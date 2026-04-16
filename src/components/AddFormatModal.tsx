@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { LabelFormat, LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { parsePDFFile, generateFormatName } from '@/lib/pdfParser';
-import { PlusIcon, UploadIcon, FileIcon } from '@/app/icons';
+import { PlusIcon, FileIcon } from '@/app/icons';
 
 interface AddFormatModalProps {
   isOpen: boolean;
@@ -32,6 +32,30 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+
+  // Calculate derived values
+  const derivedValues = useMemo(() => {
+    const w = parseFloat(width) || 0;
+    const h = parseFloat(height) || 0;
+    const cols = parseInt(columns) || 1;
+    const r = parseInt(rows) || 1;
+    const sheetW = 8.5;
+    const sheetH = 11;
+    const tM = parseFloat(topMargin) || 0;
+    const sM = parseFloat(sideMargin) || 0;
+    const hGap = parseFloat(horizontalGap) || 0;
+    const vGap = parseFloat(verticalGap) || 0;
+
+    return {
+      labelsPerSheet: type === 'sheet' ? cols * r : 1,
+      pageWidth: sheetW,
+      pageHeight: sheetH,
+      topMargin: tM,
+      sideMargin: sM,
+      horizontalGap: hGap,
+      verticalGap: vGap,
+    };
+  }, [width, height, columns, rows, topMargin, sideMargin, horizontalGap, verticalGap, type]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,6 +240,25 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               {parseError && (
                 <p className="mt-2 text-xs text-red-400">{parseError}</p>
               )}
+            </div>
+          )}
+
+          {/* Preview - for sheet labels */}
+          {type === 'sheet' && parseInt(columns) > 0 && parseInt(rows) > 0 && (
+            <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
+                Layout Preview
+              </label>
+              <SheetPreview
+                labelWidth={parseFloat(width) || 1}
+                labelHeight={parseFloat(height) || 1}
+                columns={parseInt(columns) || 1}
+                rows={parseInt(rows) || 1}
+                topMargin={parseFloat(topMargin) || 0}
+                sideMargin={parseFloat(sideMargin) || 0}
+                horizontalGap={parseFloat(horizontalGap) || 0}
+                verticalGap={parseFloat(verticalGap) || 0}
+              />
             </div>
           )}
 
@@ -439,6 +482,105 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// SVG-based sheet preview component
+function SheetPreview({
+  labelWidth,
+  labelHeight,
+  columns,
+  rows,
+  topMargin,
+  sideMargin,
+  horizontalGap,
+  verticalGap,
+}: {
+  labelWidth: number;
+  labelHeight: number;
+  columns: number;
+  rows: number;
+  topMargin: number;
+  sideMargin: number;
+  horizontalGap: number;
+  verticalGap: number;
+}) {
+  // Calculate scaling to fit in preview area
+  const sheetWidth = 8.5;
+  const sheetHeight = 11;
+  const maxPreviewSize = 280;
+
+  const sheetAspect = sheetWidth / sheetHeight;
+  const previewWidth = sheetAspect > 1 ? maxPreviewSize : maxPreviewSize * sheetAspect;
+  const previewHeight = sheetAspect > 1 ? maxPreviewSize / sheetAspect : maxPreviewSize;
+
+  const scaleX = previewWidth / sheetWidth;
+  const scaleY = previewHeight / sheetHeight;
+  const scale = Math.min(scaleX, scaleY);
+
+  const labelW = labelWidth * scale;
+  const labelH = labelHeight * scale;
+  const startX = sideMargin * scale;
+  const startY = topMargin * scale;
+  const gapX = horizontalGap * scale;
+  const gapY = verticalGap * scale;
+
+  // Generate label rectangles
+  const labels = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < columns; col++) {
+      const x = startX + col * (labelW + gapX);
+      const y = startY + row * (labelH + gapY);
+      
+      // Skip if label would extend beyond preview
+      if (x + labelW > previewWidth || y + labelH > previewHeight) continue;
+      
+      labels.push(
+        <rect
+          key={`${row}-${col}`}
+          x={x}
+          y={y}
+          width={labelW}
+          height={labelH}
+          fill="none"
+          stroke="url(#previewGradient)"
+          strokeWidth="0.5"
+          rx="1"
+        />
+      );
+    }
+  }
+
+  const totalLabels = columns * rows;
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg
+        width={previewWidth}
+        height={previewHeight}
+        viewBox={`0 0 ${previewWidth} ${previewHeight}`}
+        className="rounded-lg bg-zinc-950"
+      >
+        <defs>
+          <linearGradient id="previewGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#818cf8" />
+            <stop offset="100%" stopColor="#c084fc" />
+          </linearGradient>
+        </defs>
+        {/* Sheet background */}
+        <rect
+          width={previewWidth}
+          height={previewHeight}
+          fill="#0f0f12"
+          rx="4"
+        />
+        {/* Labels */}
+        {labels}
+      </svg>
+      <div className="mt-3 text-sm text-zinc-400">
+        {columns} × {rows} = <span className="text-zinc-200 font-medium">{totalLabels}</span> labels per sheet
       </div>
     </div>
   );
