@@ -1,7 +1,6 @@
 'use client';
 
 import { LabelFormat, formatDimensions } from '@/lib/types';
-import { ThermalIcon, SheetIcon } from './icons';
 
 interface FormatCardProps {
   format: LabelFormat;
@@ -16,48 +15,56 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
     <button
       onClick={onClick}
       className={`
-        w-full text-left rounded-lg border p-4 transition-all
+        w-full text-left p-4 rounded-xl border transition-all duration-200 card-hover
         ${isSelected
-          ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500'
-          : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900'
+          ? 'bg-zinc-800/80 border-indigo-500/50 shadow-lg shadow-indigo-500/10'
+          : 'bg-zinc-900/40 border-zinc-800/50 hover:border-zinc-700 hover:bg-zinc-900/60'
         }
       `}
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5">
+        {/* Icon */}
+        <div className={`
+          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+          ${isThermal
+            ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10'
+            : 'bg-gradient-to-br from-blue-500/20 to-blue-600/10'
+          }
+        `}>
           {isThermal ? (
-            <ThermalIcon className="w-5 h-5 text-orange-400" />
+            <svg className="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="4" y="6" width="16" height="12" rx="2" />
+              <circle cx="12" cy="12" r="3" />
+              <path d="M8 6V4M16 6V4" />
+            </svg>
           ) : (
-            <SheetIcon className="w-5 h-5 text-blue-400" />
+            <svg className="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="4" y="3" width="16" height="18" rx="2" />
+              <path d="M4 9h16M4 15h16M12 3v18" />
+            </svg>
           )}
         </div>
 
         <div className="flex-1 min-w-0">
+          {/* Name & badge */}
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-zinc-100 truncate">{format.name}</h3>
-            <span className={`
-              text-xs px-1.5 py-0.5 rounded-full font-medium
-              ${isThermal ? 'bg-orange-400/10 text-orange-400' : 'bg-blue-400/10 text-blue-400'}
-            `}>
-              {isThermal ? 'Thermal' : 'Sheet'}
-            </span>
+            <h3 className="font-semibold text-zinc-100 truncate text-sm">{format.name}</h3>
           </div>
 
           {format.description && (
-            <p className="text-sm text-zinc-500 mt-0.5 truncate">{format.description}</p>
+            <p className="text-xs text-zinc-500 mt-0.5 truncate">{format.description}</p>
           )}
 
-          <div className="flex items-center gap-4 mt-2 text-sm">
-            <span className="text-zinc-400">
+          {/* Specs row */}
+          <div className="flex items-center gap-3 mt-2">
+            <span className="text-xs font-medium text-zinc-300">
               {formatDimensions(format.width, format.height)}
             </span>
-
+            <span className="w-1 h-1 rounded-full bg-zinc-700" />
             {isThermal ? (
-              <span className="text-zinc-500">{format.dpi || 203} DPI</span>
+              <span className="text-xs text-zinc-500">{format.dpi || 203} DPI</span>
             ) : (
-              <span className="text-zinc-500">
-                {format.labelsPerSheet} per sheet
-              </span>
+              <span className="text-xs text-zinc-500">{format.labelsPerSheet} labels</span>
             )}
           </div>
         </div>

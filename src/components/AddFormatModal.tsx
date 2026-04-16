@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { LabelFormat, LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
-import { PlusIcon } from './icons';
+import { PlusIcon } from '@/app/icons';
 
 interface AddFormatModalProps {
   isOpen: boolean;
@@ -17,13 +17,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
-  // Thermal fields
   const [width, setWidth] = useState('2');
   const [height, setHeight] = useState('1');
   const [dpi, setDpi] = useState(203);
   const [labelsAcross, setLabelsAcross] = useState(1);
 
-  // Sheet fields
   const [columns, setColumns] = useState('3');
   const [rows, setRows] = useState('10');
   const [topMargin, setTopMargin] = useState('0.5');
@@ -93,13 +91,14 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="w-full max-w-lg bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-100">Add Label Format</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-lg bg-[#151518] rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
+          <h2 className="text-lg font-bold text-white">New Label Format</h2>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             ×
           </button>
@@ -107,13 +106,13 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Type Toggle */}
-          <div className="flex rounded-lg bg-zinc-950 p-1">
+          <div className="flex rounded-xl bg-zinc-900/50 p-1 border border-zinc-800">
             <button
               type="button"
               onClick={() => setType('thermal')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
                 type === 'thermal'
-                  ? 'bg-zinc-800 text-orange-400'
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -122,9 +121,9 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <button
               type="button"
               onClick={() => setType('sheet')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
                 type === 'sheet'
-                  ? 'bg-zinc-800 text-blue-400'
+                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/20'
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
@@ -133,9 +132,9 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           </div>
 
           {/* Name & Description */}
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
                 Format Name
               </label>
               <input
@@ -143,19 +142,19 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={type === 'thermal' ? 'e.g., 2" × 1" Thermal' : 'e.g., Avery 5160'}
-                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                Description (optional)
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                Description <span className="text-zinc-600 normal-case">(optional)</span>
               </label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g., Standard shipping label"
-                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
           </div>
@@ -163,7 +162,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {/* Thermal Presets */}
           {type === 'thermal' && (
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-2">
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
                 Quick Select
               </label>
               <div className="flex flex-wrap gap-2">
@@ -172,7 +171,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     key={preset.name}
                     type="button"
                     onClick={() => applyPreset(preset)}
-                    className="px-3 py-1.5 text-sm bg-zinc-950 border border-zinc-800 rounded-md text-zinc-300 hover:border-orange-500/50 hover:text-orange-400 transition-colors"
+                    className="px-3 py-1.5 text-sm bg-zinc-900/50 border border-zinc-800 rounded-lg text-zinc-300 hover:border-orange-500/50 hover:text-orange-400 transition-all"
                   >
                     {preset.name}
                   </button>
@@ -184,8 +183,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {/* Dimensions */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                Width (inches)
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                Width <span className="text-zinc-600">(inches)</span>
               </label>
               <input
                 type="number"
@@ -193,12 +192,12 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 min="0.1"
                 value={width}
                 onChange={(e) => setWidth(e.target.value)}
-                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                Height (inches)
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                Height <span className="text-zinc-600">(inches)</span>
               </label>
               <input
                 type="number"
@@ -206,7 +205,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 min="0.1"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
-                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
           </div>
@@ -215,13 +214,13 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {type === 'thermal' && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
                   DPI
                 </label>
                 <select
                   value={dpi}
                   onChange={(e) => setDpi(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all appearance-none cursor-pointer"
                 >
                   {COMMON_DPI_VALUES.map((d) => (
                     <option key={d} value={d}>{d} DPI</option>
@@ -229,7 +228,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
                   Labels Across
                 </label>
                 <input
@@ -238,7 +237,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   max="10"
                   value={labelsAcross}
                   onChange={(e) => setLabelsAcross(parseInt(e.target.value) || 1)}
-                  className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
@@ -249,7 +248,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
                     Columns
                   </label>
                   <input
@@ -257,11 +256,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="1"
                     value={columns}
                     onChange={(e) => setColumns(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
                     Rows
                   </label>
                   <input
@@ -269,15 +268,15 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="1"
                     value={rows}
                     onChange={(e) => setRows(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                    Top Margin (in)
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                    Top Margin <span className="text-zinc-600">(in)</span>
                   </label>
                   <input
                     type="number"
@@ -285,12 +284,12 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={topMargin}
                     onChange={(e) => setTopMargin(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                    Side Margin (in)
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                    Side Margin <span className="text-zinc-600">(in)</span>
                   </label>
                   <input
                     type="number"
@@ -298,15 +297,15 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={sideMargin}
                     onChange={(e) => setSideMargin(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                    Horizontal Gap (in)
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                    Horizontal Gap <span className="text-zinc-600">(in)</span>
                   </label>
                   <input
                     type="number"
@@ -314,12 +313,12 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={horizontalGap}
                     onChange={(e) => setHorizontalGap(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">
-                    Vertical Gap (in)
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                    Vertical Gap <span className="text-zinc-600">(in)</span>
                   </label>
                   <input
                     type="number"
@@ -327,7 +326,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={verticalGap}
                     onChange={(e) => setVerticalGap(e.target.value)}
-                    className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-100 focus:outline-none focus:border-indigo-500 transition-colors"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
               </div>
@@ -339,16 +338,16 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors rounded-xl hover:bg-zinc-800"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-zinc-200 transition-colors shadow-lg shadow-white/10"
             >
               <PlusIcon className="w-4 h-4" />
-              Add Format
+              Create Format
             </button>
           </div>
         </form>
