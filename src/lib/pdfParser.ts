@@ -15,14 +15,22 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
     // Dynamically import PDF.js only on client
     const pdfjsLib = await import('pdfjs-dist');
     
-    // Set worker to built-in (no external CDN needed)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs',
-      import.meta.url
-    ).toString();
+    // Use the legacy build which doesn't need a worker
+    // Point to the bundled worker script
+    const workerSrc = '/pdf.worker.min.mjs';
+
+    let pdfjs;
+    try {
+      pdfjs = pdfjsLib;
+    } catch {
+      throw new Error('Failed to load PDF.js');
+    }
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pdf = await pdfjs.getDocument({ 
+      data: arrayBuffer,
+      verbosity: 0,
+    }).promise;
 
     // Get first page at high resolution for accurate detection
     const page = await pdf.getPage(1);
@@ -56,6 +64,7 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
       spec: analysis.spec,
     };
   } catch (err) {
+    console.error('PDF parsing error:', err);
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Failed to parse PDF',
@@ -79,8 +88,6 @@ function analyzeCanvasImage(
 ): GridAnalysis {
   // Find all non-white rectangles (labels have borders)
   // We'll scan for dark pixels that form rectangular patterns
-  
-  const targetBorderWidth = 1; // pixels
   
   // Detect horizontal and vertical lines
   const horizontalLines: number[] = [];
@@ -255,7 +262,6 @@ function detectByContrast(
   }
 
   // Convert edge positions to actual counts
-  // A grid with N labels should have roughly N+1 edges
   const columns = Math.max(1, xEdges.length > 0 ? Math.round(xEdges.length / 2) : 1);
   const rows = Math.max(1, yEdges.length > 0 ? Math.round(yEdges.length / 2) : 1);
 
@@ -291,8 +297,8 @@ function detectByContrast(
       sheetHeight: parseFloat(pageHeight.toFixed(3)),
       columns,
       rows,
-      topMargin: parseFloat((pageHeight - labelHeight * rows) / 2 as any),
-      sideMargin: parseFloat((pageWidth - labelWidth * columns) / 2 as any),
+      topMargin: parseFloat(((pageHeight - labelHeight * rows) / 2).toFixed(3)),
+      sideMargin: parseFloat(((pageWidth - labelWidth * columns) / 2).toFixed(3)),
       horizontalGap: 0,
       verticalGap: 0,
       confidence: 'medium',
