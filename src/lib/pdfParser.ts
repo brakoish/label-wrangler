@@ -12,14 +12,11 @@ export interface PDFParseResult {
  */
 export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   try {
-    // Dynamically import PDF.js only on client
-    const pdfjsLib = await import('pdfjs-dist');
-
-    // Set worker source for PDF.js
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    // Dynamically import PDF.js - use legacy build that doesn't need a worker
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.min.mjs');
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ 
+    const pdf = await pdfjsLib.getDocument({
       data: arrayBuffer,
       verbosity: 0,
     }).promise;
@@ -80,7 +77,7 @@ function analyzeCanvasImage(
 ): GridAnalysis {
   // Find all non-white rectangles (labels have borders)
   // We'll scan for dark pixels that form rectangular patterns
-  
+
   // Detect horizontal and vertical lines
   const horizontalLines: number[] = [];
   const verticalLines: number[] = [];
@@ -132,15 +129,15 @@ function analyzeCanvasImage(
   // Calculate margins and gaps
   const leftMargin = xPositions[0] / width * pageWidth;
   const topMargin = yPositions[0] / height * pageHeight;
-  
+
   let horizontalGap = 0;
   let verticalGap = 0;
-  
+
   if (columns > 1) {
     const totalGaps = pageWidth - leftMargin * 2 - labelWidth * columns;
     horizontalGap = totalGaps / (columns - 1);
   }
-  
+
   if (rows > 1) {
     const totalGaps = pageHeight - topMargin * 2 - labelHeight * rows;
     verticalGap = totalGaps / (rows - 1);
@@ -177,7 +174,7 @@ function analyzeCanvasImage(
  */
 function clusterPositions(positions: number[]): number[] {
   if (positions.length === 0) return [];
-  
+
   const threshold = 5; // pixels
   const clusters: number[][] = [];
   let currentCluster: number[] = [positions[0]];
@@ -211,7 +208,7 @@ function detectByContrast(
   // Sample grid points and look for consistent spacing
   const samplesX = 20;
   const samplesY = 20;
-  
+
   // Create a grid of brightness values
   const brightnessGrid: number[][] = [];
   for (let y = 0; y < samplesY; y++) {
