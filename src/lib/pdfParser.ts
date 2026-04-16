@@ -1,10 +1,4 @@
-import * as pdfjsLib from 'pdfjs-dist';
 import { ParsedLabelSpec } from './types';
-
-// Initialize PDF.js worker
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-}
 
 export interface PDFParseResult {
   success: boolean;
@@ -22,11 +16,21 @@ export interface PDFParseResult {
   };
 }
 
+// Dynamically import pdfjs to avoid SSR issues
+async function getPDFJS() {
+  const pdfjs = await import('pdfjs-dist');
+  if (typeof window !== 'undefined') {
+    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+  }
+  return pdfjs;
+}
+
 /**
  * Parse a PDF file to detect label format specifications
  */
 export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   try {
+    const pdfjsLib = await getPDFJS();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
