@@ -23,7 +23,7 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
 
     // Get first page at high resolution for accurate detection
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 2.0 });
+    const viewport = page.getViewport({ scale: 3.0 }); // Increased from 2.0 for better accuracy
 
     // Create canvas to render PDF
     const canvas = document.createElement('canvas');
@@ -75,23 +75,20 @@ function analyzeCanvasImage(
   pageWidth: number,
   pageHeight: number
 ): GridAnalysis {
-  // Find all non-white rectangles (labels have borders)
-  // We'll scan for dark pixels that form rectangular patterns
-
-  // Detect horizontal and vertical lines
+  // Find all dark lines (borders between labels)
   const horizontalLines: number[] = [];
   const verticalLines: number[] = [];
 
-  // Scan for horizontal lines (rows of dark pixels)
+  // Scan for horizontal lines (rows with significant dark pixels)
   for (let y = 0; y < height; y++) {
     let darkCount = 0;
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
       const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      if (brightness < 200) darkCount++;
+      if (brightness < 180) darkCount++;
     }
-    // If more than 30% of row is dark, it's likely a line
-    if (darkCount / width > 0.3) {
+    // If more than 20% of row is dark, it's likely a border line
+    if (darkCount / width > 0.2) {
       horizontalLines.push(y);
     }
   }
@@ -102,53 +99,61 @@ function analyzeCanvasImage(
     for (let y = 0; y < height; y++) {
       const i = (y * width + x) * 4;
       const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      if (brightness < 200) darkCount++;
+      if (brightness < 180) darkCount++;
     }
-    if (darkCount / height > 0.3) {
+    if (darkCount / height > 0.2) {
       verticalLines.push(x);
     }
   }
 
-  // Cluster lines to find grid positions
-  const yPositions = clusterPositions(horizontalLines);
-  const xPositions = clusterPositions(verticalLines);
+  // Cluster lines to find distinct positions
+  const yPositions = clusterPositions(horizontalLines, 8);
+  const xPositions = clusterPositions(verticalLines, 8);
 
   // If we don't find enough lines, try edge detection
   if (xPositions.length < 2 || yPositions.length < 2) {
-    // Try detecting label boundaries by finding contrast changes
     return detectByContrast(data, width, height, pageWidth, pageHeight);
   }
 
-  const columns = xPositions.length;
-  const rows = yPositions.length;
+  // Calculate the ACTUAL distances between lines (this gives us label + gap)
+  const xDistances = calculateDistances(xPositions);
+  const yDistances = calculateDistances(yPositions);
 
-  // Calculate label dimensions
-  const labelWidth = pageWidth / columns;
-  const labelHeight = pageHeight / rows;
+  // Find the most common distance - this is the repeat unit (label + gap)
+  // The second most common is likely just the gap, or if there's no second distinct one, gap = 0
+  const xUnit = findMostCommonValue(xDistances);
+  const yUnit = findMostCommonValue(yDistances);
 
-  // Calculate margins and gaps
+  // Now find the ACTUAL label dimensions by looking at the label areas (not the gaps)
+  // We need to subtract the gap from the unit
+  // For typical sheet labels, gaps are small (0.0625" to 0.125")
+  // Let's detect the gap by looking at where lines appear repeatedly
+
+  // The gap can be detected as the minimum distance between lines
+  // (or the second most common if there's a pattern)
+  const xGap = findGapSize(xDistances, xUnit);
+  const yGap = findGapSize(yDistances, yUnit);
+
+  // Label size = unit - gap
+  let labelWidth = xUnit - xGap;
+  let labelHeight = yUnit - yGap;
+
+  // Ensure positive values
+  labelWidth = Math.max(0.1, labelWidth);
+  labelHeight = Math.max(0.1, labelHeight);
+
+  // Calculate number of labels
+  const columns = xPositions.length - 1 || 1;
+  const rows = yPositions.length - 1 || 1;
+
+  // Calculate margins from first line position
   const leftMargin = xPositions[0] / width * pageWidth;
   const topMargin = yPositions[0] / height * pageHeight;
 
-  let horizontalGap = 0;
-  let verticalGap = 0;
-
-  if (columns > 1) {
-    const totalGaps = pageWidth - leftMargin * 2 - labelWidth * columns;
-    horizontalGap = totalGaps / (columns - 1);
-  }
-
-  if (rows > 1) {
-    const totalGaps = pageHeight - topMargin * 2 - labelHeight * rows;
-    verticalGap = totalGaps / (rows - 1);
-  }
-
   // Determine confidence
   let confidence: 'high' | 'medium' | 'low' = 'medium';
-  if (columns >= 2 && rows >= 2) {
+  if (columns >= 2 && rows >= 2 && xGap >= 0 && yGap >= 0) {
     confidence = 'high';
-  } else if (columns > 1 || rows > 1) {
-    confidence = 'medium';
   }
 
   return {
@@ -162,8 +167,8 @@ function analyzeCanvasImage(
       rows,
       topMargin: parseFloat(topMargin.toFixed(3)),
       sideMargin: parseFloat(leftMargin.toFixed(3)),
-      horizontalGap: parseFloat(horizontalGap.toFixed(3)),
-      verticalGap: parseFloat(verticalGap.toFixed(3)),
+      horizontalGap: parseFloat(xGap.toFixed(3)),
+      verticalGap: parseFloat(yGap.toFixed(3)),
       confidence,
     },
   };
@@ -172,10 +177,9 @@ function analyzeCanvasImage(
 /**
  * Cluster nearby line positions to get distinct positions
  */
-function clusterPositions(positions: number[]): number[] {
+function clusterPositions(positions: number[], threshold: number = 5): number[] {
   if (positions.length === 0) return [];
 
-  const threshold = 5; // pixels
   const clusters: number[][] = [];
   let currentCluster: number[] = [positions[0]];
 
@@ -196,6 +200,79 @@ function clusterPositions(positions: number[]): number[] {
 }
 
 /**
+ * Calculate distances between consecutive positions
+ */
+function calculateDistances(positions: number[]): number[] {
+  const distances: number[] = [];
+  for (let i = 1; i < positions.length; i++) {
+    distances.push(positions[i] - positions[i - 1]);
+  }
+  return distances;
+}
+
+/**
+ * Find the most common value in an array
+ */
+function findMostCommonValue(values: number[]): number {
+  if (values.length === 0) return 1;
+  
+  const counts = new Map<number, number>();
+  for (const v of values) {
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  
+  let mostCommon = values[0];
+  let maxCount = 0;
+  for (const [v, count] of counts) {
+    if (count > maxCount) {
+      maxCount = count;
+      mostCommon = v;
+    }
+  }
+  return mostCommon;
+}
+
+/**
+ * Find the gap size by looking for the smallest consistent distance
+ * that's less than the unit size
+ */
+function findGapSize(distances: number[], unitSize: number): number {
+  if (distances.length === 0) return 0;
+
+  // Group distances by approximate value (within 2 pixels)
+  const groups = new Map<number, number[]>();
+  for (const d of distances) {
+    let foundGroup = false;
+    for (const key of groups.keys()) {
+      if (Math.abs(d - key) <= 2) {
+        groups.get(key)!.push(d);
+        foundGroup = true;
+        break;
+      }
+    }
+    if (!foundGroup) {
+      groups.set(d, [d]);
+    }
+  }
+
+  // Find the smallest group that's less than unitSize
+  // This is likely the gap
+  let gapSize = 0;
+  let minGapCount = 0;
+  
+  for (const [gap, counts] of groups) {
+    const count = counts.length;
+    // Gap should be smaller than unit and appear consistently
+    if (gap < unitSize * 0.5 && count >= minGapCount) {
+      gapSize = gap;
+      minGapCount = count;
+    }
+  }
+
+  return gapSize;
+}
+
+/**
  * Fallback: detect grid by analyzing contrast at regular intervals
  */
 function detectByContrast(
@@ -206,8 +283,8 @@ function detectByContrast(
   pageHeight: number
 ): GridAnalysis {
   // Sample grid points and look for consistent spacing
-  const samplesX = 20;
-  const samplesY = 20;
+  const samplesX = 30;
+  const samplesY = 30;
 
   // Create a grid of brightness values
   const brightnessGrid: number[][] = [];
@@ -233,7 +310,7 @@ function detectByContrast(
       const diff = Math.abs(brightnessGrid[y][x] - brightnessGrid[y][x - 1]);
       edgeStrength += diff;
     }
-    if (edgeStrength / samplesY > 50) {
+    if (edgeStrength / samplesY > 40) {
       xEdges.push(x);
     }
   }
@@ -245,14 +322,19 @@ function detectByContrast(
       const diff = Math.abs(brightnessGrid[y][x] - brightnessGrid[y - 1][x]);
       edgeStrength += diff;
     }
-    if (edgeStrength / samplesX > 50) {
+    if (edgeStrength / samplesX > 40) {
       yEdges.push(y);
     }
   }
 
   // Convert edge positions to actual counts
-  const columns = Math.max(1, xEdges.length > 0 ? Math.round(xEdges.length / 2) : 1);
-  const rows = Math.max(1, yEdges.length > 0 ? Math.round(yEdges.length / 2) : 1);
+  // Each label has 4 edges (left, right, top, bottom)
+  // So edges / 2 ≈ number of labels
+  const xEdgeGroups = clusterPositions(xEdges.map(e => Math.round(e * width / samplesX)), 15);
+  const yEdgeGroups = clusterPositions(yEdges.map(e => Math.round(e * height / samplesY)), 15);
+
+  const columns = Math.max(1, Math.round(xEdgeGroups.length / 2));
+  const rows = Math.max(1, Math.round(yEdgeGroups.length / 2));
 
   // If detection is poor, assume Avery 5160 as most common format
   if (columns < 2 || rows < 2) {
@@ -299,27 +381,30 @@ function detectByContrast(
  * Generate a name suggestion based on detected specs
  */
 export function generateFormatName(spec: ParsedLabelSpec): string {
+  const labelInches = `${spec.width}" × ${spec.height}"`;
+  
   if (spec.type === 'thermal') {
-    return `${spec.width}" × ${spec.height}" Thermal Roll`;
+    return `${labelInches} Thermal`;
   }
-
-  const labelsPerSheet = (spec.columns || 1) * (spec.rows || 1);
-
-  // Check for common Avery formats
-  if (spec.sheetWidth === 8.5 && spec.sheetHeight === 11) {
-    if (spec.columns === 3 && spec.rows === 10 && Math.abs(spec.width - 2.625) < 0.1) {
-      return 'Avery 5160';
-    }
-    if (spec.columns === 2 && spec.rows === 5 && Math.abs(spec.width - 4) < 0.1) {
-      return 'Avery 5163';
-    }
-    if (spec.columns === 4 && spec.rows === 20 && Math.abs(spec.width - 1.75) < 0.1) {
-      return 'Avery 5167';
-    }
-    if (spec.columns === 2 && spec.rows === 3 && Math.abs(spec.width - 4) < 0.1) {
-      return 'Avery 8164';
-    }
+  
+  // Check for common sheet label formats
+  const w = parseFloat(spec.width.toFixed(2));
+  const h = parseFloat(spec.height.toFixed(2));
+  const cols = spec.columns || 1;
+  const r = spec.rows || 1;
+  
+  // Common sheet label formats
+  if (w === 2.625 && h === 1 && cols === 3 && r === 10) return 'Avery 5160';
+  if (w === 4 && h === 2 && cols === 2 && r === 5) return 'Avery 5163';
+  if (w === 1.75 && h === 0.5 && cols === 4 && r === 20) return 'Avery 5167';
+  if (w === 4 && h === 3.33 && cols === 2 && r === 3) return 'Avery 8164';
+  if (w === 0.5 && h === 0.5 && cols === 13 && r === 17) return 'OL2050';
+  if (w === 0.5 && h === 0.5 && cols === 13 && r === 17) return 'OL2050';
+  
+  // Generic naming
+  if (spec.columns && spec.rows) {
+    return `${labelInches} Sheet (${spec.columns}×${spec.rows})`;
   }
-
-  return `${spec.width.toFixed(2)}" × ${spec.height.toFixed(2)}" Sheet (${labelsPerSheet} per sheet)`;
+  
+  return `${labelInches} Sheet`;
 }
