@@ -14,20 +14,12 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   try {
     // Dynamically import PDF.js only on client
     const pdfjsLib = await import('pdfjs-dist');
-    
-    // Use the legacy build which doesn't need a worker
-    // Point to the bundled worker script
-    const workerSrc = '/pdf.worker.min.mjs';
 
-    let pdfjs;
-    try {
-      pdfjs = pdfjsLib;
-    } catch {
-      throw new Error('Failed to load PDF.js');
-    }
+    // Set worker source for PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjs.getDocument({ 
+    const pdf = await pdfjsLib.getDocument({ 
       data: arrayBuffer,
       verbosity: 0,
     }).promise;
