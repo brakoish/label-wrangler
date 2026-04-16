@@ -32,6 +32,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [pdfUploaded, setPdfUploaded] = useState(false);
 
   // Calculate derived values
   const derivedValues = useMemo(() => {
@@ -109,6 +110,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
     setHorizontalGap('0.125');
     setVerticalGap('0');
     setParseError(null);
+    setPdfUploaded(false);
   };
 
   const applyPreset = (preset: (typeof COMMON_THERMAL_SIZES)[number]) => {
@@ -123,6 +125,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
     setIsParsing(true);
     setParseError(null);
+    setPdfUploaded(true);
 
     try {
       const result = await parsePDFFile(file);
@@ -244,7 +247,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           )}
 
           {/* Preview - for sheet labels */}
-          {type === 'sheet' && parseInt(columns) > 0 && parseInt(rows) > 0 && (
+          {type === 'sheet' && pdfUploaded && !isParsing && parseInt(columns) > 0 && parseInt(rows) > 0 && (
             <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
               <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
                 Layout Preview
