@@ -5,13 +5,11 @@ import { useFormatStore } from '@/lib/store';
 import { FormatCard } from '@/components/FormatCard';
 import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
-import { PlusIcon, UploadIcon, DownloadIcon, Sparkles, FileIcon } from './icons';
-import { PDFImportModal } from '@/components/PDFImportModal';
+import { PlusIcon, UploadIcon, DownloadIcon, Sparkles } from './icons';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isPDFModalOpen, setIsPDFModalOpen] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'thermal' | 'sheet'>('all');
 
@@ -101,13 +99,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsPDFModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-            >
-              <FileIcon className="w-4 h-4" />
-              Parse PDF
-            </button>
             <button
               onClick={handleImport}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/5"
@@ -284,9 +275,6 @@ export default function Home() {
 
       {/* Add Format Modal */}
       <AddFormatModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
-
-      {/* PDF Import Modal */}
-      <PDFImportModal isOpen={isPDFModalOpen} onClose={() => setIsPDFModalOpen(false)} />
     </div>
   );
 }

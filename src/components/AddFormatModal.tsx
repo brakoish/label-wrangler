@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { LabelFormat, LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
-import { PlusIcon } from '@/app/icons';
+import { parsePDFFile, generateFormatName } from '@/lib/pdfParser';
+import { PlusIcon, UploadIcon, FileIcon } from '@/app/icons';
 
 interface AddFormatModalProps {
   isOpen: boolean;
@@ -28,6 +29,9 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
   const [sideMargin, setSideMargin] = useState('0.1875');
   const [horizontalGap, setHorizontalGap] = useState('0.125');
   const [verticalGap, setVerticalGap] = useState('0');
+
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +84,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
     setSideMargin('0.1875');
     setHorizontalGap('0.125');
     setVerticalGap('0');
+    setParseError(null);
   };
 
   const applyPreset = (preset: (typeof COMMON_THERMAL_SIZES)[number]) => {
@@ -88,13 +93,54 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
     setName(`${preset.name} Thermal`);
   };
 
+  const handlePDFUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsing(true);
+    setParseError(null);
+
+    try {
+      const result = await parsePDFFile(file);
+
+      if (result.success && result.spec) {
+        const spec = result.spec;
+        
+        // Auto-fill form based on parsed spec
+        setType(spec.type);
+        setName(generateFormatName(spec));
+        setDescription(`Imported from ${file.name}`);
+
+        if (spec.type === 'thermal') {
+          setWidth(spec.width.toFixed(3));
+          setHeight(spec.height.toFixed(3));
+        } else {
+          setWidth(spec.width.toFixed(3));
+          setHeight(spec.height.toFixed(3));
+          setColumns(spec.columns?.toString() || '3');
+          setRows(spec.rows?.toString() || '10');
+          setTopMargin((spec.topMargin || 0).toFixed(3));
+          setSideMargin((spec.sideMargin || 0).toFixed(3));
+          setHorizontalGap((spec.horizontalGap || 0).toFixed(3));
+          setVerticalGap((spec.verticalGap || 0).toFixed(3));
+        }
+      } else {
+        setParseError(result.error || 'Failed to parse PDF');
+      }
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : 'Failed to parse PDF');
+    } finally {
+      setIsParsing(false);
+    }
+  }, []);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-[#151518] rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg bg-[#151518] rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800 sticky top-0 bg-[#151518] z-10">
           <h2 className="text-lg font-bold text-white">New Label Format</h2>
           <button
             onClick={onClose}
@@ -130,6 +176,48 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               Sheet Labels
             </button>
           </div>
+
+          {/* PDF Upload - Sheet labels only */}
+          {type === 'sheet' && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
+                Import from PDF Template
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={handlePDFUpload}
+                  disabled={isParsing}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                />
+                <div className={`
+                  flex items-center justify-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed transition-all
+                  ${isParsing 
+                    ? 'border-indigo-500/50 bg-indigo-500/5' 
+                    : 'border-zinc-700 hover:border-zinc-600 bg-zinc-900/30'
+                  }
+                `}>
+                  {isParsing ? (
+                    <>
+                      <div className="w-5 h-5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+                      <span className="text-sm text-indigo-400">Analyzing PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileIcon className="w-5 h-5 text-zinc-400" />
+                      <span className="text-sm text-zinc-400">
+                        Drop PDF or <span className="text-indigo-400">browse</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+              {parseError && (
+                <p className="mt-2 text-xs text-red-400">{parseError}</p>
+              )}
+            </div>
+          )}
 
           {/* Name & Description */}
           <div className="space-y-4">
