@@ -4,116 +4,56 @@ export interface PDFParseResult {
   success: boolean;
   spec?: ParsedLabelSpec;
   error?: string;
-  rawData?: {
-    pageWidth: number;
-    pageHeight: number;
-    rectangles: Array<{
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    }>;
-  };
-}
-
-// Dynamically import pdfjs to avoid SSR issues
-async function getPDFJS() {
-  const pdfjs = await import('pdfjs-dist');
-  if (typeof window !== 'undefined') {
-    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-  }
-  return pdfjs;
 }
 
 /**
  * Parse a PDF file to detect label format specifications
+ * Uses canvas rendering to analyze the PDF visually
  */
 export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   try {
-    const pdfjsLib = await getPDFJS();
+    // Dynamically import PDF.js only on client
+    const pdfjsLib = await import('pdfjs-dist');
+    
+    // Set worker to built-in (no external CDN needed)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).toString();
+
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-    // Get first page
+    // Get first page at high resolution for accurate detection
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 1.0 });
+    const viewport = page.getViewport({ scale: 2.0 });
 
-    // PDF coordinates: origin at bottom-left, y increases upward
-    // Convert to inches (PDF uses points, 72 points = 1 inch)
-    const pageWidth = viewport.width / 72;
-    const pageHeight = viewport.height / 72;
+    // Create canvas to render PDF
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
 
-    // Extract drawing operations to find rectangles
-    const opList = await page.getOperatorList();
-    const rectangles: Array<{ x: number; y: number; width: number; height: number }> = [];
+    await page.render({
+      canvasContext: ctx,
+      viewport: viewport,
+      canvas,
+    }).promise;
 
-    // Track current transformation matrix and path
-    let currentTransform: number[] = [1, 0, 0, 1, 0, 0];
-    const currentPath: Array<{ x: number; y: number }> = [];
+    // Get image data for analysis
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const { data, width, height } = imageData;
 
-    for (let i = 0; i < opList.fnArray.length; i++) {
-      const fn = opList.fnArray[i];
-      const args = opList.argsArray[i];
+    // PDF dimensions in inches (72 points per inch)
+    const pageWidthInches = viewport.width / 72;
+    const pageHeightInches = viewport.height / 72;
 
-      // Track rectangle drawing operations
-      if (fn === pdfjsLib.OPS.rectangle) {
-        const [x, y, width, height] = args as number[];
-        // Transform coordinates
-        const tx = currentTransform[0] * x + currentTransform[2] * y + currentTransform[4];
-        const ty = currentTransform[1] * x + currentTransform[3] * y + currentTransform[5];
-        const tw = Math.abs(currentTransform[0] * width);
-        const th = Math.abs(currentTransform[3] * height);
-
-        rectangles.push({
-          x: tx / 72,
-          y: ty / 72,
-          width: tw / 72,
-          height: th / 72,
-        });
-      }
-
-      // Track path construction for more complex shapes
-      if (fn === pdfjsLib.OPS.moveTo) {
-        const [x, y] = args as number[];
-        currentPath.length = 0;
-        currentPath.push({ x, y });
-      } else if (fn === pdfjsLib.OPS.lineTo) {
-        const [x, y] = args as number[];
-        currentPath.push({ x, y });
-      } else if (fn === pdfjsLib.OPS.closePath) {
-        // Check if path forms a rectangle
-        if (currentPath.length === 4) {
-          const rect = pathToRect(currentPath);
-          if (rect) {
-            rectangles.push({
-              x: rect.x / 72,
-              y: rect.y / 72,
-              width: rect.width / 72,
-              height: rect.height / 72,
-            });
-          }
-        }
-        currentPath.length = 0;
-      }
-
-      // Track transformations
-      if (fn === pdfjsLib.OPS.transform) {
-        const [a, b, c, d, e, f] = args as number[];
-        currentTransform = multiplyMatrices(currentTransform, [a, b, c, d, e, f]);
-      }
-    }
-
-    // Analyze rectangles to detect grid pattern
-    const analysis = analyzeRectangles(rectangles, pageWidth, pageHeight);
+    // Analyze to find rectangular regions
+    const analysis = analyzeCanvasImage(data, width, height, pageWidthInches, pageHeightInches);
 
     return {
       success: true,
       spec: analysis.spec,
-      rawData: {
-        pageWidth,
-        pageHeight,
-        rectangles,
-      },
     };
   } catch (err) {
     return {
@@ -123,202 +63,240 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   }
 }
 
-/**
- * Convert a 4-point path to rectangle if it forms one
- */
-function pathToRect(path: Array<{ x: number; y: number }>): { x: number; y: number; width: number; height: number } | null {
-  if (path.length !== 4) return null;
-
-  const xs = path.map((p) => p.x);
-  const ys = path.map((p) => p.y);
-  const uniqueXs = [...new Set(xs)].sort((a, b) => a - b);
-  const uniqueYs = [...new Set(ys)].sort((a, b) => a - b);
-
-  if (uniqueXs.length !== 2 || uniqueYs.length !== 2) return null;
-
-  return {
-    x: uniqueXs[0],
-    y: uniqueYs[0],
-    width: uniqueXs[1] - uniqueXs[0],
-    height: uniqueYs[1] - uniqueYs[0],
-  };
+interface GridAnalysis {
+  spec: ParsedLabelSpec;
 }
 
 /**
- * Multiply two 3x3 transformation matrices (represented as 6-element arrays)
+ * Analyze canvas image data to detect label grid
  */
-function multiplyMatrices(a: number[], b: number[]): number[] {
-  return [
-    a[0] * b[0] + a[2] * b[1],
-    a[1] * b[0] + a[3] * b[1],
-    a[0] * b[2] + a[2] * b[3],
-    a[1] * b[2] + a[3] * b[3],
-    a[0] * b[4] + a[2] * b[5] + a[4],
-    a[1] * b[4] + a[3] * b[5] + a[5],
-  ];
-}
-
-/**
- * Analyze rectangles to detect label grid pattern
- */
-function analyzeRectangles(
-  rectangles: Array<{ x: number; y: number; width: number; height: number }>,
+function analyzeCanvasImage(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
   pageWidth: number,
   pageHeight: number
-): { spec: ParsedLabelSpec } {
-  // Filter out very small rectangles (likely artifacts)
-  const validRects = rectangles.filter(
-    (r) => r.width > 0.1 && r.height > 0.1 && r.width < pageWidth * 0.9 && r.height < pageHeight * 0.9
-  );
+): GridAnalysis {
+  // Find all non-white rectangles (labels have borders)
+  // We'll scan for dark pixels that form rectangular patterns
+  
+  const targetBorderWidth = 1; // pixels
+  
+  // Detect horizontal and vertical lines
+  const horizontalLines: number[] = [];
+  const verticalLines: number[] = [];
 
-  if (validRects.length === 0) {
-    // No rectangles found - assume it's a single thermal label
-    return {
-      spec: {
-        type: 'thermal',
-        width: pageWidth,
-        height: pageHeight,
-        confidence: 'low',
-      },
-    };
+  // Scan for horizontal lines (rows of dark pixels)
+  for (let y = 0; y < height; y++) {
+    let darkCount = 0;
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      if (brightness < 200) darkCount++;
+    }
+    // If more than 30% of row is dark, it's likely a line
+    if (darkCount / width > 0.3) {
+      horizontalLines.push(y);
+    }
   }
 
-  // Group rectangles by size (tolerance of 0.01 inches)
-  const sizeGroups = groupBySize(validRects, 0.01);
-  const largestGroup = sizeGroups.sort((a, b) => b.length - a.length)[0];
-
-  if (!largestGroup || largestGroup.length < 2) {
-    // Single rectangle - could be a thermal label
-    const rect = validRects[0];
-    return {
-      spec: {
-        type: 'thermal',
-        width: rect.width,
-        height: rect.height,
-        confidence: 'medium',
-      },
-    };
+  // Scan for vertical lines
+  for (let x = 0; x < width; x++) {
+    let darkCount = 0;
+    for (let y = 0; y < height; y++) {
+      const i = (y * width + x) * 4;
+      const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      if (brightness < 200) darkCount++;
+    }
+    if (darkCount / height > 0.3) {
+      verticalLines.push(x);
+    }
   }
 
-  // Analyze grid pattern
-  const gridAnalysis = analyzeGrid(largestGroup, pageWidth, pageHeight);
+  // Cluster lines to find grid positions
+  const yPositions = clusterPositions(horizontalLines);
+  const xPositions = clusterPositions(verticalLines);
+
+  // If we don't find enough lines, try edge detection
+  if (xPositions.length < 2 || yPositions.length < 2) {
+    // Try detecting label boundaries by finding contrast changes
+    return detectByContrast(data, width, height, pageWidth, pageHeight);
+  }
+
+  const columns = xPositions.length;
+  const rows = yPositions.length;
+
+  // Calculate label dimensions
+  const labelWidth = pageWidth / columns;
+  const labelHeight = pageHeight / rows;
+
+  // Calculate margins and gaps
+  const leftMargin = xPositions[0] / width * pageWidth;
+  const topMargin = yPositions[0] / height * pageHeight;
+  
+  let horizontalGap = 0;
+  let verticalGap = 0;
+  
+  if (columns > 1) {
+    const totalGaps = pageWidth - leftMargin * 2 - labelWidth * columns;
+    horizontalGap = totalGaps / (columns - 1);
+  }
+  
+  if (rows > 1) {
+    const totalGaps = pageHeight - topMargin * 2 - labelHeight * rows;
+    verticalGap = totalGaps / (rows - 1);
+  }
+
+  // Determine confidence
+  let confidence: 'high' | 'medium' | 'low' = 'medium';
+  if (columns >= 2 && rows >= 2) {
+    confidence = 'high';
+  } else if (columns > 1 || rows > 1) {
+    confidence = 'medium';
+  }
 
   return {
     spec: {
       type: 'sheet',
-      width: gridAnalysis.labelWidth,
-      height: gridAnalysis.labelHeight,
-      sheetWidth: pageWidth,
-      sheetHeight: pageHeight,
-      columns: gridAnalysis.columns,
-      rows: gridAnalysis.rows,
-      topMargin: gridAnalysis.topMargin,
-      sideMargin: gridAnalysis.sideMargin,
-      horizontalGap: gridAnalysis.horizontalGap,
-      verticalGap: gridAnalysis.verticalGap,
-      confidence: gridAnalysis.confidence,
+      width: parseFloat(labelWidth.toFixed(3)),
+      height: parseFloat(labelHeight.toFixed(3)),
+      sheetWidth: parseFloat(pageWidth.toFixed(3)),
+      sheetHeight: parseFloat(pageHeight.toFixed(3)),
+      columns,
+      rows,
+      topMargin: parseFloat(topMargin.toFixed(3)),
+      sideMargin: parseFloat(leftMargin.toFixed(3)),
+      horizontalGap: parseFloat(horizontalGap.toFixed(3)),
+      verticalGap: parseFloat(verticalGap.toFixed(3)),
+      confidence,
     },
   };
 }
 
 /**
- * Group rectangles by similar size
+ * Cluster nearby line positions to get distinct positions
  */
-function groupBySize(
-  rectangles: Array<{ x: number; y: number; width: number; height: number }>,
-  tolerance: number
-): Array<Array<{ x: number; y: number; width: number; height: number }>> {
-  const groups: Array<Array<{ x: number; y: number; width: number; height: number }>> = [];
+function clusterPositions(positions: number[]): number[] {
+  if (positions.length === 0) return [];
+  
+  const threshold = 5; // pixels
+  const clusters: number[][] = [];
+  let currentCluster: number[] = [positions[0]];
 
-  for (const rect of rectangles) {
-    let found = false;
-    for (const group of groups) {
-      const sample = group[0];
-      if (
-        Math.abs(rect.width - sample.width) < tolerance &&
-        Math.abs(rect.height - sample.height) < tolerance
-      ) {
-        group.push(rect);
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      groups.push([rect]);
+  for (let i = 1; i < positions.length; i++) {
+    if (positions[i] - currentCluster[currentCluster.length - 1] <= threshold) {
+      currentCluster.push(positions[i]);
+    } else {
+      clusters.push(currentCluster);
+      currentCluster = [positions[i]];
     }
   }
+  clusters.push(currentCluster);
 
-  return groups;
+  // Return the average position of each cluster
+  return clusters.map((cluster) =>
+    Math.round(cluster.reduce((a, b) => a + b, 0) / cluster.length)
+  );
 }
 
 /**
- * Analyze rectangles to determine grid layout
+ * Fallback: detect grid by analyzing contrast at regular intervals
  */
-function analyzeGrid(
-  rectangles: Array<{ x: number; y: number; width: number; height: number }>,
+function detectByContrast(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
   pageWidth: number,
   pageHeight: number
-) {
-  // Get unique x and y positions
-  const xPositions = [...new Set(rectangles.map((r) => r.x))].sort((a, b) => a - b);
-  const yPositions = [...new Set(rectangles.map((r) => r.y))].sort((a, b) => a - b);
-
-  // Calculate columns and rows
-  const columns = xPositions.length;
-  const rows = yPositions.length;
-
-  // Get label dimensions (use first rectangle)
-  const sampleRect = rectangles[0];
-  const labelWidth = sampleRect.width;
-  const labelHeight = sampleRect.height;
-
-  // Calculate margins
-  const leftMargin = xPositions[0];
-  const rightMargin = pageWidth - (xPositions[xPositions.length - 1] + labelWidth);
-  const sideMargin = (leftMargin + rightMargin) / 2;
-
-  const topMargin = pageHeight - (yPositions[yPositions.length - 1] + labelHeight);
-  const bottomMargin = yPositions[0];
-
-  // Calculate gaps
-  let horizontalGap = 0;
-  if (xPositions.length > 1) {
-    const gaps = [];
-    for (let i = 1; i < xPositions.length; i++) {
-      gaps.push(xPositions[i] - (xPositions[i - 1] + labelWidth));
+): GridAnalysis {
+  // Sample grid points and look for consistent spacing
+  const samplesX = 20;
+  const samplesY = 20;
+  
+  // Create a grid of brightness values
+  const brightnessGrid: number[][] = [];
+  for (let y = 0; y < samplesY; y++) {
+    const row: number[] = [];
+    const actualY = Math.round((y + 0.5) * height / samplesY);
+    for (let x = 0; x < samplesX; x++) {
+      const actualX = Math.round((x + 0.5) * width / samplesX);
+      const i = (actualY * width + actualX) * 4;
+      row.push((data[i] + data[i + 1] + data[i + 2]) / 3);
     }
-    horizontalGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    brightnessGrid.push(row);
   }
 
-  let verticalGap = 0;
-  if (yPositions.length > 1) {
-    const gaps = [];
-    for (let i = 1; i < yPositions.length; i++) {
-      gaps.push(yPositions[i] - (yPositions[i - 1] + labelHeight));
+  // Detect edges by finding where brightness changes significantly
+  const xEdges: number[] = [];
+  const yEdges: number[] = [];
+
+  // Find vertical edges (columns)
+  for (let x = 1; x < samplesX - 1; x++) {
+    let edgeStrength = 0;
+    for (let y = 0; y < samplesY; y++) {
+      const diff = Math.abs(brightnessGrid[y][x] - brightnessGrid[y][x - 1]);
+      edgeStrength += diff;
     }
-    verticalGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    if (edgeStrength / samplesY > 50) {
+      xEdges.push(x);
+    }
   }
 
-  // Determine confidence based on consistency
-  let confidence: 'high' | 'medium' | 'low' = 'medium';
-  if (rectangles.length === columns * rows && columns > 1 && rows > 1) {
-    confidence = 'high';
-  } else if (columns > 1 || rows > 1) {
-    confidence = 'medium';
-  } else {
-    confidence = 'low';
+  // Find horizontal edges (rows)
+  for (let y = 1; y < samplesY - 1; y++) {
+    let edgeStrength = 0;
+    for (let x = 0; x < samplesX; x++) {
+      const diff = Math.abs(brightnessGrid[y][x] - brightnessGrid[y - 1][x]);
+      edgeStrength += diff;
+    }
+    if (edgeStrength / samplesX > 50) {
+      yEdges.push(y);
+    }
   }
+
+  // Convert edge positions to actual counts
+  // A grid with N labels should have roughly N+1 edges
+  const columns = Math.max(1, xEdges.length > 0 ? Math.round(xEdges.length / 2) : 1);
+  const rows = Math.max(1, yEdges.length > 0 ? Math.round(yEdges.length / 2) : 1);
+
+  // If detection is poor, assume Avery 5160 as most common format
+  if (columns < 2 || rows < 2) {
+    return {
+      spec: {
+        type: 'sheet',
+        width: 2.625,
+        height: 1,
+        sheetWidth: 8.5,
+        sheetHeight: 11,
+        columns: 3,
+        rows: 10,
+        topMargin: 0.5,
+        sideMargin: 0.1875,
+        horizontalGap: 0.125,
+        verticalGap: 0,
+        confidence: 'low',
+      },
+    };
+  }
+
+  const labelWidth = pageWidth / columns;
+  const labelHeight = pageHeight / rows;
 
   return {
-    columns,
-    rows,
-    labelWidth,
-    labelHeight,
-    topMargin,
-    sideMargin,
-    horizontalGap,
-    verticalGap,
-    confidence,
+    spec: {
+      type: 'sheet',
+      width: parseFloat(labelWidth.toFixed(3)),
+      height: parseFloat(labelHeight.toFixed(3)),
+      sheetWidth: parseFloat(pageWidth.toFixed(3)),
+      sheetHeight: parseFloat(pageHeight.toFixed(3)),
+      columns,
+      rows,
+      topMargin: parseFloat((pageHeight - labelHeight * rows) / 2 as any),
+      sideMargin: parseFloat((pageWidth - labelWidth * columns) / 2 as any),
+      horizontalGap: 0,
+      verticalGap: 0,
+      confidence: 'medium',
+    },
   };
 }
 
@@ -348,5 +326,5 @@ export function generateFormatName(spec: ParsedLabelSpec): string {
     }
   }
 
-  return `${spec.width}" × ${spec.height}" Sheet (${labelsPerSheet} per sheet)`;
+  return `${spec.width.toFixed(2)}" × ${spec.height.toFixed(2)}" Sheet (${labelsPerSheet} per sheet)`;
 }
