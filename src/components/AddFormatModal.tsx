@@ -578,12 +578,31 @@ function SheetPreview({
           height={previewHeight}
           fill="#0f0f12"
           rx="4"
+          stroke="#27272a"
+          strokeWidth="1"
+        />
+        {/* Margin guides */}
+        <rect
+          x={startX}
+          y={startY}
+          width={previewWidth - startX * 2}
+          height={previewHeight - startY * 2}
+          fill="none"
+          stroke="#27272a"
+          strokeWidth="0.5"
+          strokeDasharray="4 2"
+          rx="2"
         />
         {/* Labels */}
         {labels}
       </svg>
-      <div className="mt-3 text-sm text-zinc-400">
-        {columns} × {rows} = <span className="text-zinc-200 font-medium">{totalLabels}</span> labels per sheet
+      <div className="mt-3 space-y-1 text-center">
+        <div className="text-sm text-zinc-400">
+          {columns} × {rows} = <span className="text-zinc-200 font-medium">{totalLabels}</span> labels per sheet
+        </div>
+        <div className="text-xs text-zinc-600">
+          Margins: {topMargin.toFixed(2)}" top, {sideMargin.toFixed(2)}" side · Gaps: {horizontalGap.toFixed(2)}" h, {verticalGap.toFixed(2)}" v
+        </div>
       </div>
     </div>
   );
