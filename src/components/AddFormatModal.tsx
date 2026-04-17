@@ -324,7 +324,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               </label>
               <input
                 type="number"
-                step="0.01"
+                step="0.001"
                 min="0.1"
                 value={width}
                 onChange={(e) => setWidth(e.target.value)}
@@ -337,7 +337,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               </label>
               <input
                 type="number"
-                step="0.01"
+                step="0.001"
                 min="0.1"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
@@ -416,7 +416,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.001"
                     min="0"
                     value={topMargin}
                     onChange={(e) => setTopMargin(e.target.value)}
@@ -429,7 +429,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.001"
                     min="0"
                     value={sideMargin}
                     onChange={(e) => setSideMargin(e.target.value)}
@@ -445,7 +445,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.001"
                     min="0"
                     value={horizontalGap}
                     onChange={(e) => setHorizontalGap(e.target.value)}
@@ -458,7 +458,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="0.001"
                     min="0"
                     value={verticalGap}
                     onChange={(e) => setVerticalGap(e.target.value)}
