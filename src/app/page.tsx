@@ -5,7 +5,7 @@ import { useFormatStore } from '@/lib/store';
 import { FormatCard } from '@/components/FormatCard';
 import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
-import { PlusIcon, UploadIcon, DownloadIcon, Sparkles } from './icons';
+import { PlusIcon, UploadIcon, DownloadIcon } from './icons';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,9 +87,11 @@ export default function Home() {
       <header className="glass sticky top-0 z-40">
         <div className="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Label Wrangler"
+              className="w-9 h-9 rounded-xl shadow-lg shadow-indigo-500/20"
+            />
             <div>
               <h1 className="text-lg font-bold tracking-tight">
                 <span className="gradient-text">Label</span>
@@ -201,20 +203,28 @@ export default function Home() {
           <div className="flex-1 overflow-auto px-4 pb-4 space-y-2">
             {filteredFormats.length === 0 ? (
               <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-900 flex items-center justify-center">
-                  <span className="text-3xl">📐</span>
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
+                  <svg className="w-8 h-8 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="4" y="3" width="16" height="18" rx="2" />
+                    <path d="M4 9h16M4 15h16M12 3v18" />
+                  </svg>
                 </div>
-                <p className="text-zinc-500 text-sm">
+                <p className="text-zinc-400 text-sm font-medium">
                   {searchQuery || activeTab !== 'all'
                     ? 'No formats match your filters'
-                    : 'Your library is empty'}
+                    : 'The corral\'s empty'}
+                </p>
+                <p className="text-zinc-600 text-xs mt-1">
+                  {searchQuery || activeTab !== 'all'
+                    ? 'Try adjusting your search or filter'
+                    : 'Add your first label format to get started'}
                 </p>
                 {!searchQuery && activeTab === 'all' && (
                   <button
                     onClick={() => setIsAddModalOpen(true)}
-                    className="mt-3 text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+                    className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium"
                   >
-                    Create your first format
+                    Wrangle your first format
                   </button>
                 )}
               </div>
@@ -263,14 +273,19 @@ export default function Home() {
                     />
                   </svg>
                 </div>
-                <h3 className="text-zinc-300 font-semibold text-lg">Select a format</h3>
+                <h3 className="text-zinc-300 font-semibold text-lg">Pick a format, partner</h3>
                 <p className="text-zinc-500 text-sm mt-2">
-                  Choose a label format from the list to view its specifications and preview
+                  Choose a label format from the list to view its specs and preview
                 </p>
               </div>
             </div>
           )}
         </div>
+      </div>
+
+      {/* Footer */}
+      <div className="h-8 flex items-center justify-center border-t border-zinc-800/30">
+        <p className="text-xs text-zinc-600">Label Wrangler v1.0</p>
       </div>
 
       {/* Add Format Modal */}
