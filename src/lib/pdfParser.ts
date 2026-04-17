@@ -100,10 +100,17 @@ function tryVectorRects(streamText: string, pageW: number, pageH: number): Parse
     const rawW = parseFloat(match[3]);
     const rawH = parseFloat(match[4]);
 
-    const ptsX = rawX * scaleX + translateX;
-    const ptsW = Math.abs(rawW * scaleX);
-    const ptsH = Math.abs(rawH * scaleY);
-    const ptsY = yFlipped ? rawY * scaleY : rawY * scaleY;
+    // Normalize negative widths/heights: x,y is the start point,
+    // w,h can be negative meaning the rect extends left/up
+    const normX = rawW < 0 ? rawX + rawW : rawX;
+    const normY = rawH < 0 ? rawY + rawH : rawY;
+    const normW = Math.abs(rawW);
+    const normH = Math.abs(rawH);
+
+    const ptsX = normX * scaleX + translateX;
+    const ptsW = normW * scaleX;
+    const ptsH = normH * scaleY;
+    const ptsY = normY * scaleY;
 
     const inX = ptsX / 72;
     const inY = Math.abs(ptsY) / 72;
