@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
@@ -10,17 +10,19 @@ interface LabelPreviewProps {
   elements: TemplateElement[];
   selectedElementId: string | null;
   onSelectElement: (id: string) => void;
+  onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
 }
 
-export function LabelPreview({ format, elements, selectedElementId, onSelectElement }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
+  const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
 
-  // Observe container size changes
+  // Observe container size
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
@@ -41,15 +43,15 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
-  // Padding around the label in viewBox units
+  // Padding
   const padFraction = 0.1;
   const padX = viewBoxWidth * padFraction;
   const padY = viewBoxHeight * padFraction;
   const totalW = viewBoxWidth + padX * 2;
   const totalH = viewBoxHeight + padY * 2;
 
-  // Calculate SVG pixel size to fill container while maintaining aspect ratio
-  const margin = 48; // px breathing room
+  // SVG pixel size
+  const margin = 48;
   const availW = containerSize.width - margin * 2;
   const availH = containerSize.height - margin * 2;
   const aspect = totalW / totalH;
@@ -57,25 +59,79 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   let svgH: number;
 
   if (availW / availH > aspect) {
-    // Container is wider than label — height-constrained
     svgH = Math.max(availH, 200);
     svgW = svgH * aspect;
   } else {
-    // Container is taller than label — width-constrained
     svgW = Math.max(availW, 200);
     svgH = svgW / aspect;
   }
 
+  // Convert screen pixels to SVG viewBox units
+  const screenToSvg = useCallback((screenDx: number, screenDy: number) => {
+    return {
+      dx: (screenDx / svgW) * totalW,
+      dy: (screenDy / svgH) * totalH,
+    };
+  }, [svgW, svgH, totalW, totalH]);
+
+  // Drag handlers
+  const handlePointerDown = useCallback((e: React.PointerEvent, elementId: string) => {
+    if (!onUpdateElement) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    const element = elements.find((el) => el.id === elementId);
+    if (!element) return;
+
+    onSelectElement(elementId);
+    setDragging({
+      elementId,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: element.x,
+      origY: element.y,
+    });
+
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }, [elements, onSelectElement, onUpdateElement]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragging || !onUpdateElement) return;
+
+    const dx = e.clientX - dragging.startX;
+    const dy = e.clientY - dragging.startY;
+    const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
+
+    const isThermal = format.type === 'thermal';
+    const newX = isThermal
+      ? Math.round(dragging.origX + svgDx)
+      : Math.round((dragging.origX + svgDx) * 100) / 100;
+    const newY = isThermal
+      ? Math.round(dragging.origY + svgDy)
+      : Math.round((dragging.origY + svgDy) * 100) / 100;
+
+    onUpdateElement(dragging.elementId, { x: newX, y: newY });
+  }, [dragging, onUpdateElement, screenToSvg, format.type]);
+
+  const handlePointerUp = useCallback(() => {
+    setDragging(null);
+  }, []);
+
   return (
     <div ref={containerRef} className="flex-1 flex items-center justify-center p-6 overflow-hidden">
       <svg
+        ref={svgRef}
         width={svgW}
         height={svgH}
         viewBox={`${-padX} ${-padY} ${totalW} ${totalH}`}
         className="rounded-2xl"
         style={{
           filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
+          userSelect: 'none',
         }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
       >
         {/* Dark surround */}
         <rect
@@ -104,10 +160,19 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
           {sortedElements.map((element) => (
             <g
               key={element.id}
-              onClick={() => onSelectElement(element.id)}
-              style={{ cursor: 'pointer' }}
+              onPointerDown={(e) => handlePointerDown(e, element.id)}
+              onClick={(e) => { e.stopPropagation(); onSelectElement(element.id); }}
+              style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
               {renderElement(element, format)}
+              {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
+              <rect
+                x={element.x}
+                y={element.y}
+                width={Math.max(element.width, viewBoxWidth * 0.02)}
+                height={Math.max(element.height, viewBoxHeight * 0.02)}
+                fill="transparent"
+              />
               {selectedElementId === element.id && (
                 <rect
                   x={element.x - viewBoxWidth * 0.005}

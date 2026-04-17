@@ -268,6 +268,7 @@ function DesignerContent() {
             elements={currentTemplate.elements}
             selectedElementId={selectedElementId}
             onSelectElement={setSelectedElementId}
+            onUpdateElement={(id, updates) => updateElement(currentTemplate.id, id, updates)}
           />
         </div>
 
