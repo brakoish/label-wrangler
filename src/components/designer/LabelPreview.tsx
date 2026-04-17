@@ -106,7 +106,6 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const dy = e.clientY - dragging.startY;
     const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
-    const isThermal = format.type === 'thermal';
     const draggedEl = elements.find((el) => el.id === dragging.elementId);
     if (!draggedEl) return;
 
@@ -161,15 +160,9 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
     setGuides({ x: activeGuideX, y: activeGuideY });
 
-    const newX = isThermal
-      ? Math.round(rawX)
-      : Math.round(rawX * 100) / 100;
-    const newY = isThermal
-      ? Math.round(rawY)
-      : Math.round(rawY * 100) / 100;
-
-    onUpdateElement(dragging.elementId, { x: newX, y: newY });
-  }, [dragging, onUpdateElement, screenToSvg, format.type, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
+    // No grid rounding — smooth movement, only snap to alignment targets
+    onUpdateElement(dragging.elementId, { x: rawX, y: rawY });
+  }, [dragging, onUpdateElement, screenToSvg, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
 
   const handlePointerUp = useCallback(() => {
     setDragging(null);
