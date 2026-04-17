@@ -500,18 +500,6 @@ export function generateFormatName(spec: ParsedLabelSpec): string {
     return `${labelInches} Thermal`;
   }
 
-  const w = parseFloat(spec.width.toFixed(2));
-  const h = parseFloat(spec.height.toFixed(2));
-  const cols = spec.columns || 1;
-  const r = spec.rows || 1;
-
-  // Try to match known formats
-  if (Math.abs(w - 2.625) < 0.05 && Math.abs(h - 1) < 0.05 && cols === 3 && r === 10) return 'Avery 5160';
-  if (Math.abs(w - 4) < 0.05 && Math.abs(h - 2) < 0.05 && cols === 2 && r === 5) return 'Avery 5163';
-  if (Math.abs(w - 1.75) < 0.05 && Math.abs(h - 0.5) < 0.05 && cols === 4 && r === 20) return 'Avery 5167';
-  if (Math.abs(w - 4) < 0.05 && Math.abs(h - 3.33) < 0.1 && cols === 2 && r === 3) return 'Avery 8164';
-  if (Math.abs(w - 0.5) < 0.05 && Math.abs(h - 0.5) < 0.05) return 'OL2050';
-
   if (spec.columns && spec.rows) {
     return `${labelInches} Sheet (${spec.columns}×${spec.rows})`;
   }
