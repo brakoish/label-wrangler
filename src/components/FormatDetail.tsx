@@ -212,6 +212,54 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
           )}
         </div>
 
+        {/* Thermal-specific details */}
+        {isThermal && (
+          <div className="grid grid-cols-2 gap-6">
+            <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+              <h3 className="text-sm font-semibold text-zinc-300 mb-4">Roll Spacing</h3>
+              <div className="space-y-3">
+                <DetailRow label="Label gap" editing={editing}>
+                  {editing ? (
+                    <EditNum value={d('labelGap') as number || 0} onChange={(v) => setD('labelGap', v)} />
+                  ) : (
+                    <span className="text-zinc-200 font-medium">{format.labelGap || 0}&quot;</span>
+                  )}
+                </DetailRow>
+                {(d('labelsAcross') as number || 1) > 1 && (
+                  <>
+                    <DetailRow label="Gap across" editing={editing}>
+                      {editing ? (
+                        <EditNum value={d('horizontalGapThermal') as number || 0} onChange={(v) => setD('horizontalGapThermal', v)} />
+                      ) : (
+                        <span className="text-zinc-200 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
+                      )}
+                    </DetailRow>
+                    <DetailRow label="Side margin" editing={editing}>
+                      {editing ? (
+                        <EditNum value={d('sideMarginThermal') as number || 0} onChange={(v) => setD('sideMarginThermal', v)} />
+                      ) : (
+                        <span className="text-zinc-200 font-medium">{format.sideMarginThermal || 0}&quot;</span>
+                      )}
+                    </DetailRow>
+                  </>
+                )}
+                <DetailRow label="Liner width" editing={editing}>
+                  {editing ? (
+                    <EditNum value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} />
+                  ) : (
+                    <span className="text-zinc-200 font-medium">{format.linerWidth ? `${format.linerWidth}"` : 'Auto'}</span>
+                  )}
+                </DetailRow>
+              </div>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+              <h3 className="text-sm font-semibold text-zinc-300 mb-4">Roll Preview</h3>
+              <RollPreview format={editing ? { ...format, ...draft } as LabelFormat : format} />
+            </div>
+          </div>
+        )}
+
         {/* Sheet-specific details */}
         {!isThermal && (
           <div className="grid grid-cols-2 gap-6">
@@ -305,6 +353,92 @@ function EditNum({ value, onChange }: { value: number; onChange: (v: number) => 
         className="w-20 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50 text-right"
       />
       <span className="text-zinc-500">&quot;</span>
+    </div>
+  );
+}
+
+// SVG roll preview — shows labels across the roll width with 2 rows for vertical gap
+function RollPreview({ format }: { format: LabelFormat }) {
+  if (format.type !== 'thermal') return null;
+
+  const across = format.labelsAcross || 1;
+  const labelW = format.width;
+  const labelH = format.height;
+  const gapH = format.horizontalGapThermal || 0;
+  const sideM = format.sideMarginThermal || 0;
+  const labelGap = format.labelGap || 0;
+
+  // Calculate liner width: explicit or auto from labels + gaps + margins
+  const linerW = format.linerWidth || (sideM * 2 + across * labelW + (across - 1) * gapH);
+
+  // Show 2 rows to visualize vertical gap
+  const rowCount = 2;
+  const totalH = rowCount * labelH + (rowCount - 1) * labelGap;
+
+  const pad = linerW * 0.06;
+  const viewW = linerW + pad * 2;
+  const viewH = totalH + pad * 2;
+
+  // Keep it reasonably sized
+  const maxW = 300;
+  const scale = maxW / viewW;
+  const displayW = maxW;
+  const displayH = viewH * scale;
+
+  const labels = [];
+  for (let row = 0; row < rowCount; row++) {
+    for (let col = 0; col < across; col++) {
+      const x = pad + sideM + col * (labelW + gapH);
+      const y = pad + row * (labelH + labelGap);
+      labels.push(
+        <rect
+          key={`${row}-${col}`}
+          x={x}
+          y={y}
+          width={labelW}
+          height={labelH}
+          fill="rgba(245, 158, 11, 0.08)"
+          stroke="#d97706"
+          strokeWidth={linerW * 0.004}
+          rx={linerW * 0.005}
+        />
+      );
+    }
+  }
+
+  return (
+    <div className="flex justify-center py-4">
+      <svg
+        width={displayW}
+        height={displayH}
+        viewBox={`0 0 ${viewW} ${viewH}`}
+        className="rounded-xl"
+      >
+        <rect width={viewW} height={viewH} fill="#0a0a0c" rx={viewW * 0.02} />
+        {/* Liner backing */}
+        <rect
+          x={pad}
+          y={0}
+          width={linerW}
+          height={viewH}
+          fill="#1a1a1f"
+          stroke="#3f3f46"
+          strokeWidth={linerW * 0.005}
+        />
+        {/* Labels */}
+        {labels}
+        {/* Dimension annotation — liner width */}
+        <text
+          x={pad + linerW / 2}
+          y={viewH - pad * 0.3}
+          textAnchor="middle"
+          fill="#71717a"
+          fontSize={linerW * 0.04}
+          fontFamily="Arial"
+        >
+          {linerW.toFixed(2)}&quot; liner
+        </text>
+      </svg>
     </div>
   );
 }

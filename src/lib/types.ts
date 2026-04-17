@@ -16,6 +16,10 @@ export interface LabelFormat {
   // For thermal labels
   dpi?: number;               // 203 or 300 (default: 203)
   labelsAcross?: number;      // For multi-across rolls (default: 1)
+  linerWidth?: number;        // Total roll/liner width (inches)
+  horizontalGapThermal?: number; // Gap between labels across (inches)
+  sideMarginThermal?: number; // Margin from liner edge to first label (inches)
+  labelGap?: number;          // Vertical gap between labels on roll (inches)
 
   // For sheet labels
   sheetWidth?: number;        // e.g., 8.5

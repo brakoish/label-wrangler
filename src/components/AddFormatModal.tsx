@@ -22,6 +22,10 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
   const [height, setHeight] = useState('1');
   const [dpi, setDpi] = useState(203);
   const [labelsAcross, setLabelsAcross] = useState(1);
+  const [linerWidth, setLinerWidth] = useState('');
+  const [horizontalGapThermal, setHorizontalGapThermal] = useState('0');
+  const [sideMarginThermal, setSideMarginThermal] = useState('0');
+  const [labelGap, setLabelGap] = useState('0.125');
 
   const [columns, setColumns] = useState('3');
   const [rows, setRows] = useState('10');
@@ -74,6 +78,10 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
         ...baseFormat,
         dpi,
         labelsAcross,
+        linerWidth: parseFloat(linerWidth) || undefined,
+        horizontalGapThermal: parseFloat(horizontalGapThermal) || 0,
+        sideMarginThermal: parseFloat(sideMarginThermal) || 0,
+        labelGap: parseFloat(labelGap) || 0,
       });
     } else {
       const cols = parseInt(columns) || 1;
@@ -103,6 +111,10 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
     setHeight('1');
     setDpi(203);
     setLabelsAcross(1);
+    setLinerWidth('');
+    setHorizontalGapThermal('0');
+    setSideMarginThermal('0');
+    setLabelGap('0.125');
     setColumns('3');
     setRows('10');
     setTopMargin('0.5');
@@ -348,6 +360,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
           {/* Thermal-specific fields */}
           {type === 'thermal' && (
+            <>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
@@ -377,6 +390,68 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 />
               </div>
             </div>
+
+            {/* Thermal spacing */}
+            {labelsAcross > 1 && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                    Gap Between Labels
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={horizontalGapThermal}
+                    onChange={(e) => setHorizontalGapThermal(e.target.value)}
+                    placeholder="0"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                    Side Margin
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={sideMarginThermal}
+                    onChange={(e) => setSideMarginThermal(e.target.value)}
+                    placeholder="0"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                  Label Gap (Vertical)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={labelGap}
+                  onChange={(e) => setLabelGap(e.target.value)}
+                  placeholder="0.125"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                  Liner Width (optional)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={linerWidth}
+                  onChange={(e) => setLinerWidth(e.target.value)}
+                  placeholder="Auto"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
+                />
+              </div>
+            </div>
+            </>
           )}
 
           {/* Sheet-specific fields */}
