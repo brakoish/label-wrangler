@@ -18,6 +18,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
 
   // Observe container size
   useEffect(() => {
@@ -95,6 +96,9 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     (e.target as Element).setPointerCapture(e.pointerId);
   }, [elements, onSelectElement, onUpdateElement]);
 
+  // Snap threshold in viewBox units (~2% of smallest dimension)
+  const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
+
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragging || !onUpdateElement) return;
 
@@ -103,18 +107,73 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
     const isThermal = format.type === 'thermal';
+    const draggedEl = elements.find((el) => el.id === dragging.elementId);
+    if (!draggedEl) return;
+
+    let rawX = dragging.origX + svgDx;
+    let rawY = dragging.origY + svgDy;
+
+    // Build snap targets from label edges, center, and other elements
+    const xTargets: number[] = [0, viewBoxWidth / 2, viewBoxWidth]; // left, center, right of label
+    const yTargets: number[] = [0, viewBoxHeight / 2, viewBoxHeight]; // top, center, bottom of label
+
+    for (const el of elements) {
+      if (el.id === dragging.elementId) continue;
+      // Other element edges and centers
+      xTargets.push(el.x, el.x + el.width / 2, el.x + el.width);
+      yTargets.push(el.y, el.y + el.height / 2, el.y + el.height);
+    }
+
+    // Snap points for the dragged element: left edge, center, right edge
+    const elEdgesX = [rawX, rawX + draggedEl.width / 2, rawX + draggedEl.width];
+    const elEdgesY = [rawY, rawY + draggedEl.height / 2, rawY + draggedEl.height];
+
+    const activeGuideX: number[] = [];
+    const activeGuideY: number[] = [];
+
+    // Check X snaps
+    let snappedX = false;
+    for (const edgeX of elEdgesX) {
+      for (const target of xTargets) {
+        if (Math.abs(edgeX - target) < snapThreshold) {
+          rawX += target - edgeX;
+          activeGuideX.push(target);
+          snappedX = true;
+          break;
+        }
+      }
+      if (snappedX) break;
+    }
+
+    // Check Y snaps
+    let snappedY = false;
+    for (const edgeY of elEdgesY) {
+      for (const target of yTargets) {
+        if (Math.abs(edgeY - target) < snapThreshold) {
+          rawY += target - edgeY;
+          activeGuideY.push(target);
+          snappedY = true;
+          break;
+        }
+      }
+      if (snappedY) break;
+    }
+
+    setGuides({ x: activeGuideX, y: activeGuideY });
+
     const newX = isThermal
-      ? Math.round(dragging.origX + svgDx)
-      : Math.round((dragging.origX + svgDx) * 100) / 100;
+      ? Math.round(rawX)
+      : Math.round(rawX * 100) / 100;
     const newY = isThermal
-      ? Math.round(dragging.origY + svgDy)
-      : Math.round((dragging.origY + svgDy) * 100) / 100;
+      ? Math.round(rawY)
+      : Math.round(rawY * 100) / 100;
 
     onUpdateElement(dragging.elementId, { x: newX, y: newY });
-  }, [dragging, onUpdateElement, screenToSvg, format.type]);
+  }, [dragging, onUpdateElement, screenToSvg, format.type, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
 
   const handlePointerUp = useCallback(() => {
     setDragging(null);
+    setGuides({ x: [], y: [] });
   }, []);
 
   return (
@@ -190,6 +249,36 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
             </g>
           ))}
         </g>
+
+        {/* Smart guides */}
+        {guides.x.map((gx, i) => (
+          <line
+            key={`gx-${i}`}
+            x1={gx}
+            y1={-padY}
+            x2={gx}
+            y2={viewBoxHeight + padY}
+            stroke="#f59e0b"
+            strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+            strokeDasharray={`${viewBoxWidth * 0.01} ${viewBoxWidth * 0.006}`}
+            pointerEvents="none"
+            opacity={0.7}
+          />
+        ))}
+        {guides.y.map((gy, i) => (
+          <line
+            key={`gy-${i}`}
+            x1={-padX}
+            y1={gy}
+            x2={viewBoxWidth + padX}
+            y2={gy}
+            stroke="#f59e0b"
+            strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+            strokeDasharray={`${viewBoxWidth * 0.01} ${viewBoxWidth * 0.006}`}
+            pointerEvents="none"
+            opacity={0.7}
+          />
+        ))}
       </svg>
     </div>
   );

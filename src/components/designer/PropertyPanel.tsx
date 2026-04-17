@@ -1,5 +1,6 @@
 'use client';
 
+import { AlignHorizontalJustifyCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyEnd, AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd } from 'lucide-react';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 
 interface PropertyPanelProps {
@@ -20,6 +21,10 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
   }
 
   const unitLabel = format.type === 'thermal' ? 'dots' : 'in';
+  const isThermal = format.type === 'thermal';
+  const dpi = format.dpi || 203;
+  const labelW = isThermal ? format.width * dpi : format.width;
+  const labelH = isThermal ? format.height * dpi : format.height;
 
   return (
     <div className="w-[320px] border-l border-zinc-800/50 overflow-y-auto">
@@ -78,6 +83,42 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
             step={1}
             suffix="°"
           />
+        </PropertyGroup>
+
+        {/* Align to Label */}
+        <PropertyGroup title="Align to Label">
+          <div className="grid grid-cols-6 gap-1.5">
+            <AlignButton
+              icon={<AlignHorizontalJustifyStart className="w-4 h-4" />}
+              title="Align left"
+              onClick={() => onUpdate({ x: 0 })}
+            />
+            <AlignButton
+              icon={<AlignHorizontalJustifyCenter className="w-4 h-4" />}
+              title="Center horizontally"
+              onClick={() => onUpdate({ x: Math.round(((labelW - element.width) / 2) * 100) / 100 })}
+            />
+            <AlignButton
+              icon={<AlignHorizontalJustifyEnd className="w-4 h-4" />}
+              title="Align right"
+              onClick={() => onUpdate({ x: Math.round((labelW - element.width) * 100) / 100 })}
+            />
+            <AlignButton
+              icon={<AlignVerticalJustifyStart className="w-4 h-4" />}
+              title="Align top"
+              onClick={() => onUpdate({ y: 0 })}
+            />
+            <AlignButton
+              icon={<AlignVerticalJustifyCenter className="w-4 h-4" />}
+              title="Center vertically"
+              onClick={() => onUpdate({ y: Math.round(((labelH - element.height) / 2) * 100) / 100 })}
+            />
+            <AlignButton
+              icon={<AlignVerticalJustifyEnd className="w-4 h-4" />}
+              title="Align bottom"
+              onClick={() => onUpdate({ y: Math.round((labelH - element.height) * 100) / 100 })}
+            />
+          </div>
         </PropertyGroup>
 
         {/* Content & Data Binding */}
@@ -408,5 +449,17 @@ function PropertySelect({
         ))}
       </select>
     </div>
+  );
+}
+
+function AlignButton({ icon, title, onClick }: { icon: React.ReactNode; title: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="flex items-center justify-center p-2 rounded-lg bg-zinc-900/50 border border-zinc-800/50 text-zinc-400 hover:text-amber-400 hover:border-amber-500/30 hover:bg-amber-500/5 transition-all"
+    >
+      {icon}
+    </button>
   );
 }
