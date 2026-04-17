@@ -6,6 +6,7 @@ import {
   Move, Maximize2, RotateCw, Type, QrCode, Barcode, Square, Image, Link2, Unlink2,
 } from 'lucide-react';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -318,15 +319,12 @@ function CompactSelect({ value, options, labels, onChange }: {
   value: string; options: string[]; labels?: string[]; onChange: (v: string) => void;
 }) {
   return (
-    <select
+    <CustomSelect
+      compact
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 h-7 focus:outline-none focus:border-amber-500/30"
-    >
-      {options.map((o, i) => (
-        <option key={o} value={o}>{labels ? labels[i] : o}</option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={options.map((o, i) => ({ value: o, label: labels ? labels[i] : o }))}
+    />
   );
 }
 

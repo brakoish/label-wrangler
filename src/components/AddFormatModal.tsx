@@ -5,6 +5,7 @@ import { LabelFormat, LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from 
 import { useFormatStore } from '@/lib/store';
 import { parsePDFFile, generateFormatName } from '@/lib/pdfParser';
 import { PlusIcon, FileIcon } from '@/app/icons';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface AddFormatModalProps {
   isOpen: boolean;
@@ -366,15 +367,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
                   DPI
                 </label>
-                <select
-                  value={dpi}
-                  onChange={(e) => setDpi(parseInt(e.target.value))}
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all appearance-none cursor-pointer"
-                >
-                  {COMMON_DPI_VALUES.map((d) => (
-                    <option key={d} value={d}>{d} DPI</option>
-                  ))}
-                </select>
+                <CustomSelect
+                  value={dpi.toString()}
+                  onChange={(v) => setDpi(parseInt(v))}
+                  options={COMMON_DPI_VALUES.map((d) => ({ value: d.toString(), label: `${d} DPI` }))}
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
