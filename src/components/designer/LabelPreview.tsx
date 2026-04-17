@@ -257,25 +257,41 @@ function QRElementRenderer({ element, transform }: { element: QRElement; transfo
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // Always render at a fixed high-res pixel size — the SVG <image> handles scaling
     QRCode.toCanvas(canvas, element.content || 'QR', {
       errorCorrectionLevel: element.errorCorrection,
-      width: element.width,
+      width: 256,
       margin: 0,
+      color: { dark: '#000000', light: '#ffffff' },
     }).then(() => {
       setDataUrl(canvas.toDataURL());
     }).catch(() => {});
-  }, [element.content, element.errorCorrection, element.width]);
+  }, [element.content, element.errorCorrection]);
 
   return (
     <>
       <canvas ref={canvasRef} style={{ display: 'none' }} />
-      {dataUrl && (
+      {dataUrl ? (
         <image
           x={element.x}
           y={element.y}
           width={element.width}
           height={element.height}
           href={dataUrl}
+          transform={transform}
+          preserveAspectRatio="xMidYMid meet"
+        />
+      ) : (
+        // Placeholder while QR generates
+        <rect
+          x={element.x}
+          y={element.y}
+          width={element.width}
+          height={element.height}
+          fill="#f4f4f5"
+          stroke="#a1a1aa"
+          strokeWidth={element.width * 0.02}
+          strokeDasharray={`${element.width * 0.05} ${element.width * 0.03}`}
           transform={transform}
         />
       )}
@@ -284,27 +300,62 @@ function QRElementRenderer({ element, transform }: { element: QRElement; transfo
 }
 
 function BarcodeElementRenderer({ element, transform }: { element: BarcodeElement; transform?: string }) {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
 
   useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-
     try {
-      JsBarcode(svg, element.content || '123456789', {
+      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      document.body.appendChild(tempSvg);
+
+      JsBarcode(tempSvg, element.content || '123456789', {
         format: element.barcodeFormat,
         width: 2,
-        height: element.height * 0.7,
+        height: 80,
         displayValue: element.showText,
         margin: 0,
+        fontSize: 14,
       });
-    } catch (err) {}
-  }, [element.content, element.barcodeFormat, element.showText, element.height]);
+
+      // Get the rendered dimensions from JsBarcode's width/height attributes
+      const w = tempSvg.getAttribute('width') || '200';
+      const h = tempSvg.getAttribute('height') || '100';
+      const viewBox = `0 0 ${w} ${h}`;
+      const svgContent = tempSvg.innerHTML;
+
+      document.body.removeChild(tempSvg);
+      setBarcodeData({ svg: svgContent, viewBox });
+    } catch (err) {
+      setBarcodeData(null);
+    }
+  }, [element.content, element.barcodeFormat, element.showText]);
+
+  if (!barcodeData) {
+    return (
+      <rect
+        x={element.x}
+        y={element.y}
+        width={element.width}
+        height={element.height}
+        fill="#f4f4f5"
+        stroke="#a1a1aa"
+        strokeWidth={element.width * 0.01}
+        transform={transform}
+      />
+    );
+  }
 
   return (
-    <g transform={`translate(${element.x}, ${element.y}) ${transform || ''}`}>
-      <svg ref={svgRef} width={element.width} height={element.height} />
-    </g>
+    <svg
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      viewBox={barcodeData.viewBox}
+      preserveAspectRatio="xMidYMid meet"
+      transform={transform}
+    >
+      <g dangerouslySetInnerHTML={{ __html: barcodeData.svg }} />
+    </svg>
   );
 }
 
