@@ -247,7 +247,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           )}
 
           {/* Preview - for sheet labels */}
-          {type === 'sheet' && !isParsing && parseInt(columns) > 0 && parseInt(rows) > 0 && parseFloat(width) > 0 && parseFloat(height) > 0 && (
+          {type === 'sheet' && pdfUploaded && !isParsing && parseInt(columns) > 0 && parseInt(rows) > 0 && parseFloat(width) > 0 && parseFloat(height) > 0 && (
             <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
               <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
                 Layout Preview
