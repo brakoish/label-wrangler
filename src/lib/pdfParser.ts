@@ -135,54 +135,73 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
       }
     }
 
-    // Method 2: Extract rectangular closed paths (m/l/l/l/h pattern)
-    if (rawRects.length < 4 && hasPathOps) {
-      // Match: x1 y1 m x2 y2 l x3 y3 l x4 y4 l h (optionally followed by f/f*/S)
-      const pathPattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+m\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+l\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+l\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+l\s*\n?h/g;
+    // Method 2: Extract label grid from repeated `cm` transforms
+    // Many PDFs (Avery, rounded-rect templates) draw each label using:
+    //   q ... 1 0 0 1 X Y cm ... path ... Q
+    // The X,Y positions form the grid directly.
+    if (rawRects.length < 4) {
+      const cmPattern = /1\s+0\s+0\s+1\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+cm/g;
+      const cmPositions: Array<{ x: number; y: number }> = [];
       let match;
 
-      while ((match = pathPattern.exec(streamText)) !== null) {
-        const x1 = parseFloat(match[1]), y1 = parseFloat(match[2]);
-        const x2 = parseFloat(match[3]), y2 = parseFloat(match[4]);
-        const x3 = parseFloat(match[5]), y3 = parseFloat(match[6]);
-        const x4 = parseFloat(match[7]), y4 = parseFloat(match[8]);
+      while ((match = cmPattern.exec(streamText)) !== null) {
+        cmPositions.push({ x: parseFloat(match[1]), y: parseFloat(match[2]) });
+      }
 
-        // Check if it's axis-aligned (a rectangle)
-        const isRect =
-          (Math.abs(y1 - y2) < 0.5 && Math.abs(x2 - x3) < 0.5 &&
-           Math.abs(y3 - y4) < 0.5 && Math.abs(x4 - x1) < 0.5) ||
-          (Math.abs(x1 - x2) < 0.5 && Math.abs(y2 - y3) < 0.5 &&
-           Math.abs(x3 - x4) < 0.5 && Math.abs(y4 - y1) < 0.5);
+      if (cmPositions.length >= 4) {
+        // Cluster X and Y positions to find the grid
+        const uniqueX = clusterValues(cmPositions.map((p) => p.x / 72), 0.03);
+        const uniqueY = clusterValues(cmPositions.map((p) => p.y / 72), 0.03);
+        uniqueX.sort((a, b) => a - b);
+        uniqueY.sort((a, b) => b - a); // PDF Y goes up; top row has highest Y
 
-        if (!isRect) continue;
+        const cols = uniqueX.length;
+        const rows = uniqueY.length;
 
-        const xs = [x1, x2, x3, x4];
-        const ys = [y1, y2, y3, y4];
-        const rawX = Math.min(...xs);
-        const rawY = Math.min(...ys);
-        const rawW = Math.max(...xs) - rawX;
-        const rawH = Math.max(...ys) - rawY;
+        if (cols >= 2 && rows >= 2) {
+          // Estimate label size from spacing
+          const xSpacing = uniqueX[1] - uniqueX[0];
+          const ySpacing = Math.abs(uniqueY[1] - uniqueY[0]);
 
-        const ptsX = rawX * scaleX + translateX;
-        const ptsW = rawW * scaleX;
-        const ptsH = rawH * scaleY;
+          // Try to get actual label dimensions from the path after first cm
+          let labelW = xSpacing;
+          let labelH = ySpacing;
 
-        let ptsY: number;
-        if (yFlipped) {
-          ptsY = Math.abs(rawY * scaleY);
-        } else {
-          ptsY = rawY * scaleY + translateY;
+          const firstCmStr = `1 0 0 1 ${cmPositions[0].x}`;
+          const firstCmIdx = streamText.indexOf(firstCmStr);
+          if (firstCmIdx > -1) {
+            const afterCm = streamText.substring(firstCmIdx, firstCmIdx + 500);
+            // Find max coordinates in path commands (m, l, c operators)
+            const coordPattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+[mlc]/g;
+            let maxX = 0, maxY = 0;
+            let cm2;
+            while ((cm2 = coordPattern.exec(afterCm)) !== null) {
+              const px = Math.abs(parseFloat(cm2[1]));
+              const py = Math.abs(parseFloat(cm2[2]));
+              if (px > maxX && px < 500) maxX = px;
+              if (py > maxY && py < 500) maxY = py;
+            }
+            if (maxX > 10) labelW = maxX / 72; // > 10 pts to avoid tiny artifacts
+            if (maxY > 10) labelH = maxY / 72;
+          }
+
+          const hGap = Math.max(0, xSpacing - labelW);
+          const vGap = Math.max(0, ySpacing - labelH);
+          const topMargin = pageHeightIn - Math.max(...uniqueY) - labelH;
+          const sideMargin = uniqueX[0];
+
+          // Build rects from grid
+          for (const yPos of uniqueY) {
+            for (const xPos of uniqueX) {
+              rawRects.push({
+                x: xPos,
+                y: pageHeightIn - yPos - labelH,
+                w: labelW,
+                h: labelH,
+              });
+            }
+          }
         }
-
-        const inX = ptsX / 72;
-        const inY = Math.abs(ptsY) / 72;
-        const inW = ptsW / 72;
-        const inH = ptsH / 72;
-
-        if (inW < 0.1 || inH < 0.1) continue;
-        if (inW > pageWidthIn * 0.95 && inH > pageHeightIn * 0.95) continue;
-
-        rawRects.push({ x: inX, y: inY, w: inW, h: inH });
       }
     }
 
