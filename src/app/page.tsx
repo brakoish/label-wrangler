@@ -81,17 +81,7 @@ export default function Home() {
   };
 
   return (
-    <AppShell
-      headerAction={
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-        >
-          <PlusIcon className="w-4 h-4" />
-          New Format
-        </button>
-      }
-    >
+    <AppShell>
       {/* Import error toast */}
       {importError && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-red-500/90 backdrop-blur text-white text-sm rounded-lg shadow-xl">
@@ -105,6 +95,15 @@ export default function Home() {
         <div className="w-[400px] flex flex-col border-r border-zinc-800/50">
           {/* Search & filters */}
           <div className="p-4 space-y-4">
+            {/* New Format button */}
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-xl hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+            >
+              <PlusIcon className="w-4 h-4" />
+              New Format
+            </button>
+
             {/* Search */}
             <div className="relative">
               <svg
