@@ -13,6 +13,24 @@ interface LabelPreviewProps {
 }
 
 export function LabelPreview({ format, elements, selectedElementId, onSelectElement }: LabelPreviewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
+
+  // Observe container size changes
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setContainerSize({ width, height });
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const viewBoxWidth = format.type === 'thermal' && format.dpi
     ? format.width * format.dpi
     : format.width;
@@ -23,71 +41,91 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
-  // Add padding around the label for visual breathing room
-  const pad = format.type === 'thermal' ? viewBoxWidth * 0.05 : viewBoxWidth * 0.08;
-  const totalW = viewBoxWidth + pad * 2;
-  const totalH = viewBoxHeight + pad * 2;
+  // Padding around the label in viewBox units
+  const padFraction = 0.1;
+  const padX = viewBoxWidth * padFraction;
+  const padY = viewBoxHeight * padFraction;
+  const totalW = viewBoxWidth + padX * 2;
+  const totalH = viewBoxHeight + padY * 2;
+
+  // Calculate SVG pixel size to fill container while maintaining aspect ratio
+  const margin = 48; // px breathing room
+  const availW = containerSize.width - margin * 2;
+  const availH = containerSize.height - margin * 2;
+  const aspect = totalW / totalH;
+  let svgW: number;
+  let svgH: number;
+
+  if (availW / availH > aspect) {
+    // Container is wider than label — height-constrained
+    svgH = Math.max(availH, 200);
+    svgW = svgH * aspect;
+  } else {
+    // Container is taller than label — width-constrained
+    svgW = Math.max(availW, 200);
+    svgH = svgW / aspect;
+  }
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="relative">
-        <svg
-          viewBox={`${-pad} ${-pad} ${totalW} ${totalH}`}
-          className="max-w-full max-h-[calc(100vh-12rem)] rounded-2xl"
-          style={{
-            filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
-          }}
-        >
-          {/* Dark surround */}
-          <rect
-            x={-pad}
-            y={-pad}
-            width={totalW}
-            height={totalH}
-            fill="#18181b"
-            rx={pad * 0.3}
-          />
+    <div ref={containerRef} className="flex-1 flex items-center justify-center p-6 overflow-hidden">
+      <svg
+        width={svgW}
+        height={svgH}
+        viewBox={`${-padX} ${-padY} ${totalW} ${totalH}`}
+        className="rounded-2xl"
+        style={{
+          filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
+        }}
+      >
+        {/* Dark surround */}
+        <rect
+          x={-padX}
+          y={-padY}
+          width={totalW}
+          height={totalH}
+          fill="#1e1e23"
+          rx={Math.min(padX, padY) * 0.4}
+        />
 
-          {/* Label surface */}
-          <rect
-            x={0}
-            y={0}
-            width={viewBoxWidth}
-            height={viewBoxHeight}
-            fill={format.type === 'thermal' ? '#ffffff' : '#fafafa'}
-            stroke="#3f3f46"
-            strokeWidth={viewBoxWidth * 0.003}
-            rx={viewBoxWidth * 0.01}
-          />
+        {/* Label surface */}
+        <rect
+          x={0}
+          y={0}
+          width={viewBoxWidth}
+          height={viewBoxHeight}
+          fill={format.type === 'thermal' ? '#ffffff' : '#fafafa'}
+          stroke="#52525b"
+          strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.004}
+          rx={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
+        />
 
-          {/* Elements */}
-          <g>
-            {sortedElements.map((element) => (
-              <g
-                key={element.id}
-                onClick={() => onSelectElement(element.id)}
-                style={{ cursor: 'pointer' }}
-              >
-                {renderElement(element, format)}
-                {selectedElementId === element.id && (
-                  <rect
-                    x={element.x - viewBoxWidth * 0.005}
-                    y={element.y - viewBoxWidth * 0.005}
-                    width={element.width + viewBoxWidth * 0.01}
-                    height={element.height + viewBoxWidth * 0.01}
-                    fill="none"
-                    stroke="#d97706"
-                    strokeWidth={viewBoxWidth * 0.005}
-                    strokeDasharray={`${viewBoxWidth * 0.015} ${viewBoxWidth * 0.01}`}
-                    rx={viewBoxWidth * 0.005}
-                    pointerEvents="none"
-                  />
-                )}
-              </g>
-            ))}
-          </g>
-        </svg>
-      </div>
+        {/* Elements */}
+        <g>
+          {sortedElements.map((element) => (
+            <g
+              key={element.id}
+              onClick={() => onSelectElement(element.id)}
+              style={{ cursor: 'pointer' }}
+            >
+              {renderElement(element, format)}
+              {selectedElementId === element.id && (
+                <rect
+                  x={element.x - viewBoxWidth * 0.005}
+                  y={element.y - viewBoxWidth * 0.005}
+                  width={element.width + viewBoxWidth * 0.01}
+                  height={element.height + viewBoxWidth * 0.01}
+                  fill="none"
+                  stroke="#d97706"
+                  strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
+                  strokeDasharray={`${viewBoxWidth * 0.015} ${viewBoxWidth * 0.01}`}
+                  rx={viewBoxWidth * 0.005}
+                  pointerEvents="none"
+                />
+              )}
+            </g>
+          ))}
+        </g>
+      </svg>
     </div>
   );
 }
