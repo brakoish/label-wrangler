@@ -18,10 +18,6 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const [resizing, setResizing] = useState<{
-    elementId: string; handle: string; startX: number; startY: number;
-    origX: number; origY: number; origW: number; origH: number;
-  } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
 
   // Observe container size
@@ -100,7 +96,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     (e.target as Element).setPointerCapture(e.pointerId);
   }, [elements, onSelectElement, onUpdateElement]);
 
-  // Resize handle pointer down
+  // Resize via window-level listeners (pointer capture on child rects doesn't bubble to SVG)
   const handleResizeDown = useCallback((e: React.PointerEvent, elementId: string, handle: string) => {
     if (!onUpdateElement) return;
     e.stopPropagation();
@@ -109,61 +105,54 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const element = elements.find((el) => el.id === elementId);
     if (!element) return;
 
-    setResizing({
-      elementId,
-      handle,
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: element.x,
-      origY: element.y,
-      origW: element.width,
-      origH: element.height,
-    });
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origX = element.x;
+    const origY = element.y;
+    const origW = element.width;
+    const origH = element.height;
+    const isQR = element.type === 'qr';
 
-    (e.target as Element).setPointerCapture(e.pointerId);
-  }, [elements, onUpdateElement]);
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
+
+      let nX = origX;
+      let nY = origY;
+      let nW = origW;
+      let nH = origH;
+
+      if (handle.includes('e')) nW = Math.max(0.01, origW + svgDx);
+      if (handle.includes('w')) { nW = Math.max(0.01, origW - svgDx); nX = origX + (origW - nW); }
+      if (handle.includes('s')) nH = Math.max(0.01, origH + svgDy);
+      if (handle.includes('n')) { nH = Math.max(0.01, origH - svgDy); nY = origY + (origH - nH); }
+
+      // QR: keep square on corner handles
+      if (isQR && handle.length === 2) {
+        const size = Math.max(nW, nH);
+        if (handle.includes('w')) nX = origX + origW - size;
+        if (handle.includes('n')) nY = origY + origH - size;
+        nW = size;
+        nH = size;
+      }
+
+      onUpdateElement(elementId, { x: nX, y: nY, width: nW, height: nH });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [elements, onUpdateElement, screenToSvg]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    // Handle resize
-    if (resizing && onUpdateElement) {
-      const dx = e.clientX - resizing.startX;
-      const dy = e.clientY - resizing.startY;
-      const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
-
-      const h = resizing.handle;
-      let newX = resizing.origX;
-      let newY = resizing.origY;
-      let newW = resizing.origW;
-      let newH = resizing.origH;
-
-      // Check if element is QR (lock aspect ratio)
-      const el = elements.find((el) => el.id === resizing.elementId);
-      const isQR = el?.type === 'qr';
-
-      // Horizontal resize
-      if (h.includes('e')) { newW = Math.max(0.01, resizing.origW + svgDx); }
-      if (h.includes('w')) { newW = Math.max(0.01, resizing.origW - svgDx); newX = resizing.origX + svgDx; }
-
-      // Vertical resize
-      if (h.includes('s')) { newH = Math.max(0.01, resizing.origH + svgDy); }
-      if (h.includes('n')) { newH = Math.max(0.01, resizing.origH - svgDy); newY = resizing.origY + svgDy; }
-
-      // QR: keep square on corner handles
-      if (isQR && (h.length === 2)) {
-        const size = Math.max(newW, newH);
-        if (h.includes('w')) newX = resizing.origX + resizing.origW - size;
-        if (h.includes('n')) newY = resizing.origY + resizing.origH - size;
-        newW = size;
-        newH = size;
-      }
-
-      onUpdateElement(resizing.elementId, { x: newX, y: newY, width: newW, height: newH });
-      return;
-    }
-
     if (!dragging || !onUpdateElement) return;
 
     const dx = e.clientX - dragging.startX;
@@ -230,7 +219,6 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
   const handlePointerUp = useCallback(() => {
     setDragging(null);
-    setResizing(null);
     setGuides({ x: [], y: [] });
   }, []);
 
