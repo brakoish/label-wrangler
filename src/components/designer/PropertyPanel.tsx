@@ -11,8 +11,10 @@ interface PropertyPanelProps {
 export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps) {
   if (!element) {
     return (
-      <div className="w-80 glass border-l border-zinc-800 p-6">
-        <p className="text-sm text-zinc-500">Select an element to edit its properties</p>
+      <div className="w-[320px] border-l border-zinc-800/50 flex items-center justify-center">
+        <div className="text-center max-w-[200px]">
+          <p className="text-zinc-500 text-sm">Select an element to edit its properties</p>
+        </div>
       </div>
     );
   }
@@ -20,89 +22,106 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
   const unitLabel = format.type === 'thermal' ? 'dots' : 'in';
 
   return (
-    <div className="w-80 glass border-l border-zinc-800 p-6 overflow-y-auto">
-      <h3 className="text-lg font-semibold text-zinc-100 mb-6 gradient-text">Properties</h3>
-
-      {/* Position & Size */}
-      <PropertyGroup title="Position & Size">
-        <PropertyInput
-          label={`X (${unitLabel})`}
-          type="number"
-          value={element.x}
-          onChange={(value) => onUpdate({ x: Number(value) })}
-          step={format.type === 'thermal' ? 1 : 0.01}
-        />
-        <PropertyInput
-          label={`Y (${unitLabel})`}
-          type="number"
-          value={element.y}
-          onChange={(value) => onUpdate({ y: Number(value) })}
-          step={format.type === 'thermal' ? 1 : 0.01}
-        />
-        <PropertyInput
-          label={`Width (${unitLabel})`}
-          type="number"
-          value={element.width}
-          onChange={(value) => onUpdate({ width: Number(value) })}
-          step={format.type === 'thermal' ? 1 : 0.01}
-        />
-        <PropertyInput
-          label={`Height (${unitLabel})`}
-          type="number"
-          value={element.height}
-          onChange={(value) => onUpdate({ height: Number(value) })}
-          step={format.type === 'thermal' ? 1 : 0.01}
-        />
-        <PropertyInput
-          label="Rotation (°)"
-          type="number"
-          value={element.rotation}
-          onChange={(value) => onUpdate({ rotation: Number(value) })}
-          step={1}
-        />
-      </PropertyGroup>
-
-      {/* Content */}
-      <PropertyGroup title="Content">
-        <div className="flex items-center gap-2 mb-3">
-          <label className="text-xs text-zinc-400 flex-1">Type</label>
-          <button
-            onClick={() => onUpdate({ isStatic: !element.isStatic })}
-            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-              element.isStatic
-                ? 'bg-zinc-700 text-zinc-200'
-                : 'bg-amber-600 text-white'
-            }`}
-          >
-            {element.isStatic ? 'Static' : 'Dynamic'}
-          </button>
-        </div>
-
-        {!element.isStatic && (
-          <>
+    <div className="w-[320px] border-l border-zinc-800/50 overflow-y-auto">
+      <div className="p-4 space-y-4">
+        {/* Position & Size */}
+        <PropertyGroup title="Position & Size">
+          <div className="grid grid-cols-2 gap-3">
             <PropertyInput
-              label="Field Name"
-              type="text"
-              value={element.fieldName || ''}
-              onChange={(value) => onUpdate({ fieldName: value as string })}
+              label={`X (${unitLabel})`}
+              type="number"
+              value={element.x}
+              onChange={(value) => onUpdate({ x: Number(value) })}
+              step={format.type === 'thermal' ? 1 : 0.01}
             />
             <PropertyInput
-              label="Default Value"
-              type="text"
-              value={element.defaultValue || ''}
-              onChange={(value) => onUpdate({ defaultValue: value as string })}
+              label={`Y (${unitLabel})`}
+              type="number"
+              value={element.y}
+              onChange={(value) => onUpdate({ y: Number(value) })}
+              step={format.type === 'thermal' ? 1 : 0.01}
             />
-          </>
-        )}
-      </PropertyGroup>
+            <PropertyInput
+              label={`Width (${unitLabel})`}
+              type="number"
+              value={element.width}
+              onChange={(value) => onUpdate({ width: Number(value) })}
+              step={format.type === 'thermal' ? 1 : 0.01}
+            />
+            <PropertyInput
+              label={`Height (${unitLabel})`}
+              type="number"
+              value={element.height}
+              onChange={(value) => onUpdate({ height: Number(value) })}
+              step={format.type === 'thermal' ? 1 : 0.01}
+            />
+          </div>
+          <PropertyInput
+            label="Rotation"
+            type="number"
+            value={element.rotation}
+            onChange={(value) => onUpdate({ rotation: Number(value) })}
+            step={1}
+            suffix="°"
+          />
+        </PropertyGroup>
 
-      {/* Type-specific properties */}
-      {element.type === 'text' && <TextProperties element={element as TextElement} onUpdate={onUpdate} format={format} />}
-      {element.type === 'qr' && <QRProperties element={element as QRElement} onUpdate={onUpdate} />}
-      {element.type === 'barcode' && <BarcodeProperties element={element as BarcodeElement} onUpdate={onUpdate} />}
-      {element.type === 'line' && <LineProperties element={element as LineElement} onUpdate={onUpdate} />}
-      {element.type === 'rectangle' && <RectangleProperties element={element as RectangleElement} onUpdate={onUpdate} />}
-      {element.type === 'image' && <ImageProperties element={element as ImageElement} onUpdate={onUpdate} />}
+        {/* Content & Data Binding */}
+        <PropertyGroup title="Data Binding">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-400">Value type</span>
+            <div className="flex gap-1 p-0.5 bg-zinc-900/50 rounded-lg border border-zinc-800/50">
+              <button
+                onClick={() => onUpdate({ isStatic: true })}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  element.isStatic
+                    ? 'bg-zinc-700 text-white shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                Static
+              </button>
+              <button
+                onClick={() => onUpdate({ isStatic: false })}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  !element.isStatic
+                    ? 'bg-amber-500/20 text-amber-400 shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                Dynamic
+              </button>
+            </div>
+          </div>
+
+          {!element.isStatic && (
+            <>
+              <PropertyInput
+                label="Field Name"
+                type="text"
+                value={element.fieldName || ''}
+                onChange={(value) => onUpdate({ fieldName: value as string })}
+                placeholder="e.g. product_name"
+              />
+              <PropertyInput
+                label="Default Value"
+                type="text"
+                value={element.defaultValue || ''}
+                onChange={(value) => onUpdate({ defaultValue: value as string })}
+                placeholder="Preview text..."
+              />
+            </>
+          )}
+        </PropertyGroup>
+
+        {/* Type-specific properties */}
+        {element.type === 'text' && <TextProperties element={element as TextElement} onUpdate={onUpdate} format={format} />}
+        {element.type === 'qr' && <QRProperties element={element as QRElement} onUpdate={onUpdate} />}
+        {element.type === 'barcode' && <BarcodeProperties element={element as BarcodeElement} onUpdate={onUpdate} />}
+        {element.type === 'line' && <LineProperties element={element as LineElement} onUpdate={onUpdate} />}
+        {element.type === 'rectangle' && <RectangleProperties element={element as RectangleElement} onUpdate={onUpdate} />}
+        {element.type === 'image' && <ImageProperties element={element as ImageElement} onUpdate={onUpdate} />}
+      </div>
     </div>
   );
 }
@@ -116,13 +135,22 @@ function TextProperties({ element, onUpdate, format }: { element: TextElement; o
         value={element.content}
         onChange={(value) => onUpdate({ content: value as string })}
       />
-      <PropertyInput
-        label="Font Size (pt)"
-        type="number"
-        value={element.fontSize}
-        onChange={(value) => onUpdate({ fontSize: Number(value) })}
-        step={1}
-      />
+      <div className="grid grid-cols-2 gap-3">
+        <PropertyInput
+          label="Font Size"
+          type="number"
+          value={element.fontSize}
+          onChange={(value) => onUpdate({ fontSize: Number(value) })}
+          step={1}
+          suffix="pt"
+        />
+        <PropertySelect
+          label="Weight"
+          value={element.fontWeight}
+          options={['normal', 'bold']}
+          onChange={(value) => onUpdate({ fontWeight: value as 'normal' | 'bold' })}
+        />
+      </div>
       <PropertySelect
         label="Font Family"
         value={element.fontFamily}
@@ -130,13 +158,7 @@ function TextProperties({ element, onUpdate, format }: { element: TextElement; o
         onChange={(value) => onUpdate({ fontFamily: value as string })}
       />
       <PropertySelect
-        label="Font Weight"
-        value={element.fontWeight}
-        options={['normal', 'bold']}
-        onChange={(value) => onUpdate({ fontWeight: value as 'normal' | 'bold' })}
-      />
-      <PropertySelect
-        label="Text Align"
+        label="Alignment"
         value={element.textAlign}
         options={['left', 'center', 'right']}
         onChange={(value) => onUpdate({ textAlign: value as 'left' | 'center' | 'right' })}
@@ -157,15 +179,17 @@ function QRProperties({ element, onUpdate }: { element: QRElement; onUpdate: (up
   return (
     <PropertyGroup title="QR Code">
       <PropertyInput
-        label="Content"
+        label="Data"
         type="text"
         value={element.content}
         onChange={(value) => onUpdate({ content: value as string })}
+        placeholder="URL or text to encode"
       />
       <PropertySelect
         label="Error Correction"
         value={element.errorCorrection}
         options={['L', 'M', 'Q', 'H']}
+        labels={['Low (L)', 'Medium (M)', 'Quartile (Q)', 'High (H)']}
         onChange={(value) => onUpdate({ errorCorrection: value as 'L' | 'M' | 'Q' | 'H' })}
       />
     </PropertyGroup>
@@ -176,10 +200,11 @@ function BarcodeProperties({ element, onUpdate }: { element: BarcodeElement; onU
   return (
     <PropertyGroup title="Barcode">
       <PropertyInput
-        label="Content"
+        label="Data"
         type="text"
         value={element.content}
         onChange={(value) => onUpdate({ content: value as string })}
+        placeholder="Value to encode"
       />
       <PropertySelect
         label="Format"
@@ -187,14 +212,18 @@ function BarcodeProperties({ element, onUpdate }: { element: BarcodeElement; onU
         options={['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14']}
         onChange={(value) => onUpdate({ barcodeFormat: value as any })}
       />
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-zinc-400 flex-1">Show Text</label>
-        <input
-          type="checkbox"
-          checked={element.showText}
-          onChange={(e) => onUpdate({ showText: e.target.checked })}
-          className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-amber-600 focus:ring-amber-500"
-        />
+      <div className="flex items-center justify-between py-1">
+        <span className="text-xs text-zinc-400">Show text below</span>
+        <button
+          onClick={() => onUpdate({ showText: !element.showText })}
+          className={`w-9 h-5 rounded-full transition-all ${
+            element.showText ? 'bg-amber-500' : 'bg-zinc-700'
+          }`}
+        >
+          <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+            element.showText ? 'translate-x-4.5' : 'translate-x-0.5'
+          }`} />
+        </button>
       </div>
     </PropertyGroup>
   );
@@ -223,13 +252,22 @@ function LineProperties({ element, onUpdate }: { element: LineElement; onUpdate:
 function RectangleProperties({ element, onUpdate }: { element: RectangleElement; onUpdate: (updates: Partial<TemplateElement>) => void }) {
   return (
     <PropertyGroup title="Rectangle Style">
-      <PropertyInput
-        label="Stroke Width"
-        type="number"
-        value={element.strokeWidth}
-        onChange={(value) => onUpdate({ strokeWidth: Number(value) })}
-        step={0.5}
-      />
+      <div className="grid grid-cols-2 gap-3">
+        <PropertyInput
+          label="Stroke"
+          type="number"
+          value={element.strokeWidth}
+          onChange={(value) => onUpdate({ strokeWidth: Number(value) })}
+          step={0.5}
+        />
+        <PropertyInput
+          label="Radius"
+          type="number"
+          value={element.borderRadius}
+          onChange={(value) => onUpdate({ borderRadius: Number(value) })}
+          step={1}
+        />
+      </div>
       <PropertyInput
         label="Stroke Color"
         type="color"
@@ -242,13 +280,6 @@ function RectangleProperties({ element, onUpdate }: { element: RectangleElement;
         value={element.fillColor}
         onChange={(value) => onUpdate({ fillColor: value as string })}
       />
-      <PropertyInput
-        label="Border Radius"
-        type="number"
-        value={element.borderRadius}
-        onChange={(value) => onUpdate({ borderRadius: Number(value) })}
-        step={1}
-      />
     </PropertyGroup>
   );
 }
@@ -257,28 +288,26 @@ function ImageProperties({ element, onUpdate }: { element: ImageElement; onUpdat
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      onUpdate({ src: dataUrl });
+      onUpdate({ src: event.target?.result as string });
     };
     reader.readAsDataURL(file);
   };
 
   return (
     <PropertyGroup title="Image">
-      <div className="mb-3">
-        <label className="text-xs text-zinc-400 block mb-2">Upload Image</label>
+      <div>
+        <label className="text-xs text-zinc-400 block mb-1.5">Upload</label>
         <input
           type="file"
           accept="image/*"
           onChange={handleImageUpload}
-          className="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-amber-600 file:text-white hover:file:bg-amber-700 file:cursor-pointer"
+          className="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-amber-500 file:text-black hover:file:bg-amber-400 file:cursor-pointer"
         />
       </div>
       <PropertySelect
-        label="Object Fit"
+        label="Fit"
         value={element.objectFit}
         options={['contain', 'cover', 'fill']}
         onChange={(value) => onUpdate({ objectFit: value as 'contain' | 'cover' | 'fill' })}
@@ -287,11 +316,12 @@ function ImageProperties({ element, onUpdate }: { element: ImageElement; onUpdat
   );
 }
 
-// Helper components
+// --- Shared form components ---
+
 function PropertyGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mb-6">
-      <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-3">{title}</h4>
+    <div className="p-4 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+      <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">{title}</h4>
       <div className="space-y-3">
         {children}
       </div>
@@ -305,23 +335,33 @@ function PropertyInput({
   value,
   onChange,
   step,
+  suffix,
+  placeholder,
 }: {
   label: string;
   type: string;
   value: string | number;
   onChange: (value: string | number) => void;
   step?: number;
+  suffix?: string;
+  placeholder?: string;
 }) {
   return (
     <div>
-      <label className="text-xs text-zinc-400 block mb-1.5">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
-        step={step}
-        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2 focus:outline-none focus:border-amber-500/50"
-      />
+      <label className="text-xs text-zinc-500 block mb-1.5">{label}</label>
+      <div className="relative">
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
+          step={step}
+          placeholder={placeholder}
+          className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-600 px-3 py-2 focus:outline-none focus:border-amber-500/50 transition-all"
+        />
+        {suffix && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500">{suffix}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -330,24 +370,26 @@ function PropertySelect({
   label,
   value,
   options,
+  labels,
   onChange,
 }: {
   label: string;
   value: string;
   options: string[];
+  labels?: string[];
   onChange: (value: string) => void;
 }) {
   return (
     <div>
-      <label className="text-xs text-zinc-400 block mb-1.5">{label}</label>
+      <label className="text-xs text-zinc-500 block mb-1.5">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/50"
+        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/50 transition-all"
       >
-        {options.map((option) => (
+        {options.map((option, i) => (
           <option key={option} value={option}>
-            {option}
+            {labels ? labels[i] : option}
           </option>
         ))}
       </select>

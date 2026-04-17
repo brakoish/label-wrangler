@@ -216,19 +216,25 @@ function DesignerContent() {
         {/* Center Panel - Preview */}
         <div className="flex-1 flex flex-col">
           {/* Breadcrumb bar */}
-          <div className="px-4 py-2 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
+          <div className="px-6 py-3 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
             <button
               onClick={() => {
                 selectTemplate(null);
                 router.push('/designer');
               }}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-zinc-500 hover:text-amber-400 transition-colors"
             >
               Templates
             </button>
-            <span className="text-zinc-600">/</span>
-            <span className="text-zinc-200 font-medium">{currentTemplate.name}</span>
-            <span className="text-zinc-600 text-xs ml-2">({currentFormat.name})</span>
+            <span className="text-zinc-700">/</span>
+            <span className="text-zinc-100 font-semibold">{currentTemplate.name}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 ${
+              currentFormat.type === 'thermal'
+                ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+            }`}>
+              {currentFormat.name}
+            </span>
           </div>
 
           <LabelPreview

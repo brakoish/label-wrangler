@@ -1,6 +1,6 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 
 interface ElementListProps {
@@ -20,18 +20,31 @@ export function ElementList({
   onMoveElement,
   onAddElement,
 }: ElementListProps) {
-  // Sort elements by zIndex for display
-  const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex); // Descending (top to bottom)
+  const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
   return (
-    <div className="w-70 glass border-r border-zinc-800 flex flex-col">
-      <div className="p-4 border-b border-zinc-800">
-        <h3 className="text-lg font-semibold text-zinc-100 gradient-text">Elements</h3>
+    <div className="w-[280px] flex flex-col border-r border-zinc-800/50">
+      {/* Add Element button */}
+      <div className="p-4 space-y-4">
+        <button
+          onClick={onAddElement}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-xl hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+        >
+          <Plus className="w-4 h-4" />
+          Add Element
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      {/* Element list */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
         {sortedElements.length === 0 ? (
-          <p className="text-sm text-zinc-500 text-center py-8">No elements yet</p>
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
+              <Square className="w-8 h-8 text-zinc-600" />
+            </div>
+            <p className="text-zinc-400 text-sm font-medium">No elements yet</p>
+            <p className="text-zinc-600 text-xs mt-1">Add elements to build your template</p>
+          </div>
         ) : (
           sortedElements.map((element) => (
             <ElementItem
@@ -47,15 +60,6 @@ export function ElementList({
             />
           ))
         )}
-      </div>
-
-      <div className="p-3 border-t border-zinc-800">
-        <button
-          onClick={onAddElement}
-          className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 text-white text-sm font-medium hover:from-amber-700 hover:to-orange-700 transition-all"
-        >
-          Add Element
-        </button>
       </div>
     </div>
   );
@@ -82,72 +86,64 @@ function ElementItem({
 }) {
   const Icon = getElementIcon(element.type);
   const label = getElementLabel(element);
+  const typeLabel = element.type.charAt(0).toUpperCase() + element.type.slice(1);
 
   return (
     <div
       onClick={onSelect}
-      className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors ${
+      className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all card-hover ${
         isSelected
-          ? 'bg-amber-600/20 border border-amber-600/50'
-          : 'bg-zinc-800/50 border border-zinc-700 hover:bg-zinc-800 hover:border-zinc-600'
+          ? 'bg-amber-500/10 border border-amber-500/30 shadow-sm shadow-amber-500/10'
+          : 'bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700'
       }`}
     >
-      <Icon className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-
-      <div className="flex-1 min-w-0">
-        <div className="text-sm text-zinc-200 truncate">{label}</div>
-        {!element.isStatic && element.fieldName && (
-          <div className="text-xs text-amber-500 truncate">{`{${element.fieldName}}`}</div>
-        )}
+      {/* Type icon */}
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+        isSelected
+          ? 'bg-amber-500/20'
+          : 'bg-zinc-800/80'
+      }`}>
+        <Icon className={`w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-zinc-400'}`} />
       </div>
 
-      <div className="flex items-center gap-1">
-        {!element.isStatic && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-600/20 text-amber-400 border border-amber-600/30">
-            D
-          </span>
-        )}
+      {/* Label */}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-zinc-200 font-medium truncate">{label}</div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs text-zinc-500">{typeLabel}</span>
+          {!element.isStatic && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              Dynamic
+            </span>
+          )}
+        </div>
+      </div>
 
+      {/* Actions */}
+      <div className="flex items-center gap-0.5">
         <div className="flex flex-col">
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveUp();
-            }}
+            onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
             disabled={!canMoveUp}
-            className={`p-0.5 rounded transition-colors ${
-              canMoveUp
-                ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200'
-                : 'text-zinc-700 cursor-not-allowed'
+            className={`p-0.5 rounded-md transition-colors ${
+              canMoveUp ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200' : 'text-zinc-800 cursor-not-allowed'
             }`}
-            title="Move up (increase z-index)"
           >
-            <ChevronUp className="w-3 h-3" />
+            <ChevronUp className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveDown();
-            }}
+            onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
             disabled={!canMoveDown}
-            className={`p-0.5 rounded transition-colors ${
-              canMoveDown
-                ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200'
-                : 'text-zinc-700 cursor-not-allowed'
+            className={`p-0.5 rounded-md transition-colors ${
+              canMoveDown ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200' : 'text-zinc-800 cursor-not-allowed'
             }`}
-            title="Move down (decrease z-index)"
           >
-            <ChevronDown className="w-3 h-3" />
+            <ChevronDown className="w-3.5 h-3.5" />
           </button>
         </div>
-
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="p-1 rounded hover:bg-red-600/20 text-zinc-400 hover:text-red-400 transition-colors"
-          title="Delete element"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -158,42 +154,25 @@ function ElementItem({
 
 function getElementIcon(type: string) {
   switch (type) {
-    case 'text':
-      return Type;
-    case 'qr':
-      return QrCode;
-    case 'barcode':
-      return Barcode;
-    case 'line':
-      return Minus;
-    case 'rectangle':
-      return Square;
-    case 'image':
-      return Image;
-    default:
-      return Square;
+    case 'text': return Type;
+    case 'qr': return QrCode;
+    case 'barcode': return Barcode;
+    case 'line': return Minus;
+    case 'rectangle': return Square;
+    case 'image': return Image;
+    default: return Square;
   }
 }
 
 function getElementLabel(element: TemplateElement): string {
-  if (element.fieldName && !element.isStatic) {
-    return element.fieldName;
-  }
-
+  if (element.fieldName && !element.isStatic) return element.fieldName;
   switch (element.type) {
-    case 'text':
-      return (element as any).content || 'Text';
-    case 'qr':
-      return 'QR Code';
-    case 'barcode':
-      return 'Barcode';
-    case 'line':
-      return 'Line';
-    case 'rectangle':
-      return 'Rectangle';
-    case 'image':
-      return 'Image';
-    default:
-      return 'Element';
+    case 'text': return (element as any).content || 'Text';
+    case 'qr': return 'QR Code';
+    case 'barcode': return 'Barcode';
+    case 'line': return 'Line';
+    case 'rectangle': return 'Rectangle';
+    case 'image': return 'Image';
+    default: return 'Element';
   }
 }

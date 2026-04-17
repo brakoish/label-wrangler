@@ -13,46 +13,81 @@ interface LabelPreviewProps {
 }
 
 export function LabelPreview({ format, elements, selectedElementId, onSelectElement }: LabelPreviewProps) {
-  // Calculate viewBox dimensions
   const viewBoxWidth = format.type === 'thermal' && format.dpi
-    ? format.width * format.dpi  // Convert inches to dots for thermal
-    : format.width;               // Use inches for sheet
+    ? format.width * format.dpi
+    : format.width;
 
   const viewBoxHeight = format.type === 'thermal' && format.dpi
     ? format.height * format.dpi
     : format.height;
 
-  // Sort elements by zIndex for proper rendering order
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
+  // Add padding around the label for visual breathing room
+  const pad = format.type === 'thermal' ? viewBoxWidth * 0.05 : viewBoxWidth * 0.08;
+  const totalW = viewBoxWidth + pad * 2;
+  const totalH = viewBoxHeight + pad * 2;
+
   return (
-    <div className="w-full h-full flex items-center justify-center p-8 bg-zinc-900/50">
-      <svg
-        viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-        className="max-w-full max-h-full border border-zinc-700"
-        style={{
-          background: format.type === 'thermal' ? '#ffffff' : '#f4f4f5',
-        }}
-      >
-        {sortedElements.map((element) => (
-          <g key={element.id} onClick={() => onSelectElement(element.id)}>
-            {renderElement(element, format)}
-            {selectedElementId === element.id && (
-              <rect
-                x={element.x}
-                y={element.y}
-                width={element.width}
-                height={element.height}
-                fill="none"
-                stroke="#d97706"
-                strokeWidth="2"
-                strokeDasharray="4 4"
-                pointerEvents="none"
-              />
-            )}
+    <div className="flex-1 flex items-center justify-center p-8">
+      <div className="relative">
+        <svg
+          viewBox={`${-pad} ${-pad} ${totalW} ${totalH}`}
+          className="max-w-full max-h-[calc(100vh-12rem)] rounded-2xl"
+          style={{
+            filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
+          }}
+        >
+          {/* Dark surround */}
+          <rect
+            x={-pad}
+            y={-pad}
+            width={totalW}
+            height={totalH}
+            fill="#18181b"
+            rx={pad * 0.3}
+          />
+
+          {/* Label surface */}
+          <rect
+            x={0}
+            y={0}
+            width={viewBoxWidth}
+            height={viewBoxHeight}
+            fill={format.type === 'thermal' ? '#ffffff' : '#fafafa'}
+            stroke="#3f3f46"
+            strokeWidth={viewBoxWidth * 0.003}
+            rx={viewBoxWidth * 0.01}
+          />
+
+          {/* Elements */}
+          <g>
+            {sortedElements.map((element) => (
+              <g
+                key={element.id}
+                onClick={() => onSelectElement(element.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                {renderElement(element, format)}
+                {selectedElementId === element.id && (
+                  <rect
+                    x={element.x - viewBoxWidth * 0.005}
+                    y={element.y - viewBoxWidth * 0.005}
+                    width={element.width + viewBoxWidth * 0.01}
+                    height={element.height + viewBoxWidth * 0.01}
+                    fill="none"
+                    stroke="#d97706"
+                    strokeWidth={viewBoxWidth * 0.005}
+                    strokeDasharray={`${viewBoxWidth * 0.015} ${viewBoxWidth * 0.01}`}
+                    rx={viewBoxWidth * 0.005}
+                    pointerEvents="none"
+                  />
+                )}
+              </g>
+            ))}
           </g>
-        ))}
-      </svg>
+        </svg>
+      </div>
     </div>
   );
 }
@@ -123,11 +158,9 @@ function QRElementRenderer({ element, transform }: { element: QRElement; transfo
       errorCorrectionLevel: element.errorCorrection,
       width: element.width,
       margin: 0,
-    }).catch(() => {
-      // Fallback if QR generation fails
-    });
-
-    setDataUrl(canvas.toDataURL());
+    }).then(() => {
+      setDataUrl(canvas.toDataURL());
+    }).catch(() => {});
   }, [element.content, element.errorCorrection, element.width]);
 
   return (
@@ -162,9 +195,7 @@ function BarcodeElementRenderer({ element, transform }: { element: BarcodeElemen
         displayValue: element.showText,
         margin: 0,
       });
-    } catch (err) {
-      // Fallback for invalid barcode data
-    }
+    } catch (err) {}
   }, [element.content, element.barcodeFormat, element.showText, element.height]);
 
   return (
