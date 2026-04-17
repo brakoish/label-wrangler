@@ -41,20 +41,34 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
               onChange={(value) => onUpdate({ y: Number(value) })}
               step={format.type === 'thermal' ? 1 : 0.01}
             />
-            <PropertyInput
-              label={`Width (${unitLabel})`}
-              type="number"
-              value={element.width}
-              onChange={(value) => onUpdate({ width: Number(value) })}
-              step={format.type === 'thermal' ? 1 : 0.01}
-            />
-            <PropertyInput
-              label={`Height (${unitLabel})`}
-              type="number"
-              value={element.height}
-              onChange={(value) => onUpdate({ height: Number(value) })}
-              step={format.type === 'thermal' ? 1 : 0.01}
-            />
+            {element.type === 'qr' ? (
+              <div className="col-span-2">
+                <PropertyInput
+                  label={`Size (${unitLabel})`}
+                  type="number"
+                  value={element.width}
+                  onChange={(value) => onUpdate({ width: Number(value), height: Number(value) })}
+                  step={format.type === 'thermal' ? 1 : 0.01}
+                />
+              </div>
+            ) : (
+              <>
+                <PropertyInput
+                  label={`Width (${unitLabel})`}
+                  type="number"
+                  value={element.width}
+                  onChange={(value) => onUpdate({ width: Number(value) })}
+                  step={format.type === 'thermal' ? 1 : 0.01}
+                />
+                <PropertyInput
+                  label={`Height (${unitLabel})`}
+                  type="number"
+                  value={element.height}
+                  onChange={(value) => onUpdate({ height: Number(value) })}
+                  step={format.type === 'thermal' ? 1 : 0.01}
+                />
+              </>
+            )}
           </div>
           <PropertyInput
             label="Rotation"
