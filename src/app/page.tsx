@@ -101,7 +101,18 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <nav className="flex items-center gap-1 px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
+              <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-white shadow-sm">
+                Formats
+              </span>
+              <a
+                href="/designer"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                Designer
+              </a>
+            </nav>
             <button
               onClick={() => setIsAddModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
