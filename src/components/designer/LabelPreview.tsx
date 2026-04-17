@@ -9,7 +9,7 @@ interface LabelPreviewProps {
   format: LabelFormat;
   elements: TemplateElement[];
   selectedElementId: string | null;
-  onSelectElement: (id: string) => void;
+  onSelectElement: (id: string | null) => void;
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
 }
 
@@ -238,7 +238,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
-        {/* Dark surround */}
+        {/* Dark surround — click to deselect */}
         <rect
           x={-padX}
           y={-padY}
@@ -246,9 +246,10 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
           height={totalH}
           fill="#1e1e23"
           rx={Math.min(padX, padY) * 0.4}
+          onClick={() => onSelectElement(null)}
         />
 
-        {/* Label surface */}
+        {/* Label surface — click to deselect */}
         <rect
           x={0}
           y={0}
@@ -258,6 +259,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
           stroke="#52525b"
           strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.004}
           rx={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
+          onClick={() => onSelectElement(null)}
         />
 
         {/* Elements */}
