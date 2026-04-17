@@ -17,6 +17,8 @@ interface TemplateStore {
   // Element actions
   addElement: (templateId: string, element: Omit<TemplateElement, 'id' | 'zIndex'>) => Promise<void>;
   updateElement: (templateId: string, elementId: string, updates: Partial<TemplateElement>) => Promise<void>;
+  updateElementLocal: (templateId: string, elementId: string, updates: Partial<TemplateElement>) => void;
+  saveTemplate: (templateId: string) => Promise<void>;
   removeElement: (templateId: string, elementId: string) => Promise<void>;
   reorderElement: (templateId: string, elementId: string, newZIndex: number) => Promise<void>;
   duplicateElement: (templateId: string, elementId: string) => Promise<void>;
@@ -129,6 +131,14 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
       e.id === elementId ? ({ ...e, ...updates } as TemplateElement) : e
     );
 
+    // Update local state immediately
+    set((state) => ({
+      templates: state.templates.map((t) =>
+        t.id === templateId ? { ...t, elements: updatedElements, updatedAt: new Date().toISOString() } : t
+      ),
+    }));
+
+    // Save to DB
     const res = await fetch(`/api/templates/${templateId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -136,11 +146,33 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     });
 
     if (!res.ok) throw new Error('Failed to update element');
+  },
 
-    const updated = await res.json();
+  // Local-only update (no API call) — used during drag/resize for performance
+  updateElementLocal: (templateId, elementId, updates) => {
     set((state) => ({
-      templates: state.templates.map((t) => (t.id === templateId ? updated : t)),
+      templates: state.templates.map((t) => {
+        if (t.id !== templateId) return t;
+        return {
+          ...t,
+          elements: t.elements.map((e) =>
+            e.id === elementId ? ({ ...e, ...updates } as TemplateElement) : e
+          ),
+        };
+      }),
     }));
+  },
+
+  // Save current template state to DB — call after drag/resize ends
+  saveTemplate: async (templateId) => {
+    const template = get().templates.find((t) => t.id === templateId);
+    if (!template) return;
+
+    await fetch(`/api/templates/${templateId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ elements: template.elements }),
+    });
   },
 
   removeElement: async (templateId, elementId) => {

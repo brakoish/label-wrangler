@@ -27,6 +27,8 @@ function DesignerContent() {
     getTemplateById,
     addElement,
     updateElement,
+    updateElementLocal,
+    saveTemplate,
     removeElement,
     reorderElement,
   } = useTemplateStore();
@@ -268,7 +270,8 @@ function DesignerContent() {
             elements={currentTemplate.elements}
             selectedElementId={selectedElementId}
             onSelectElement={setSelectedElementId}
-            onUpdateElement={(id, updates) => updateElement(currentTemplate.id, id, updates)}
+            onUpdateElement={(id, updates) => updateElementLocal(currentTemplate.id, id, updates)}
+            onDragEnd={() => saveTemplate(currentTemplate.id)}
           />
         </div>
 

@@ -11,9 +11,10 @@ interface LabelPreviewProps {
   selectedElementId: string | null;
   onSelectElement: (id: string | null) => void;
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
+  onDragEnd?: () => void;
 }
 
-export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement, onDragEnd }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -143,6 +144,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      onDragEnd?.();
     };
 
     window.addEventListener('pointermove', onMove);
@@ -218,9 +220,12 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   }, [dragging, onUpdateElement, screenToSvg, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
 
   const handlePointerUp = useCallback(() => {
+    if (dragging) {
+      onDragEnd?.();
+    }
     setDragging(null);
     setGuides({ x: [], y: [] });
-  }, []);
+  }, [dragging, onDragEnd]);
 
   return (
     <div ref={containerRef} className="flex-1 flex items-center justify-center p-6 overflow-hidden">
