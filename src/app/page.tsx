@@ -90,7 +90,7 @@ export default function Home() {
             <img
               src="/logo.png"
               alt="Label Wrangler"
-              className="w-11 h-11"
+              className="w-14 h-14 transition-transform duration-300 hover:animate-buck cursor-pointer"
               style={{ filter: 'brightness(0) invert(1)' }}
             />
             <div>
