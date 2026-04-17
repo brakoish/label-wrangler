@@ -221,20 +221,20 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 <div className={`
                   flex items-center justify-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed transition-all
                   ${isParsing 
-                    ? 'border-indigo-500/50 bg-indigo-500/5' 
+                    ? 'border-amber-500/50 bg-amber-500/5' 
                     : 'border-zinc-700 hover:border-zinc-600 bg-zinc-900/30'
                   }
                 `}>
                   {isParsing ? (
                     <>
-                      <div className="w-5 h-5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
-                      <span className="text-sm text-indigo-400">Analyzing PDF...</span>
+                      <div className="w-5 h-5 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                      <span className="text-sm text-amber-400">Analyzing PDF...</span>
                     </>
                   ) : (
                     <>
                       <FileIcon className="w-5 h-5 text-zinc-400" />
                       <span className="text-sm text-zinc-400">
-                        Drop PDF or <span className="text-indigo-400">browse</span>
+                        Drop PDF or <span className="text-amber-400">browse</span>
                       </span>
                     </>
                   )}
@@ -276,7 +276,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={type === 'thermal' ? 'e.g., 2" × 1" Thermal' : 'e.g., Avery 5160'}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
             <div>
@@ -288,7 +288,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g., Standard shipping label"
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
           </div>
@@ -326,7 +326,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 min="0.1"
                 value={width}
                 onChange={(e) => setWidth(e.target.value)}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
             <div>
@@ -339,7 +339,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 min="0.1"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
           </div>
@@ -354,7 +354,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 <select
                   value={dpi}
                   onChange={(e) => setDpi(parseInt(e.target.value))}
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all appearance-none cursor-pointer"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all appearance-none cursor-pointer"
                 >
                   {COMMON_DPI_VALUES.map((d) => (
                     <option key={d} value={d}>{d} DPI</option>
@@ -371,7 +371,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   max="10"
                   value={labelsAcross}
                   onChange={(e) => setLabelsAcross(parseInt(e.target.value) || 1)}
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
@@ -390,7 +390,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="1"
                     value={columns}
                     onChange={(e) => setColumns(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
                 <div>
@@ -402,7 +402,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="1"
                     value={rows}
                     onChange={(e) => setRows(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
               </div>
@@ -418,7 +418,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={topMargin}
                     onChange={(e) => setTopMargin(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
                 <div>
@@ -431,7 +431,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={sideMargin}
                     onChange={(e) => setSideMargin(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
               </div>
@@ -447,7 +447,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={horizontalGap}
                     onChange={(e) => setHorizontalGap(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
                 <div>
@@ -460,7 +460,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={verticalGap}
                     onChange={(e) => setVerticalGap(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
                   />
                 </div>
               </div>
@@ -478,7 +478,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-zinc-200 transition-colors shadow-lg shadow-white/10"
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-xl hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
             >
               <PlusIcon className="w-4 h-4" />
               Create Format
@@ -568,8 +568,8 @@ function SheetPreview({
       >
         <defs>
           <linearGradient id="previewGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#818cf8" />
-            <stop offset="100%" stopColor="#c084fc" />
+            <stop offset="0%" stopColor="#f59e0b" />
+            <stop offset="100%" stopColor="#d97706" />
           </linearGradient>
         </defs>
         {/* Sheet background */}

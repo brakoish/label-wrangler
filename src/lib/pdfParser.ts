@@ -1,58 +1,89 @@
 import { ParsedLabelSpec } from './types';
+import { PDFDocument } from 'pdf-lib';
 
 export interface PDFParseResult {
   success: boolean;
   spec?: ParsedLabelSpec;
   error?: string;
+  debug?: {
+    totalRects: number;
+    labelRects: number;
+    pageWidth: number;
+    pageHeight: number;
+  };
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /**
- * Parse a PDF file to detect label format specifications
- * Uses canvas rendering to analyze the PDF visually
+ * Parse a PDF label template to detect the grid layout.
+ * 
+ * Strategy: Extract rectangle drawing operators from the PDF content stream.
+ * Label sheet PDFs are vector-based — each label outline is a `re` (rectangle) op.
+ * We cluster by size to find the dominant label rectangle, then derive the grid.
  */
 export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   try {
-    // Dynamically import PDF.js v4
-    const pdfjsLib = await import('pdfjs-dist');
-
-    // Set worker source for PDF.js v4
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
-
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({
-      data: arrayBuffer,
-      verbosity: 0,
-    }).promise;
+    const pdfDoc = await PDFDocument.load(arrayBuffer);
+    const page = pdfDoc.getPage(0);
 
-    // Get first page at high resolution for accurate detection
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 2.0 });
+    // Page dimensions in PDF points (72 per inch)
+    const { width: pageW, height: pageH } = page.getSize();
+    const pageWidthIn = pageW / 72;
+    const pageHeightIn = pageH / 72;
 
-    // Create canvas to render PDF
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d')!;
+    // Extract rectangles from the content stream
+    const contentStream = page.node.Contents();
+    if (!contentStream) {
+      return { success: false, error: 'No content stream found on page 1' };
+    }
 
-    await page.render({
-      canvasContext: ctx,
-      viewport: viewport,
-    }).promise;
+    // Get the raw content stream bytes
+    let streamData: string;
+    try {
+      // Handle both single stream and array of streams
+      const rawContent = contentStream.toString();
+      
+      // For pdf-lib, we need to decode the content stream
+      // The Contents can be a stream or an array of streams
+      const contents = page.node.Contents();
+      if (!contents) {
+        return { success: false, error: 'Empty content stream' };
+      }
+      
+      // Use pdf-lib's internal API to get decoded stream content
+      const ref = page.node.get(page.node.context.obj('Contents'));
+      streamData = await getContentStreamText(arrayBuffer);
+    } catch {
+      // Fallback: use the canvas rendering approach
+      return await parseWithCanvas(file, pageWidthIn, pageHeightIn);
+    }
 
-    // Get image data for analysis
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const { data, width, height } = imageData;
+    // Parse rectangle operators from the content stream
+    const rects = extractRectsFromStream(streamData, pageH);
 
-    // PDF dimensions in inches (72 points per inch)
-    const pageWidthInches = viewport.width / 72;
-    const pageHeightInches = viewport.height / 72;
+    if (rects.length < 4) {
+      // Too few rects, try canvas fallback
+      return await parseWithCanvas(file, pageWidthIn, pageHeightIn);
+    }
 
-    // Analyze to find rectangular regions (label grid)
-    const analysis = analyzeCanvasImage(data, width, height, pageWidthInches, pageHeightInches);
+    const spec = analyzeRects(rects, pageWidthIn, pageHeightIn);
 
     return {
       success: true,
-      spec: analysis.spec,
+      spec,
+      debug: {
+        totalRects: rects.length,
+        labelRects: (spec.columns || 1) * (spec.rows || 1),
+        pageWidth: pageWidthIn,
+        pageHeight: pageHeightIn,
+      },
     };
   } catch (err) {
     console.error('PDF parsing error:', err);
@@ -63,274 +94,403 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
   }
 }
 
-interface GridAnalysis {
-  spec: ParsedLabelSpec;
+/**
+ * Extract raw content stream text from a PDF file using manual parsing.
+ * pdf-lib doesn't expose decoded stream content easily, so we parse the
+ * raw PDF bytes to find `stream...endstream` blocks.
+ */
+async function getContentStreamText(arrayBuffer: ArrayBuffer): Promise<string> {
+  const bytes = new Uint8Array(arrayBuffer);
+  const text = new TextDecoder('latin1').decode(bytes);
+  
+  // Find all stream...endstream blocks and look for ones with `re` operators
+  const streams: string[] = [];
+  let pos = 0;
+  
+  while (pos < text.length) {
+    const streamStart = text.indexOf('stream\r\n', pos);
+    const streamStart2 = text.indexOf('stream\n', pos);
+    const actualStart = streamStart === -1 ? streamStart2 : 
+                        streamStart2 === -1 ? streamStart :
+                        Math.min(streamStart, streamStart2);
+    
+    if (actualStart === -1) break;
+    
+    const contentStart = actualStart + (text[actualStart + 6] === '\r' ? 8 : 7);
+    const endStream = text.indexOf('endstream', contentStart);
+    
+    if (endStream === -1) break;
+    
+    const content = text.substring(contentStart, endStream).trim();
+    
+    // Check if this stream contains rectangle operators
+    if (content.includes(' re') || content.includes('\nre')) {
+      streams.push(content);
+    }
+    
+    pos = endStream + 9;
+  }
+  
+  if (streams.length === 0) {
+    throw new Error('No rectangle content streams found');
+  }
+  
+  // Return the longest stream (most likely the main page content)
+  return streams.reduce((a, b) => a.length > b.length ? a : b);
 }
 
 /**
- * Analyze canvas image data to detect label grid
+ * Parse PDF content stream text to extract rectangle operations.
+ * PDF `re` operator: x y w h re
+ * Coordinates are in PDF points (72/inch), Y-axis goes UP from bottom-left.
  */
-function analyzeCanvasImage(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  pageWidth: number,
-  pageHeight: number
-): GridAnalysis {
-  const horizontalLines: number[] = [];
-  const verticalLines: number[] = [];
-
-  // Scan for horizontal lines
-  for (let y = 0; y < height; y++) {
-    let darkCount = 0;
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      if (brightness < 180) darkCount++;
-    }
-    if (darkCount / width > 0.2) {
-      horizontalLines.push(y);
-    }
-  }
-
-  // Scan for vertical lines
-  for (let x = 0; x < width; x++) {
-    let darkCount = 0;
-    for (let y = 0; y < height; y++) {
-      const i = (y * width + x) * 4;
-      const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      if (brightness < 180) darkCount++;
-    }
-    if (darkCount / height > 0.2) {
-      verticalLines.push(x);
+function extractRectsFromStream(streamText: string, pageHeight: number): Rect[] {
+  const rects: Rect[] = [];
+  
+  // Match: number number number number re
+  // PDF numbers can be integers or decimals, positive or negative
+  const rePattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+re/g;
+  
+  let match;
+  while ((match = rePattern.exec(streamText)) !== null) {
+    const x = parseFloat(match[1]);
+    const y = parseFloat(match[2]);
+    const w = parseFloat(match[3]);
+    const h = parseFloat(match[4]);
+    
+    // Convert to inches, flip Y axis (PDF Y=0 is bottom)
+    // Normalize negative widths/heights
+    const rectW = Math.abs(w) / 72;
+    const rectH = Math.abs(h) / 72;
+    const rectX = (w < 0 ? x + w : x) / 72;
+    const rectY = (pageHeight - (h < 0 ? y : y + h)) / 72; // flip Y
+    
+    // Filter out tiny artifacts and full-page rects
+    if (rectW > 0.05 && rectH > 0.05 && rectW < 10 && rectH < 14) {
+      rects.push({ x: rectX, y: rectY, w: rectW, h: rectH });
     }
   }
+  
+  return rects;
+}
 
-  const yPositions = clusterPositions(horizontalLines, 8);
-  const xPositions = clusterPositions(verticalLines, 8);
-
-  if (xPositions.length < 2 || yPositions.length < 2) {
-    return detectByContrast(data, width, height, pageWidth, pageHeight);
+/**
+ * Analyze extracted rectangles to determine the label grid layout.
+ */
+function analyzeRects(rects: Rect[], pageWidth: number, pageHeight: number): ParsedLabelSpec {
+  // Step 1: Cluster rectangles by size to find the dominant label size
+  const sizeClusters = clusterBySize(rects, 0.02); // 0.02" tolerance
+  
+  // Sort clusters by count (most common first)
+  sizeClusters.sort((a, b) => b.rects.length - a.rects.length);
+  
+  // The most common rectangle size is our label
+  const labelCluster = sizeClusters[0];
+  const labelW = labelCluster.avgW;
+  const labelH = labelCluster.avgH;
+  const labelRects = labelCluster.rects;
+  
+  // Step 2: Find unique X and Y positions (grid positions)
+  const xPositions = clusterValues(labelRects.map(r => r.x), 0.02);
+  const yPositions = clusterValues(labelRects.map(r => r.y), 0.02);
+  
+  // Sort positions
+  xPositions.sort((a, b) => a - b);
+  yPositions.sort((a, b) => a - b);
+  
+  const columns = xPositions.length;
+  const rows = yPositions.length;
+  
+  // Step 3: Calculate margins
+  const leftMargin = xPositions[0];
+  const topMargin = yPositions[0];
+  
+  // Step 4: Calculate gaps
+  let horizontalGap = 0;
+  let verticalGap = 0;
+  
+  if (xPositions.length >= 2) {
+    // Gap = distance between labels minus label width
+    const xSpacing = xPositions[1] - xPositions[0];
+    horizontalGap = Math.max(0, xSpacing - labelW);
   }
-
-  const xDistances = calculateDistances(xPositions);
-  const yDistances = calculateDistances(yPositions);
-
-  const xUnit = findMostCommonValue(xDistances);
-  const yUnit = findMostCommonValue(yDistances);
-
-  const xGap = findGapSize(xDistances, xUnit);
-  const yGap = findGapSize(yDistances, yUnit);
-
-  let labelWidth = xUnit - xGap;
-  let labelHeight = yUnit - yGap;
-
-  labelWidth = Math.max(0.1, labelWidth);
-  labelHeight = Math.max(0.1, labelHeight);
-
-  const columns = Math.max(1, xPositions.length - 1);
-  const rows = Math.max(1, yPositions.length - 1);
-
-  const leftMargin = xPositions[0] / width * pageWidth;
-  const topMargin = yPositions[0] / height * pageHeight;
-
-  let confidence: 'high' | 'medium' | 'low' = 'medium';
-  if (columns >= 2 && rows >= 2) {
+  
+  if (yPositions.length >= 2) {
+    const ySpacing = yPositions[1] - yPositions[0];
+    verticalGap = Math.max(0, ySpacing - labelH);
+  }
+  
+  // Determine confidence
+  let confidence: 'high' | 'medium' | 'low' = 'low';
+  if (labelRects.length >= columns * rows * 0.9 && columns >= 2 && rows >= 2) {
     confidence = 'high';
+  } else if (labelRects.length >= 4) {
+    confidence = 'medium';
   }
-
+  
   return {
-    spec: {
-      type: 'sheet',
-      width: parseFloat(labelWidth.toFixed(3)),
-      height: parseFloat(labelHeight.toFixed(3)),
-      sheetWidth: parseFloat(pageWidth.toFixed(3)),
-      sheetHeight: parseFloat(pageHeight.toFixed(3)),
-      columns,
-      rows,
-      topMargin: parseFloat(topMargin.toFixed(3)),
-      sideMargin: parseFloat(leftMargin.toFixed(3)),
-      horizontalGap: parseFloat(xGap.toFixed(3)),
-      verticalGap: parseFloat(yGap.toFixed(3)),
-      confidence,
-    },
+    type: 'sheet',
+    width: round(labelW),
+    height: round(labelH),
+    sheetWidth: round(pageWidth),
+    sheetHeight: round(pageHeight),
+    columns,
+    rows,
+    topMargin: round(topMargin),
+    sideMargin: round(leftMargin),
+    horizontalGap: round(horizontalGap),
+    verticalGap: round(verticalGap),
+    confidence,
   };
 }
 
-function clusterPositions(positions: number[], threshold: number = 5): number[] {
-  if (positions.length === 0) return [];
-
-  const clusters: number[][] = [];
-  let currentCluster: number[] = [positions[0]];
-
-  for (let i = 1; i < positions.length; i++) {
-    if (positions[i] - currentCluster[currentCluster.length - 1] <= threshold) {
-      currentCluster.push(positions[i]);
-    } else {
-      clusters.push(currentCluster);
-      currentCluster = [positions[i]];
-    }
-  }
-  clusters.push(currentCluster);
-
-  return clusters.map((cluster) =>
-    Math.round(cluster.reduce((a, b) => a + b, 0) / cluster.length)
-  );
+interface SizeCluster {
+  avgW: number;
+  avgH: number;
+  rects: Rect[];
 }
 
-function calculateDistances(positions: number[]): number[] {
-  const distances: number[] = [];
-  for (let i = 1; i < positions.length; i++) {
-    distances.push(positions[i] - positions[i - 1]);
-  }
-  return distances;
-}
-
-function findMostCommonValue(values: number[]): number {
-  if (values.length === 0) return 1;
-
-  const counts = new Map<number, number>();
-  for (const v of values) {
-    counts.set(v, (counts.get(v) || 0) + 1);
-  }
-
-  let mostCommon = values[0];
-  let maxCount = 0;
-  for (const [v, count] of counts) {
-    if (count > maxCount) {
-      maxCount = count;
-      mostCommon = v;
-    }
-  }
-  return mostCommon;
-}
-
-function findGapSize(distances: number[], unitSize: number): number {
-  if (distances.length === 0) return 0;
-
-  const groups = new Map<number, number[]>();
-  for (const d of distances) {
-    let foundGroup = false;
-    for (const key of groups.keys()) {
-      if (Math.abs(d - key) <= 2) {
-        groups.get(key)!.push(d);
-        foundGroup = true;
+/**
+ * Cluster rectangles by their width/height within a tolerance.
+ */
+function clusterBySize(rects: Rect[], tolerance: number): SizeCluster[] {
+  const clusters: SizeCluster[] = [];
+  
+  for (const rect of rects) {
+    let matched = false;
+    for (const cluster of clusters) {
+      if (
+        Math.abs(rect.w - cluster.avgW) < tolerance &&
+        Math.abs(rect.h - cluster.avgH) < tolerance
+      ) {
+        cluster.rects.push(rect);
+        // Update running average
+        const n = cluster.rects.length;
+        cluster.avgW = cluster.rects.reduce((s, r) => s + r.w, 0) / n;
+        cluster.avgH = cluster.rects.reduce((s, r) => s + r.h, 0) / n;
+        matched = true;
         break;
       }
     }
-    if (!foundGroup) {
-      groups.set(d, [d]);
+    if (!matched) {
+      clusters.push({ avgW: rect.w, avgH: rect.h, rects: [rect] });
     }
   }
-
-  let gapSize = 0;
-  let minGapCount = 0;
-
-  for (const [gap, counts] of groups) {
-    const count = counts.length;
-    if (gap < unitSize * 0.5 && count >= minGapCount) {
-      gapSize = gap;
-      minGapCount = count;
-    }
-  }
-
-  return gapSize;
+  
+  return clusters;
 }
 
-function detectByContrast(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  pageWidth: number,
-  pageHeight: number
-): GridAnalysis {
-  const samplesX = 30;
-  const samplesY = 30;
-
-  const brightnessGrid: number[][] = [];
-  for (let y = 0; y < samplesY; y++) {
-    const row: number[] = [];
-    const actualY = Math.round((y + 0.5) * height / samplesY);
-    for (let x = 0; x < samplesX; x++) {
-      const actualX = Math.round((x + 0.5) * width / samplesX);
-      const i = (actualY * width + actualX) * 4;
-      row.push((data[i] + data[i + 1] + data[i + 2]) / 3);
-    }
-    brightnessGrid.push(row);
-  }
-
-  const xEdges: number[] = [];
-  const yEdges: number[] = [];
-
-  for (let x = 1; x < samplesX - 1; x++) {
-    let edgeStrength = 0;
-    for (let y = 0; y < samplesY; y++) {
-      const diff = Math.abs(brightnessGrid[y][x] - brightnessGrid[y][x - 1]);
-      edgeStrength += diff;
-    }
-    if (edgeStrength / samplesY > 40) {
-      xEdges.push(x);
+/**
+ * Cluster numeric values within a tolerance, returning cluster centers.
+ */
+function clusterValues(values: number[], tolerance: number): number[] {
+  if (values.length === 0) return [];
+  
+  const sorted = [...values].sort((a, b) => a - b);
+  const clusters: number[][] = [[sorted[0]]];
+  
+  for (let i = 1; i < sorted.length; i++) {
+    const lastCluster = clusters[clusters.length - 1];
+    const lastAvg = lastCluster.reduce((s, v) => s + v, 0) / lastCluster.length;
+    
+    if (Math.abs(sorted[i] - lastAvg) <= tolerance) {
+      lastCluster.push(sorted[i]);
+    } else {
+      clusters.push([sorted[i]]);
     }
   }
+  
+  return clusters.map(c => c.reduce((s, v) => s + v, 0) / c.length);
+}
 
-  for (let y = 1; y < samplesY - 1; y++) {
-    let edgeStrength = 0;
-    for (let x = 0; x < samplesX; x++) {
-      const diff = Math.abs(brightnessGrid[y][x] - brightnessGrid[y - 1][x]);
-      edgeStrength += diff;
+function round(n: number): number {
+  return parseFloat(n.toFixed(3));
+}
+
+/**
+ * Fallback: Canvas-based detection using PDF.js rendering.
+ * Used when the content stream can't be parsed directly (e.g., compressed streams).
+ */
+async function parseWithCanvas(file: File, pageWidth: number, pageHeight: number): Promise<PDFParseResult> {
+  try {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, verbosity: 0 }).promise;
+    const page = await pdf.getPage(1);
+    
+    // Render at high resolution
+    const scale = 3.0;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const { data, width, height } = imageData;
+
+    // Scan columns for dark pixel density to find vertical edges
+    const colDark = new Float32Array(width);
+    for (let x = 0; x < width; x++) {
+      let dark = 0;
+      for (let y = 0; y < height; y++) {
+        const i = (y * width + x) * 4;
+        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        if (brightness < 160) dark++;
+      }
+      colDark[x] = dark / height;
     }
-    if (edgeStrength / samplesX > 40) {
-      yEdges.push(y);
+
+    // Scan rows for dark pixel density to find horizontal edges
+    const rowDark = new Float32Array(height);
+    for (let y = 0; y < height; y++) {
+      let dark = 0;
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        if (brightness < 160) dark++;
+      }
+      rowDark[y] = dark / width;
     }
-  }
 
-  const xEdgePixels = xEdges.map(e => Math.round(e * width / samplesX));
-  const yEdgePixels = yEdges.map(e => Math.round(e * height / samplesY));
+    // Find edges: positions where dark density exceeds threshold
+    const vEdges = findEdgePositions(colDark, 0.15, 5);
+    const hEdges = findEdgePositions(rowDark, 0.15, 5);
 
-  const xEdgeClustered = clusterPositions(xEdgePixels, 15);
-  const yEdgeClustered = clusterPositions(yEdgePixels, 15);
+    if (vEdges.length < 2 || hEdges.length < 2) {
+      return {
+        success: true,
+        spec: {
+          type: 'sheet',
+          width: round(pageWidth / 3),
+          height: round(pageHeight / 10),
+          sheetWidth: round(pageWidth),
+          sheetHeight: round(pageHeight),
+          columns: 3,
+          rows: 10,
+          topMargin: 0.5,
+          sideMargin: 0.19,
+          horizontalGap: 0.125,
+          verticalGap: 0,
+          confidence: 'low',
+        },
+      };
+    }
 
-  const columns = Math.max(1, Math.round(xEdgeClustered.length / 2));
-  const rows = Math.max(1, Math.round(yEdgeClustered.length / 2));
+    // Convert pixel edges to inches
+    const vInches = vEdges.map(e => (e / width) * pageWidth);
+    const hInches = hEdges.map(e => (e / height) * pageHeight);
 
-  if (columns < 2 || rows < 2) {
+    // Edges come in pairs (left edge, right edge of each column)
+    // Find the most common spacing
+    const vSpacings = [];
+    for (let i = 1; i < vInches.length; i++) {
+      vSpacings.push(round(vInches[i] - vInches[i - 1]));
+    }
+    const hSpacings = [];
+    for (let i = 1; i < hInches.length; i++) {
+      hSpacings.push(round(hInches[i] - hInches[i - 1]));
+    }
+
+    // Separate label width (larger) and gap width (smaller)
+    const vSorted = [...new Set(vSpacings)].sort((a, b) => a - b);
+    const hSorted = [...new Set(hSpacings)].sort((a, b) => a - b);
+
+    // If edges alternate: gap, label, gap, label...
+    // The label width is the larger spacing, gap is the smaller
+    let labelW: number, labelH: number, hGap: number, vGap: number;
+
+    if (vSorted.length >= 2) {
+      // Most common small value = gap, most common large value = label
+      const smallV = vSorted[0];
+      const largeV = vSorted[vSorted.length - 1];
+      if (smallV < largeV * 0.3) {
+        labelW = largeV;
+        hGap = smallV;
+      } else {
+        labelW = smallV;
+        hGap = 0;
+      }
+    } else {
+      labelW = vSorted[0] || pageWidth / 3;
+      hGap = 0;
+    }
+
+    if (hSorted.length >= 2) {
+      const smallH = hSorted[0];
+      const largeH = hSorted[hSorted.length - 1];
+      if (smallH < largeH * 0.3) {
+        labelH = largeH;
+        vGap = smallH;
+      } else {
+        labelH = smallH;
+        vGap = 0;
+      }
+    } else {
+      labelH = hSorted[0] || pageHeight / 10;
+      vGap = 0;
+    }
+
+    // Count columns and rows
+    const columns = Math.round((vInches.length + 1) / 2);
+    const rows = Math.round((hInches.length + 1) / 2);
+
     return {
+      success: true,
       spec: {
         type: 'sheet',
-        width: parseFloat((pageWidth / 3).toFixed(3)),
-        height: parseFloat((pageHeight / 10).toFixed(3)),
-        sheetWidth: parseFloat(pageWidth.toFixed(3)),
-        sheetHeight: parseFloat(pageHeight.toFixed(3)),
-        columns: 3,
-        rows: 10,
-        topMargin: 0.5,
-        sideMargin: 0.1875,
-        horizontalGap: 0.125,
-        verticalGap: 0,
-        confidence: 'low',
+        width: round(labelW),
+        height: round(labelH),
+        sheetWidth: round(pageWidth),
+        sheetHeight: round(pageHeight),
+        columns: Math.max(1, columns),
+        rows: Math.max(1, rows),
+        topMargin: round(hInches[0] || 0.5),
+        sideMargin: round(vInches[0] || 0.19),
+        horizontalGap: round(hGap),
+        verticalGap: round(vGap),
+        confidence: 'medium',
       },
     };
+  } catch (err) {
+    return {
+      success: false,
+      error: 'PDF analysis failed: ' + (err instanceof Error ? err.message : String(err)),
+    };
+  }
+}
+
+/**
+ * Find positions in a density array where the value exceeds the threshold.
+ * Clusters nearby positions and returns their centers.
+ */
+function findEdgePositions(densities: Float32Array, threshold: number, minGap: number): number[] {
+  const edges: number[] = [];
+  let inEdge = false;
+  let edgeStart = 0;
+
+  for (let i = 0; i < densities.length; i++) {
+    if (densities[i] > threshold) {
+      if (!inEdge) {
+        edgeStart = i;
+        inEdge = true;
+      }
+    } else {
+      if (inEdge) {
+        const center = Math.round((edgeStart + i) / 2);
+        if (edges.length === 0 || center - edges[edges.length - 1] >= minGap) {
+          edges.push(center);
+        }
+        inEdge = false;
+      }
+    }
   }
 
-  const labelWidth = pageWidth / columns;
-  const labelHeight = pageHeight / rows;
-
-  return {
-    spec: {
-      type: 'sheet',
-      width: parseFloat(labelWidth.toFixed(3)),
-      height: parseFloat(labelHeight.toFixed(3)),
-      sheetWidth: parseFloat(pageWidth.toFixed(3)),
-      sheetHeight: parseFloat(pageHeight.toFixed(3)),
-      columns,
-      rows,
-      topMargin: parseFloat(((pageHeight - labelHeight * rows) / 2).toFixed(3)),
-      sideMargin: parseFloat(((pageWidth - labelWidth * columns) / 2).toFixed(3)),
-      horizontalGap: 0,
-      verticalGap: 0,
-      confidence: 'medium',
-    },
-  };
+  return edges;
 }
 
 export function generateFormatName(spec: ParsedLabelSpec): string {
@@ -345,11 +505,12 @@ export function generateFormatName(spec: ParsedLabelSpec): string {
   const cols = spec.columns || 1;
   const r = spec.rows || 1;
 
-  if (w === 2.625 && h === 1 && cols === 3 && r === 10) return 'Avery 5160';
-  if (w === 4 && h === 2 && cols === 2 && r === 5) return 'Avery 5163';
-  if (w === 1.75 && h === 0.5 && cols === 4 && r === 20) return 'Avery 5167';
-  if (w === 4 && h === 3.33 && cols === 2 && r === 3) return 'Avery 8164';
-  if (w === 0.5 && h === 0.5 && cols === 13 && r === 17) return 'OL2050';
+  // Try to match known formats
+  if (Math.abs(w - 2.625) < 0.05 && Math.abs(h - 1) < 0.05 && cols === 3 && r === 10) return 'Avery 5160';
+  if (Math.abs(w - 4) < 0.05 && Math.abs(h - 2) < 0.05 && cols === 2 && r === 5) return 'Avery 5163';
+  if (Math.abs(w - 1.75) < 0.05 && Math.abs(h - 0.5) < 0.05 && cols === 4 && r === 20) return 'Avery 5167';
+  if (Math.abs(w - 4) < 0.05 && Math.abs(h - 3.33) < 0.1 && cols === 2 && r === 3) return 'Avery 8164';
+  if (Math.abs(w - 0.5) < 0.05 && Math.abs(h - 0.5) < 0.05) return 'OL2050';
 
   if (spec.columns && spec.rows) {
     return `${labelInches} Sheet (${spec.columns}×${spec.rows})`;
