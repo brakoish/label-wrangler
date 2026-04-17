@@ -90,10 +90,11 @@ export default function Home() {
             <img
               src="/logo.png"
               alt="Label Wrangler"
-              className="w-9 h-9 rounded-xl shadow-lg shadow-indigo-500/20"
+              className="w-11 h-11"
+              style={{ filter: 'brightness(0) invert(1)' }}
             />
             <div>
-              <h1 className="text-lg font-bold tracking-tight">
+              <h1 className="text-xl font-bold tracking-tight">
                 <span className="gradient-text">Label</span>
                 <span className="text-white">Wrangler</span>
               </h1>
@@ -118,7 +119,7 @@ export default function Home() {
             <div className="w-px h-6 bg-zinc-800 mx-1" />
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white text-black text-sm font-semibold rounded-lg hover:bg-zinc-200 transition-colors shadow-lg shadow-white/10"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
             >
               <PlusIcon className="w-4 h-4" />
               New Format
@@ -160,7 +161,7 @@ export default function Home() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search formats..."
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
 
@@ -222,7 +223,7 @@ export default function Home() {
                 {!searchQuery && activeTab === 'all' && (
                   <button
                     onClick={() => setIsAddModalOpen(true)}
-                    className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium"
+                    className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium"
                   >
                     Wrangle your first format
                   </button>

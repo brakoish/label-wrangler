@@ -17,7 +17,7 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
       className={`
         w-full text-left p-4 rounded-xl border transition-all duration-200 card-hover
         ${isSelected
-          ? 'bg-zinc-800/80 border-indigo-500/50 shadow-lg shadow-indigo-500/10'
+          ? 'bg-zinc-800/80 border-amber-500/50 shadow-lg shadow-amber-500/10'
           : 'bg-zinc-900/40 border-zinc-800/50 hover:border-zinc-700 hover:bg-zinc-900/60'
         }
       `}

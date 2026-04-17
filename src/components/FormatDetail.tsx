@@ -16,7 +16,7 @@ export function FormatDetail({ format, onDelete, onEdit }: FormatDetailProps) {
     <div className="h-full">
       {/* Hero header */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent" />
         <div className="relative px-8 py-8">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-4">
@@ -63,7 +63,7 @@ export function FormatDetail({ format, onDelete, onEdit }: FormatDetailProps) {
             <div className="flex gap-2">
               <button
                 onClick={onEdit}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-300 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-colors border border-zinc-700"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-300 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-colors border border-zinc-700/50"
               >
                 <EditIcon className="w-4 h-4" />
                 Edit
@@ -209,8 +209,8 @@ function SheetPreview({ format }: { format: LabelFormat }) {
       >
         <defs>
           <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#818cf8" />
-            <stop offset="100%" stopColor="#c084fc" />
+            <stop offset="0%" stopColor="#f59e0b" />
+            <stop offset="100%" stopColor="#d97706" />
           </linearGradient>
         </defs>
         <rect
