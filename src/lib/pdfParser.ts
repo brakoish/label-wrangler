@@ -158,14 +158,21 @@ function tryTransformGrid(streamText: string, pageW: number, pageH: number): Par
   let labelW = xSpacing;
   let labelH = ySpacing;
 
+  // Extract label dimensions from the path drawn after the first cm transform.
+  // The path is enclosed in q...Q (save/restore). We only want coordinates
+  // within the cm's scope — stop at the first S (stroke), f (fill), or Q (restore).
   const firstCmStr = `1 0 0 1 ${positions[0].x}`;
   const firstCmIdx = streamText.indexOf(firstCmStr);
   if (firstCmIdx > -1) {
-    const afterCm = streamText.substring(firstCmIdx, firstCmIdx + 500);
+    // Get text from cm to end of its scope (next S, f, or Q on its own line)
+    const afterCm = streamText.substring(firstCmIdx + firstCmStr.length + 4); // skip past "cm\n"
+    const scopeEnd = afterCm.search(/\n[SfQ]\s*\n|\nS\n|\nh\nS/);
+    const scopeText = scopeEnd > -1 ? afterCm.substring(0, scopeEnd + 2) : afterCm.substring(0, 300);
+
     const coordPattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+[mlc]/g;
     let maxX = 0, maxY = 0;
     let cm;
-    while ((cm = coordPattern.exec(afterCm)) !== null) {
+    while ((cm = coordPattern.exec(scopeText)) !== null) {
       const px = Math.abs(parseFloat(cm[1]));
       const py = Math.abs(parseFloat(cm[2]));
       if (px > maxX && px < 500) maxX = px;
