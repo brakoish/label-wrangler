@@ -18,6 +18,10 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const [resizing, setResizing] = useState<{
+    elementId: string; handle: string; startX: number; startY: number;
+    origX: number; origY: number; origW: number; origH: number;
+  } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
 
   // Observe container size
@@ -96,10 +100,70 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     (e.target as Element).setPointerCapture(e.pointerId);
   }, [elements, onSelectElement, onUpdateElement]);
 
+  // Resize handle pointer down
+  const handleResizeDown = useCallback((e: React.PointerEvent, elementId: string, handle: string) => {
+    if (!onUpdateElement) return;
+    e.stopPropagation();
+    e.preventDefault();
+
+    const element = elements.find((el) => el.id === elementId);
+    if (!element) return;
+
+    setResizing({
+      elementId,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: element.x,
+      origY: element.y,
+      origW: element.width,
+      origH: element.height,
+    });
+
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }, [elements, onUpdateElement]);
+
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    // Handle resize
+    if (resizing && onUpdateElement) {
+      const dx = e.clientX - resizing.startX;
+      const dy = e.clientY - resizing.startY;
+      const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
+
+      const h = resizing.handle;
+      let newX = resizing.origX;
+      let newY = resizing.origY;
+      let newW = resizing.origW;
+      let newH = resizing.origH;
+
+      // Check if element is QR (lock aspect ratio)
+      const el = elements.find((el) => el.id === resizing.elementId);
+      const isQR = el?.type === 'qr';
+
+      // Horizontal resize
+      if (h.includes('e')) { newW = Math.max(0.01, resizing.origW + svgDx); }
+      if (h.includes('w')) { newW = Math.max(0.01, resizing.origW - svgDx); newX = resizing.origX + svgDx; }
+
+      // Vertical resize
+      if (h.includes('s')) { newH = Math.max(0.01, resizing.origH + svgDy); }
+      if (h.includes('n')) { newH = Math.max(0.01, resizing.origH - svgDy); newY = resizing.origY + svgDy; }
+
+      // QR: keep square on corner handles
+      if (isQR && (h.length === 2)) {
+        const size = Math.max(newW, newH);
+        if (h.includes('w')) newX = resizing.origX + resizing.origW - size;
+        if (h.includes('n')) newY = resizing.origY + resizing.origH - size;
+        newW = size;
+        newH = size;
+      }
+
+      onUpdateElement(resizing.elementId, { x: newX, y: newY, width: newW, height: newH });
+      return;
+    }
+
     if (!dragging || !onUpdateElement) return;
 
     const dx = e.clientX - dragging.startX;
@@ -166,6 +230,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
   const handlePointerUp = useCallback(() => {
     setDragging(null);
+    setResizing(null);
     setGuides({ x: [], y: [] });
   }, []);
 
@@ -226,18 +291,52 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
                 fill="transparent"
               />
               {selectedElementId === element.id && (
-                <rect
-                  x={element.x - viewBoxWidth * 0.005}
-                  y={element.y - viewBoxWidth * 0.005}
-                  width={element.width + viewBoxWidth * 0.01}
-                  height={element.height + viewBoxWidth * 0.01}
-                  fill="none"
-                  stroke="#d97706"
-                  strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
-                  strokeDasharray={`${viewBoxWidth * 0.015} ${viewBoxWidth * 0.01}`}
-                  rx={viewBoxWidth * 0.005}
-                  pointerEvents="none"
-                />
+                <>
+                  {/* Selection border */}
+                  <rect
+                    x={element.x - viewBoxWidth * 0.005}
+                    y={element.y - viewBoxWidth * 0.005}
+                    width={element.width + viewBoxWidth * 0.01}
+                    height={element.height + viewBoxWidth * 0.01}
+                    fill="none"
+                    stroke="#d97706"
+                    strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.005}
+                    pointerEvents="none"
+                  />
+                  {/* Resize handles */}
+                  {(() => {
+                    const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
+                    const half = hs / 2;
+                    const ex = element.x;
+                    const ey = element.y;
+                    const ew = element.width;
+                    const eh = element.height;
+                    const handles = [
+                      { id: 'nw', cx: ex, cy: ey, cursor: 'nwse-resize' },
+                      { id: 'n',  cx: ex + ew / 2, cy: ey, cursor: 'ns-resize' },
+                      { id: 'ne', cx: ex + ew, cy: ey, cursor: 'nesw-resize' },
+                      { id: 'e',  cx: ex + ew, cy: ey + eh / 2, cursor: 'ew-resize' },
+                      { id: 'se', cx: ex + ew, cy: ey + eh, cursor: 'nwse-resize' },
+                      { id: 's',  cx: ex + ew / 2, cy: ey + eh, cursor: 'ns-resize' },
+                      { id: 'sw', cx: ex, cy: ey + eh, cursor: 'nesw-resize' },
+                      { id: 'w',  cx: ex, cy: ey + eh / 2, cursor: 'ew-resize' },
+                    ];
+                    return handles.map((h) => (
+                      <rect
+                        key={h.id}
+                        x={h.cx - half}
+                        y={h.cy - half}
+                        width={hs}
+                        height={hs}
+                        fill="#ffffff"
+                        stroke="#d97706"
+                        strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+                        style={{ cursor: h.cursor }}
+                        onPointerDown={(e) => handleResizeDown(e, element.id, h.id)}
+                      />
+                    ));
+                  })()}
+                </>
               )}
             </g>
           ))}
