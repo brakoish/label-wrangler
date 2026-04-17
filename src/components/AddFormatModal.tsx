@@ -512,47 +512,42 @@ function SheetPreview({
   horizontalGap: number;
   verticalGap: number;
 }) {
-  // Calculate scaling to fit in preview area
-  const sheetWidth = 8.5;
-  const sheetHeight = 11;
-  const maxPreviewSize = 280;
+  // Sheet dimensions in inches
+  const sheetW = 8.5;
+  const sheetH = 11;
 
-  const sheetAspect = sheetWidth / sheetHeight;
-  const previewWidth = sheetAspect > 1 ? maxPreviewSize : maxPreviewSize * sheetAspect;
-  const previewHeight = sheetAspect > 1 ? maxPreviewSize / sheetAspect : maxPreviewSize;
+  // SVG coordinate space = inches (we'll use viewBox to scale)
+  // Add padding around the sheet
+  const pad = 0.15;
+  const viewW = sheetW + pad * 2;
+  const viewH = sheetH + pad * 2;
 
-  const scaleX = previewWidth / sheetWidth;
-  const scaleY = previewHeight / sheetHeight;
-  const scale = Math.min(scaleX, scaleY);
+  // Display size
+  const maxSize = 300;
+  const displayW = maxSize * (viewW / viewH);
+  const displayH = maxSize;
 
-  const labelW = labelWidth * scale;
-  const labelH = labelHeight * scale;
-  const startX = sideMargin * scale;
-  const startY = topMargin * scale;
-  const gapX = horizontalGap * scale;
-  const gapY = verticalGap * scale;
-
-  // Generate label rectangles
+  // Generate label rectangles in inch coordinates
   const labels = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < columns; col++) {
-      const x = startX + col * (labelW + gapX);
-      const y = startY + row * (labelH + gapY);
-      
-      // Skip if label would extend beyond preview
-      if (x + labelW > previewWidth || y + labelH > previewHeight) continue;
-      
+      const x = pad + sideMargin + col * (labelWidth + horizontalGap);
+      const y = pad + topMargin + row * (labelHeight + verticalGap);
+
+      // Skip if out of sheet bounds
+      if (x + labelWidth > pad + sheetW + 0.01 || y + labelHeight > pad + sheetH + 0.01) continue;
+
       labels.push(
         <rect
           key={`${row}-${col}`}
           x={x}
           y={y}
-          width={labelW}
-          height={labelH}
-          fill="none"
-          stroke="url(#previewGradient)"
-          strokeWidth="0.5"
-          rx="1"
+          width={labelWidth}
+          height={labelHeight}
+          fill="rgba(245, 158, 11, 0.08)"
+          stroke="#d97706"
+          strokeWidth={0.01}
+          rx={0.02}
         />
       );
     }
@@ -563,38 +558,26 @@ function SheetPreview({
   return (
     <div className="flex flex-col items-center">
       <svg
-        width={previewWidth}
-        height={previewHeight}
-        viewBox={`0 0 ${previewWidth} ${previewHeight}`}
-        className="rounded-lg bg-zinc-950"
+        width={displayW}
+        height={displayH}
+        viewBox={`0 0 ${viewW} ${viewH}`}
+        className="rounded-lg"
       >
-        <defs>
-          <linearGradient id="previewGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#d97706" />
-          </linearGradient>
-        </defs>
-        {/* Sheet background */}
+        {/* Dark background behind sheet */}
+        <rect width={viewW} height={viewH} fill="#0a0a0c" rx={0.08} />
+
+        {/* Sheet (white page) */}
         <rect
-          width={previewWidth}
-          height={previewHeight}
-          fill="#0f0f12"
-          rx="4"
-          stroke="#27272a"
-          strokeWidth="1"
+          x={pad}
+          y={pad}
+          width={sheetW}
+          height={sheetH}
+          fill="#1a1a1f"
+          stroke="#3f3f46"
+          strokeWidth={0.02}
+          rx={0.04}
         />
-        {/* Margin guides */}
-        <rect
-          x={startX}
-          y={startY}
-          width={previewWidth - startX * 2}
-          height={previewHeight - startY * 2}
-          fill="none"
-          stroke="#27272a"
-          strokeWidth="0.5"
-          strokeDasharray="4 2"
-          rx="2"
-        />
+
         {/* Labels */}
         {labels}
       </svg>
@@ -603,7 +586,8 @@ function SheetPreview({
           {columns} × {rows} = <span className="text-zinc-200 font-medium">{totalLabels}</span> labels per sheet
         </div>
         <div className="text-xs text-zinc-600">
-          Margins: {topMargin.toFixed(2)}" top, {sideMargin.toFixed(2)}" side · Gaps: {horizontalGap.toFixed(2)}" h, {verticalGap.toFixed(2)}" v
+          {labelWidth}" × {labelHeight}" labels · {topMargin.toFixed(2)}" top, {sideMargin.toFixed(2)}" side
+          {(horizontalGap > 0 || verticalGap > 0) && ` · ${horizontalGap.toFixed(2)}" h-gap, ${verticalGap.toFixed(2)}" v-gap`}
         </div>
       </div>
     </div>

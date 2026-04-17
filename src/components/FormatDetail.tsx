@@ -156,33 +156,35 @@ export function FormatDetail({ format, onDelete, onEdit }: FormatDetailProps) {
   );
 }
 
-// SVG-based sheet layout preview
+// SVG-based sheet layout preview — uses real inch coordinates via viewBox
 function SheetPreview({ format }: { format: LabelFormat }) {
   if (format.type !== 'sheet') return null;
 
   const cols = format.columns || 1;
   const rows = format.rows || 1;
-  const maxPreviewSize = 280;
+  const sheetW = format.sheetWidth || 8.5;
+  const sheetH = format.sheetHeight || 11;
+  const labelW = format.width;
+  const labelH = format.height;
+  const sideM = format.sideMargin || 0;
+  const topM = format.topMargin || 0;
+  const gapX = format.horizontalGap || 0;
+  const gapY = format.verticalGap || 0;
 
-  const sheetAspect = (format.sheetWidth || 8.5) / (format.sheetHeight || 11);
-  const previewWidth = sheetAspect > 1 ? maxPreviewSize : maxPreviewSize * sheetAspect;
-  const previewHeight = sheetAspect > 1 ? maxPreviewSize / sheetAspect : maxPreviewSize;
-
-  const scaleX = previewWidth / (format.sheetWidth || 8.5);
-  const scaleY = previewHeight / (format.sheetHeight || 11);
-
-  const labelW = format.width * scaleX;
-  const labelH = format.height * scaleY;
-  const startX = (format.sideMargin || 0) * scaleX;
-  const startY = (format.topMargin || 0) * scaleY;
-  const gapX = (format.horizontalGap || 0) * scaleX;
-  const gapY = (format.verticalGap || 0) * scaleY;
+  // ViewBox in inches with padding
+  const pad = 0.15;
+  const viewW = sheetW + pad * 2;
+  const viewH = sheetH + pad * 2;
+  const maxSize = 320;
+  const displayW = maxSize * (viewW / viewH);
+  const displayH = maxSize;
 
   const labels = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      const x = startX + col * (labelW + gapX);
-      const y = startY + row * (labelH + gapY);
+      const x = pad + sideM + col * (labelW + gapX);
+      const y = pad + topM + row * (labelH + gapY);
+      if (x + labelW > pad + sheetW + 0.01 || y + labelH > pad + sheetH + 0.01) continue;
       labels.push(
         <rect
           key={`${row}-${col}`}
@@ -190,10 +192,10 @@ function SheetPreview({ format }: { format: LabelFormat }) {
           y={y}
           width={labelW}
           height={labelH}
-          fill="none"
-          stroke="url(#gradient)"
-          strokeWidth="1.5"
-          rx="3"
+          fill="rgba(245, 158, 11, 0.08)"
+          stroke="#d97706"
+          strokeWidth={0.012}
+          rx={0.02}
         />
       );
     }
@@ -202,24 +204,21 @@ function SheetPreview({ format }: { format: LabelFormat }) {
   return (
     <div className="flex justify-center py-4">
       <svg
-        width={previewWidth}
-        height={previewHeight}
-        viewBox={`0 0 ${previewWidth} ${previewHeight}`}
+        width={displayW}
+        height={displayH}
+        viewBox={`0 0 ${viewW} ${viewH}`}
         className="rounded-xl"
       >
-        <defs>
-          <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#d97706" />
-          </linearGradient>
-        </defs>
+        <rect width={viewW} height={viewH} fill="#0a0a0c" rx={0.08} />
         <rect
-          width={previewWidth}
-          height={previewHeight}
-          fill="#0c0c0e"
-          rx="8"
-          stroke="#27272f"
-          strokeWidth="1"
+          x={pad}
+          y={pad}
+          width={sheetW}
+          height={sheetH}
+          fill="#1a1a1f"
+          stroke="#3f3f46"
+          strokeWidth={0.02}
+          rx={0.04}
         />
         {labels}
       </svg>
