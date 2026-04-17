@@ -199,7 +199,7 @@ function DesignerContent() {
   return (
     <AppShell>
       {/* Editor layout fills the content area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List */}
         <ElementList
           elements={currentTemplate.elements}
