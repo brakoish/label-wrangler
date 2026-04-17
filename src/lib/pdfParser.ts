@@ -68,13 +68,9 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
       };
     }
 
-    // Check if stream has rectangle operators
-    if (!streamText.includes(' re')) {
-      return {
-        success: false,
-        error: 'No label outlines found in this PDF. Try a different label sheet template.',
-      };
-    }
+    // Check if stream has rectangle operators or path-based rectangles
+    const hasRectOps = streamText.includes(' re');
+    const hasPathOps = (streamText.match(/\bm\b/g) || []).length > 5;
 
     // Parse transform matrix if present
     // Format: a b c d e f cm
@@ -103,47 +99,97 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
       yFlipped = d < 0;
     }
 
-    // Extract all rectangle operators: x y w h re
-    const rePattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+re/g;
     const rawRects: Rect[] = [];
-    let match;
 
-    while ((match = rePattern.exec(streamText)) !== null) {
-      const rawX = parseFloat(match[1]);
-      const rawY = parseFloat(match[2]);
-      const rawW = parseFloat(match[3]);
-      const rawH = parseFloat(match[4]);
+    // Method 1: Extract `re` rectangle operators
+    if (hasRectOps) {
+      const rePattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+re/g;
+      let match;
 
-      // Apply transform matrix to get points
-      const ptsX = rawX * scaleX + translateX;
-      const ptsW = Math.abs(rawW * scaleX);
-      const ptsH = Math.abs(rawH * scaleY);
+      while ((match = rePattern.exec(streamText)) !== null) {
+        const rawX = parseFloat(match[1]);
+        const rawY = parseFloat(match[2]);
+        const rawW = parseFloat(match[3]);
+        const rawH = parseFloat(match[4]);
 
-      let ptsY: number;
-      if (yFlipped) {
-        // Y is flipped: rawY goes down from translateY
-        ptsY = rawY * scaleY; // This gives positive distance from top
-      } else {
-        ptsY = rawY * scaleY + translateY;
+        const ptsX = rawX * scaleX + translateX;
+        const ptsW = Math.abs(rawW * scaleX);
+        const ptsH = Math.abs(rawH * scaleY);
+
+        let ptsY: number;
+        if (yFlipped) {
+          ptsY = rawY * scaleY;
+        } else {
+          ptsY = rawY * scaleY + translateY;
+        }
+
+        const inX = ptsX / 72;
+        const inY = ptsY / 72;
+        const inW = ptsW / 72;
+        const inH = ptsH / 72;
+
+        if (inW < 0.1 || inH < 0.1) continue;
+        if (inW > pageWidthIn * 0.95 && inH > pageHeightIn * 0.95) continue;
+
+        rawRects.push({ x: inX, y: inY, w: inW, h: inH });
       }
+    }
 
-      // Convert to inches
-      const inX = ptsX / 72;
-      const inY = ptsY / 72;
-      const inW = ptsW / 72;
-      const inH = ptsH / 72;
+    // Method 2: Extract rectangular closed paths (m/l/l/l/h pattern)
+    if (rawRects.length < 4 && hasPathOps) {
+      // Match: x1 y1 m x2 y2 l x3 y3 l x4 y4 l h (optionally followed by f/f*/S)
+      const pathPattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+m\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+l\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+l\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+l\s*\n?h/g;
+      let match;
 
-      // Filter: skip tiny artifacts and full-page rects
-      if (inW < 0.1 || inH < 0.1) continue;
-      if (inW > pageWidthIn * 0.95 && inH > pageHeightIn * 0.95) continue;
+      while ((match = pathPattern.exec(streamText)) !== null) {
+        const x1 = parseFloat(match[1]), y1 = parseFloat(match[2]);
+        const x2 = parseFloat(match[3]), y2 = parseFloat(match[4]);
+        const x3 = parseFloat(match[5]), y3 = parseFloat(match[6]);
+        const x4 = parseFloat(match[7]), y4 = parseFloat(match[8]);
 
-      rawRects.push({ x: inX, y: inY, w: inW, h: inH });
+        // Check if it's axis-aligned (a rectangle)
+        const isRect =
+          (Math.abs(y1 - y2) < 0.5 && Math.abs(x2 - x3) < 0.5 &&
+           Math.abs(y3 - y4) < 0.5 && Math.abs(x4 - x1) < 0.5) ||
+          (Math.abs(x1 - x2) < 0.5 && Math.abs(y2 - y3) < 0.5 &&
+           Math.abs(x3 - x4) < 0.5 && Math.abs(y4 - y1) < 0.5);
+
+        if (!isRect) continue;
+
+        const xs = [x1, x2, x3, x4];
+        const ys = [y1, y2, y3, y4];
+        const rawX = Math.min(...xs);
+        const rawY = Math.min(...ys);
+        const rawW = Math.max(...xs) - rawX;
+        const rawH = Math.max(...ys) - rawY;
+
+        const ptsX = rawX * scaleX + translateX;
+        const ptsW = rawW * scaleX;
+        const ptsH = rawH * scaleY;
+
+        let ptsY: number;
+        if (yFlipped) {
+          ptsY = Math.abs(rawY * scaleY);
+        } else {
+          ptsY = rawY * scaleY + translateY;
+        }
+
+        const inX = ptsX / 72;
+        const inY = Math.abs(ptsY) / 72;
+        const inW = ptsW / 72;
+        const inH = ptsH / 72;
+
+        if (inW < 0.1 || inH < 0.1) continue;
+        if (inW > pageWidthIn * 0.95 && inH > pageHeightIn * 0.95) continue;
+
+        rawRects.push({ x: inX, y: inY, w: inW, h: inH });
+      }
     }
 
     if (rawRects.length < 2) {
       return {
         success: false,
-        error: `Only found ${rawRects.length} rectangles. This PDF may not be a label sheet template.`,
+        error: 'No label outlines found in this PDF. Try a different label sheet template.',
       };
     }
 

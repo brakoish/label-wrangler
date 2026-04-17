@@ -153,9 +153,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
         }
       } else {
         setParseError(result.error || 'Failed to parse PDF');
+        setPdfUploaded(false);
       }
     } catch (err) {
       setParseError(err instanceof Error ? err.message : 'Failed to parse PDF');
+      setPdfUploaded(false);
     } finally {
       setIsParsing(false);
     }
