@@ -100,15 +100,36 @@ function DesignerContent() {
     : null;
 
   const handleAddElement = (type: ElementType) => {
-    // Calculate default position and size based on format
-    const defaultWidth = currentFormat.type === 'thermal' ? 100 : 1;
-    const defaultHeight = currentFormat.type === 'thermal' ? 50 : 0.5;
+    // Calculate dimensions in the label's native units
+    const isThermal = currentFormat.type === 'thermal';
+    const dpi = currentFormat.dpi || 203;
+
+    // Label dimensions in working units (dots for thermal, inches for sheet)
+    const labelW = isThermal ? currentFormat.width * dpi : currentFormat.width;
+    const labelH = isThermal ? currentFormat.height * dpi : currentFormat.height;
+
+    // Default element size: ~30% of the smaller label dimension
+    const unit = Math.min(labelW, labelH);
+    const defaultW = Math.round((unit * 0.4) * 100) / 100;
+    const defaultH = Math.round((unit * 0.2) * 100) / 100;
+
+    // Position: 5% from top-left
+    const defaultX = Math.round((labelW * 0.05) * 100) / 100;
+    const defaultY = Math.round((labelH * 0.05) * 100) / 100;
+
+    // Font size proportional to label
+    const defaultFontSize = isThermal
+      ? Math.max(8, Math.round(unit * 0.06))
+      : Math.max(6, Math.round(unit * 30)); // ~30pt per inch for readability
+
+    // Stroke width proportional
+    const defaultStroke = isThermal ? Math.max(1, Math.round(unit * 0.005)) : Math.round(unit * 0.01 * 100) / 100;
 
     const baseElement = {
-      x: 10,
-      y: 10,
-      width: defaultWidth,
-      height: defaultHeight,
+      x: defaultX,
+      y: defaultY,
+      width: defaultW,
+      height: defaultH,
       rotation: 0,
       isStatic: true,
     };
@@ -121,23 +142,27 @@ function DesignerContent() {
           ...baseElement,
           type: 'text',
           content: 'Text',
-          fontSize: 12,
+          fontSize: defaultFontSize,
           fontFamily: 'Arial',
           fontWeight: 'normal',
           textAlign: 'left',
           color: '#000000',
+          height: isThermal ? defaultFontSize * 1.5 : defaultFontSize / 72, // convert pt to inches roughly
         };
         break;
-      case 'qr':
+      case 'qr': {
+        // QR should be square, ~40% of the smaller label dimension
+        const qrSize = Math.round((unit * 0.4) * 100) / 100;
         elementData = {
           ...baseElement,
           type: 'qr',
           content: 'https://example.com',
           errorCorrection: 'M',
-          width: defaultWidth * 2,
-          height: defaultWidth * 2,
+          width: qrSize,
+          height: qrSize,
         };
         break;
+      }
       case 'barcode':
         elementData = {
           ...baseElement,
@@ -145,16 +170,17 @@ function DesignerContent() {
           content: '123456789',
           barcodeFormat: 'CODE128',
           showText: true,
-          width: defaultWidth * 2,
-          height: defaultHeight * 1.5,
+          width: Math.round((labelW * 0.6) * 100) / 100,
+          height: Math.round((labelH * 0.25) * 100) / 100,
         };
         break;
       case 'line':
         elementData = {
           ...baseElement,
           type: 'line',
-          strokeWidth: 2,
+          strokeWidth: defaultStroke,
           color: '#000000',
+          width: Math.round((labelW * 0.8) * 100) / 100,
           height: 0,
         };
         break;
@@ -162,7 +188,7 @@ function DesignerContent() {
         elementData = {
           ...baseElement,
           type: 'rectangle',
-          strokeWidth: 2,
+          strokeWidth: defaultStroke,
           strokeColor: '#000000',
           fillColor: '',
           borderRadius: 0,
