@@ -2,11 +2,11 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { ElementType, TemplateElement } from '@/lib/types';
+import { AppShell } from '@/components/AppShell';
 import { LabelPreview } from '@/components/designer/LabelPreview';
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
@@ -47,51 +47,32 @@ function DesignerContent() {
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
 
-  // If no template is selected, show template list
+  // If no template is selected, show template list view
   if (!currentTemplate || !currentFormat) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950">
-        {/* Header */}
-        <header className="glass border-b border-zinc-800 sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-4">
-              <div className="w-14 h-14 relative group">
-                <svg viewBox="0 0 200 200" className="w-full h-full group-hover:animate-[buck_0.5s_ease-in-out]">
-                  <rect x="20" y="60" width="160" height="100" rx="8" fill="none" stroke="currentColor" strokeWidth="6" className="text-amber-600" />
-                  <rect x="30" y="70" width="140" height="30" rx="4" fill="currentColor" className="text-amber-600/20" />
-                  <path d="M 80 120 Q 100 110 120 120" stroke="currentColor" strokeWidth="4" fill="none" className="text-amber-600" strokeLinecap="round" />
-                  <circle cx="70" cy="100" r="3" fill="currentColor" className="text-amber-600" />
-                  <circle cx="130" cy="100" r="3" fill="currentColor" className="text-amber-600" />
-                  <path d="M 60 50 L 70 35 L 75 50 M 125 50 L 130 35 L 140 50" stroke="currentColor" strokeWidth="3" fill="none" className="text-amber-600" strokeLinecap="round" />
-                </svg>
-              </div>
-              <h1 className="text-2xl font-bold gradient-text">Label Wrangler</h1>
-            </Link>
-
-            <nav className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
-              >
-                Formats
-              </Link>
-              <span className="px-4 py-2 text-sm text-amber-500 font-medium">
-                Designer
-              </span>
-            </nav>
-          </div>
-        </header>
-
+      <AppShell
+        headerAction={
+          <button
+            onClick={() => setShowNewTemplateDialog(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+          >
+            <Plus className="w-4 h-4" />
+            New Template
+          </button>
+        }
+      >
         {/* Template List */}
-        <TemplateList
-          templates={templates}
-          onSelectTemplate={(id) => {
-            selectTemplate(id);
-            router.push(`/designer?id=${id}`);
-          }}
-          onDeleteTemplate={deleteTemplate}
-          onNewTemplate={() => setShowNewTemplateDialog(true)}
-        />
+        <div className="flex-1 overflow-auto">
+          <TemplateList
+            templates={templates}
+            onSelectTemplate={(id) => {
+              selectTemplate(id);
+              router.push(`/designer?id=${id}`);
+            }}
+            onDeleteTemplate={deleteTemplate}
+            onNewTemplate={() => setShowNewTemplateDialog(true)}
+          />
+        </div>
 
         {/* New Template Dialog */}
         <NewTemplateDialog
@@ -109,7 +90,7 @@ function DesignerContent() {
             setShowNewTemplateDialog(false);
           }}
         />
-      </div>
+      </AppShell>
     );
   }
 
@@ -123,7 +104,6 @@ function DesignerContent() {
     const defaultWidth = currentFormat.type === 'thermal' ? 100 : 1;
     const defaultHeight = currentFormat.type === 'thermal' ? 50 : 0.5;
 
-    // Create base element data
     const baseElement = {
       x: 10,
       y: 10,
@@ -133,7 +113,6 @@ function DesignerContent() {
       isStatic: true,
     };
 
-    // Type-specific defaults - using any to bypass strict type checking in switch
     let elementData: any;
 
     switch (type) {
@@ -156,7 +135,7 @@ function DesignerContent() {
           content: 'https://example.com',
           errorCorrection: 'M',
           width: defaultWidth * 2,
-          height: defaultHeight * 2,
+          height: defaultWidth * 2,
         };
         break;
       case 'barcode':
@@ -218,52 +197,8 @@ function DesignerContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 flex flex-col">
-      {/* Header */}
-      <header className="glass border-b border-zinc-800 sticky top-0 z-10">
-        <div className="px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/designer"
-              className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors"
-              title="Back to templates"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <div className="w-10 h-10 relative">
-              <svg viewBox="0 0 200 200" className="w-full h-full">
-                <rect x="20" y="60" width="160" height="100" rx="8" fill="none" stroke="currentColor" strokeWidth="6" className="text-amber-600" />
-                <rect x="30" y="70" width="140" height="30" rx="4" fill="currentColor" className="text-amber-600/20" />
-                <path d="M 80 120 Q 100 110 120 120" stroke="currentColor" strokeWidth="4" fill="none" className="text-amber-600" strokeLinecap="round" />
-                <circle cx="70" cy="100" r="3" fill="currentColor" className="text-amber-600" />
-                <circle cx="130" cy="100" r="3" fill="currentColor" className="text-amber-600" />
-                <path d="M 60 50 L 70 35 L 75 50 M 125 50 L 130 35 L 140 50" stroke="currentColor" strokeWidth="3" fill="none" className="text-amber-600" strokeLinecap="round" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold gradient-text">{currentTemplate.name}</h1>
-              <p className="text-xs text-zinc-500">{currentFormat.name}</p>
-            </div>
-          </div>
-
-          <nav className="flex items-center gap-4">
-            <Link
-              href="/"
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
-            >
-              Formats
-            </Link>
-            <Link
-              href="/designer"
-              className="px-4 py-2 text-sm text-amber-500 font-medium"
-            >
-              Designer
-            </Link>
-          </nav>
-        </div>
-      </header>
-
-      {/* Main Editor Layout */}
+    <AppShell>
+      {/* Editor layout fills the content area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Element List */}
         <ElementList
@@ -280,6 +215,22 @@ function DesignerContent() {
 
         {/* Center Panel - Preview */}
         <div className="flex-1 flex flex-col">
+          {/* Breadcrumb bar */}
+          <div className="px-4 py-2 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
+            <button
+              onClick={() => {
+                selectTemplate(null);
+                router.push('/designer');
+              }}
+              className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Templates
+            </button>
+            <span className="text-zinc-600">/</span>
+            <span className="text-zinc-200 font-medium">{currentTemplate.name}</span>
+            <span className="text-zinc-600 text-xs ml-2">({currentFormat.name})</span>
+          </div>
+
           <LabelPreview
             format={currentFormat}
             elements={currentTemplate.elements}
@@ -302,14 +253,14 @@ function DesignerContent() {
         onClose={() => setShowAddElementMenu(false)}
         onAddElement={handleAddElement}
       />
-    </div>
+    </AppShell>
   );
 }
 
 export default function DesignerPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 flex items-center justify-center">
+      <div className="h-screen flex items-center justify-center bg-[#0c0c0e]">
         <div className="text-zinc-400">Loading...</div>
       </div>
     }>

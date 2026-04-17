@@ -5,6 +5,7 @@ import { useFormatStore } from '@/lib/store';
 import { FormatCard } from '@/components/FormatCard';
 import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
+import { AppShell } from '@/components/AppShell';
 import { PlusIcon } from './icons';
 
 export default function Home() {
@@ -27,12 +28,10 @@ export default function Home() {
   const filteredFormats = useMemo(() => {
     let result = formats;
 
-    // Filter by tab
     if (activeTab !== 'all') {
       result = result.filter((f) => f.type === activeTab);
     }
 
-    // Filter by search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
@@ -82,48 +81,17 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-[#0c0c0e]">
-      {/* Modern Header */}
-      <header className="glass sticky top-0 z-40">
-        <div className="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src="/logo.png"
-              alt="Label Wrangler"
-              className="w-14 h-14 transition-transform duration-300 hover:animate-buck cursor-pointer"
-              style={{ filter: 'brightness(0) invert(1)' }}
-            />
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">
-                <span className="gradient-text">Label</span>
-                <span className="text-white">Wrangler</span>
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <nav className="flex items-center gap-1 px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
-              <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-white shadow-sm">
-                Formats
-              </span>
-              <a
-                href="/designer"
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                Designer
-              </a>
-            </nav>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-            >
-              <PlusIcon className="w-4 h-4" />
-              New Format
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <AppShell
+      headerAction={
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+        >
+          <PlusIcon className="w-4 h-4" />
+          New Format
+        </button>
+      }
+    >
       {/* Import error toast */}
       {importError && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-red-500/90 backdrop-blur text-white text-sm rounded-lg shadow-xl">
@@ -280,13 +248,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="h-8 flex items-center justify-center border-t border-zinc-800/30">
-        <p className="text-xs text-zinc-600">Label Wrangler v1.0</p>
-      </div>
-
       {/* Add Format Modal */}
       <AddFormatModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
-    </div>
+    </AppShell>
   );
 }
