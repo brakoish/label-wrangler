@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus } from 'lucide-react';
+import { Plus, Undo2, Redo2 } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
+import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
 import { LabelPreview } from '@/components/designer/LabelPreview';
@@ -34,20 +35,99 @@ function DesignerContent() {
   } = useTemplateStore();
 
   const { getFormatById } = useFormatStore();
+  const { push: pushUndo, undo, redo, setCurrent: setUndoCurrent, canUndo, canRedo, clear: clearUndo } = useUndoStore();
 
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [showAddElementMenu, setShowAddElementMenu] = useState(false);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
-  // Load template from URL if present
+  // Sync template selection with URL
   useEffect(() => {
     if (templateId && templateId !== selectedTemplateId) {
       selectTemplate(templateId);
+    } else if (!templateId && selectedTemplateId) {
+      // URL cleared but store still has selection — clear it
+      selectTemplate(null);
     }
   }, [templateId, selectedTemplateId, selectTemplate]);
 
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
+
+  // Push undo state before making changes
+  const pushUndoState = useCallback(() => {
+    if (currentTemplate) {
+      pushUndo(currentTemplate.id, currentTemplate.elements);
+    }
+  }, [currentTemplate, pushUndo]);
+
+  // Undo handler
+  const handleUndo = useCallback(() => {
+    if (!currentTemplate || !canUndo()) return;
+    const prev = undo();
+    if (prev) {
+      // Save current state for redo
+      setUndoCurrent(currentTemplate.id, currentTemplate.elements);
+      // Apply previous state
+      const updatedElements = prev.elements;
+      fetch(`/api/templates/${currentTemplate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elements: updatedElements }),
+      });
+      // Update local store
+      useTemplateStore.setState((state) => ({
+        templates: state.templates.map((t) =>
+          t.id === currentTemplate.id ? { ...t, elements: updatedElements } : t
+        ),
+      }));
+    }
+  }, [currentTemplate, undo, setUndoCurrent, canUndo]);
+
+  // Redo handler
+  const handleRedo = useCallback(() => {
+    if (!currentTemplate || !canRedo()) return;
+    const next = redo();
+    if (next) {
+      pushUndo(currentTemplate.id, currentTemplate.elements);
+      const updatedElements = next.elements;
+      fetch(`/api/templates/${currentTemplate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ elements: updatedElements }),
+      });
+      useTemplateStore.setState((state) => ({
+        templates: state.templates.map((t) =>
+          t.id === currentTemplate.id ? { ...t, elements: updatedElements } : t
+        ),
+      }));
+    }
+  }, [currentTemplate, redo, pushUndo, canRedo]);
+
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z (or Cmd on Mac)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
+
+  // Clear undo history when switching templates
+  useEffect(() => {
+    clearUndo();
+  }, [selectedTemplateId, clearUndo]);
 
   // If no template is selected, show template list view
   if (!currentTemplate || !currentFormat) {
@@ -102,6 +182,7 @@ function DesignerContent() {
     : null;
 
   const handleAddElement = (type: ElementType) => {
+    pushUndoState();
     // Calculate dimensions in the label's native units
     const isThermal = currentFormat.type === 'thermal';
     const dpi = currentFormat.dpi || 203;
@@ -213,10 +294,12 @@ function DesignerContent() {
 
   const handleUpdateElement = (updates: Partial<TemplateElement>) => {
     if (!selectedElementId) return;
+    pushUndoState();
     updateElement(currentTemplate.id, selectedElementId, updates);
   };
 
   const handleMoveElement = (elementId: string, direction: 'up' | 'down') => {
+    pushUndoState();
     const element = currentTemplate.elements.find((e) => e.id === elementId);
     if (!element) return;
 
@@ -234,6 +317,7 @@ function DesignerContent() {
           selectedElementId={selectedElementId}
           onSelectElement={setSelectedElementId}
           onDeleteElement={(id) => {
+            pushUndoState();
             removeElement(currentTemplate.id, id);
             if (selectedElementId === id) setSelectedElementId(null);
           }}
@@ -263,6 +347,26 @@ function DesignerContent() {
             }`}>
               {currentFormat.name}
             </span>
+
+            {/* Undo/Redo */}
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo()}
+                title="Undo (Ctrl+Z)"
+                className={`p-1.5 rounded-lg transition-colors ${canUndo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5' : 'text-zinc-700 cursor-not-allowed'}`}
+              >
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo()}
+                title="Redo (Ctrl+Shift+Z)"
+                className={`p-1.5 rounded-lg transition-colors ${canRedo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5' : 'text-zinc-700 cursor-not-allowed'}`}
+              >
+                <Redo2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <LabelPreview
@@ -271,6 +375,7 @@ function DesignerContent() {
             selectedElementId={selectedElementId}
             onSelectElement={setSelectedElementId}
             onUpdateElement={(id, updates) => updateElementLocal(currentTemplate.id, id, updates)}
+            onDragStart={pushUndoState}
             onDragEnd={() => saveTemplate(currentTemplate.id)}
           />
         </div>

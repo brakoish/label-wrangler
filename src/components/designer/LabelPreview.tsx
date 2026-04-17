@@ -11,10 +11,11 @@ interface LabelPreviewProps {
   selectedElementId: string | null;
   onSelectElement: (id: string | null) => void;
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
+  onDragStart?: () => void;
   onDragEnd?: () => void;
 }
 
-export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement, onDragEnd }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement, onDragStart, onDragEnd }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -86,6 +87,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     if (!element) return;
 
     onSelectElement(elementId);
+    onDragStart?.();
     setDragging({
       elementId,
       startX: e.clientX,
@@ -95,7 +97,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     });
 
     (e.target as Element).setPointerCapture(e.pointerId);
-  }, [elements, onSelectElement, onUpdateElement]);
+  }, [elements, onSelectElement, onUpdateElement, onDragStart]);
 
   // Resize via window-level listeners (pointer capture on child rects doesn't bubble to SVG)
   const handleResizeDown = useCallback((e: React.PointerEvent, elementId: string, handle: string) => {
@@ -105,6 +107,8 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
     const element = elements.find((el) => el.id === elementId);
     if (!element) return;
+
+    onDragStart?.();
 
     const startX = e.clientX;
     const startY = e.clientY;
