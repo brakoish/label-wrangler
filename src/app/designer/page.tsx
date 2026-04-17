@@ -78,8 +78,8 @@ function DesignerContent() {
         <NewTemplateDialog
           isOpen={showNewTemplateDialog}
           onClose={() => setShowNewTemplateDialog(false)}
-          onCreate={(name, description, formatId) => {
-            const newTemplate = addTemplate({
+          onCreate={async (name, description, formatId) => {
+            const newTemplate = await addTemplate({
               name,
               description,
               formatId,

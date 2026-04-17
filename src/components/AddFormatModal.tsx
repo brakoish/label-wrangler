@@ -58,7 +58,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
     };
   }, [width, height, columns, rows, topMargin, sideMargin, horizontalGap, verticalGap, type]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const baseFormat = {
@@ -70,7 +70,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
     };
 
     if (type === 'thermal') {
-      addFormat({
+      await addFormat({
         ...baseFormat,
         dpi,
         labelsAcross,
@@ -79,7 +79,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
       const cols = parseInt(columns) || 1;
       const rowCount = parseInt(rows) || 1;
 
-      addFormat({
+      await addFormat({
         ...baseFormat,
         sheetWidth: 8.5,
         sheetHeight: 11,
