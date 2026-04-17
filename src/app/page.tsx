@@ -5,7 +5,7 @@ import { useFormatStore } from '@/lib/store';
 import { FormatCard } from '@/components/FormatCard';
 import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
-import { PlusIcon, UploadIcon, DownloadIcon } from './icons';
+import { PlusIcon } from './icons';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,21 +102,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleImport}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-            >
-              <UploadIcon className="w-4 h-4" />
-              Import
-            </button>
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-            >
-              <DownloadIcon className="w-4 h-4" />
-              Export
-            </button>
-            <div className="w-px h-6 bg-zinc-800 mx-1" />
             <button
               onClick={() => setIsAddModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
