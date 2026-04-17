@@ -18,6 +18,7 @@ export default function Home() {
   const selectedFormatId = useFormatStore((s) => s.selectedFormatId);
   const selectFormat = useFormatStore((s) => s.selectFormat);
   const deleteFormat = useFormatStore((s) => s.deleteFormat);
+  const updateFormat = useFormatStore((s) => s.updateFormat);
   const exportFormats = useFormatStore((s) => s.exportFormats);
   const importFormats = useFormatStore((s) => s.importFormats);
 
@@ -215,8 +216,8 @@ export default function Home() {
                   deleteFormat(selectedFormat.id);
                 }
               }}
-              onEdit={() => {
-                alert('Edit coming soon!');
+              onUpdate={(id, updates) => {
+                updateFormat(id, updates);
               }}
             />
           ) : (
