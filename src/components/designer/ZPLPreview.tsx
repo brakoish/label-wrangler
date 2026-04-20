@@ -69,27 +69,27 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   if (format.type !== 'thermal') return null;
 
   return (
-    <div className="border-t border-zinc-800/50 px-4 py-3">
-      <div className="flex items-center gap-2 mb-2">
-        <Printer className="w-3.5 h-3.5 text-amber-400" />
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">ZPL Preview</span>
-        <span className="text-[10px] text-zinc-600">Local render — actual thermal output</span>
+    <div className="border-t border-zinc-800/50 px-6 py-4 flex flex-col" style={{ minHeight: '40vh' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <Printer className="w-4 h-4 text-amber-400" />
+        <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">ZPL Preview</span>
+        <span className="text-xs text-zinc-500">Local render — actual thermal output</span>
 
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={() => setShowZPL(!showZPL)}
             title="View ZPL code"
-            className={`p-1 rounded-md transition-colors ${showZPL ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`p-1.5 rounded-md transition-colors ${showZPL ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
-            <Code2 className="w-3.5 h-3.5" />
+            <Code2 className="w-4 h-4" />
           </button>
           <button
             onClick={fetchPreview}
             disabled={loading}
             title="Refresh preview"
-            className="p-1 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
@@ -101,33 +101,41 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
         </div>
       )}
 
-      {/* Preview image */}
-      <div className="flex justify-center">
+      {/* Preview image — fill available space, center, constrain by both dimensions */}
+      <div className="flex-1 flex items-center justify-center min-h-0">
         {loading && !previewUrl ? (
-          <div className="h-[100px] flex items-center justify-center text-zinc-500 text-xs">
-            <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-            Rendering...
+          <div className="flex items-center justify-center text-zinc-500 text-sm">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" />
+            Rendering…
           </div>
         ) : error ? (
-          <div className="h-[100px] flex items-center justify-center text-red-400 text-xs">
+          <div className="flex items-center justify-center text-red-400 text-sm">
             {error}
           </div>
         ) : previewUrl ? (
-          <div className="relative">
+          <div className="relative max-w-full max-h-full">
             <img
               src={previewUrl}
               alt="ZPL Preview"
-              className="w-full rounded-lg border border-zinc-700/50"
-              style={{ imageRendering: 'pixelated' }}
+              className="max-w-full max-h-full rounded-lg border border-zinc-700/50 bg-white"
+              style={{
+                imageRendering: 'pixelated',
+                objectFit: 'contain',
+                maxHeight: '100%',
+                // Boost apparent size: display at 2x natural pixel dimensions so
+                // a 203-DPI label renders at roughly 0.5x real-world size instead
+                // of the tiny native PNG.
+                minHeight: '200px',
+              }}
             />
             {loading && (
               <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center">
-                <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                <RefreshCw className="w-5 h-5 animate-spin text-white" />
               </div>
             )}
           </div>
         ) : (
-          <div className="h-[100px] flex items-center justify-center text-zinc-600 text-xs">
+          <div className="flex items-center justify-center text-zinc-600 text-sm">
             No preview available
           </div>
         )}
