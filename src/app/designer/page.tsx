@@ -14,6 +14,7 @@ import { ElementList } from '@/components/designer/ElementList';
 import { TemplateList, NewTemplateDialog } from '@/components/designer/TemplateList';
 import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
+import { TestDataPanel } from '@/components/designer/TestDataPanel';
 
 function DesignerContent() {
   const router = useRouter();
@@ -42,6 +43,7 @@ function DesignerContent() {
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [showAddElementMenu, setShowAddElementMenu] = useState(false);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [testData, setTestData] = useState<Record<string, string>>({});
 
   // Sync template selection with URL
   useEffect(() => {
@@ -308,27 +310,34 @@ function DesignerContent() {
     <AppShell>
       {/* Editor layout fills the content area */}
       <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
-        {/* Left Panel - Element List */}
-        <ElementList
-          elements={currentTemplate.elements}
-          selectedElementId={selectedElementId}
-          onSelectElement={setSelectedElementId}
-          onDeleteElement={(id) => {
-            pushUndoState();
-            removeElement(currentTemplate.id, id);
-            if (selectedElementId === id) setSelectedElementId(null);
-          }}
-          onDuplicateElement={(id) => {
-            pushUndoState();
-            duplicateElement(currentTemplate.id, id);
-          }}
-          onMoveElement={handleMoveElement}
-          onAddElement={() => setShowAddElementMenu(true)}
-          onBackToTemplates={() => {
-            selectTemplate(null);
-            router.push('/designer');
-          }}
-        />
+        {/* Left Panel - Element List + Test Data */}
+        <div className="w-[280px] flex flex-col border-r border-zinc-800/50">
+          <ElementList
+            elements={currentTemplate.elements}
+            selectedElementId={selectedElementId}
+            onSelectElement={setSelectedElementId}
+            onDeleteElement={(id) => {
+              pushUndoState();
+              removeElement(currentTemplate.id, id);
+              if (selectedElementId === id) setSelectedElementId(null);
+            }}
+            onDuplicateElement={(id) => {
+              pushUndoState();
+              duplicateElement(currentTemplate.id, id);
+            }}
+            onMoveElement={handleMoveElement}
+            onAddElement={() => setShowAddElementMenu(true)}
+            onBackToTemplates={() => {
+              selectTemplate(null);
+              router.push('/designer');
+            }}
+          />
+          <TestDataPanel
+            elements={currentTemplate.elements}
+            testData={testData}
+            onTestDataChange={(field, value) => setTestData((prev) => ({ ...prev, [field]: value }))}
+          />
+        </div>
 
         {/* Center Panel - Preview */}
         <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
@@ -382,6 +391,7 @@ function DesignerContent() {
             onUpdateElement={(id, updates) => updateElementLocal(currentTemplate.id, id, updates)}
             onDragStart={pushUndoState}
             onDragEnd={() => saveTemplate(currentTemplate.id)}
+            testData={testData}
           />
           <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
         </div>

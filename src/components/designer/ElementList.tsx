@@ -27,7 +27,7 @@ export function ElementList({
   const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
   return (
-    <div className="w-[280px] flex flex-col border-r border-zinc-800/50">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Back to templates */}
       {onBackToTemplates && (
         <button

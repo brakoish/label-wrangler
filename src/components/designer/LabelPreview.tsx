@@ -13,9 +13,10 @@ interface LabelPreviewProps {
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
+  testData?: Record<string, string>;
 }
 
-export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement, onDragStart, onDragEnd }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -303,7 +304,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
               onClick={(e) => { e.stopPropagation(); onSelectElement(element.id); }}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
-              {renderElement(element, format, handleTextMeasure)}
+              {renderElement(element, format, handleTextMeasure, testData)}
               {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
               <rect
                 x={element.x}
@@ -408,14 +409,14 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   );
 }
 
-function renderElement(element: TemplateElement, format: LabelFormat, onTextMeasure?: (id: string, w: number, h: number) => void): React.ReactNode {
+function renderElement(element: TemplateElement, format: LabelFormat, onTextMeasure?: (id: string, w: number, h: number) => void, testData?: Record<string, string>): React.ReactNode {
   const transform = element.rotation !== 0
     ? `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`
     : undefined;
 
   switch (element.type) {
     case 'text':
-      return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} onMeasure={onTextMeasure} />;
+      return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
       return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} />;
     case 'barcode':
@@ -431,11 +432,17 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
   }
 }
 
-function TextElementRenderer({ element, transform, format, onMeasure }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void }) {
+function TextElementRenderer({ element, transform, format, onMeasure, testData }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void; testData?: Record<string, string> }) {
   const textRef = useRef<SVGTextElement>(null);
-  const rawContent = element.isStatic
-    ? element.content
-    : (element.defaultValue || `{{${element.fieldName || 'field'}}}`);
+
+  // Resolve display content: test data > default value > field placeholder
+  let rawContent: string;
+  if (element.isStatic) {
+    rawContent = element.content;
+  } else {
+    const testValue = element.fieldName && testData?.[element.fieldName];
+    rawContent = testValue || element.defaultValue || `{{${element.fieldName || 'field'}}}`;
+  }
   const prefix = (!element.isStatic && element.prefix) ? element.prefix : '';
   const suffix = (!element.isStatic && element.suffix) ? element.suffix : '';
   const displayContent = `${prefix}${rawContent}${suffix}`;
