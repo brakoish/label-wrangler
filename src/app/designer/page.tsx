@@ -132,17 +132,7 @@ function DesignerContent() {
   // If no template is selected, show template list view
   if (!currentTemplate || !currentFormat) {
     return (
-      <AppShell
-        headerAction={
-          <button
-            onClick={() => setShowNewTemplateDialog(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-          >
-            <Plus className="w-4 h-4" />
-            New Template
-          </button>
-        }
-      >
+      <AppShell>
         {/* Template List */}
         <div className="flex-1 overflow-auto">
           <TemplateList
@@ -308,17 +298,7 @@ function DesignerContent() {
   };
 
   return (
-    <AppShell
-      headerAction={
-        <button
-          onClick={() => setShowNewTemplateDialog(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-lg hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          New Template
-        </button>
-      }
-    >
+    <AppShell>
       {/* Editor layout fills the content area */}
       <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List */}
