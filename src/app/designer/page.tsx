@@ -317,7 +317,7 @@ function DesignerContent() {
         />
 
         {/* Center Panel - Preview */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
           {/* Breadcrumb bar */}
           <div className="px-6 py-3 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
             <button

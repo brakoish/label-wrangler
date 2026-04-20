@@ -255,7 +255,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   }, [dragging, onDragEnd]);
 
   return (
-    <div ref={containerRef} className="flex-1 flex items-center justify-center p-6 overflow-hidden">
+    <div ref={containerRef} className="flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '400px', height: '60vh' }}>
       <svg
         ref={svgRef}
         width={svgW}
