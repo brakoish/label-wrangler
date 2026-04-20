@@ -155,38 +155,57 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     const isThermal = format.type === 'thermal';
     const dpi = format.dpi || 203;
 
-    // Multi-select resize: snapshot all selected elements for group scaling
+    // Multi-select resize: snapshot all selected elements for group scaling.
+    // For text elements, use rendered textBounds (if measured) so the group
+    // bbox reflects what the user actually sees.
     const isMultiResize = selectedElementIds.size > 1 && selectedElementIds.has(elementId);
+    const getEffectiveBounds = (el: TemplateElement) => {
+      if (el.type === 'text' && textBounds[el.id]) {
+        return { w: textBounds[el.id].w, h: textBounds[el.id].h };
+      }
+      return { w: el.width, h: el.height };
+    };
     const selectedSnapshots = isMultiResize ? new Map(
       elements
         .filter((el) => selectedElementIds.has(el.id))
-        .map((el) => [el.id, {
-          x: el.x, y: el.y, width: el.width, height: el.height,
-          fontSize: el.type === 'text' ? (el as any).fontSize : 0,
-          type: el.type,
-        }] as const)
+        .map((el) => {
+          const eff = getEffectiveBounds(el);
+          return [el.id, {
+            x: el.x, y: el.y, width: el.width, height: el.height,
+            effW: eff.w, effH: eff.h,
+            fontSize: el.type === 'text' ? (el as any).fontSize : 0,
+            type: el.type,
+          }] as const;
+        })
     ) : null;
 
-    // Compute group bounding box for anchor point
+    // Compute group bounding box from EFFECTIVE (rendered) bounds for anchor point
     let groupBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
     if (selectedSnapshots) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const snap of selectedSnapshots.values()) {
         minX = Math.min(minX, snap.x);
         minY = Math.min(minY, snap.y);
-        maxX = Math.max(maxX, snap.x + snap.width);
-        maxY = Math.max(maxY, snap.y + snap.height);
+        maxX = Math.max(maxX, snap.x + snap.effW);
+        maxY = Math.max(maxY, snap.y + snap.effH);
       }
       groupBBox = { minX, minY, maxX, maxY };
     }
 
     // Determine anchor corner (opposite of the handle being dragged)
+    const grabbedCornerX = handle.includes('w') ? origX : origX + origW;
+    const grabbedCornerY = handle.includes('n') ? origY : origY + origH;
     const anchorX = handle.includes('e') ? groupBBox?.minX ?? origX
                   : handle.includes('w') ? groupBBox?.maxX ?? (origX + origW)
                   : groupBBox?.minX ?? origX;
     const anchorY = handle.includes('s') ? groupBBox?.minY ?? origY
                   : handle.includes('n') ? groupBBox?.maxY ?? (origY + origH)
                   : groupBBox?.minY ?? origY;
+    // Distance from anchor to the grabbed handle at start (in viewBox units).
+    // We use this to translate pointer motion into a group scale factor
+    // that is independent of the primary element's own width/height.
+    const grabDistX = Math.abs(grabbedCornerX - anchorX) || 1;
+    const grabDistY = Math.abs(grabbedCornerY - anchorY) || 1;
 
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
@@ -212,24 +231,32 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
         nH = size;
       }
 
-      // Compute scale factor from primary element
-      const scaleX = origW > 0 ? nW / origW : 1;
-      const scaleY = origH > 0 ? nH / origH : 1;
-      const uniformScale = Math.max(scaleX, scaleY);
-
-      // Multi-select group resize: scale all selected elements proportionally
+      // Multi-select group resize: scale by pointer distance from the anchor,
+      // not by the primary element's own dimensions (those can be misleading
+      // for text whose rendered size ≠ stored width).
       if (isMultiResize && selectedSnapshots && handle.length === 2) {
+        // Current pointer position in viewBox coords relative to anchor.
+        const pointerX = grabbedCornerX + svgDx;
+        const pointerY = grabbedCornerY + svgDy;
+        const newDistX = Math.abs(pointerX - anchorX);
+        const newDistY = Math.abs(pointerY - anchorY);
+        const groupScaleX = newDistX / grabDistX;
+        const groupScaleY = newDistY / grabDistY;
+        // Uniform scale (min keeps everything inside the drag envelope;
+        // using min avoids runaway growth when one axis is tiny).
+        const uniform = Math.max(0.1, Math.min(groupScaleX, groupScaleY));
+
         for (const [id, snap] of selectedSnapshots) {
           // Scale position relative to anchor
           const relX = snap.x - anchorX;
           const relY = snap.y - anchorY;
-          const newElX = anchorX + relX * uniformScale;
-          const newElY = anchorY + relY * uniformScale;
-          const newElW = snap.width * uniformScale;
-          const newElH = snap.height * uniformScale;
+          const newElX = anchorX + relX * uniform;
+          const newElY = anchorY + relY * uniform;
+          const newElW = snap.width * uniform;
+          const newElH = snap.height * uniform;
 
           if (snap.type === 'text') {
-            const newFs = Math.max(4, Math.round(snap.fontSize * uniformScale * 10) / 10);
+            const newFs = Math.max(4, Math.round(snap.fontSize * uniform * 10) / 10);
             const svgFs = isThermal ? newFs * (dpi / 72) : newFs / 72;
             onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: svgFs * 1.2, fontSize: newFs } as any);
           } else if (snap.type === 'qr') {
