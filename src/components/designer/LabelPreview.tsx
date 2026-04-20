@@ -668,17 +668,10 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
 
   const lineHeight = svgFontSize * (element.lineHeight || 1.2);
 
-  // For thermal labels, default to a monospace font that approximates Zebra's
-  // bitmap font 0, giving a closer WYSIWYG match to the actual printer output.
-  // User-picked fonts still win.
-  const effectiveFontFamily = isThermal && (!element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica')
-    ? 'var(--font-plex-mono), ui-monospace, monospace'
-    : element.fontFamily;
+  const effectiveFontFamily = element.fontFamily;
 
-  // Word-wrap: split text into lines that fit within element.width.
-  // Monospace char width ≈ 0.6× font size; proportional ≈ 0.5×.
-  const isMono = isThermal && effectiveFontFamily !== element.fontFamily;
-  const charWidth = svgFontSize * (isMono ? 0.6 : 0.5);
+  // Word-wrap: estimate average character width (~0.5× font size for proportional fonts)
+  const charWidth = svgFontSize * 0.5;
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -728,7 +721,7 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
     <text
       ref={textRef}
       fontSize={svgFontSize}
-      fontFamily={effectiveFontFamily}
+      fontFamily={element.fontFamily}
       fontWeight={element.fontWeight}
       textAnchor={textAnchor}
       fill={color}
