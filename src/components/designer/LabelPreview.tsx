@@ -20,7 +20,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
-  const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origPositions: Record<string, { x: number; y: number }> } | null>(null);
+  const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [textBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
 
@@ -95,27 +95,26 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     const element = elements.find((el) => el.id === elementId);
     if (!element) return;
 
-    onSelectElement(elementId, e.shiftKey);
-    onDragStart?.();
-
-    // Store original positions of all selected elements (plus the one being dragged)
-    const idsToMove = new Set(selectedElementIds);
-    idsToMove.add(elementId);
-    const origPositions: Record<string, { x: number; y: number }> = {};
-    for (const id of idsToMove) {
-      const el = elements.find((e) => e.id === id);
-      if (el) origPositions[id] = { x: el.x, y: el.y };
+    // If shift-clicking, just toggle selection — don't start drag
+    if (e.shiftKey) {
+      onSelectElement(elementId, true);
+      return;
     }
+
+    // Single select + start drag
+    onSelectElement(elementId, false);
+    onDragStart?.();
 
     setDragging({
       elementId,
       startX: e.clientX,
       startY: e.clientY,
-      origPositions,
+      origX: element.x,
+      origY: element.y,
     });
 
     (e.target as Element).setPointerCapture(e.pointerId);
-  }, [elements, onSelectElement, onUpdateElement, onDragStart, selectedElementIds]);
+  }, [elements, onSelectElement, onUpdateElement, onDragStart]);
 
   // Resize via window-level listeners (pointer capture on child rects doesn't bubble to SVG)
   const handleResizeDown = useCallback((e: React.PointerEvent, elementId: string, handle: string) => {
@@ -198,13 +197,11 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     const dy = e.clientY - dragging.startY;
     const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
-    const origPos = dragging.origPositions[dragging.elementId];
-    if (!origPos) return;
     const draggedEl = elements.find((el) => el.id === dragging.elementId);
     if (!draggedEl) return;
 
-    let rawX = origPos.x + svgDx;
-    let rawY = origPos.y + svgDy;
+    let rawX = dragging.origX + svgDx;
+    let rawY = dragging.origY + svgDy;
 
     // Build snap targets from label edges, center, and other elements
     const xTargets: number[] = [0, viewBoxWidth / 2, viewBoxWidth]; // left, center, right of label
@@ -254,14 +251,8 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
 
     setGuides({ x: activeGuideX, y: activeGuideY });
 
-    // Move primary dragged element (with snap)
+    // Move the dragged element
     onUpdateElement(dragging.elementId, { x: rawX, y: rawY });
-
-    // Move other selected elements by the same raw delta (no snap, they follow)
-    for (const [id, orig] of Object.entries(dragging.origPositions)) {
-      if (id === dragging.elementId) continue;
-      onUpdateElement(id, { x: orig.x + svgDx, y: orig.y + svgDy });
-    }
   }, [dragging, onUpdateElement, screenToSvg, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
 
   const handlePointerUp = useCallback(() => {
