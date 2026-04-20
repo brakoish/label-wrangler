@@ -71,7 +71,7 @@ function SheetLayout({ format, elements }: { format: LabelFormat; elements: Temp
       <div className="flex justify-center">
         <svg
           viewBox={`0 0 ${viewW} ${viewH}`}
-          className="max-h-[160px] rounded-lg"
+          className="w-full rounded-lg"
           style={{ background: '#0a0a0c' }}
         >
           {/* Sheet */}
@@ -123,7 +123,7 @@ function RollLayout({ format, elements }: { format: LabelFormat; elements: Templ
       <div className="flex justify-center">
         <svg
           viewBox={`0 0 ${viewW} ${viewH}`}
-          className="max-h-[120px] rounded-lg"
+          className="w-full rounded-lg"
           style={{ background: '#0a0a0c' }}
         >
           {/* Liner */}
