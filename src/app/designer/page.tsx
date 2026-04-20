@@ -13,6 +13,7 @@ import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
 import { TemplateList, NewTemplateDialog } from '@/components/designer/TemplateList';
 import { AddElementMenu } from '@/components/designer/AddElementMenu';
+import { LayoutPreview } from '@/components/designer/LayoutPreview';
 
 function DesignerContent() {
   const router = useRouter();
@@ -368,6 +369,7 @@ function DesignerContent() {
             onDragStart={pushUndoState}
             onDragEnd={() => saveTemplate(currentTemplate.id)}
           />
+          <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
         </div>
 
         {/* Right Panel - Properties */}
