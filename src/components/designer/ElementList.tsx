@@ -28,6 +28,17 @@ export function ElementList({
 
   return (
     <div className="w-[280px] flex flex-col border-r border-zinc-800/50">
+      {/* Back to templates */}
+      {onBackToTemplates && (
+        <button
+          onClick={onBackToTemplates}
+          className="flex items-center gap-2 px-4 py-2.5 text-zinc-400 hover:text-zinc-200 text-sm border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          All Templates
+        </button>
+      )}
+
       {/* Add Element button */}
       <div className="p-4 space-y-4">
         <button
@@ -67,18 +78,6 @@ export function ElementList({
         )}
       </div>
 
-      {/* Back to templates */}
-      {onBackToTemplates && (
-        <div className="p-4 border-t border-zinc-800/50">
-          <button
-            onClick={onBackToTemplates}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-zinc-400 hover:text-zinc-200 text-sm rounded-xl hover:bg-zinc-800/50 transition-all"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            All Templates
-          </button>
-        </div>
-      )}
     </div>
   );
 }
