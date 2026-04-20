@@ -471,9 +471,9 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
     if (currentLine) lines.push(currentLine);
   }
 
-  // Always show at least 1 line, even if the box is smaller than the font
-  const maxLines = Math.max(1, Math.floor(element.height / lineHeight) || 1);
-  const visibleLines = lines.length > 0 ? lines.slice(0, maxLines) : [displayContent];
+  // Show all wrapped lines — let the visual overflow indicate the box needs to be bigger
+  // Don't artificially clip lines; the user can see they need to resize
+  const visibleLines = lines.length > 0 ? lines : [displayContent];
 
   let textAnchor: 'start' | 'middle' | 'end' = 'start';
   if (element.textAlign === 'center') textAnchor = 'middle';

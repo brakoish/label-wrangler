@@ -145,7 +145,13 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
-      <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Enter text..." full />
+      <textarea
+        value={element.content}
+        onChange={(e) => onUpdate({ content: e.target.value })}
+        placeholder="Enter text..."
+        rows={3}
+        className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:outline-none focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-600"
+      />
       <div className="grid grid-cols-2 gap-1">
         <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
         <CompactSelect value={element.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
