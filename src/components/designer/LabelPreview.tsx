@@ -468,10 +468,10 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
       ref={foRef}
       x={element.x}
       y={element.y}
-      width={element.width}
-      height={element.height}
+      width={Math.max(element.width, svgFontSize * 0.6)}
+      height={Math.max(element.height, svgFontSize * 1.5)}
       transform={transform}
-      style={{ overflow: 'hidden' }}
+      style={{ overflow: 'visible' }}
     >
       <div
         style={{
