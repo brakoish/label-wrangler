@@ -192,15 +192,20 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
       groupBBox = { minX, minY, maxX, maxY };
     }
 
-    // Determine anchor corner (opposite of the handle being dragged)
-    const grabbedCornerX = handle.includes('w') ? origX : origX + origW;
-    const grabbedCornerY = handle.includes('n') ? origY : origY + origH;
-    const anchorX = handle.includes('e') ? groupBBox?.minX ?? origX
-                  : handle.includes('w') ? groupBBox?.maxX ?? (origX + origW)
-                  : groupBBox?.minX ?? origX;
-    const anchorY = handle.includes('s') ? groupBBox?.minY ?? origY
-                  : handle.includes('n') ? groupBBox?.maxY ?? (origY + origH)
-                  : groupBBox?.minY ?? origY;
+    // Determine grabbed corner and anchor corner (opposite of the handle).
+    // For multi-select, use the GROUP bounding box. For single, use the element itself.
+    const gbX = groupBBox?.minX ?? origX;
+    const gbY = groupBBox?.minY ?? origY;
+    const gbRight = groupBBox?.maxX ?? (origX + origW);
+    const gbBottom = groupBBox?.maxY ?? (origY + origH);
+    const grabbedCornerX = handle.includes('w') ? gbX : gbRight;
+    const grabbedCornerY = handle.includes('n') ? gbY : gbBottom;
+    const anchorX = handle.includes('e') ? gbX
+                  : handle.includes('w') ? gbRight
+                  : gbX;
+    const anchorY = handle.includes('s') ? gbY
+                  : handle.includes('n') ? gbBottom
+                  : gbY;
     // Distance from anchor to the grabbed handle at start (in viewBox units).
     // We use this to translate pointer motion into a group scale factor
     // that is independent of the primary element's own width/height.
@@ -433,7 +438,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
                 height={Math.max(element.height, viewBoxHeight * 0.02)}
                 fill="transparent"
               />
-              {selectedElementIds.has(element.id) && (
+              {selectedElementIds.has(element.id) && selectedElementIds.size === 1 && (
                 <>
                   {/* Selection border — use measured bounds for text */}
                   {(() => {
@@ -491,9 +496,95 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
                   })()}
                 </>
               )}
+              {/* Multi-select: subtle dashed outline on each member element */}
+              {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
+                const tb = element.type === 'text' ? textBounds[element.id] : null;
+                const ew = tb ? tb.w : element.width;
+                const eh = tb ? tb.h : element.height;
+                return (
+                  <rect
+                    x={element.x}
+                    y={element.y}
+                    width={ew}
+                    height={eh}
+                    fill="none"
+                    stroke="#d97706"
+                    strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.002}
+                    strokeDasharray={`${Math.min(viewBoxWidth, viewBoxHeight) * 0.008} ${Math.min(viewBoxWidth, viewBoxHeight) * 0.006}`}
+                    opacity={0.5}
+                    pointerEvents="none"
+                  />
+                );
+              })()}
             </g>
           ))}
         </g>
+
+        {/* Group selection bounding box + handles (shown when multi-selected) */}
+        {selectedElementIds.size > 1 && (() => {
+          const ids = Array.from(selectedElementIds);
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const id of ids) {
+            const el = elements.find((e) => e.id === id);
+            if (!el) continue;
+            const tb = el.type === 'text' ? textBounds[el.id] : null;
+            const w = tb ? tb.w : el.width;
+            const h = tb ? tb.h : el.height;
+            minX = Math.min(minX, el.x);
+            minY = Math.min(minY, el.y);
+            maxX = Math.max(maxX, el.x + w);
+            maxY = Math.max(maxY, el.y + h);
+          }
+          if (!isFinite(minX)) return null;
+          const pad = viewBoxWidth * 0.005;
+          const gX = minX - pad;
+          const gY = minY - pad;
+          const gW = (maxX - minX) + pad * 2;
+          const gH = (maxY - minY) + pad * 2;
+          const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025;
+          const half = hs / 2;
+          const handles = [
+            { id: 'nw', cx: gX, cy: gY, cursor: 'nwse-resize' },
+            { id: 'n',  cx: gX + gW / 2, cy: gY, cursor: 'ns-resize' },
+            { id: 'ne', cx: gX + gW, cy: gY, cursor: 'nesw-resize' },
+            { id: 'e',  cx: gX + gW, cy: gY + gH / 2, cursor: 'ew-resize' },
+            { id: 'se', cx: gX + gW, cy: gY + gH, cursor: 'nwse-resize' },
+            { id: 's',  cx: gX + gW / 2, cy: gY + gH, cursor: 'ns-resize' },
+            { id: 'sw', cx: gX, cy: gY + gH, cursor: 'nesw-resize' },
+            { id: 'w',  cx: gX, cy: gY + gH / 2, cursor: 'ew-resize' },
+          ];
+          // Pick a representative element id to pass to the resize handler;
+          // the handler detects multi-select and uses the snapshot path.
+          const primaryId = ids[0];
+          return (
+            <g>
+              <rect
+                x={gX}
+                y={gY}
+                width={gW}
+                height={gH}
+                fill="none"
+                stroke="#d97706"
+                strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.005}
+                pointerEvents="none"
+              />
+              {handles.map((h) => (
+                <rect
+                  key={h.id}
+                  x={h.cx - half}
+                  y={h.cy - half}
+                  width={hs}
+                  height={hs}
+                  fill="#ffffff"
+                  stroke="#d97706"
+                  strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+                  style={{ cursor: h.cursor }}
+                  onPointerDown={(e) => handleResizeDown(e, primaryId, h.id)}
+                />
+              ))}
+            </g>
+          );
+        })()}
 
         {/* Smart guides */}
         {guides.x.map((gx, i) => (
