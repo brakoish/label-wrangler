@@ -117,6 +117,10 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const origW = element.width;
     const origH = element.height;
     const isQR = element.type === 'qr';
+    const isText = element.type === 'text';
+    const origFontSize = isText ? (element as any).fontSize : 0;
+    const isThermal = format.type === 'thermal';
+    const dpi = format.dpi || 203;
 
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
@@ -140,6 +144,17 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
         if (handle.includes('n')) nY = origY + origH - size;
         nW = size;
         nH = size;
+      }
+
+      // Text: corner handles scale font size proportionally
+      if (isText && handle.length === 2) {
+        const scale = Math.max(nW / origW, nH / origH);
+        const newFontSize = Math.max(4, Math.round(origFontSize * scale * 10) / 10);
+        // Convert fontSize to viewBox units for height calc
+        const svgFs = isThermal ? newFontSize * (dpi / 72) : newFontSize / 72;
+        nH = svgFs * 1.2; // approximate line height
+        onUpdateElement(elementId, { x: nX, y: nY, width: nW, height: nH, fontSize: newFontSize } as any);
+        return;
       }
 
       onUpdateElement(elementId, { x: nX, y: nY, width: nW, height: nH });
