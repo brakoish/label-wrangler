@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Printer, RefreshCw, Code2 } from 'lucide-react';
+import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
 
@@ -29,6 +29,8 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showZPL, setShowZPL] = useState(false);
+  // Zoom level as multiplier of "fit" size. 1 = fit to container, 2 = double.
+  const [zoom, setZoom] = useState<number>(1);
 
   const zpl = generateZPL(template, format, testData);
 
@@ -81,6 +83,29 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
 
         <div className="ml-auto flex items-center gap-1">
           <button
+            onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+            title="Zoom out"
+            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <span className="text-xs text-zinc-400 w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={() => setZoom((z) => Math.min(8, +(z + 0.25).toFixed(2)))}
+            title="Zoom in"
+            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setZoom(1)}
+            title="Fit to view"
+            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+          <div className="w-px h-4 bg-zinc-800 mx-1" />
+          <button
             onClick={() => setShowZPL(!showZPL)}
             title="View ZPL code"
             className={`p-1.5 rounded-md transition-colors ${showZPL ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
@@ -105,8 +130,9 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
         </div>
       )}
 
-      {/* Preview image — fill available space, center, constrain by both dimensions */}
-      <div className="flex-1 flex items-center justify-center min-h-0">
+      {/* Preview image — fill available space, center, constrain by both dimensions.
+          overflow-auto so when zoomed beyond fit the user can pan horizontally/vertically. */}
+      <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
         {loading && !previewUrl ? (
           <div className="flex items-center justify-center text-zinc-500 text-sm">
             <RefreshCw className="w-5 h-5 animate-spin mr-2" />
@@ -117,10 +143,9 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             {error}
           </div>
         ) : previewUrl ? (
-          <div className="relative max-w-full max-h-full inline-block">
-            {/* Image sizes to its own aspect ratio; parent flex centers it.
-                No bg color so we don't paint phantom whitespace around
-                short-and-wide labels. */}
+          <div className="relative inline-block" style={{ padding: '4px' }}>
+            {/* At zoom=1 the image fits its container (max-w/h 100%).
+                At zoom>1 it grows past container bounds and parent scrolls. */}
             <img
               src={previewUrl}
               alt="ZPL Preview"
@@ -128,10 +153,10 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
               style={{
                 imageRendering: 'auto',
                 display: 'block',
-                maxWidth: '100%',
-                maxHeight: '100%',
+                maxWidth: zoom === 1 ? '100%' : 'none',
+                maxHeight: zoom === 1 ? '100%' : 'none',
+                width: zoom === 1 ? 'auto' : `${zoom * 100}%`,
                 height: 'auto',
-                width: 'auto',
               }}
             />
             {loading && (
