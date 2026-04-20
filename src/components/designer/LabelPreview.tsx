@@ -432,7 +432,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
 }
 
 function TextElementRenderer({ element, transform, format, onMeasure }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void }) {
-  const foRef = useRef<SVGForeignObjectElement>(null);
+  const textRef = useRef<SVGTextElement>(null);
   const displayContent = element.isStatic
     ? element.content
     : (element.defaultValue || `{{${element.fieldName || 'field'}}}`);
@@ -445,54 +445,72 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
     ? element.fontSize * (dpi / 72)
     : element.fontSize / 72;
 
-  // Report measured height for selection box
-  useEffect(() => {
-    if (foRef.current && onMeasure) {
-      // Measure the inner div
-      const div = foRef.current.querySelector('div');
-      if (div) {
-        const scrollH = div.scrollHeight;
-        // Convert pixel height back to viewBox units
-        const fo = foRef.current;
-        const foHeight = parseFloat(fo.getAttribute('height') || '0');
-        const foClientH = fo.clientHeight || 1;
-        const scale = foHeight / foClientH;
-        const actualH = scrollH * scale;
-        onMeasure(element.id, element.width, Math.max(actualH, element.height));
-      }
+  const lineHeight = svgFontSize * 1.25;
+
+  // Simple word-wrap: split text into lines that fit within element.width
+  // We estimate character width as ~0.6 * fontSize (rough monospace-ish estimate)
+  const charWidth = svgFontSize * 0.55;
+  const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth));
+
+  const lines: string[] = [];
+  const words = displayContent.split(' ');
+  let currentLine = '';
+  for (const word of words) {
+    const test = currentLine ? `${currentLine} ${word}` : word;
+    if (test.length <= maxCharsPerLine) {
+      currentLine = test;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      // If single word is longer than line, just put it on its own line
+      currentLine = word;
     }
-  });
+  }
+  if (currentLine) lines.push(currentLine);
+
+  // Max lines that fit in the element height
+  const maxLines = Math.max(1, Math.floor(element.height / lineHeight));
+  const visibleLines = lines.slice(0, maxLines);
+
+  let textAnchor: 'start' | 'middle' | 'end' = 'start';
+  if (element.textAlign === 'center') textAnchor = 'middle';
+  else if (element.textAlign === 'right') textAnchor = 'end';
+
+  let baseX = element.x;
+  if (element.textAlign === 'center') baseX = element.x + element.width / 2;
+  else if (element.textAlign === 'right') baseX = element.x + element.width;
+
+  // Measure and report
+  useEffect(() => {
+    if (textRef.current && onMeasure) {
+      try {
+        const bbox = textRef.current.getBBox();
+        if (bbox.width > 0) {
+          onMeasure(element.id, Math.max(bbox.width, element.width), Math.max(bbox.height, element.height));
+        }
+      } catch (e) {}
+    }
+  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.id, onMeasure]);
 
   return (
-    <foreignObject
-      ref={foRef}
-      x={element.x}
-      y={element.y}
-      width={Math.max(element.width, svgFontSize * 0.6)}
-      height={Math.max(element.height, svgFontSize * 1.5)}
+    <text
+      ref={textRef}
+      fontSize={svgFontSize}
+      fontFamily={element.fontFamily}
+      fontWeight={element.fontWeight}
+      textAnchor={textAnchor}
+      fill={color}
       transform={transform}
-      style={{ overflow: 'visible' }}
     >
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          fontSize: svgFontSize,
-          fontFamily: element.fontFamily,
-          fontWeight: element.fontWeight,
-          color: color,
-          textAlign: element.textAlign,
-          lineHeight: 1.2,
-          wordWrap: 'break-word',
-          overflowWrap: 'break-word',
-          overflow: 'hidden',
-          padding: 0,
-          margin: 0,
-        }}
-      >
-        {displayContent}
-      </div>
-    </foreignObject>
+      {visibleLines.map((line, i) => (
+        <tspan
+          key={i}
+          x={baseX}
+          y={element.y + svgFontSize * 0.85 + i * lineHeight}
+        >
+          {line}
+        </tspan>
+      ))}
+    </text>
   );
 }
 
