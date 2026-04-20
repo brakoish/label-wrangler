@@ -14,15 +14,9 @@ interface LabelPreviewProps {
   onDragStart?: () => void;
   onDragEnd?: () => void;
   testData?: Record<string, string>;
-  /** ZPL preview image (data URL) to use as background for thermal labels. */
-  zplPreviewUrl?: string | null;
-  /** True while ZPL preview is being refetched (for spinner/stale indicator). */
-  zplPreviewLoading?: boolean;
-  /** When true, hide SVG element renders — only show ZPL background + interactive overlay. */
-  useZplAsTruth?: boolean;
 }
 
-export function LabelPreview({ format, elements, selectedElementIds, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, zplPreviewUrl, zplPreviewLoading, useZplAsTruth }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -427,21 +421,6 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
           onClick={() => onSelectElement(null)}
         />
 
-        {/* ZPL-as-truth background: render Labelary PNG into the label surface.
-            Clicking this layer also deselects. Pixelated rendering preserves thermal look. */}
-        {useZplAsTruth && format.type === 'thermal' && zplPreviewUrl && (
-          <image
-            href={zplPreviewUrl}
-            x={0}
-            y={0}
-            width={viewBoxWidth}
-            height={viewBoxHeight}
-            preserveAspectRatio="none"
-            style={{ imageRendering: 'pixelated' as any, opacity: zplPreviewLoading ? 0.7 : 1 }}
-            onClick={() => onSelectElement(null)}
-          />
-        )}
-
         {/* Elements */}
         <g>
           {sortedElements.map((element) => (
@@ -450,11 +429,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
               onPointerDown={(e) => handlePointerDown(e, element.id)}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
-              {/* When using ZPL as truth, only render the SVG element during active drag/resize
-                  (so the user gets instant feedback while the ZPL background is stale);
-                  otherwise hide SVG entirely and let the ZPL render speak for itself. */}
-              {(!useZplAsTruth || dragging !== null) &&
-                renderElement(element, format, handleTextMeasure, testData, useZplAsTruth)}
+              {renderElement(element, format, handleTextMeasure, testData)}
               {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
               <rect
                 x={element.x}
@@ -645,7 +620,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
   );
 }
 
-function renderElement(element: TemplateElement, format: LabelFormat, onTextMeasure?: (id: string, w: number, h: number) => void, testData?: Record<string, string>, _ghost?: boolean): React.ReactNode {
+function renderElement(element: TemplateElement, format: LabelFormat, onTextMeasure?: (id: string, w: number, h: number) => void, testData?: Record<string, string>): React.ReactNode {
   const transform = element.rotation !== 0
     ? `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`
     : undefined;
@@ -693,9 +668,17 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
 
   const lineHeight = svgFontSize * (element.lineHeight || 1.2);
 
-  // Word-wrap: split text into lines that fit within element.width
-  // Estimate average character width (~0.5× font size for proportional fonts)
-  const charWidth = svgFontSize * 0.5;
+  // For thermal labels, default to a monospace font that approximates Zebra's
+  // bitmap font 0, giving a closer WYSIWYG match to the actual printer output.
+  // User-picked fonts still win.
+  const effectiveFontFamily = isThermal && (!element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica')
+    ? 'var(--font-plex-mono), ui-monospace, monospace'
+    : element.fontFamily;
+
+  // Word-wrap: split text into lines that fit within element.width.
+  // Monospace char width ≈ 0.6× font size; proportional ≈ 0.5×.
+  const isMono = isThermal && effectiveFontFamily !== element.fontFamily;
+  const charWidth = svgFontSize * (isMono ? 0.6 : 0.5);
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -745,7 +728,7 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
     <text
       ref={textRef}
       fontSize={svgFontSize}
-      fontFamily={element.fontFamily}
+      fontFamily={effectiveFontFamily}
       fontWeight={element.fontWeight}
       textAnchor={textAnchor}
       fill={color}
