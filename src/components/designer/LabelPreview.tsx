@@ -670,9 +670,13 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
 
   const effectiveFontFamily = element.fontFamily;
 
-  // Word-wrap: use 0.6× for thermal (matches ZPL's fixed fontW = fontH * 0.6)
-  // and 0.5× for sheet labels (proportional Arial avg).
-  const charWidth = svgFontSize * (isThermal ? 0.6 : 0.5);
+  // Word-wrap character width estimate.
+  // For thermal: match ZPL's fixed character width (fontW = fontH * 0.6). We then
+  // apply SVG textLength compression so each rendered line occupies exactly that
+  // width, matching ZPL's actual output and ensuring wrap decisions align.
+  // For sheet: 0.5x for proportional Arial.
+  const zplCharW = svgFontSize * 0.6;
+  const charWidth = isThermal ? zplCharW : svgFontSize * 0.5;
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -730,11 +734,7 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
     >
       {visibleLines.map((line, i) => {
         // For thermal labels, force SVG text to render at ZPL's fixed character width
-        // (fontW = fontH * 0.6). This makes the live preview match the actual thermal
-        // output width-wise so overlapping layouts in ZPL also appear overlapped in SVG,
-        // and comfortable layouts look comfortable. lengthAdjust="spacingAndGlyphs" scales
-        // glyphs horizontally when needed.
-        const zplCharW = svgFontSize * 0.6;
+        // so Arial renders at the same total width Zebra Font 0 would.
         const forcedLen = isThermal ? line.length * zplCharW : undefined;
         return (
           <tspan
