@@ -21,6 +21,14 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
+  const [textBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
+
+  const handleTextMeasure = useCallback((id: string, w: number, h: number) => {
+    setTextBounds((prev) => {
+      if (prev[id]?.w === w && prev[id]?.h === h) return prev;
+      return { ...prev, [id]: { w, h } };
+    });
+  }, []);
 
   // Observe container size
   useEffect(() => {
@@ -295,7 +303,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
               onClick={(e) => { e.stopPropagation(); onSelectElement(element.id); }}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
-              {renderElement(element, format)}
+              {renderElement(element, format, handleTextMeasure)}
               {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
               <rect
                 x={element.x}
@@ -306,25 +314,35 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
               />
               {selectedElementId === element.id && (
                 <>
-                  {/* Selection border */}
-                  <rect
-                    x={element.x - viewBoxWidth * 0.005}
-                    y={element.y - viewBoxWidth * 0.005}
-                    width={element.width + viewBoxWidth * 0.01}
-                    height={element.height + viewBoxWidth * 0.01}
-                    fill="none"
-                    stroke="#d97706"
-                    strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.005}
-                    pointerEvents="none"
-                  />
+                  {/* Selection border — use measured bounds for text */}
+                  {(() => {
+                    const tb = element.type === 'text' ? textBounds[element.id] : null;
+                    const selX = element.x - viewBoxWidth * 0.005;
+                    const selY = (tb ? element.y - viewBoxWidth * 0.005 : element.y - viewBoxWidth * 0.005);
+                    const selW = (tb ? tb.w : element.width) + viewBoxWidth * 0.01;
+                    const selH = (tb ? tb.h : element.height) + viewBoxWidth * 0.01;
+                    return (
+                      <rect
+                        x={selX}
+                        y={selY}
+                        width={selW}
+                        height={selH}
+                        fill="none"
+                        stroke="#d97706"
+                        strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.005}
+                        pointerEvents="none"
+                      />
+                    );
+                  })()}
                   {/* Resize handles */}
                   {(() => {
+                    const tb = element.type === 'text' ? textBounds[element.id] : null;
                     const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
                     const half = hs / 2;
                     const ex = element.x;
                     const ey = element.y;
-                    const ew = element.width;
-                    const eh = element.height;
+                    const ew = tb ? tb.w : element.width;
+                    const eh = tb ? tb.h : element.height;
                     const handles = [
                       { id: 'nw', cx: ex, cy: ey, cursor: 'nwse-resize' },
                       { id: 'n',  cx: ex + ew / 2, cy: ey, cursor: 'ns-resize' },
@@ -390,14 +408,14 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
   );
 }
 
-function renderElement(element: TemplateElement, format: LabelFormat): React.ReactNode {
+function renderElement(element: TemplateElement, format: LabelFormat, onTextMeasure?: (id: string, w: number, h: number) => void): React.ReactNode {
   const transform = element.rotation !== 0
     ? `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`
     : undefined;
 
   switch (element.type) {
     case 'text':
-      return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} />;
+      return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} onMeasure={onTextMeasure} />;
     case 'qr':
       return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} />;
     case 'barcode':
@@ -413,7 +431,8 @@ function renderElement(element: TemplateElement, format: LabelFormat): React.Rea
   }
 }
 
-function TextElementRenderer({ element, transform, format }: { element: TextElement; transform?: string; format: LabelFormat }) {
+function TextElementRenderer({ element, transform, format, onMeasure }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void }) {
+  const textRef = useRef<SVGTextElement>(null);
   const displayContent = element.isStatic
     ? element.content
     : (element.defaultValue || `{{${element.fieldName || 'field'}}}`);
@@ -428,17 +447,27 @@ function TextElementRenderer({ element, transform, format }: { element: TextElem
 
   const color = format.type === 'thermal' ? '#000000' : element.color;
 
-  // Convert font size from points to viewBox units
-  // Sheet: viewBox is in inches, 72pt = 1 inch
-  // Thermal: viewBox is in dots, fontSize in pts needs to scale by DPI/72
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;
   const svgFontSize = isThermal
-    ? element.fontSize * (dpi / 72)   // pts → dots
-    : element.fontSize / 72;           // pts → inches
+    ? element.fontSize * (dpi / 72)
+    : element.fontSize / 72;
+
+  // Measure actual rendered text and report back
+  useEffect(() => {
+    if (textRef.current && onMeasure) {
+      try {
+        const bbox = textRef.current.getBBox();
+        if (bbox.width > 0 && bbox.height > 0) {
+          onMeasure(element.id, bbox.width, bbox.height);
+        }
+      } catch (e) {}
+    }
+  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.id, onMeasure]);
 
   return (
     <text
+      ref={textRef}
       x={x}
       y={element.y + svgFontSize * 0.85}
       fontSize={svgFontSize}
