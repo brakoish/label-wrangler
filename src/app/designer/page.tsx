@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Undo2, Redo2 } from 'lucide-react';
+import { Plus, Undo2, Redo2, Printer, Eye } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { useUndoStore } from '@/lib/undoStore';
@@ -16,6 +16,7 @@ import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { ZPLPreview } from '@/components/designer/ZPLPreview';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
+import { generateZPL } from '@/lib/zplGenerator';
 
 function DesignerContent() {
   const router = useRouter();
@@ -48,6 +49,12 @@ function DesignerContent() {
   const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
   const [testData, setTestData] = useState<Record<string, string>>({});
 
+  // ZPL-as-truth mode: renders the actual Labelary thermal output as the canvas
+  // background so "what you design is what you print". Thermal only.
+  const [useZplAsTruth, setUseZplAsTruth] = useState<boolean>(false);
+  const [zplPreviewUrl, setZplPreviewUrl] = useState<string | null>(null);
+  const [zplLoading, setZplLoading] = useState(false);
+
   // Sync template selection with URL
   useEffect(() => {
     if (templateId && templateId !== selectedTemplateId) {
@@ -60,6 +67,46 @@ function DesignerContent() {
 
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
+
+  // Debounced ZPL preview fetch for ZPL-as-truth mode. Only runs when toggle is on
+  // and format is thermal. Regenerates ZPL whenever elements/format/test data change,
+  // then hits /api/zpl-preview (Labelary) with 500ms debounce.
+  useEffect(() => {
+    if (!useZplAsTruth || !currentTemplate || !currentFormat || currentFormat.type !== 'thermal') {
+      return;
+    }
+    const zpl = generateZPL(currentTemplate, currentFormat, testData);
+    setZplLoading(true);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/zpl-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zpl,
+            width: currentFormat.width,
+            height: currentFormat.height,
+            dpi: currentFormat.dpi || 203,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error('ZPL preview failed');
+        const data = await res.json();
+        setZplPreviewUrl(data.image);
+      } catch (err) {
+        if ((err as any)?.name !== 'AbortError') {
+          console.error('ZPL preview error', err);
+        }
+      } finally {
+        setZplLoading(false);
+      }
+    }, 500);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [useZplAsTruth, currentTemplate, currentFormat, testData]);
 
   // Push undo state before making changes
   const pushUndoState = useCallback(() => {
@@ -365,8 +412,22 @@ function DesignerContent() {
               {currentFormat.name}
             </span>
 
-            {/* Undo/Redo */}
+            {/* ZPL-as-truth toggle (thermal only) + Undo/Redo */}
             <div className="ml-auto flex items-center gap-1">
+              {currentFormat.type === 'thermal' && (
+                <button
+                  onClick={() => setUseZplAsTruth((v) => !v)}
+                  title={useZplAsTruth ? 'Switch to SVG preview (fast)' : 'Switch to ZPL preview (accurate thermal output)'}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors mr-2 ${
+                    useZplAsTruth
+                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                      : 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5 border border-transparent'
+                  }`}
+                >
+                  {useZplAsTruth ? <Printer className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {useZplAsTruth ? 'ZPL' : 'SVG'}
+                </button>
+              )}
               <button
                 onClick={handleUndo}
                 disabled={!canUndo()}
@@ -407,6 +468,9 @@ function DesignerContent() {
             onDragStart={pushUndoState}
             onDragEnd={() => saveTemplate(currentTemplate.id)}
             testData={testData}
+            zplPreviewUrl={zplPreviewUrl}
+            zplPreviewLoading={zplLoading}
+            useZplAsTruth={useZplAsTruth}
           />
           {currentFormat.type === 'thermal' ? (
             <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
