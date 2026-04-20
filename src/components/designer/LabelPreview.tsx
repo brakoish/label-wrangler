@@ -155,6 +155,39 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     const isThermal = format.type === 'thermal';
     const dpi = format.dpi || 203;
 
+    // Multi-select resize: snapshot all selected elements for group scaling
+    const isMultiResize = selectedElementIds.size > 1 && selectedElementIds.has(elementId);
+    const selectedSnapshots = isMultiResize ? new Map(
+      elements
+        .filter((el) => selectedElementIds.has(el.id))
+        .map((el) => [el.id, {
+          x: el.x, y: el.y, width: el.width, height: el.height,
+          fontSize: el.type === 'text' ? (el as any).fontSize : 0,
+          type: el.type,
+        }] as const)
+    ) : null;
+
+    // Compute group bounding box for anchor point
+    let groupBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+    if (selectedSnapshots) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const snap of selectedSnapshots.values()) {
+        minX = Math.min(minX, snap.x);
+        minY = Math.min(minY, snap.y);
+        maxX = Math.max(maxX, snap.x + snap.width);
+        maxY = Math.max(maxY, snap.y + snap.height);
+      }
+      groupBBox = { minX, minY, maxX, maxY };
+    }
+
+    // Determine anchor corner (opposite of the handle being dragged)
+    const anchorX = handle.includes('e') ? groupBBox?.minX ?? origX
+                  : handle.includes('w') ? groupBBox?.maxX ?? (origX + origW)
+                  : groupBBox?.minX ?? origX;
+    const anchorY = handle.includes('s') ? groupBBox?.minY ?? origY
+                  : handle.includes('n') ? groupBBox?.maxY ?? (origY + origH)
+                  : groupBBox?.minY ?? origY;
+
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
@@ -179,7 +212,37 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
         nH = size;
       }
 
-      // Text: corner handles scale font size proportionally
+      // Compute scale factor from primary element
+      const scaleX = origW > 0 ? nW / origW : 1;
+      const scaleY = origH > 0 ? nH / origH : 1;
+      const uniformScale = Math.max(scaleX, scaleY);
+
+      // Multi-select group resize: scale all selected elements proportionally
+      if (isMultiResize && selectedSnapshots && handle.length === 2) {
+        for (const [id, snap] of selectedSnapshots) {
+          // Scale position relative to anchor
+          const relX = snap.x - anchorX;
+          const relY = snap.y - anchorY;
+          const newElX = anchorX + relX * uniformScale;
+          const newElY = anchorY + relY * uniformScale;
+          const newElW = snap.width * uniformScale;
+          const newElH = snap.height * uniformScale;
+
+          if (snap.type === 'text') {
+            const newFs = Math.max(4, Math.round(snap.fontSize * uniformScale * 10) / 10);
+            const svgFs = isThermal ? newFs * (dpi / 72) : newFs / 72;
+            onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: svgFs * 1.2, fontSize: newFs } as any);
+          } else if (snap.type === 'qr') {
+            const qrSize = Math.max(newElW, newElH);
+            onUpdateElement(id, { x: newElX, y: newElY, width: qrSize, height: qrSize });
+          } else {
+            onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: newElH });
+          }
+        }
+        return;
+      }
+
+      // Single element text resize: corner handles scale font size proportionally
       if (isText && handle.length === 2) {
         const scale = Math.max(nW / origW, nH / origH);
         const newFontSize = Math.max(4, Math.round(origFontSize * scale * 10) / 10);
@@ -201,7 +264,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
