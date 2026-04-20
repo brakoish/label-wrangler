@@ -8,19 +8,19 @@ import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, L
 interface LabelPreviewProps {
   format: LabelFormat;
   elements: TemplateElement[];
-  selectedElementId: string | null;
-  onSelectElement: (id: string | null) => void;
+  selectedElementIds: Set<string>;
+  onSelectElement: (id: string | null, addToSelection?: boolean) => void;
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
   testData?: Record<string, string>;
 }
 
-export function LabelPreview({ format, elements, selectedElementId, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
-  const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const [dragging, setDragging] = useState<{ elementId: string; startX: number; startY: number; origPositions: Record<string, { x: number; y: number }> } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [textBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
 
@@ -95,18 +95,27 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const element = elements.find((el) => el.id === elementId);
     if (!element) return;
 
-    onSelectElement(elementId);
+    onSelectElement(elementId, e.shiftKey);
     onDragStart?.();
+
+    // Store original positions of all selected elements (plus the one being dragged)
+    const idsToMove = new Set(selectedElementIds);
+    idsToMove.add(elementId);
+    const origPositions: Record<string, { x: number; y: number }> = {};
+    for (const id of idsToMove) {
+      const el = elements.find((e) => e.id === id);
+      if (el) origPositions[id] = { x: el.x, y: el.y };
+    }
+
     setDragging({
       elementId,
       startX: e.clientX,
       startY: e.clientY,
-      origX: element.x,
-      origY: element.y,
+      origPositions,
     });
 
     (e.target as Element).setPointerCapture(e.pointerId);
-  }, [elements, onSelectElement, onUpdateElement, onDragStart]);
+  }, [elements, onSelectElement, onUpdateElement, onDragStart, selectedElementIds]);
 
   // Resize via window-level listeners (pointer capture on child rects doesn't bubble to SVG)
   const handleResizeDown = useCallback((e: React.PointerEvent, elementId: string, handle: string) => {
@@ -189,11 +198,13 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
     const dy = e.clientY - dragging.startY;
     const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
+    const origPos = dragging.origPositions[dragging.elementId];
+    if (!origPos) return;
     const draggedEl = elements.find((el) => el.id === dragging.elementId);
     if (!draggedEl) return;
 
-    let rawX = dragging.origX + svgDx;
-    let rawY = dragging.origY + svgDy;
+    let rawX = origPos.x + svgDx;
+    let rawY = origPos.y + svgDy;
 
     // Build snap targets from label edges, center, and other elements
     const xTargets: number[] = [0, viewBoxWidth / 2, viewBoxWidth]; // left, center, right of label
@@ -243,8 +254,14 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
 
     setGuides({ x: activeGuideX, y: activeGuideY });
 
-    // No grid rounding — smooth movement, only snap to alignment targets
+    // Move primary dragged element (with snap)
     onUpdateElement(dragging.elementId, { x: rawX, y: rawY });
+
+    // Move other selected elements by the same raw delta (no snap, they follow)
+    for (const [id, orig] of Object.entries(dragging.origPositions)) {
+      if (id === dragging.elementId) continue;
+      onUpdateElement(id, { x: orig.x + svgDx, y: orig.y + svgDy });
+    }
   }, [dragging, onUpdateElement, screenToSvg, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
 
   const handlePointerUp = useCallback(() => {
@@ -301,7 +318,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
             <g
               key={element.id}
               onPointerDown={(e) => handlePointerDown(e, element.id)}
-              onClick={(e) => { e.stopPropagation(); onSelectElement(element.id); }}
+              onClick={(e) => { e.stopPropagation(); onSelectElement(element.id, e.shiftKey); }}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
               {renderElement(element, format, handleTextMeasure, testData)}
@@ -313,7 +330,7 @@ export function LabelPreview({ format, elements, selectedElementId, onSelectElem
                 height={Math.max(element.height, viewBoxHeight * 0.02)}
                 fill="transparent"
               />
-              {selectedElementId === element.id && (
+              {selectedElementIds.has(element.id) && (
                 <>
                   {/* Selection border — use measured bounds for text */}
                   {(() => {

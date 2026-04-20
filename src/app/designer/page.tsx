@@ -42,7 +42,9 @@ function DesignerContent() {
 
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [showAddElementMenu, setShowAddElementMenu] = useState(false);
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Convenience: single selected element for property panel
+  const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
   const [testData, setTestData] = useState<Record<string, string>>({});
 
   // Sync template selection with URL
@@ -315,11 +317,11 @@ function DesignerContent() {
           <ElementList
             elements={currentTemplate.elements}
             selectedElementId={selectedElementId}
-            onSelectElement={setSelectedElementId}
+            onSelectElement={(id) => setSelectedIds(new Set(id ? [id] : []))}
             onDeleteElement={(id) => {
               pushUndoState();
               removeElement(currentTemplate.id, id);
-              if (selectedElementId === id) setSelectedElementId(null);
+              setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
             }}
             onDuplicateElement={(id) => {
               pushUndoState();
@@ -386,8 +388,20 @@ function DesignerContent() {
           <LabelPreview
             format={currentFormat}
             elements={currentTemplate.elements}
-            selectedElementId={selectedElementId}
-            onSelectElement={setSelectedElementId}
+            selectedElementIds={selectedIds}
+            onSelectElement={(id, addToSelection) => {
+              if (id === null) {
+                setSelectedIds(new Set());
+              } else if (addToSelection) {
+                setSelectedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(id)) next.delete(id); else next.add(id);
+                  return next;
+                });
+              } else {
+                setSelectedIds(new Set([id]));
+              }
+            }}
             onUpdateElement={(id, updates) => updateElementLocal(currentTemplate.id, id, updates)}
             onDragStart={pushUndoState}
             onDragEnd={() => saveTemplate(currentTemplate.id)}
