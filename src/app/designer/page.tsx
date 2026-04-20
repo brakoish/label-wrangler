@@ -319,6 +319,10 @@ function DesignerContent() {
           }}
           onMoveElement={handleMoveElement}
           onAddElement={() => setShowAddElementMenu(true)}
+          onBackToTemplates={() => {
+            selectTemplate(null);
+            router.push('/designer');
+          }}
         />
 
         {/* Center Panel - Preview */}

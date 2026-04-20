@@ -1,6 +1,6 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus, ArrowLeft } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 
 interface ElementListProps {
@@ -10,6 +10,7 @@ interface ElementListProps {
   onDeleteElement: (id: string) => void;
   onMoveElement: (id: string, direction: 'up' | 'down') => void;
   onAddElement: () => void;
+  onBackToTemplates?: () => void;
 }
 
 export function ElementList({
@@ -19,6 +20,7 @@ export function ElementList({
   onDeleteElement,
   onMoveElement,
   onAddElement,
+  onBackToTemplates,
 }: ElementListProps) {
   const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
@@ -61,6 +63,19 @@ export function ElementList({
           ))
         )}
       </div>
+
+      {/* Back to templates */}
+      {onBackToTemplates && (
+        <div className="p-4 border-t border-zinc-800/50">
+          <button
+            onClick={onBackToTemplates}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-zinc-400 hover:text-zinc-200 text-sm rounded-xl hover:bg-zinc-800/50 transition-all"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            All Templates
+          </button>
+        </div>
+      )}
     </div>
   );
 }
