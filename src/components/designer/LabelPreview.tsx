@@ -388,9 +388,9 @@ function renderElement(element: TemplateElement, format: LabelFormat): React.Rea
     case 'barcode':
       return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} />;
     case 'line':
-      return <LineElementRenderer key={element.id} element={element as LineElement} transform={transform} />;
+      return <LineElementRenderer key={element.id} element={element as LineElement} transform={transform} format={format} />;
     case 'rectangle':
-      return <RectangleElementRenderer key={element.id} element={element as RectangleElement} transform={transform} />;
+      return <RectangleElementRenderer key={element.id} element={element as RectangleElement} transform={transform} format={format} />;
     case 'image':
       return <ImageElementRenderer key={element.id} element={element as ImageElement} transform={transform} />;
     default:
@@ -548,30 +548,40 @@ function BarcodeElementRenderer({ element, transform }: { element: BarcodeElemen
   );
 }
 
-function LineElementRenderer({ element, transform }: { element: LineElement; transform?: string }) {
+function LineElementRenderer({ element, transform, format }: { element: LineElement; transform?: string; format: LabelFormat }) {
+  // Convert strokeWidth from points to viewBox units
+  const isThermal = format.type === 'thermal';
+  const dpi = format.dpi || 203;
+  const sw = isThermal ? element.strokeWidth * (dpi / 72) : element.strokeWidth / 72;
+
   return (
     <line
       x1={element.x}
       y1={element.y}
       x2={element.x + element.width}
       y2={element.y + element.height}
-      stroke={element.color}
-      strokeWidth={element.strokeWidth}
+      stroke={isThermal ? '#000000' : element.color}
+      strokeWidth={sw}
       transform={transform}
     />
   );
 }
 
-function RectangleElementRenderer({ element, transform }: { element: RectangleElement; transform?: string }) {
+function RectangleElementRenderer({ element, transform, format }: { element: RectangleElement; transform?: string; format: LabelFormat }) {
+  const isThermal = format.type === 'thermal';
+  const dpi = format.dpi || 203;
+  const sw = isThermal ? element.strokeWidth * (dpi / 72) : element.strokeWidth / 72;
+  const br = isThermal ? element.borderRadius * (dpi / 72) : element.borderRadius / 72;
+
   return (
     <rect
       x={element.x}
       y={element.y}
       width={element.width}
       height={element.height}
-      rx={element.borderRadius}
-      stroke={element.strokeColor}
-      strokeWidth={element.strokeWidth}
+      rx={br}
+      stroke={isThermal ? '#000000' : element.strokeColor}
+      strokeWidth={sw}
       fill={element.fillColor || 'none'}
       transform={transform}
     />
