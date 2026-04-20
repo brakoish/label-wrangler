@@ -35,14 +35,38 @@ function MiniElements({ elements, vbW, vbH, format }: { elements: TemplateElemen
         switch (el.type) {
           case 'text': {
             const te = el as TextElement;
-            // Convert font size to viewBox units (same as LabelPreview)
             const fs = isThermal ? te.fontSize * (dpi / 72) : te.fontSize / 72;
+            const lh = fs * (te.lineHeight || 1.2);
             const prefix = (!te.isStatic && te.prefix) ? te.prefix : '';
             const suffix = (!te.isStatic && te.suffix) ? te.suffix : '';
-            const content = te.isStatic ? te.content : (te.defaultValue || te.fieldName || '...');
+            const fullText = `${prefix}${te.isStatic ? te.content : (te.defaultValue || te.fieldName || '...')}${suffix}`;
+
+            // Word wrap (same logic as LabelPreview)
+            const charW = fs * 0.5;
+            const maxCpl = Math.max(1, Math.floor(el.width / charW)) || 999;
+            const lines: string[] = [];
+            if (maxCpl >= fullText.length) {
+              lines.push(fullText);
+            } else {
+              const words = fullText.split(' ');
+              let cur = '';
+              for (const w of words) {
+                const t = cur ? `${cur} ${w}` : w;
+                if (t.length <= maxCpl) { cur = t; } else { if (cur) lines.push(cur); cur = w; }
+              }
+              if (cur) lines.push(cur);
+            }
+
+            let anchor: 'start' | 'middle' | 'end' = 'start';
+            let baseX = el.x;
+            if (te.textAlign === 'center') { anchor = 'middle'; baseX = el.x + el.width / 2; }
+            else if (te.textAlign === 'right') { anchor = 'end'; baseX = el.x + el.width; }
+
             return (
-              <text key={el.id} x={el.x} y={el.y + fs * 0.85} fontSize={fs} fontFamily={te.fontFamily} fill={isThermal ? '#000000' : '#374151'} opacity={0.9}>
-                {`${prefix}${content}${suffix}`}
+              <text key={el.id} fontSize={fs} fontFamily={te.fontFamily} fontWeight={te.fontWeight} textAnchor={anchor} fill={isThermal ? '#000000' : '#374151'} opacity={0.9}>
+                {lines.map((line, i) => (
+                  <tspan key={i} x={baseX} y={el.y + fs * 0.85 + i * lh}>{line}</tspan>
+                ))}
               </text>
             );
           }

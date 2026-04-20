@@ -318,7 +318,6 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
             <g
               key={element.id}
               onPointerDown={(e) => handlePointerDown(e, element.id)}
-              onClick={(e) => { e.stopPropagation(); onSelectElement(element.id, e.shiftKey); }}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
               {renderElement(element, format, handleTextMeasure, testData)}
