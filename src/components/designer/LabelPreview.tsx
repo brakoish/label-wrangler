@@ -447,29 +447,33 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
 
   const lineHeight = svgFontSize * 1.25;
 
-  // Simple word-wrap: split text into lines that fit within element.width
-  // We estimate character width as ~0.6 * fontSize (rough monospace-ish estimate)
-  const charWidth = svgFontSize * 0.55;
-  const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth));
+  // Word-wrap: split text into lines that fit within element.width
+  // Estimate average character width (~0.5× font size for proportional fonts)
+  const charWidth = svgFontSize * 0.5;
+  const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
-  const words = displayContent.split(' ');
-  let currentLine = '';
-  for (const word of words) {
-    const test = currentLine ? `${currentLine} ${word}` : word;
-    if (test.length <= maxCharsPerLine) {
-      currentLine = test;
-    } else {
-      if (currentLine) lines.push(currentLine);
-      // If single word is longer than line, just put it on its own line
-      currentLine = word;
+  if (maxCharsPerLine >= displayContent.length) {
+    // Entire text fits on one line
+    lines.push(displayContent);
+  } else {
+    const words = displayContent.split(' ');
+    let currentLine = '';
+    for (const word of words) {
+      const test = currentLine ? `${currentLine} ${word}` : word;
+      if (test.length <= maxCharsPerLine) {
+        currentLine = test;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+      }
     }
+    if (currentLine) lines.push(currentLine);
   }
-  if (currentLine) lines.push(currentLine);
 
-  // Max lines that fit in the element height
-  const maxLines = Math.max(1, Math.floor(element.height / lineHeight));
-  const visibleLines = lines.slice(0, maxLines);
+  // Always show at least 1 line, even if the box is smaller than the font
+  const maxLines = Math.max(1, Math.floor(element.height / lineHeight) || 1);
+  const visibleLines = lines.length > 0 ? lines.slice(0, maxLines) : [displayContent];
 
   let textAnchor: 'start' | 'middle' | 'end' = 'start';
   if (element.textAlign === 'center') textAnchor = 'middle';
