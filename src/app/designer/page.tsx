@@ -78,6 +78,8 @@ function DesignerContent() {
     const zpl = generateZPL(currentTemplate, currentFormat, testData);
     setZplLoading(true);
     const controller = new AbortController();
+    // 800ms debounce keeps us comfortably under Labelary's 5 req/sec free-tier cap
+    // even when users are actively dragging/resizing.
     const timer = setTimeout(async () => {
       try {
         const res = await fetch('/api/zpl-preview', {
@@ -101,7 +103,7 @@ function DesignerContent() {
       } finally {
         setZplLoading(false);
       }
-    }, 500);
+    }, 800);
     return () => {
       controller.abort();
       clearTimeout(timer);
@@ -472,8 +474,10 @@ function DesignerContent() {
             zplPreviewLoading={zplLoading}
             useZplAsTruth={useZplAsTruth}
           />
+          {/* Hide bottom ZPL preview when ZPL-as-truth is active — it's redundant
+              and would double our Labelary API usage (triggering 429 rate limits). */}
           {currentFormat.type === 'thermal' ? (
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
+            !useZplAsTruth && <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
           ) : (
             <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
           )}

@@ -450,9 +450,10 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
               onPointerDown={(e) => handlePointerDown(e, element.id)}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
-              {/* When using ZPL as truth, only render the SVG element during active drag
-                  (so the user gets instant feedback); otherwise keep SVG rendering to stay visible. */}
-              {(!useZplAsTruth || dragging?.elementId === element.id || selectedElementIds.has(element.id)) &&
+              {/* When using ZPL as truth, only render the SVG element during active drag/resize
+                  (so the user gets instant feedback while the ZPL background is stale);
+                  otherwise hide SVG entirely and let the ZPL render speak for itself. */}
+              {(!useZplAsTruth || dragging !== null) &&
                 renderElement(element, format, handleTextMeasure, testData, useZplAsTruth)}
               {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
               <rect
