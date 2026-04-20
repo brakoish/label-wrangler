@@ -445,7 +445,7 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
     ? element.fontSize * (dpi / 72)
     : element.fontSize / 72;
 
-  const lineHeight = svgFontSize * 1.25;
+  const lineHeight = svgFontSize * (element.lineHeight || 1.2);
 
   // Word-wrap: split text into lines that fit within element.width
   // Estimate average character width (~0.5× font size for proportional fonts)

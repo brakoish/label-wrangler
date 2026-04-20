@@ -152,8 +152,9 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
         rows={3}
         className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:outline-none focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-600"
       />
-      <div className="grid grid-cols-2 gap-1">
+      <div className="grid grid-cols-3 gap-1">
         <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
+        <CompactInput label="LH" value={element.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
         <CompactSelect value={element.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
       </div>
       <CompactSelect value={element.fontFamily} options={['Arial', 'Helvetica', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />

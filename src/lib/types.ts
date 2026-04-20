@@ -121,6 +121,7 @@ export interface TextElement extends TemplateElementBase {
   fontWeight: "normal" | "bold";
   textAlign: TextAlign;
   color: string;         // hex color (only used for sheet, ignored for thermal)
+  lineHeight: number;    // multiplier (e.g. 1.2 = 120%)
 }
 
 // QR Code element
