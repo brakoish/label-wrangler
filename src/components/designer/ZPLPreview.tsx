@@ -43,11 +43,15 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       // No network, no rate limits. 8MB WASM is lazy-loaded once and cached.
       const api = await getLocalZplApi();
       // Our format stores width/height in inches. Convert to mm (1 inch = 25.4 mm).
-      // dpmm: 203 DPI ≈ 8 dots/mm (203 / 25.4); 300 DPI ≈ 11.8.
+      // Native dpmm: 203 DPI ≈ 8 dots/mm; 300 DPI ≈ 11.8.
+      // We render at 3x the native resolution for a crisp on-screen preview;
+      // the printer will rasterize at native resolution when printing, so this
+      // upscale is purely cosmetic for the UI.
       const widthMm = format.width * 25.4;
       const heightMm = format.height * 25.4;
-      const dpmm = Math.round((format.dpi || 203) / 25.4);
-      const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
+      const nativeDpmm = (format.dpi || 203) / 25.4;
+      const renderDpmm = Math.round(nativeDpmm * 3);
+      const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, renderDpmm);
       setPreviewUrl(`data:image/png;base64,${base64}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed');
@@ -119,12 +123,11 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
               alt="ZPL Preview"
               className="max-w-full max-h-full rounded-lg border border-zinc-700/50 bg-white"
               style={{
-                imageRendering: 'pixelated',
+                // Rendered at 3× native DPI so default browser smoothing gives
+                // a crisp look without visible pixelation.
+                imageRendering: 'auto',
                 objectFit: 'contain',
                 maxHeight: '100%',
-                // Boost apparent size: display at 2x natural pixel dimensions so
-                // a 203-DPI label renders at roughly 0.5x real-world size instead
-                // of the tiny native PNG.
                 minHeight: '200px',
               }}
             />
