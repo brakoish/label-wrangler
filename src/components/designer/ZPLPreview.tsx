@@ -117,18 +117,21 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             {error}
           </div>
         ) : previewUrl ? (
-          <div className="relative max-w-full max-h-full">
+          <div className="relative max-w-full max-h-full inline-block">
+            {/* Image sizes to its own aspect ratio; parent flex centers it.
+                No bg color so we don't paint phantom whitespace around
+                short-and-wide labels. */}
             <img
               src={previewUrl}
               alt="ZPL Preview"
-              className="max-w-full max-h-full rounded-lg border border-zinc-700/50 bg-white"
+              className="rounded-lg border border-zinc-700/50"
               style={{
-                // Rendered at 3× native DPI so default browser smoothing gives
-                // a crisp look without visible pixelation.
                 imageRendering: 'auto',
-                objectFit: 'contain',
+                display: 'block',
+                maxWidth: '100%',
                 maxHeight: '100%',
-                minHeight: '200px',
+                height: 'auto',
+                width: 'auto',
               }}
             />
             {loading && (
