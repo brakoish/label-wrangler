@@ -670,8 +670,9 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
 
   const effectiveFontFamily = element.fontFamily;
 
-  // Word-wrap: estimate average character width (~0.5× font size for proportional fonts)
-  const charWidth = svgFontSize * 0.5;
+  // Word-wrap: use 0.6× for thermal (matches ZPL's fixed fontW = fontH * 0.6)
+  // and 0.5× for sheet labels (proportional Arial avg).
+  const charWidth = svgFontSize * (isThermal ? 0.6 : 0.5);
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -727,15 +728,26 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
       fill={color}
       transform={transform}
     >
-      {visibleLines.map((line, i) => (
-        <tspan
-          key={i}
-          x={baseX}
-          y={element.y + svgFontSize * 0.85 + i * lineHeight}
-        >
-          {line}
-        </tspan>
-      ))}
+      {visibleLines.map((line, i) => {
+        // For thermal labels, force SVG text to render at ZPL's fixed character width
+        // (fontW = fontH * 0.6). This makes the live preview match the actual thermal
+        // output width-wise so overlapping layouts in ZPL also appear overlapped in SVG,
+        // and comfortable layouts look comfortable. lengthAdjust="spacingAndGlyphs" scales
+        // glyphs horizontally when needed.
+        const zplCharW = svgFontSize * 0.6;
+        const forcedLen = isThermal ? line.length * zplCharW : undefined;
+        return (
+          <tspan
+            key={i}
+            x={baseX}
+            y={element.y + svgFontSize * 0.85 + i * lineHeight}
+            textLength={forcedLen}
+            lengthAdjust={forcedLen ? 'spacingAndGlyphs' : undefined}
+          >
+            {line}
+          </tspan>
+        );
+      })}
     </text>
   );
 }
