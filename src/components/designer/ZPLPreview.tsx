@@ -11,6 +11,19 @@ interface ZPLPreviewProps {
   testData?: Record<string, string>;
 }
 
+// Module-level cache for the WASM ZPL renderer API.
+// Lazy-loaded on first ZPLPreview mount to avoid ~8MB bundle cost on page load.
+let zplApiPromise: Promise<{ zplToBase64Async: (zpl: string, widthMm?: number, heightMm?: number, dpmm?: number) => Promise<string> }> | null = null;
+async function getLocalZplApi() {
+  if (!zplApiPromise) {
+    zplApiPromise = import('zpl-renderer-js').then(async (m) => {
+      const { api } = await m.ready;
+      return api;
+    });
+  }
+  return zplApiPromise;
+}
+
 export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,24 +39,16 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
     setError(null);
 
     try {
-      const res = await fetch('/api/zpl-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          zpl,
-          width: format.width,
-          height: format.height,
-          dpi: format.dpi || 203,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Preview failed');
-      }
-
-      const data = await res.json();
-      setPreviewUrl(data.image);
+      // Render ZPL → PNG entirely in the browser via zpl-renderer-js (Zebrash WASM).
+      // No network, no rate limits. 8MB WASM is lazy-loaded once and cached.
+      const api = await getLocalZplApi();
+      // Our format stores width/height in inches. Convert to mm (1 inch = 25.4 mm).
+      // dpmm: 203 DPI ≈ 8 dots/mm (203 / 25.4); 300 DPI ≈ 11.8.
+      const widthMm = format.width * 25.4;
+      const heightMm = format.height * 25.4;
+      const dpmm = Math.round((format.dpi || 203) / 25.4);
+      const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
+      setPreviewUrl(`data:image/png;base64,${base64}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed');
     } finally {
@@ -51,11 +56,12 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
     }
   }, [zpl, format]);
 
-  // Auto-fetch on mount and when ZPL changes (debounced)
+  // Auto-fetch on mount and when ZPL changes. Local WASM — tighter 200ms debounce
+  // is fine since there's no network or rate limit.
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchPreview();
-    }, 800); // Debounce 800ms
+    }, 200);
 
     return () => clearTimeout(timer);
   }, [fetchPreview]);
@@ -67,7 +73,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       <div className="flex items-center gap-2 mb-2">
         <Printer className="w-3.5 h-3.5 text-amber-400" />
         <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">ZPL Preview</span>
-        <span className="text-[10px] text-zinc-600">Actual thermal output</span>
+        <span className="text-[10px] text-zinc-600">Local render — actual thermal output</span>
 
         <div className="ml-auto flex items-center gap-1">
           <button
