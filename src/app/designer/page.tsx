@@ -33,6 +33,7 @@ function DesignerContent() {
     saveTemplate,
     removeElement,
     reorderElement,
+    duplicateElement,
   } = useTemplateStore();
 
   const { getFormatById } = useFormatStore();
@@ -316,6 +317,10 @@ function DesignerContent() {
             pushUndoState();
             removeElement(currentTemplate.id, id);
             if (selectedElementId === id) setSelectedElementId(null);
+          }}
+          onDuplicateElement={(id) => {
+            pushUndoState();
+            duplicateElement(currentTemplate.id, id);
           }}
           onMoveElement={handleMoveElement}
           onAddElement={() => setShowAddElementMenu(true)}

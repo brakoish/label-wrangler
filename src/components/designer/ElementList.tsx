@@ -1,6 +1,6 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus, ArrowLeft } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus, ArrowLeft, Copy } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 
 interface ElementListProps {
@@ -8,6 +8,7 @@ interface ElementListProps {
   selectedElementId: string | null;
   onSelectElement: (id: string) => void;
   onDeleteElement: (id: string) => void;
+  onDuplicateElement: (id: string) => void;
   onMoveElement: (id: string, direction: 'up' | 'down') => void;
   onAddElement: () => void;
   onBackToTemplates?: () => void;
@@ -18,6 +19,7 @@ export function ElementList({
   selectedElementId,
   onSelectElement,
   onDeleteElement,
+  onDuplicateElement,
   onMoveElement,
   onAddElement,
   onBackToTemplates,
@@ -55,6 +57,7 @@ export function ElementList({
               isSelected={selectedElementId === element.id}
               onSelect={() => onSelectElement(element.id)}
               onDelete={() => onDeleteElement(element.id)}
+              onDuplicate={() => onDuplicateElement(element.id)}
               onMoveUp={() => onMoveElement(element.id, 'up')}
               onMoveDown={() => onMoveElement(element.id, 'down')}
               canMoveUp={element.zIndex < Math.max(...elements.map((e) => e.zIndex))}
@@ -85,6 +88,7 @@ function ElementItem({
   isSelected,
   onSelect,
   onDelete,
+  onDuplicate,
   onMoveUp,
   onMoveDown,
   canMoveUp,
@@ -94,6 +98,7 @@ function ElementItem({
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   canMoveUp: boolean;
@@ -157,8 +162,16 @@ function ElementItem({
           </button>
         </div>
         <button
+          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+          className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors"
+          title="Duplicate"
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+        <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"
+          title="Delete"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
