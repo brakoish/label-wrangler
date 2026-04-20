@@ -408,9 +408,10 @@ function DesignerContent() {
             onDragEnd={() => saveTemplate(currentTemplate.id)}
             testData={testData}
           />
-          <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
-          {currentFormat.type === 'thermal' && (
+          {currentFormat.type === 'thermal' ? (
             <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
+          ) : (
+            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
           )}
         </div>
 
