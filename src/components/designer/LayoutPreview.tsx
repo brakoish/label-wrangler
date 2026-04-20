@@ -14,19 +14,35 @@ export function LayoutPreview({ format, elements }: LayoutPreviewProps) {
   return <RollLayout format={format} elements={elements} />;
 }
 
+// Get the viewBox dimensions for the label content (matches LabelPreview)
+function getLabelViewBox(format: LabelFormat) {
+  const isThermal = format.type === 'thermal';
+  const dpi = format.dpi || 203;
+  return {
+    vbW: isThermal ? format.width * dpi : format.width,
+    vbH: isThermal ? format.height * dpi : format.height,
+  };
+}
+
 // Renders a simplified version of the label content (for tiling)
-function MiniElements({ elements, vbW, vbH }: { elements: TemplateElement[]; vbW: number; vbH: number }) {
+function MiniElements({ elements, vbW, vbH, format }: { elements: TemplateElement[]; vbW: number; vbH: number; format: LabelFormat }) {
   const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+  const isThermal = format.type === 'thermal';
+  const dpi = format.dpi || 203;
   return (
     <>
       {sorted.map((el) => {
         switch (el.type) {
           case 'text': {
             const te = el as TextElement;
-            const fs = te.fontSize / 72; // pts to inches (always inches in this mini view)
+            // Convert font size to viewBox units (same as LabelPreview)
+            const fs = isThermal ? te.fontSize * (dpi / 72) : te.fontSize / 72;
+            const prefix = (!te.isStatic && te.prefix) ? te.prefix : '';
+            const suffix = (!te.isStatic && te.suffix) ? te.suffix : '';
+            const content = te.isStatic ? te.content : (te.defaultValue || te.fieldName || '...');
             return (
-              <text key={el.id} x={el.x} y={el.y + fs * 0.85} fontSize={fs} fontFamily={(el as TextElement).fontFamily} fill="#374151" opacity={0.8}>
-                {te.isStatic ? te.content : (te.defaultValue || te.fieldName || '...')}
+              <text key={el.id} x={el.x} y={el.y + fs * 0.85} fontSize={fs} fontFamily={te.fontFamily} fill={isThermal ? '#000000' : '#374151'} opacity={0.9}>
+                {`${prefix}${content}${suffix}`}
               </text>
             );
           }
@@ -46,7 +62,8 @@ function MiniElements({ elements, vbW, vbH }: { elements: TemplateElement[]; vbW
   );
 }
 
-function SheetLayout({ format, elements }: { format: LabelFormat; elements: TemplateElement[] }) {
+function SheetLayout({ format, elements }: LayoutPreviewProps) {
+  const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const cols = format.columns || 1;
   const rows = format.rows || 1;
   const sheetW = format.sheetWidth || 8.5;
@@ -85,8 +102,8 @@ function SheetLayout({ format, elements }: { format: LabelFormat; elements: Temp
               return (
                 <g key={`${row}-${col}`}>
                   <rect x={x} y={y} width={labelW} height={labelH} fill="#ffffff" stroke="#e5e7eb" strokeWidth={0.01} />
-                  <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${labelW} ${labelH}`}>
-                    <MiniElements elements={elements} vbW={labelW} vbH={labelH} />
+                  <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${contentW} ${contentH}`} preserveAspectRatio="xMidYMid meet">
+                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} />
                   </svg>
                 </g>
               );
@@ -98,7 +115,8 @@ function SheetLayout({ format, elements }: { format: LabelFormat; elements: Temp
   );
 }
 
-function RollLayout({ format, elements }: { format: LabelFormat; elements: TemplateElement[] }) {
+function RollLayout({ format, elements }: LayoutPreviewProps) {
+  const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const across = format.labelsAcross || 1;
   const labelW = format.width;
   const labelH = format.height;
@@ -136,8 +154,8 @@ function RollLayout({ format, elements }: { format: LabelFormat; elements: Templ
               return (
                 <g key={`${row}-${col}`}>
                   <rect x={x} y={y} width={labelW} height={labelH} fill="#ffffff" stroke="#d1d5db" strokeWidth={linerW * 0.003} />
-                  <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${labelW} ${labelH}`}>
-                    <MiniElements elements={elements} vbW={labelW} vbH={labelH} />
+                  <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${contentW} ${contentH}`} preserveAspectRatio="xMidYMid meet">
+                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} />
                   </svg>
                 </g>
               );
