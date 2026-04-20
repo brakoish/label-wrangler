@@ -432,18 +432,10 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
 }
 
 function TextElementRenderer({ element, transform, format, onMeasure }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void }) {
-  const textRef = useRef<SVGTextElement>(null);
+  const foRef = useRef<SVGForeignObjectElement>(null);
   const displayContent = element.isStatic
     ? element.content
     : (element.defaultValue || `{{${element.fieldName || 'field'}}}`);
-
-  let textAnchor: 'start' | 'middle' | 'end' = 'start';
-  if (element.textAlign === 'center') textAnchor = 'middle';
-  else if (element.textAlign === 'right') textAnchor = 'end';
-
-  let x = element.x;
-  if (element.textAlign === 'center') x += element.width / 2;
-  else if (element.textAlign === 'right') x += element.width;
 
   const color = format.type === 'thermal' ? '#000000' : element.color;
 
@@ -453,32 +445,54 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
     ? element.fontSize * (dpi / 72)
     : element.fontSize / 72;
 
-  // Measure actual rendered text and report back
+  // Report measured height for selection box
   useEffect(() => {
-    if (textRef.current && onMeasure) {
-      try {
-        const bbox = textRef.current.getBBox();
-        if (bbox.width > 0 && bbox.height > 0) {
-          onMeasure(element.id, bbox.width, bbox.height);
-        }
-      } catch (e) {}
+    if (foRef.current && onMeasure) {
+      // Measure the inner div
+      const div = foRef.current.querySelector('div');
+      if (div) {
+        const scrollH = div.scrollHeight;
+        // Convert pixel height back to viewBox units
+        const fo = foRef.current;
+        const foHeight = parseFloat(fo.getAttribute('height') || '0');
+        const foClientH = fo.clientHeight || 1;
+        const scale = foHeight / foClientH;
+        const actualH = scrollH * scale;
+        onMeasure(element.id, element.width, Math.max(actualH, element.height));
+      }
     }
-  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.id, onMeasure]);
+  });
 
   return (
-    <text
-      ref={textRef}
-      x={x}
-      y={element.y + svgFontSize * 0.85}
-      fontSize={svgFontSize}
-      fontFamily={element.fontFamily}
-      fontWeight={element.fontWeight}
-      textAnchor={textAnchor}
-      fill={color}
+    <foreignObject
+      ref={foRef}
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
       transform={transform}
+      style={{ overflow: 'hidden' }}
     >
-      {displayContent}
-    </text>
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          fontSize: svgFontSize,
+          fontFamily: element.fontFamily,
+          fontWeight: element.fontWeight,
+          color: color,
+          textAlign: element.textAlign,
+          lineHeight: 1.2,
+          wordWrap: 'break-word',
+          overflowWrap: 'break-word',
+          overflow: 'hidden',
+          padding: 0,
+          margin: 0,
+        }}
+      >
+        {displayContent}
+      </div>
+    </foreignObject>
   );
 }
 
