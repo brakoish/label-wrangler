@@ -122,10 +122,12 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
           <div className="space-y-1">
             <CompactTextInput label="Field" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
             <CompactTextInput label="Default" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Preview..." />
-            <div className="grid grid-cols-2 gap-1">
-              <CompactTextInput label="Pre" value={element.prefix || ''} onChange={(v) => onUpdate({ prefix: v })} placeholder="SKU: " />
-              <CompactTextInput label="Suf" value={element.suffix || ''} onChange={(v) => onUpdate({ suffix: v })} placeholder=" oz" />
-            </div>
+            {element.type === 'text' && (
+              <div className="grid grid-cols-2 gap-1">
+                <CompactTextInput label="Pre" value={element.prefix || ''} onChange={(v) => onUpdate({ prefix: v })} placeholder="SKU: " />
+                <CompactTextInput label="Suf" value={element.suffix || ''} onChange={(v) => onUpdate({ suffix: v })} placeholder=" oz" />
+              </div>
+            )}
           </div>
         )}
 
