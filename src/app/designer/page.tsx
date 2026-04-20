@@ -14,6 +14,7 @@ import { ElementList } from '@/components/designer/ElementList';
 import { TemplateList, NewTemplateDialog } from '@/components/designer/TemplateList';
 import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
+import { ZPLPreview } from '@/components/designer/ZPLPreview';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
 
 function DesignerContent() {
@@ -408,6 +409,9 @@ function DesignerContent() {
             testData={testData}
           />
           <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
+          {currentFormat.type === 'thermal' && (
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
+          )}
         </div>
 
         {/* Right Panel - Properties */}
