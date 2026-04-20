@@ -192,9 +192,10 @@ function DesignerContent() {
     const defaultY = Math.round((labelH * 0.05) * 100) / 100;
 
     // Font size proportional to label
+    // Sheet: ~10-14pt for readability. Thermal: proportional to dots.
     const defaultFontSize = isThermal
       ? Math.max(8, Math.round(unit * 0.06))
-      : Math.max(6, Math.round(unit * 30)); // ~30pt per inch for readability
+      : Math.max(6, Math.min(14, Math.round(unit * 12))); // cap at 14pt for sheet labels
 
     // Stroke width proportional
     const defaultStroke = isThermal ? Math.max(1, Math.round(unit * 0.005)) : Math.round(unit * 0.01 * 100) / 100;
@@ -221,7 +222,10 @@ function DesignerContent() {
           fontWeight: 'normal',
           textAlign: 'left',
           color: '#000000',
-          height: isThermal ? defaultFontSize * 1.5 : defaultFontSize / 72, // convert pt to inches roughly
+          // Height: enough for 2 lines of text
+          height: isThermal ? defaultFontSize * 3 : (defaultFontSize / 72) * 2.5,
+          // Width: at least 60% of label width for text
+          width: Math.round((labelW * 0.6) * 100) / 100,
         };
         break;
       case 'qr': {

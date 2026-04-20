@@ -515,27 +515,22 @@ function TextElementRenderer({ element, transform, format, onMeasure }: { elemen
 }
 
 function QRElementRenderer({ element, transform }: { element: QRElement; transform?: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dataUrl, setDataUrl] = useState<string>('');
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Always render at a fixed high-res pixel size — the SVG <image> handles scaling
-    QRCode.toCanvas(canvas, element.content || 'QR', {
+    // Use toDataURL instead of toCanvas — canvas elements can't exist inside SVG
+    QRCode.toDataURL(element.content || 'QR', {
       errorCorrectionLevel: element.errorCorrection,
       width: 256,
       margin: 0,
       color: { dark: '#000000', light: '#ffffff' },
-    }).then(() => {
-      setDataUrl(canvas.toDataURL());
+    }).then((url: string) => {
+      setDataUrl(url);
     }).catch(() => {});
   }, [element.content, element.errorCorrection]);
 
   return (
     <>
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
       {dataUrl ? (
         <image
           x={element.x}
