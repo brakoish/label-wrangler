@@ -413,11 +413,20 @@ function TextElementRenderer({ element, transform, format }: { element: TextElem
 
   const color = format.type === 'thermal' ? '#000000' : element.color;
 
+  // Convert font size from points to viewBox units
+  // Sheet: viewBox is in inches, 72pt = 1 inch
+  // Thermal: viewBox is in dots, fontSize in pts needs to scale by DPI/72
+  const isThermal = format.type === 'thermal';
+  const dpi = format.dpi || 203;
+  const svgFontSize = isThermal
+    ? element.fontSize * (dpi / 72)   // pts → dots
+    : element.fontSize / 72;           // pts → inches
+
   return (
     <text
       x={x}
-      y={element.y + element.fontSize}
-      fontSize={element.fontSize}
+      y={element.y + svgFontSize * 0.85}
+      fontSize={svgFontSize}
       fontFamily={element.fontFamily}
       fontWeight={element.fontWeight}
       textAnchor={textAnchor}
