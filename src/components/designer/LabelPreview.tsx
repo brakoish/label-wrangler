@@ -433,9 +433,12 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
 
 function TextElementRenderer({ element, transform, format, onMeasure }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void }) {
   const textRef = useRef<SVGTextElement>(null);
-  const displayContent = element.isStatic
+  const rawContent = element.isStatic
     ? element.content
     : (element.defaultValue || `{{${element.fieldName || 'field'}}}`);
+  const prefix = (!element.isStatic && element.prefix) ? element.prefix : '';
+  const suffix = (!element.isStatic && element.suffix) ? element.suffix : '';
+  const displayContent = `${prefix}${rawContent}${suffix}`;
 
   const color = format.type === 'thermal' ? '#000000' : element.color;
 
