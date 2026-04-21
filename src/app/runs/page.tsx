@@ -1,0 +1,225 @@
+'use client';
+
+import Link from 'next/link';
+import { Plus, Printer, Clock, Trash2, Copy, Play } from 'lucide-react';
+import { AppShell } from '@/components/AppShell';
+import { useRunStore } from '@/lib/runStore';
+import { useTemplateStore } from '@/lib/templateStore';
+import { useFormatStore } from '@/lib/store';
+import type { Run, RunPreset, RunStatus } from '@/lib/types';
+
+const STATUS_STYLES: Record<RunStatus, string> = {
+  draft: 'bg-zinc-800/60 text-zinc-400 border-zinc-700/50',
+  queued: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  printing: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  paused: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  completed: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  cancelled: 'bg-red-500/10 text-red-400 border-red-500/20',
+};
+
+function formatDate(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+export default function RunsPage() {
+  const { runs, presets, deleteRun, deletePreset } = useRunStore();
+  const { templates } = useTemplateStore();
+  const { formats } = useFormatStore();
+
+  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? 'Deleted template';
+  const formatName = (templateId: string) => {
+    const t = templates.find((x) => x.id === templateId);
+    if (!t) return '';
+    return formats.find((f) => f.id === t.formatId)?.name ?? '';
+  };
+
+  return (
+    <AppShell
+      headerAction={
+        <Link
+          href="/runs/new"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+        >
+          <Plus className="w-3.5 h-3.5" /> New Run
+        </Link>
+      }
+    >
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-[1600px] mx-auto w-full p-8 space-y-8">
+          {/* Presets section */}
+          <section>
+            <div className="flex items-baseline justify-between mb-4">
+              <h2 className="text-lg font-semibold text-zinc-100">Saved Presets</h2>
+              <span className="text-xs text-zinc-500">Reusable recipes for recurring batches</span>
+            </div>
+            {presets.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center">
+                <p className="text-sm text-zinc-500">No presets yet. Save one from a run to reuse its template and static values.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {presets.map((p) => (
+                  <PresetCard
+                    key={p.id}
+                    preset={p}
+                    templateName={templateName(p.templateId)}
+                    formatName={formatName(p.templateId)}
+                    onDelete={() => {
+                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Recent runs */}
+          <section>
+            <div className="flex items-baseline justify-between mb-4">
+              <h2 className="text-lg font-semibold text-zinc-100">Recent Runs</h2>
+              <span className="text-xs text-zinc-500">
+                {runs.length === 0 ? 'None yet' : `${runs.length} total`}
+              </span>
+            </div>
+            {runs.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
+                <Printer className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
+                <h3 className="text-zinc-300 font-semibold">Start your first run</h3>
+                <p className="text-sm text-zinc-500 mt-1 mb-4">
+                  Pick a template, fill in batch info, paste your METRC URLs, and print.
+                </p>
+                <Link
+                  href="/runs/new"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all"
+                >
+                  <Plus className="w-4 h-4" /> New Run
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {runs.map((r) => (
+                  <RunRow
+                    key={r.id}
+                    run={r}
+                    templateName={templateName(r.templateId)}
+                    formatName={formatName(r.templateId)}
+                    onDelete={() => {
+                      if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+function PresetCard({
+  preset,
+  templateName,
+  formatName,
+  onDelete,
+}: {
+  preset: RunPreset;
+  templateName: string;
+  formatName: string;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="glass rounded-2xl p-5 border border-zinc-800 hover:border-amber-500/30 transition-all group">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors">{preset.name}</h3>
+          <p className="text-xs text-zinc-500 mt-0.5 truncate">{templateName} {formatName && <span className="text-zinc-600">\u00b7 {formatName}</span>}</p>
+        </div>
+        <button
+          onClick={onDelete}
+          className="p-1 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          title="Delete preset"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="flex items-center gap-3 text-[10px] text-zinc-500 mt-3">
+        {preset.useCount > 0 && <span>Used {preset.useCount}\u00d7</span>}
+        {preset.lastUsedAt && <span>Last used {formatDate(preset.lastUsedAt)}</span>}
+      </div>
+      <Link
+        href={`/runs/new?presetId=${preset.id}`}
+        className="mt-4 flex items-center justify-center gap-1.5 w-full py-2 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors"
+      >
+        <Play className="w-3.5 h-3.5" /> Use preset
+      </Link>
+    </div>
+  );
+}
+
+function RunRow({
+  run,
+  templateName,
+  formatName,
+  onDelete,
+}: {
+  run: Run;
+  templateName: string;
+  formatName: string;
+  onDelete: () => void;
+}) {
+  const pct = run.totalLabels > 0 ? Math.round((run.printedCount / run.totalLabels) * 100) : 0;
+  return (
+    <Link
+      href={`/runs/${run.id}`}
+      className="flex items-center gap-4 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors">{run.name}</h3>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_STYLES[run.status] || STATUS_STYLES.draft}`}>
+            {run.status}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+          <span>{templateName}</span>
+          {formatName && <span className="text-zinc-600">{formatName}</span>}
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3" /> {formatDate(run.createdAt)}
+          </span>
+        </div>
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <div className="text-sm font-semibold text-zinc-200 tabular-nums">
+          {run.printedCount} / {run.totalLabels}
+        </div>
+        <div className="w-24 h-1 rounded-full bg-zinc-800 mt-1 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 to-amber-400"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          title="Delete run"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {/* Suppress unused Copy import warning \u2014 Copy is reserved for a v2 duplicate-run action. */}
+      <Copy className="w-0 h-0" />
+    </Link>
+  );
+}

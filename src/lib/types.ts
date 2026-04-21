@@ -184,3 +184,45 @@ export interface LabelTemplate {
   createdAt: string;
   updatedAt: string;
 }
+// ---------------------------------------------------------------------------
+// Runs & Presets
+// ---------------------------------------------------------------------------
+
+/** Reusable recipe for a repeating batch print job.
+ *  Captures the template + static field defaults + CSV column mapping so
+ *  the user can spin up a new Run without re-entering everything. */
+export interface RunPreset {
+  id: string;
+  name: string;
+  templateId: string;
+  staticDefaults: Record<string, string>;
+  mappedField: string | null;  // template dynamic field that receives the variable list
+  csvColumn: string | null;     // CSV header to pull values from
+  lastUsedAt: string | null;
+  useCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RunStatus = 'draft' | 'queued' | 'printing' | 'paused' | 'completed' | 'cancelled';
+export type RunDataSource = 'paste' | 'csv' | 'manual';
+
+/** One execution of a print run. */
+export interface Run {
+  id: string;
+  name: string;
+  templateId: string;
+  presetId: string | null;
+  staticValues: Record<string, string>;
+  dataSource: RunDataSource;
+  /** Ordered list of variable values — one per label to print. */
+  sourceData: string[];
+  mappedField: string | null;
+  status: RunStatus;
+  totalLabels: number;
+  printedCount: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}

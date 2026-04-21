@@ -13,6 +13,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
   const pathname = usePathname();
   const isFormats = pathname === '/';
   const isDesigner = pathname === '/designer' || pathname.startsWith('/designer');
+  const isRuns = pathname === '/runs' || pathname.startsWith('/runs');
 
   return (
     <div className="h-screen flex flex-col bg-[#0c0c0e]">
@@ -58,6 +59,16 @@ export function AppShell({ children, headerAction }: AppShellProps) {
                 }`}
               >
                 Designer
+              </Link>
+              <Link
+                href="/runs"
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  isRuns
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                Runs
               </Link>
             </nav>
 
