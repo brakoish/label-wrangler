@@ -3,32 +3,52 @@ import { LabelFormat, LabelTemplate, TemplateElement, TextElement, QRElement, Ba
 /**
  * Generate ZPL II commands from a label template.
  * Positions are in dots (element coordinates should already be in dots for thermal formats).
+ *
+ * For multi-across rolls (format.labelsAcross > 1), we emit one ^XA..^XZ
+ * whose print width covers the full liner width, and every element is drawn
+ * N times — once per across-lane, each shifted by (labelW + gap) dots plus
+ * the side margin. This is how Zebra printers natively handle multi-across
+ * rolls, so the preview and the actual printout match.
  */
 export function generateZPL(template: LabelTemplate, format: LabelFormat, fieldValues?: Record<string, string>): string {
   const dpi = format.dpi || 203;
-  const widthDots = Math.round(format.width * dpi);
+  const labelWDots = Math.round(format.width * dpi);
   const heightDots = Math.round(format.height * dpi);
+  const across = Math.max(1, format.labelsAcross || 1);
+  const gapDots = Math.round((format.horizontalGapThermal || 0) * dpi);
+  const sideMDots = Math.round((format.sideMarginThermal || 0) * dpi);
+  // Total liner width in dots. If the user set linerWidth explicitly, use it;
+  // otherwise compute from across + gaps + margins so the preview matches the
+  // physical roll exactly.
+  const computedLinerDots = sideMDots * 2 + across * labelWDots + (across - 1) * gapDots;
+  const linerDots = format.linerWidth
+    ? Math.round(format.linerWidth * dpi)
+    : computedLinerDots;
+  // Effective side margin: if no explicit margin was set but a liner width was,
+  // center the label group on the liner (matches LayoutPreview behavior).
+  const effectiveSideMDots = (format.sideMarginThermal && format.sideMarginThermal > 0)
+    ? sideMDots
+    : Math.max(0, Math.round((linerDots - (across * labelWDots + (across - 1) * gapDots)) / 2));
 
-  const commands: string[] = [];
-
-  // Start format
-  commands.push('^XA');
-
-  // Label dimensions
-  commands.push(`^PW${widthDots}`); // Print width
-  commands.push(`^LL${heightDots}`); // Label length
-
-  // Sort by zIndex
+  // Sort by zIndex once — reused for every across-lane.
   const sorted = [...template.elements].sort((a, b) => a.zIndex - b.zIndex);
 
-  for (const element of sorted) {
-    const cmd = elementToZPL(element, format, fieldValues);
-    if (cmd) commands.push(cmd);
+  const commands: string[] = [];
+  commands.push('^XA');
+  // Print width covers the full liner so multi-across lays out correctly.
+  commands.push(`^PW${linerDots}`);
+  commands.push(`^LL${heightDots}`);
+
+  // Draw each element once per lane, offset by the lane origin.
+  for (let lane = 0; lane < across; lane++) {
+    const laneOriginX = effectiveSideMDots + lane * (labelWDots + gapDots);
+    for (const element of sorted) {
+      const cmd = elementToZPL(element, format, fieldValues, laneOriginX);
+      if (cmd) commands.push(cmd);
+    }
   }
 
-  // End format
   commands.push('^XZ');
-
   return commands.join('\n');
 }
 
@@ -47,9 +67,15 @@ function resolveContent(element: TemplateElement, fieldValues?: Record<string, s
   return `${prefix}${value}${suffix}`;
 }
 
-function elementToZPL(element: TemplateElement, format: LabelFormat, fieldValues?: Record<string, string>): string {
-  // Round positions to nearest dot
-  const x = Math.round(element.x);
+function elementToZPL(
+  element: TemplateElement,
+  format: LabelFormat,
+  fieldValues?: Record<string, string>,
+  laneOriginX: number = 0,
+): string {
+  // Round positions to nearest dot. `laneOriginX` shifts every element for
+  // multi-across layouts; when across=1 it's 0 and everything behaves as before.
+  const x = Math.round(element.x) + laneOriginX;
   const y = Math.round(element.y);
 
   switch (element.type) {
@@ -120,20 +146,54 @@ function qrToZPL(element: QRElement, x: number, y: number, fieldValues?: Record<
   const content = resolveContent(element, fieldValues);
   if (!content) return '';
 
-  // QR magnification: approximate from element size
-  // Each QR module at mag 1 = ~10 dots at 203dpi
-  // Element width in dots / typical QR size (~21 modules for simple data)
-  const mag = Math.max(1, Math.min(10, Math.round(element.width / 25)));
-
-  // Error correction: H=ultra-high, Q=high, M=standard, L=high density
+  // Choose magnification so the QR physically fills element.width regardless
+  // of how long the data is. Previously we picked mag from element width
+  // alone, which meant short data (e.g. "QR") rendered tiny and long data
+  // (40-char URLs) overflowed because the module count jumped from ~21 to
+  // ~37+ at the same mag.
+  //
+  // Strategy: estimate the minimum QR version (and therefore module count)
+  // needed for `content` at the chosen error-correction level, then pick the
+  // largest mag where moduleCount * mag ≤ elementWidth.
   const ec = element.errorCorrection || 'M';
+  const modules = estimateQrModules(content, ec);
+  const elementW = Math.round(element.width);
+  const mag = Math.max(1, Math.min(10, Math.floor(elementW / modules)));
 
   const cmds: string[] = [];
   cmds.push(`^FO${x},${y}`);
-  cmds.push(`^BQN,2,${mag}`);
+  // Fifth param of ^BQ sets error correction level: H,Q,M,L.
+  cmds.push(`^BQN,2,${mag},${ec}`);
   cmds.push(`^FDQA,${escapeZPL(content)}^FS`);
 
   return cmds.join('');
+}
+
+/**
+ * Roughly estimate how many modules per side a QR code needs for a given
+ * content string + error-correction level. Based on QR alphanumeric +
+ * byte-mode capacity tables. Values are "maximum characters at this version"
+ * for the chosen EC, then we pick the first version that fits.
+ *
+ * We deliberately use byte-mode caps (worst case) since our content is often
+ * URLs and tags that mix letters, digits, and symbols. Module count = 21 + 4*(version-1).
+ */
+function estimateQrModules(content: string, ec: 'L' | 'M' | 'Q' | 'H'): number {
+  const len = content.length;
+  // Byte-mode capacity per version for each EC level, versions 1..10 (covers
+  // everything we realistically print on thermal labels). For lengths beyond
+  // version 10 we clamp to version 10's module count (57) — the mag calc will
+  // still produce a workable QR even if data is massive.
+  const capsByte: Record<'L' | 'M' | 'Q' | 'H', number[]> = {
+    L: [17, 32, 53, 78, 106, 134, 154, 192, 230, 271],
+    M: [14, 26, 42, 62, 84, 106, 122, 152, 180, 213],
+    Q: [11, 20, 32, 46, 60, 74, 86, 108, 130, 151],
+    H: [7, 14, 24, 34, 44, 58, 64, 84, 98, 119],
+  };
+  const caps = capsByte[ec] || capsByte.M;
+  let version = caps.findIndex((c) => len <= c) + 1;
+  if (version === 0) version = caps.length; // data longer than v10 cap — clamp
+  return 21 + 4 * (version - 1);
 }
 
 function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues?: Record<string, string>): string {

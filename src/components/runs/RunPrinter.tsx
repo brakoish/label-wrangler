@@ -545,7 +545,13 @@ function LocalZplPreview({ zpl, format }: { zpl: string; format: LabelFormat }) 
       try {
         const mod = await import('zpl-renderer-js');
         const { api } = await mod.ready;
-        const widthMm = format.width * 25.4;
+        // Multi-across: render the full liner width so all N labels fit in the preview.
+        const across = Math.max(1, format.labelsAcross || 1);
+        const gapIn = format.horizontalGapThermal || 0;
+        const sideIn = format.sideMarginThermal || 0;
+        const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
+        const linerIn = format.linerWidth || computedLinerIn;
+        const widthMm = linerIn * 25.4;
         const heightMm = format.height * 25.4;
         const dpmm = Math.round((format.dpi || 203) / 25.4);
         const b64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);

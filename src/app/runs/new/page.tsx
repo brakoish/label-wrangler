@@ -603,8 +603,9 @@ function NewRunContent() {
   );
 }
 
-// Inline ZPL preview via zpl-renderer-js WASM.
-function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number; height: number; dpi?: number; type: string } }) {
+// Inline ZPL preview via zpl-renderer-js WASM. Accepts the extra thermal
+// fields needed to size the canvas for multi-across rolls.
+function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number } }) {
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -615,7 +616,12 @@ function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number
       try {
         const mod = await import('zpl-renderer-js');
         const { api } = await mod.ready;
-        const widthMm = format.width * 25.4;
+        const across = Math.max(1, format.labelsAcross || 1);
+        const gapIn = format.horizontalGapThermal || 0;
+        const sideIn = format.sideMarginThermal || 0;
+        const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
+        const linerIn = format.linerWidth || computedLinerIn;
+        const widthMm = linerIn * 25.4;
         const heightMm = format.height * 25.4;
         const dpmm = Math.round((format.dpi || 203) / 25.4);
         const b64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
@@ -627,7 +633,7 @@ function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number
     return () => {
       cancelled = true;
     };
-  }, [zpl, format.width, format.height, format.dpi]);
+  }, [zpl, format.width, format.height, format.dpi, format.labelsAcross, format.horizontalGapThermal, format.sideMarginThermal, format.linerWidth]);
 
   if (err) return <p className="text-xs text-red-400">{err}</p>;
   if (!url) return <p className="text-xs text-zinc-500">Rendering\u2026</p>;

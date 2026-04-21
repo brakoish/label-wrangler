@@ -46,8 +46,14 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       // No network, no rate limits. 8MB WASM is lazy-loaded once and cached.
       const api = await getLocalZplApi();
       // Our format stores width/height in inches. Convert to mm (1 inch = 25.4 mm).
-      // Render at native DPI; zoom controls scale up in the browser when needed.
-      const widthMm = format.width * 25.4;
+      // For multi-across rolls we render the full liner width so all N labels
+      // appear side-by-side exactly as they'll come off the roll.
+      const across = Math.max(1, format.labelsAcross || 1);
+      const gapIn = format.horizontalGapThermal || 0;
+      const sideIn = format.sideMarginThermal || 0;
+      const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
+      const linerIn = format.linerWidth || computedLinerIn;
+      const widthMm = linerIn * 25.4;
       const heightMm = format.height * 25.4;
       const dpmm = Math.round((format.dpi || 203) / 25.4);
       const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
