@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!--
+    Label Wrangler cowboy hat favicon.
+    Minimalist silhouette to match the cowboy-on-label logo aesthetic:
+    solid amber on dark tile, wide flat brim with upturned tips, squat
+    crown with a single bold center notch for the Cattleman pinch.
+    Tuned for 16x16 legibility: no fine triple dents, thicker brim,
+    breathing room around the silhouette.
+  -->
+  <!-- Dark rounded tile so the hat has presence in tab bars. -->
+  <rect x="0" y="0" width="64" height="64" rx="12" fill="#0a0a0b"/>
+
+  <!--
+    Brim: one continuous shape, wide and flat across the middle, upturned
+    at the tips so the cowboy silhouette reads. Thicker than before so it
+    doesn't dissolve at 16x16.
+  -->
+  <path
+    d="M6 44
+       C 10 52, 22 50, 32 48
+       C 42 50, 54 52, 58 44
+       C 54 38, 44 40, 40 40
+       L 24 40
+       C 20 40, 10 38, 6 44 Z"
+    fill="#f59e0b"
+  />
+
+  <!--
+    Crown: squat trapezoid with a single bold V-notch on top (Cattleman
+    pinch). One notch reads cleaner than three at small sizes.
+  -->
+  <path
+    d="M20 40
+       L 22 26
+       C 22 22, 26 20, 28 20
+       L 30 24
+       L 32 22
+       L 34 24
+       L 36 20
+       C 38 20, 42 22, 42 26
+       L 44 40 Z"
+    fill="#f59e0b"
+  />
+
+  <!-- Hat band: thin dark strip, sized to survive at small pixel sizes. -->
+  <rect x="20" y="38" width="24" height="3" fill="#0a0a0b"/>
+</svg>
