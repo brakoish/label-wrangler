@@ -371,6 +371,11 @@ function RollPreview({ format }: { format: LabelFormat }) {
   // Calculate liner width: explicit or auto from labels + gaps + margins
   const linerW = format.linerWidth || (sideM * 2 + across * labelW + (across - 1) * gapH);
 
+  // Center labels on liner when user didn't set a side margin explicitly.
+  const labelsTotalW = across * labelW + (across - 1) * gapH;
+  const centeredSideM = Math.max(0, (linerW - labelsTotalW) / 2);
+  const effectiveSideM = sideM > 0 ? sideM : centeredSideM;
+
   // Show 2 rows to visualize vertical gap
   const rowCount = 2;
   const totalH = rowCount * labelH + (rowCount - 1) * labelGap;
@@ -388,7 +393,7 @@ function RollPreview({ format }: { format: LabelFormat }) {
   const labels = [];
   for (let row = 0; row < rowCount; row++) {
     for (let col = 0; col < across; col++) {
-      const x = pad + sideM + col * (labelW + gapH);
+      const x = pad + effectiveSideM + col * (labelW + gapH);
       const y = pad + row * (labelH + labelGap);
       labels.push(
         <rect

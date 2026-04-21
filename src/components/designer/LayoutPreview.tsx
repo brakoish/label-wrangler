@@ -147,7 +147,14 @@ function RollLayout({ format, elements }: LayoutPreviewProps) {
   const gapH = format.horizontalGapThermal || 0;
   const sideM = format.sideMarginThermal || 0;
   const labelGap = format.labelGap || 0;
-  const linerW = format.linerWidth || (sideM * 2 + across * labelW + (across - 1) * gapH);
+  const autoLinerW = sideM * 2 + across * labelW + (across - 1) * gapH;
+  const linerW = format.linerWidth || autoLinerW;
+
+  // Center the labels on the liner. If the user explicitly set a side margin,
+  // honor it; otherwise compute the symmetric offset from liner edge.
+  const labelsTotalW = across * labelW + (across - 1) * gapH;
+  const centeredSideM = Math.max(0, (linerW - labelsTotalW) / 2);
+  const effectiveSideM = sideM > 0 ? sideM : centeredSideM;
 
   const rowCount = 3;
   const totalH = rowCount * labelH + (rowCount - 1) * labelGap;
@@ -173,7 +180,7 @@ function RollLayout({ format, elements }: LayoutPreviewProps) {
           {/* Labels */}
           {Array.from({ length: rowCount }).map((_, row) =>
             Array.from({ length: across }).map((_, col) => {
-              const x = pad + sideM + col * (labelW + gapH);
+              const x = pad + effectiveSideM + col * (labelW + gapH);
               const y = pad + row * (labelH + labelGap);
               return (
                 <g key={`${row}-${col}`}>
