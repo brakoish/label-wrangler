@@ -90,21 +90,56 @@ function valuesForLabel(run: Run, index: number): Record<string, string> {
 }
 
 /**
- * Generate per-label ZPL strings for an entire run.
- * Returns one complete ^XA..^XZ per label.
+ * Generate the ZPL feed strings for an entire run. For a single-across roll
+ * this is one ^XA..^XZ per row (1 feed = 1 physical label). For a
+ * multi-across roll this is one ^XA..^XZ per FEED (each feed produces
+ * `labelsAcross` physical labels side-by-side, each with its own CSV row).
+ *
+ * Returned array length = number of printer feeds needed for the run, NOT
+ * the total physical label count. The printer prints one feed per entry.
  */
 export function generateLabelsForRun(
   run: Run,
   template: LabelTemplate,
   format: LabelFormat,
 ): string[] {
-  const labels: string[] = [];
+  const feeds: string[] = [];
   const total = Math.max(run.sourceData.length, 1);
-  for (let i = 0; i < total; i++) {
-    const values = valuesForLabel(run, i);
-    labels.push(generateZPL(template, format, values));
+  const across = Math.max(1, format.labelsAcross || 1);
+
+  if (across === 1) {
+    // Simple case: one feed per row.
+    for (let i = 0; i < total; i++) {
+      feeds.push(generateZPL(template, format, valuesForLabel(run, i)));
+    }
+    return feeds;
   }
-  return labels;
+
+  // Multi-across: bundle `across` consecutive rows into each feed. The last
+  // feed may be partially filled; pad with undefined so those lanes print
+  // blank instead of repeating the previous row.
+  for (let i = 0; i < total; i += across) {
+    const laneValues: Array<Record<string, string> | undefined> = [];
+    for (let lane = 0; lane < across; lane++) {
+      const idx = i + lane;
+      laneValues.push(idx < total ? valuesForLabel(run, idx) : undefined);
+    }
+    feeds.push(generateZPL(template, format, laneValues));
+  }
+  return feeds;
+}
+
+/** Total physical labels a run will produce. For single-across this equals
+ *  the row count; for multi-across it still equals the row count since each
+ *  row produces exactly one physical label somewhere across the lanes. */
+export function totalLabelsForRun(run: Run): number {
+  return run.sourceData.length;
+}
+
+/** Count of printer feeds needed to produce the run. Equals ceil(rows / across). */
+export function totalFeedsForRun(run: Run, format: LabelFormat): number {
+  const across = Math.max(1, format.labelsAcross || 1);
+  return Math.ceil(run.sourceData.length / across);
 }
 
 /** Preview a single label. */

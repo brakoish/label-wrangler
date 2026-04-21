@@ -122,11 +122,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [status]);
 
-  // Build the per-label ZPL list once we have run + template + format.
+  // Build the ZPL feed list once we have run + template + format. For
+  // single-across rolls one feed = one physical label. For multi-across
+  // each feed produces `across` physical labels with unique data per lane.
+  const across = Math.max(1, format?.labelsAcross || 1);
   const labels = useMemo(() => {
     if (!run || !template || !format) return [] as string[];
     return generateLabelsForRun(run, template, format);
   }, [run, template, format]);
+  // Total printer feeds (may be < total physical labels when across > 1).
+  const totalFeeds = labels.length;
 
   const canStart = !!run && labels.length > 0 && (
     (transport === 'dazzle' && !!dazzleSelected) ||
@@ -134,11 +139,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   );
 
   // Preview ZPL for whichever label index the user is inspecting.
+  // For multi-across rolls we group rows by feed so the preview matches
+  // what actually prints: lane 0 = row N, lane 1 = row N+1, etc.
   const previewZpl = useMemo(() => {
     if (!run || !template || !format) return '';
-    const values = previewLabelValues(run, Math.min(previewIndex, Math.max(0, run.sourceData.length - 1)));
-    return generateZPL(template, format, values);
-  }, [run, template, format, previewIndex]);
+    const maxIdx = Math.max(0, run.sourceData.length - 1);
+    const idx = Math.min(Math.max(0, previewIndex), maxIdx);
+    if (across === 1) {
+      return generateZPL(template, format, previewLabelValues(run, idx));
+    }
+    // Multi-across: snap idx to the start of its feed group, then build
+    // per-lane values for that group.
+    const feedStart = Math.floor(idx / across) * across;
+    const laneValues: Array<Record<string, string> | undefined> = [];
+    for (let lane = 0; lane < across; lane++) {
+      const rowIdx = feedStart + lane;
+      laneValues.push(rowIdx <= maxIdx ? previewLabelValues(run, rowIdx) : undefined);
+    }
+    return generateZPL(template, format, laneValues);
+  }, [run, template, format, previewIndex, across]);
 
   // Friendly description of where each dynamic field's value is coming from.
   const mappingRows = useMemo(() => {
@@ -198,23 +217,33 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       },
     };
 
+    // The queue tracks feeds internally (startIndex/done are feed counts).
+    // We convert between physical-label count (what the user + DB see) and
+    // feed count (what the queue consumes) at the boundary so multi-across
+    // progress bars behave intuitively.
+    const startFeed = Math.floor(printedCount / across);
     const handle = startPrintQueue(sender, {
       labels,
       batchSize: 25,
-      startIndex: printedCount,
-      onProgress: async (done) => {
-        setPrintedCount(done);
-        // Fire-and-forget DB update — we don't block printing on persistence.
-        void persistProgress(done);
-        if (done >= labels.length) {
+      startIndex: startFeed,
+      onProgress: async (feedsDone) => {
+        // Each feed produced up to `across` physical labels. Clamp to total
+        // so the last (possibly-partial) feed doesn't overshoot.
+        const physical = Math.min(feedsDone * across, total);
+        setPrintedCount(physical);
+        // Fire-and-forget DB update — don't block printing on persistence.
+        void persistProgress(physical);
+        if (feedsDone >= labels.length) {
           setStatus('completed');
-          await setRunStatus(run.id, 'completed', done);
+          await setRunStatus(run.id, 'completed', physical);
         }
       },
-      onError: async (err, atIndex) => {
+      onError: async (err, atFeed) => {
         setStatus('error');
         setErrorMsg((err as Error)?.message || 'Print failed');
-        await setRunStatus(run.id, 'paused', atIndex);
+        // Persist physical-label count corresponding to the failed feed.
+        const atPhysical = Math.min(atFeed * across, total);
+        await setRunStatus(run.id, 'paused', atPhysical);
       },
     });
 

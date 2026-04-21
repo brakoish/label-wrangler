@@ -9,8 +9,21 @@ import { LabelFormat, LabelTemplate, TemplateElement, TextElement, QRElement, Ba
  * N times — once per across-lane, each shifted by (labelW + gap) dots plus
  * the side margin. This is how Zebra printers natively handle multi-across
  * rolls, so the preview and the actual printout match.
+ *
+ * fieldValues can be:
+ * - A single Record<string,string>: same values applied to every lane (useful
+ *   when every lane should show the same data, e.g. previews or same-product
+ *   batches).
+ * - An array of Record<string,string>: one entry per lane. Missing entries
+ *   (array shorter than labelsAcross) render as blank lanes. Used by
+ *   `generateLabelsForRun` so each lane in a multi-across feed gets its own
+ *   unique CSV row.
  */
-export function generateZPL(template: LabelTemplate, format: LabelFormat, fieldValues?: Record<string, string>): string {
+export function generateZPL(
+  template: LabelTemplate,
+  format: LabelFormat,
+  fieldValues?: Record<string, string> | Array<Record<string, string> | null | undefined>,
+): string {
   const dpi = format.dpi || 203;
   const labelWDots = Math.round(format.width * dpi);
   const heightDots = Math.round(format.height * dpi);
@@ -39,11 +52,23 @@ export function generateZPL(template: LabelTemplate, format: LabelFormat, fieldV
   commands.push(`^PW${linerDots}`);
   commands.push(`^LL${heightDots}`);
 
-  // Draw each element once per lane, offset by the lane origin.
+  // Normalize fieldValues into a per-lane array so the draw loop is uniform.
+  const perLane: Array<Record<string, string> | undefined> = [];
+  if (Array.isArray(fieldValues)) {
+    for (let i = 0; i < across; i++) perLane.push(fieldValues[i] ?? undefined);
+  } else {
+    for (let i = 0; i < across; i++) perLane.push(fieldValues);
+  }
+
+  // Draw each element once per lane, offset by the lane origin. Skip a lane
+  // entirely if its values slot is undefined — used to pad the last feed of
+  // a run when rows don't divide evenly by labelsAcross.
   for (let lane = 0; lane < across; lane++) {
+    const laneValues = perLane[lane];
+    if (laneValues === undefined) continue;
     const laneOriginX = effectiveSideMDots + lane * (labelWDots + gapDots);
     for (const element of sorted) {
-      const cmd = elementToZPL(element, format, fieldValues, laneOriginX);
+      const cmd = elementToZPL(element, format, laneValues, laneOriginX);
       if (cmd) commands.push(cmd);
     }
   }
