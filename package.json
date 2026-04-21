@@ -14,6 +14,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@types/qrcode": "^1.5.6",
+    "dazzle-zpl": "^0.2.2",
     "drizzle-orm": "^0.45.2",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.8.0",
