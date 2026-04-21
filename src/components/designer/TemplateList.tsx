@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Copy } from 'lucide-react';
 import { LabelFormat, LabelTemplate, TemplateElement, TextElement } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -10,6 +10,7 @@ interface TemplateListProps {
   templates: LabelTemplate[];
   onSelectTemplate: (id: string) => void;
   onDeleteTemplate: (id: string) => void;
+  onDuplicateTemplate?: (template: LabelTemplate) => void;
   onNewTemplate: () => void;
 }
 
@@ -17,6 +18,7 @@ export function TemplateList({
   templates,
   onSelectTemplate,
   onDeleteTemplate,
+  onDuplicateTemplate,
   onNewTemplate,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
@@ -63,6 +65,7 @@ export function TemplateList({
                 format={format}
                 onSelect={() => onSelectTemplate(template.id)}
                 onDelete={() => onDeleteTemplate(template.id)}
+                onDuplicate={onDuplicateTemplate ? () => onDuplicateTemplate(template) : undefined}
               />
             );
           })}
@@ -157,11 +160,13 @@ function TemplateCard({
   format,
   onSelect,
   onDelete,
+  onDuplicate,
 }: {
   template: LabelTemplate;
   format?: LabelFormat;
   onSelect: () => void;
   onDelete: () => void;
+  onDuplicate?: () => void;
 }) {
   const dynamicCount = template.elements.filter((e) => !e.isStatic).length;
   const formatName = format?.name || 'Unknown Format';
@@ -204,18 +209,32 @@ function TemplateCard({
           <h3 className="text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors flex-1">
             {template.name}
           </h3>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm(`Delete template "${template.name}"?`)) {
-                onDelete();
-              }
-            }}
-            className="p-1 rounded-lg hover:bg-red-600/20 text-zinc-600 hover:text-red-400 transition-colors ml-2 flex-shrink-0"
-            title="Delete template"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
+            {onDuplicate && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicate();
+                }}
+                className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-600 hover:text-amber-400 transition-colors"
+                title="Duplicate to another format"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Delete template "${template.name}"?`)) {
+                  onDelete();
+                }
+              }}
+              className="p-1 rounded-lg hover:bg-red-600/20 text-zinc-600 hover:text-red-400 transition-colors"
+              title="Delete template"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Format badge */}
@@ -340,6 +359,123 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
               className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
             >
               Create
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface DuplicateTemplateDialogProps {
+  isOpen: boolean;
+  source: LabelTemplate | null;
+  onClose: () => void;
+  onCreate: (name: string, formatId: string, scale: boolean) => void;
+}
+
+/**
+ * Modal for duplicating a template to a (possibly different) format.
+ * Lets the user choose whether to scale elements proportionally or keep them
+ * at their exact positions.
+ */
+export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: DuplicateTemplateDialogProps) {
+  const [name, setName] = useState('');
+  const [formatId, setFormatId] = useState('');
+  const [scale, setScale] = useState(true);
+  const { formats } = useFormatStore();
+
+  // Reset form when opening for a new source template.
+  useEffect(() => {
+    if (isOpen && source) {
+      setName(`Copy of ${source.name}`);
+      setFormatId(source.formatId);
+      setScale(true);
+    }
+  }, [isOpen, source]);
+
+  if (!isOpen || !source) return null;
+
+  const sourceFormat = formats.find((f) => f.id === source.formatId);
+  const targetFormat = formats.find((f) => f.id === formatId);
+  const isDifferentFormat = formatId !== source.formatId;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !formatId) return;
+    onCreate(name, formatId, scale);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="glass rounded-2xl p-6 max-w-md w-full border border-zinc-800">
+        <h3 className="text-xl font-semibold text-zinc-100 mb-1 gradient-text">Duplicate Template</h3>
+        <p className="text-xs text-zinc-500 mb-6">
+          Creating a copy of <span className="text-zinc-300">{source.name}</span>
+          {sourceFormat && <span> ({sourceFormat.width}&quot; × {sourceFormat.height}&quot;)</span>}
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm text-zinc-400 block mb-2">New Template Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="text-sm text-zinc-400 block mb-2">Target Format</label>
+            {formats.length === 0 ? (
+              <p className="text-sm text-zinc-500 py-2">No formats available.</p>
+            ) : (
+              <CustomSelect
+                value={formatId}
+                onChange={setFormatId}
+                placeholder="Select a format..."
+                options={formats.map((format) => ({
+                  value: format.id,
+                  label: format.name,
+                  sublabel: `${format.width}" × ${format.height}" — ${format.type}`,
+                }))}
+              />
+            )}
+          </div>
+
+          {isDifferentFormat && targetFormat && (
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800 cursor-pointer hover:border-amber-500/30 transition-colors">
+              <input
+                type="checkbox"
+                checked={scale}
+                onChange={(e) => setScale(e.target.checked)}
+                className="mt-0.5 accent-amber-500"
+              />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-zinc-200">Scale elements proportionally</div>
+                <div className="text-xs text-zinc-500 mt-0.5">
+                  Resize text, positions, and QR codes to fit the new label dimensions. Uncheck to keep exact coordinates.
+                </div>
+              </div>
+            </label>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-medium hover:bg-zinc-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim() || !formatId}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
+            >
+              Duplicate
             </button>
           </div>
         </form>

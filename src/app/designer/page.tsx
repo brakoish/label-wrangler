@@ -6,12 +6,12 @@ import { Plus, Undo2, Redo2 } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { useUndoStore } from '@/lib/undoStore';
-import { ElementType, TemplateElement } from '@/lib/types';
+import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
 import { LabelPreview } from '@/components/designer/LabelPreview';
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
-import { TemplateList, NewTemplateDialog } from '@/components/designer/TemplateList';
+import { TemplateList, NewTemplateDialog, DuplicateTemplateDialog } from '@/components/designer/TemplateList';
 import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { ZPLPreview } from '@/components/designer/ZPLPreview';
@@ -42,6 +42,7 @@ function DesignerContent() {
   const { push: pushUndo, undo, redo, setCurrent: setUndoCurrent, canUndo, canRedo, clear: clearUndo } = useUndoStore();
 
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
+  const [duplicateSource, setDuplicateSource] = useState<LabelTemplate | null>(null);
   const [showAddElementMenu, setShowAddElementMenu] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Convenience: single selected element for property panel
@@ -191,6 +192,7 @@ function DesignerContent() {
               router.push(`/designer?id=${id}`);
             }}
             onDeleteTemplate={deleteTemplate}
+            onDuplicateTemplate={(t) => setDuplicateSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
         </div>
@@ -209,6 +211,34 @@ function DesignerContent() {
             selectTemplate(newTemplate.id);
             router.push(`/designer?id=${newTemplate.id}`);
             setShowNewTemplateDialog(false);
+          }}
+        />
+
+        {/* Duplicate Template Dialog */}
+        <DuplicateTemplateDialog
+          isOpen={!!duplicateSource}
+          source={duplicateSource}
+          onClose={() => setDuplicateSource(null)}
+          onCreate={async (newName, newFormatId, scale) => {
+            if (!duplicateSource) return;
+            const { duplicateElementsForFormat } = await import('@/lib/templateScale');
+            const sourceFormat = getFormatById(duplicateSource.formatId);
+            const targetFormat = getFormatById(newFormatId);
+            if (!sourceFormat || !targetFormat) return;
+            const elements = duplicateElementsForFormat(
+              duplicateSource,
+              sourceFormat,
+              targetFormat,
+              { scale: scale && sourceFormat.id !== targetFormat.id },
+            );
+            const newTemplate = await addTemplate({
+              name: newName,
+              description: duplicateSource.description,
+              formatId: newFormatId,
+              elements: elements as TemplateElement[],
+            });
+            setDuplicateSource(null);
+            router.push(`/designer?id=${newTemplate.id}`);
           }}
         />
       </AppShell>
