@@ -686,7 +686,7 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
   // Word-wrap: for thermal we use ZPL's raw fontH × charWidth ratio (ZPL's
   // native fontW) so wrapping decisions agree with ZPL's field-block wrapping.
   // For sheet, 0.5 is a decent Arial average.
-  const textCharWidthRatio = element.charWidth ?? 0.6;
+  const textCharWidthRatio = element.charWidth ?? 0.5;
   const charWidth = isThermal
     ? rawFontHDots * textCharWidthRatio
     : svgFontSize * 0.5;
@@ -750,7 +750,7 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
         // will use (line.length × raw fontH × charWidth ratio). Combined
         // with the zebraHeightCalibration scaling, the SVG text now visually
         // matches what the thermal printer will produce.
-        const widthRatio = element.charWidth ?? 0.6;
+        const widthRatio = element.charWidth ?? 0.5;
         const forcedLen = isThermal ? line.length * rawFontHDots * widthRatio : undefined;
         return (
           <tspan

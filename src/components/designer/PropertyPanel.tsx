@@ -165,12 +165,12 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
         <CompactSelect value={element.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
       </div>
       {/* Thermal-only: horizontal character width ratio. Controls ZPL fontW/fontH.
-          0.5 = tight (Zebra native), 0.6 = balanced (default), 0.8 = roomy. */}
+          0.5 = Zebra native (default, tight/squished), 0.6 = balanced, 0.8 = roomy. */}
       {isThermal && (
         <div className="grid grid-cols-3 gap-1">
           <CompactInput
             label="CW"
-            value={element.charWidth ?? 0.6}
+            value={element.charWidth ?? 0.5}
             onChange={(v) => onUpdate({ charWidth: v })}
             step={0.05}
             labelRight
@@ -185,7 +185,7 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
                 key={p.label}
                 onClick={() => onUpdate({ charWidth: p.value })}
                 className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
-                  (element.charWidth ?? 0.6) === p.value
+                  (element.charWidth ?? 0.5) === p.value
                     ? 'bg-zinc-700 text-zinc-100'
                     : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
                 }`}
