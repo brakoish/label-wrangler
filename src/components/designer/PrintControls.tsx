@@ -229,7 +229,9 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
   }, [doPrint, template, format, testData]);
 
   const handlePrintCalibration = useCallback(() => {
-    const zpl = calibrationZpl(format.width, format.height, format.dpi || 203, {
+    // Pass the full format so calibration lays out across every lane on
+    // multi-across rolls (not just the middle).
+    const zpl = calibrationZpl(format, {
       count: calibCount,
       style: 'crosshair',
       topOffset,

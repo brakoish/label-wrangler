@@ -170,23 +170,64 @@ export function autoCalibrateZpl(): string {
 }
 
 /**
- * Generate a calibration label for a given format (width/height in inches, dpi).
- * Renders alignment marks and a ruler so the user can verify media alignment,
- * print offset, and feed consistency before running production labels.
+ * Generate a calibration label for a given format. Renders alignment marks
+ * and a ruler so the user can verify media alignment, print offset, and
+ * feed consistency before running production labels.
+ *
+ * Multi-across aware: if `across > 1`, the print width covers the full
+ * liner width and calibration marks are drawn on every lane, so you can
+ * see whether lane 0 and lane 2 are both aligned — not just the middle.
  *
  * Supports printing multiple consecutive copies (^PQ) to detect drift.
+ *
+ * Signature note: we also accept the legacy positional signature
+ * `calibrationZpl(width, height, dpi, options)` for backward compatibility.
  */
-export function calibrationZpl(
-  widthIn: number,
-  heightIn: number,
-  dpi = 203,
-  options: CalibrationOptions = {},
-): string {
-  const { count = 1, style = 'crosshair', topOffset, leftShift, darkness, speed, persist } = options;
-  const w = Math.round(widthIn * dpi);
-  const h = Math.round(heightIn * dpi);
+export interface CalibrationFormat {
+  width: number;
+  height: number;
+  dpi?: number;
+  labelsAcross?: number;
+  horizontalGapThermal?: number;
+  sideMarginThermal?: number;
+  linerWidth?: number;
+}
 
-  const lines: string[] = ['^XA', `^PW${w}`, `^LL${h}`];
+export function calibrationZpl(
+  formatOrWidth: CalibrationFormat | number,
+  heightOrOptions?: number | CalibrationOptions,
+  dpiArg?: number,
+  optionsArg?: CalibrationOptions,
+): string {
+  // Normalize the two call shapes into a CalibrationFormat + options object.
+  let fmt: CalibrationFormat;
+  let options: CalibrationOptions;
+  if (typeof formatOrWidth === 'number') {
+    fmt = {
+      width: formatOrWidth,
+      height: (heightOrOptions as number) ?? formatOrWidth,
+      dpi: dpiArg ?? 203,
+    };
+    options = optionsArg ?? {};
+  } else {
+    fmt = formatOrWidth;
+    options = (heightOrOptions as CalibrationOptions) ?? {};
+  }
+
+  const { count = 1, style = 'crosshair', topOffset, leftShift, darkness, speed, persist } = options;
+  const dpi = fmt.dpi || 203;
+  const labelW = Math.round(fmt.width * dpi);
+  const h = Math.round(fmt.height * dpi);
+  const across = Math.max(1, fmt.labelsAcross || 1);
+  const gap = Math.round((fmt.horizontalGapThermal || 0) * dpi);
+  const sideM = Math.round((fmt.sideMarginThermal || 0) * dpi);
+  const computedLiner = sideM * 2 + across * labelW + (across - 1) * gap;
+  const linerW = fmt.linerWidth ? Math.round(fmt.linerWidth * dpi) : computedLiner;
+  const effectiveSideM = (fmt.sideMarginThermal && fmt.sideMarginThermal > 0)
+    ? sideM
+    : Math.max(0, Math.round((linerW - (across * labelW + (across - 1) * gap)) / 2));
+
+  const lines: string[] = ['^XA', `^PW${linerW}`, `^LL${h}`];
 
   // Pre-label printer adjustments so the calibration print uses them.
   if (typeof topOffset === 'number') lines.push(`^LT${Math.round(topOffset)}`);
@@ -195,10 +236,15 @@ export function calibrationZpl(
   if (typeof speed === 'number') lines.push(`^PR${Math.round(Math.max(1, Math.min(14, speed)))}`);
   if (persist) lines.push('^JUS');
 
-  if (style === 'grid') {
-    appendGridCalibration(lines, w, h, dpi, widthIn, heightIn);
-  } else {
-    appendCrosshairCalibration(lines, w, h, dpi, widthIn, heightIn);
+  // Draw calibration marks once per across-lane so we can see alignment
+  // across the entire liner width, not just the middle lane.
+  for (let lane = 0; lane < across; lane++) {
+    const laneX = effectiveSideM + lane * (labelW + gap);
+    if (style === 'grid') {
+      appendGridCalibration(lines, laneX, labelW, h, dpi, fmt.width, fmt.height);
+    } else {
+      appendCrosshairCalibration(lines, laneX, labelW, h, dpi, fmt.width, fmt.height);
+    }
   }
 
   // ^PQ sets print quantity: n, 0, 0, N, N (n copies, no pause, no replicate).
@@ -210,15 +256,19 @@ export function calibrationZpl(
   return lines.join('\n');
 }
 
-/** Crosshairs at 4 corners + center + 4-edge ruler ticks. */
+/** Crosshairs at 4 corners + center + 4-edge ruler ticks for one lane.
+ *  All X coords are offset by `originX` so the caller can place the entire
+ *  calibration block anywhere on the liner (used for multi-across rolls). */
 function appendCrosshairCalibration(
   lines: string[],
+  originX: number,
   w: number,
   h: number,
   dpi: number,
   widthIn: number,
   heightIn: number,
 ): void {
+  const ox = (x: number) => originX + x;
   // Slightly smaller crosses so they don't get clipped at label edges.
   const cross = Math.min(w, h) * 0.08;
   const thick = Math.max(2, Math.round(dpi / 60));
@@ -234,23 +284,22 @@ function appendCrosshairCalibration(
   ];
   for (const c of corners) {
     // Horizontal bar
-    lines.push(`^FO${Math.round(c.x)},${Math.round(c.y + cross / 2 - thick / 2)}^GB${Math.round(cross)},${thick},${thick}^FS`);
+    lines.push(`^FO${Math.round(ox(c.x))},${Math.round(c.y + cross / 2 - thick / 2)}^GB${Math.round(cross)},${thick},${thick}^FS`);
     // Vertical bar
-    lines.push(`^FO${Math.round(c.x + cross / 2 - thick / 2)},${Math.round(c.y)}^GB${thick},${Math.round(cross)},${thick}^FS`);
+    lines.push(`^FO${Math.round(ox(c.x + cross / 2 - thick / 2))},${Math.round(c.y)}^GB${thick},${Math.round(cross)},${thick}^FS`);
   }
 
   // Center crosshair
-  lines.push(`^FO${Math.round(w / 2 - cross / 2)},${Math.round(h / 2 - thick / 2)}^GB${Math.round(cross)},${thick},${thick}^FS`);
-  lines.push(`^FO${Math.round(w / 2 - thick / 2)},${Math.round(h / 2 - cross / 2)}^GB${thick},${Math.round(cross)},${thick}^FS`);
+  lines.push(`^FO${Math.round(ox(w / 2 - cross / 2))},${Math.round(h / 2 - thick / 2)}^GB${Math.round(cross)},${thick},${thick}^FS`);
+  lines.push(`^FO${Math.round(ox(w / 2 - thick / 2))},${Math.round(h / 2 - cross / 2)}^GB${thick},${Math.round(cross)},${thick}^FS`);
 
   // Dimensions label below center cross
   const fh = Math.max(20, Math.round(dpi / 10));
   const dimText = `${widthIn}" x ${heightIn}"`;
   const dimW = dimText.length * fh * 0.6;
-  lines.push(`^FO${Math.round(w / 2 - dimW / 2)},${Math.round(h / 2 + cross)}^A0N,${fh},${Math.round(fh * 0.6)}^FD${dimText}^FS`);
+  lines.push(`^FO${Math.round(ox(w / 2 - dimW / 2))},${Math.round(h / 2 + cross)}^A0N,${fh},${Math.round(fh * 0.6)}^FD${dimText}^FS`);
 
-  // Ruler ticks on all 4 edges, every 0.25".
-  // Ticks are inset 2 dots from the edge to avoid clipping.
+  // Ruler ticks on all 4 edges, every 0.25". Inset 2 dots from the edge.
   const tickSpacing = Math.round(dpi * 0.25);
   const tickShort = Math.max(8, Math.round(dpi / 25));
   const tickLong = Math.max(16, Math.round(dpi / 12));
@@ -260,37 +309,35 @@ function appendCrosshairCalibration(
   for (let x = tickSpacing; x < w; x += tickSpacing) {
     const isInch = Math.abs(x - Math.round(x / dpi) * dpi) < 2;
     const len = isInch ? tickLong : tickShort;
-    // Top edge
-    lines.push(`^FO${x},${edge}^GB${tickThick},${len},${tickThick}^FS`);
-    // Bottom edge
-    lines.push(`^FO${x},${h - edge - len}^GB${tickThick},${len},${tickThick}^FS`);
+    lines.push(`^FO${Math.round(ox(x))},${edge}^GB${tickThick},${len},${tickThick}^FS`);
+    lines.push(`^FO${Math.round(ox(x))},${h - edge - len}^GB${tickThick},${len},${tickThick}^FS`);
   }
   for (let y = tickSpacing; y < h; y += tickSpacing) {
     const isInch = Math.abs(y - Math.round(y / dpi) * dpi) < 2;
     const len = isInch ? tickLong : tickShort;
-    // Left edge
-    lines.push(`^FO${edge},${y}^GB${len},${tickThick},${tickThick}^FS`);
-    // Right edge
-    lines.push(`^FO${w - edge - len},${y}^GB${len},${tickThick},${tickThick}^FS`);
+    lines.push(`^FO${Math.round(ox(edge))},${y}^GB${len},${tickThick},${tickThick}^FS`);
+    lines.push(`^FO${Math.round(ox(w - edge - len))},${y}^GB${len},${tickThick},${tickThick}^FS`);
   }
 
-  // Inch labels at 1", 2", etc. along the top edge
+  // Inch labels along the top edge (for labels > 1" wide).
   const labelFh = Math.max(14, Math.round(dpi / 18));
   for (let i = 1; i < Math.floor(widthIn); i++) {
     const x = i * dpi;
-    lines.push(`^FO${x - labelFh},${tickLong + 4}^A0N,${labelFh},${Math.round(labelFh * 0.6)}^FD${i}"^FS`);
+    lines.push(`^FO${Math.round(ox(x - labelFh))},${tickLong + 4}^A0N,${labelFh},${Math.round(labelFh * 0.6)}^FD${i}"^FS`);
   }
 }
 
-/** Full 0.25" grid of dots + inch labels. Great for measuring exact offsets. */
+/** Full 0.25" grid of dots + inch labels for one lane. */
 function appendGridCalibration(
   lines: string[],
+  originX: number,
   w: number,
   h: number,
   dpi: number,
   widthIn: number,
   heightIn: number,
 ): void {
+  const ox = (x: number) => originX + x;
   const step = Math.round(dpi * 0.25);
   const dotSize = Math.max(3, Math.round(dpi / 60));
 
@@ -302,16 +349,15 @@ function appendGridCalibration(
       const size = isMajor ? dotSize * 2 : dotSize;
       const cx = Math.max(0, x - Math.floor(size / 2));
       const cy = Math.max(0, y - Math.floor(size / 2));
-      lines.push(`^FO${cx},${cy}^GB${size},${size},${size}^FS`);
+      lines.push(`^FO${Math.round(ox(cx))},${cy}^GB${size},${size},${size}^FS`);
     }
   }
 
-  // Dimensions label center-bottom
+  // Dimensions label center-bottom with a white background band.
   const fh = Math.max(18, Math.round(dpi / 12));
   const dimText = `${widthIn}" x ${heightIn}" GRID 0.25"`;
   const dimW = dimText.length * fh * 0.6;
   const bandH = Math.round(fh * 1.5);
-  // White background band so text is readable over grid
-  lines.push(`^FO${Math.round(w / 2 - dimW / 2 - 8)},${h - bandH - 4}^GB${Math.round(dimW + 16)},${bandH},${bandH},W^FS`);
-  lines.push(`^FO${Math.round(w / 2 - dimW / 2)},${h - bandH + 2}^A0N,${fh},${Math.round(fh * 0.6)}^FD${dimText}^FS`);
+  lines.push(`^FO${Math.round(ox(w / 2 - dimW / 2 - 8))},${h - bandH - 4}^GB${Math.round(dimW + 16)},${bandH},${bandH},W^FS`);
+  lines.push(`^FO${Math.round(ox(w / 2 - dimW / 2))},${h - bandH + 2}^A0N,${fh},${Math.round(fh * 0.6)}^FD${dimText}^FS`);
 }
