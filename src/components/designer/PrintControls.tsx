@@ -415,7 +415,9 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
               <ChevronDown className="w-3 h-3" />
             </button>
             {calibMenuOpen && (
-              <div className="absolute top-full mt-1 right-auto min-w-[280px] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 p-3 space-y-3">
+              // Anchor to the right edge of the trigger so the menu opens
+              // leftward — keeps it inside the viewport on narrow screens.
+              <div className="absolute top-full mt-1 right-0 w-[300px] max-w-[calc(100vw-2rem)] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 p-3 space-y-3">
                 <div>
                   <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-1.5">Copies</div>
                   <div className="flex gap-0.5">
