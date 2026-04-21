@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash } from 'lucide-react';
 import type { Run, LabelTemplate, LabelFormat } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
-import { generateLabelsForRun } from '@/lib/runBuilder';
+import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
+import { generateZPL } from '@/lib/zplGenerator';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -60,6 +61,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const total = run?.totalLabels ?? 0;
   const pct = total > 0 ? Math.round((printedCount / total) * 100) : 0;
+
+  // Label preview state — which row to show in the small thumbnail.
+  const [previewIndex, setPreviewIndex] = useState(0);
+  // Reprint-range UI state.
+  const [showReprint, setShowReprint] = useState(false);
+  const [reprintFrom, setReprintFrom] = useState(1);
 
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
 
@@ -121,6 +128,48 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     (transport === 'webusb' && !!usbPrinter)
   );
 
+  // Preview ZPL for whichever label index the user is inspecting.
+  const previewZpl = useMemo(() => {
+    if (!run || !template || !format) return '';
+    const values = previewLabelValues(run, Math.min(previewIndex, Math.max(0, run.sourceData.length - 1)));
+    return generateZPL(template, format, values);
+  }, [run, template, format, previewIndex]);
+
+  // Friendly description of where each dynamic field's value is coming from.
+  const mappingRows = useMemo(() => {
+    if (!run || !template) return [] as Array<{ field: string; source: string; sample: string }>;
+    const out: Array<{ field: string; source: string; sample: string }> = [];
+    const row0 = run.sourceData[0];
+    const isObjRow = row0 && typeof row0 === 'object' && !Array.isArray(row0);
+    const fieldsSeen = new Set<string>();
+    for (const el of template.elements) {
+      if (el.isStatic) continue;
+      const f = el.fieldName;
+      if (!f || fieldsSeen.has(f)) continue;
+      fieldsSeen.add(f);
+      const mapping = run.fieldMappings?.[f];
+      if (mapping?.mode === 'column' && mapping.csvColumn) {
+        const col = mapping.csvColumn;
+        let sample = '';
+        if (col === '__paste__') {
+          sample = typeof row0 === 'string' ? row0 : '';
+        } else if (isObjRow) {
+          sample = (row0 as Record<string, string>)[col] ?? '';
+        }
+        out.push({
+          field: f,
+          source: col === '__paste__' ? 'pasted values' : `CSV → ${col}`,
+          sample,
+        });
+      } else if (run.mappedField === f && typeof row0 === 'string') {
+        out.push({ field: f, source: 'pasted values', sample: row0 });
+      } else {
+        out.push({ field: f, source: 'static', sample: run.staticValues?.[f] ?? '' });
+      }
+    }
+    return out;
+  }, [run, template]);
+
   const persistProgress = async (next: number) => {
     if (!run) return;
     await updateRun(run.id, { printedCount: next });
@@ -179,6 +228,29 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (run) await setRunStatus(run.id, 'cancelled', printedCount);
   };
 
+  // Jump back to label N (1-based) and put the run back in 'paused' so Start
+  // kicks off from there. Used for reprinting a bad strip without re-running
+  // the whole batch.
+  const handleReprintFrom = async (oneBased: number) => {
+    if (!run) return;
+    const n = Math.max(1, Math.min(total, Math.floor(oneBased)));
+    const newPrinted = n - 1;
+    setPrintedCount(newPrinted);
+    setStatus('paused');
+    setShowReprint(false);
+    await setRunStatus(run.id, 'paused', newPrinted);
+  };
+
+  // Reset the whole run (printedCount -> 0, status -> queued) so user can hit
+  // Start again and print the whole batch from scratch.
+  const handleReprintAll = async () => {
+    if (!run) return;
+    if (!confirm(`Reprint all ${total} labels from the beginning?`)) return;
+    setPrintedCount(0);
+    setStatus('idle');
+    await setRunStatus(run.id, 'queued', 0);
+  };
+
   if (!run || !template || !format) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-500">
@@ -189,11 +261,98 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="max-w-[800px] mx-auto w-full p-8 space-y-6">
-        <header>
-          <h1 className="text-2xl font-bold text-zinc-100">{run.name}</h1>
-          <p className="text-sm text-zinc-500 mt-1">{template.name} \u00b7 {format.name} \u00b7 {total} labels</p>
+      <div className="max-w-[980px] mx-auto w-full p-8 space-y-6">
+        <header className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-zinc-100 truncate">{run.name}</h1>
+            <p className="text-sm text-zinc-500 mt-1">
+              {template.name} \u00b7 {format.name} \u00b7 {format.width}\u2033 \u00d7 {format.height}\u2033 \u00b7 {total} labels
+            </p>
+          </div>
+          <div className="shrink-0 flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border"
+            style={{}}
+          >
+            <span className={
+              run.status === 'completed' ? 'text-emerald-400' :
+              run.status === 'printing' ? 'text-amber-400' :
+              run.status === 'paused' ? 'text-yellow-400' :
+              run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-400'
+            }>{run.status}</span>
+          </div>
         </header>
+
+        {/* Two-column: left = summary + preview; right = printer + controls. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+          <div className="space-y-6">
+
+        {/* Run summary: how fields are mapped + a live label preview. */}
+        <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Label Data</h2>
+            <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+              {run.dataSource === 'csv' ? <FileSpreadsheet className="w-3 h-3" /> : <Clipboard className="w-3 h-3" />}
+              {run.dataSource === 'csv' ? 'CSV import' : 'Pasted values'}
+            </span>
+          </div>
+          {mappingRows.length === 0 ? (
+            <p className="text-xs text-zinc-500">No dynamic fields \u2014 every label prints the same.</p>
+          ) : (
+            <div className="space-y-1">
+              {mappingRows.map((m) => (
+                <div key={m.field} className="flex items-center gap-3 text-xs py-1.5 px-2 rounded-md bg-zinc-950/40">
+                  <span className="w-28 shrink-0 font-medium text-zinc-200 truncate">{m.field}</span>
+                  <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${m.source === 'static' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                    {m.source}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-zinc-400 font-mono text-[10.5px]" title={m.sample}>
+                    {m.sample || <span className="text-zinc-600">(empty)</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Per-label preview with row stepper. Lets the user spot-check that,
+              say, label 1 and label 543 really do have different QR codes. */}
+          <div className="pt-2 border-t border-zinc-800/60 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h3>
+              {total > 0 && (
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <button
+                    onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
+                    disabled={previewIndex === 0}
+                    className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                  >\u2039</button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={total}
+                    value={previewIndex + 1}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      if (Number.isFinite(n)) setPreviewIndex(Math.max(0, Math.min(total - 1, n - 1)));
+                    }}
+                    className="w-14 text-center bg-zinc-950 border border-zinc-800 rounded text-[11px] text-zinc-200 tabular-nums py-0.5 focus:outline-none focus:border-amber-500/40"
+                  />
+                  <span className="text-zinc-500">/ {total}</span>
+                  <button
+                    onClick={() => setPreviewIndex((i) => Math.min(total - 1, i + 1))}
+                    disabled={previewIndex >= total - 1}
+                    className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                  >\u203a</button>
+                </div>
+              )}
+            </div>
+            <div className="rounded-xl bg-zinc-950/60 p-3 min-h-[120px] flex items-center justify-center">
+              <LocalZplPreview zpl={previewZpl} format={format} />
+            </div>
+          </div>
+        </section>
+
+          </div>
+
+          <div className="space-y-6">
 
         {/* Transport setup */}
         <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-3">
@@ -313,8 +472,99 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </button>
             )}
           </div>
+
+          {/* Reprint tools \u2014 always available once status is not 'running'. */}
+          {status !== 'running' && total > 0 && (
+            <div className="pt-3 border-t border-zinc-800/60 space-y-2">
+              {!showReprint ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setReprintFrom(Math.max(1, printedCount)); setShowReprint(true); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
+                    title="Jam, ribbon out, bad print? Reprint a range."
+                  >
+                    <Hash className="w-3 h-3" /> Reprint from label\u2026
+                  </button>
+                  {status === 'completed' && (
+                    <button
+                      onClick={handleReprintAll}
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
+                    >
+                      <RotateCcw className="w-3 h-3" /> All
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] text-zinc-400 whitespace-nowrap">Start at label</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={total}
+                    value={reprintFrom}
+                    onChange={(e) => setReprintFrom(parseInt(e.target.value, 10) || 1)}
+                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
+                  />
+                  <span className="text-[11px] text-zinc-500">/ {total}</span>
+                  <button
+                    onClick={() => void handleReprintFrom(reprintFrom)}
+                    className="px-3 py-1 rounded-md text-[11px] font-semibold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                  >
+                    Set
+                  </button>
+                  <button
+                    onClick={() => setShowReprint(false)}
+                    className="px-2 py-1 rounded-md text-[11px] text-zinc-500 hover:text-zinc-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
+
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+// Inline ZPL preview via zpl-renderer-js WASM \u2014 same renderer as the
+// designer, scaled into whatever space it's given. Caches module-level.
+function LocalZplPreview({ zpl, format }: { zpl: string; format: LabelFormat }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    if (!zpl) return;
+    (async () => {
+      try {
+        const mod = await import('zpl-renderer-js');
+        const { api } = await mod.ready;
+        const widthMm = format.width * 25.4;
+        const heightMm = format.height * 25.4;
+        const dpmm = Math.round((format.dpi || 203) / 25.4);
+        const b64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
+        if (!cancelled) setUrl(`data:image/png;base64,${b64}`);
+      } catch (e) {
+        if (!cancelled) setErr((e as Error)?.message || 'Render failed');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [zpl, format.width, format.height, format.dpi]);
+
+  if (err) return <p className="text-[11px] text-red-400">{err}</p>;
+  if (!url) return <p className="text-[11px] text-zinc-500">Rendering\u2026</p>;
+  return (
+    <img
+      src={url}
+      alt="Label preview"
+      className="rounded-md border border-zinc-800 bg-white"
+      style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '240px' }}
+    />
   );
 }

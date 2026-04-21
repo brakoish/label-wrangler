@@ -1,12 +1,15 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Printer, Clock, Trash2, Copy, Play } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
-import type { Run, RunPreset, RunStatus } from '@/lib/types';
+import { generateZPL } from '@/lib/zplGenerator';
+import { previewLabelValues } from '@/lib/runBuilder';
+import type { Run, RunPreset, RunStatus, LabelFormat, LabelTemplate } from '@/lib/types';
 
 const STATUS_STYLES: Record<RunStatus, string> = {
   draft: 'bg-zinc-800/60 text-zinc-400 border-zinc-700/50',
@@ -102,17 +105,23 @@ export default function RunsPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {runs.map((r) => (
-                  <RunRow
-                    key={r.id}
-                    run={r}
-                    templateName={templateName(r.templateId)}
-                    formatName={formatName(r.templateId)}
-                    onDelete={() => {
-                      if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id);
-                    }}
-                  />
-                ))}
+                {runs.map((r) => {
+                  const t = templates.find((x) => x.id === r.templateId) ?? null;
+                  const f = t ? formats.find((x) => x.id === t.formatId) ?? null : null;
+                  return (
+                    <RunRow
+                      key={r.id}
+                      run={r}
+                      template={t}
+                      format={f}
+                      templateName={templateName(r.templateId)}
+                      formatName={formatName(r.templateId)}
+                      onDelete={() => {
+                        if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id);
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
           </section>
@@ -164,21 +173,43 @@ function PresetCard({
 
 function RunRow({
   run,
+  template,
+  format,
   templateName,
   formatName,
   onDelete,
 }: {
   run: Run;
+  template: LabelTemplate | null;
+  format: LabelFormat | null;
   templateName: string;
   formatName: string;
   onDelete: () => void;
 }) {
   const pct = run.totalLabels > 0 ? Math.round((run.printedCount / run.totalLabels) * 100) : 0;
+  const resumable = run.status === 'paused' || run.status === 'draft' || (run.status === 'error' as RunStatus);
+  // Mapped columns \u2014 useful at a glance to tell "Metrc QR run" from "batch dates".
+  const mappedCols = useMemo(() => {
+    const cols: string[] = [];
+    for (const m of Object.values(run.fieldMappings || {})) {
+      if (m.mode === 'column' && m.csvColumn && m.csvColumn !== '__paste__') cols.push(m.csvColumn);
+    }
+    return cols;
+  }, [run.fieldMappings]);
+
   return (
     <Link
       href={`/runs/${run.id}`}
-      className="flex items-center gap-4 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group"
+      className="flex items-center gap-4 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group"
     >
+      {/* Thumbnail \u2014 first label, lazy WASM render. */}
+      <div className="shrink-0 w-20 h-14 rounded-md bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center">
+        {template && format ? (
+          <RunThumbnail run={run} template={template} format={format} />
+        ) : (
+          <Printer className="w-4 h-4 text-zinc-700" />
+        )}
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <h3 className="text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors">{run.name}</h3>
@@ -187,11 +218,16 @@ function RunRow({
           </span>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-zinc-500">
-          <span>{templateName}</span>
-          {formatName && <span className="text-zinc-600">{formatName}</span>}
-          <span className="flex items-center gap-1">
+          <span className="truncate">{templateName}</span>
+          {formatName && <span className="text-zinc-600 truncate">{formatName}</span>}
+          <span className="flex items-center gap-1 whitespace-nowrap">
             <Clock className="w-3 h-3" /> {formatDate(run.createdAt)}
           </span>
+          {mappedCols.length > 0 && (
+            <span className="hidden md:flex items-center gap-1 text-amber-500/70 truncate" title={mappedCols.join(', ')}>
+              \u2192 {mappedCols.slice(0, 2).join(', ')}{mappedCols.length > 2 && `, +${mappedCols.length - 2}`}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex-shrink-0 text-right">
@@ -206,6 +242,14 @@ function RunRow({
         </div>
       </div>
       <div className="flex items-center gap-1">
+        {resumable && (
+          <span
+            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-400 group-hover:bg-amber-500/25 transition-colors"
+            title="Continue this run"
+          >
+            <Play className="w-3 h-3" /> Continue
+          </span>
+        )}
         <button
           onClick={(e) => {
             e.preventDefault();
@@ -221,5 +265,43 @@ function RunRow({
       {/* Suppress unused Copy import warning \u2014 Copy is reserved for a v2 duplicate-run action. */}
       <Copy className="w-0 h-0" />
     </Link>
+  );
+}
+
+// Thumbnail of the first label in a run. Renders on-demand via the WASM ZPL
+// renderer. Falls back to a tiny icon on error. Module cache in the renderer
+// means N thumbnails share one WASM instance.
+function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemplate; format: LabelFormat }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const values = previewLabelValues(run, 0);
+        const zpl = generateZPL(template, format, values);
+        const mod = await import('zpl-renderer-js');
+        const { api } = await mod.ready;
+        const widthMm = format.width * 25.4;
+        const heightMm = format.height * 25.4;
+        const dpmm = Math.round((format.dpi || 203) / 25.4);
+        const b64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
+        if (!cancelled) setUrl(`data:image/png;base64,${b64}`);
+      } catch {
+        if (!cancelled) setErr(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [run, template, format]);
+
+  if (err || !url) return <Printer className="w-4 h-4 text-zinc-700" />;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="max-w-full max-h-full"
+      style={{ imageRendering: 'pixelated' }}
+    />
   );
 }
