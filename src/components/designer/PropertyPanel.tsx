@@ -148,6 +148,7 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
 // ── Type-specific property sections ──
 
 function TextProps({ element, onUpdate, format }: { element: TextElement; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat }) {
+  const isThermal = format.type === 'thermal';
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
@@ -163,6 +164,39 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
         <CompactInput label="LH" value={element.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
         <CompactSelect value={element.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
       </div>
+      {/* Thermal-only: horizontal character width ratio. Controls ZPL fontW/fontH.
+          0.5 = tight (Zebra native), 0.6 = balanced (default), 0.8 = roomy. */}
+      {isThermal && (
+        <div className="grid grid-cols-3 gap-1">
+          <CompactInput
+            label="CW"
+            value={element.charWidth ?? 0.6}
+            onChange={(v) => onUpdate({ charWidth: v })}
+            step={0.05}
+            labelRight
+          />
+          <div className="col-span-2 flex items-center gap-0.5">
+            {([
+              { label: 'Tight', value: 0.5 },
+              { label: 'Normal', value: 0.6 },
+              { label: 'Roomy', value: 0.8 },
+            ] as const).map((p) => (
+              <button
+                key={p.label}
+                onClick={() => onUpdate({ charWidth: p.value })}
+                className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+                  (element.charWidth ?? 0.6) === p.value
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
+                }`}
+                title={`Set character width ratio to ${p.value}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <CompactSelect value={element.fontFamily} options={['Arial', 'Helvetica', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
       <div className="flex gap-0.5">
         {(['left', 'center', 'right'] as const).map((a) => (

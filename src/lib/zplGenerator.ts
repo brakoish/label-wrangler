@@ -74,10 +74,14 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
 
   const dpi = format.dpi || 203;
 
-  // Convert font size from points to dots
-  // ZPL font height in dots: fontSize (pt) * dpi / 72
+  // Convert font size from points to dots.
+  // ZPL font height in dots: fontSize (pt) * dpi / 72.
+  // Width: controllable via element.charWidth (fontW / fontH ratio).
+  // Zebra Font 0's native ratio is ~0.5; 0.6 gives a balanced look; higher
+  // values make the text roomier (less squished horizontally).
   const fontH = Math.round(element.fontSize * (dpi / 72));
-  const fontW = Math.round(fontH * 0.6); // Approximate width
+  const widthRatio = element.charWidth ?? 0.6;
+  const fontW = Math.max(1, Math.round(fontH * widthRatio));
 
   const cmds: string[] = [];
 

@@ -124,6 +124,13 @@ export interface TextElement extends TemplateElementBase {
   textAlign: TextAlign;
   color: string;         // hex color (only used for sheet, ignored for thermal)
   lineHeight: number;    // multiplier (e.g. 1.2 = 120%)
+  /** Horizontal character-width multiplier (thermal/ZPL). 1.0 = Zebra default
+   *  (tall narrow), 1.2 = roomier, 1.5 = very wide. Also applied as a
+   *  proportional SVG letter-spacing in the designer so the preview matches. */
+  charWidth?: number;
+  /** Extra dot spacing between characters (ZPL ^A and ^CI don't expose this
+   *  directly; we implement it in SVG via letterSpacing only). Optional. */
+  letterSpacing?: number;
 }
 
 // QR Code element

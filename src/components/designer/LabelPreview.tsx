@@ -668,9 +668,11 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
 
   const lineHeight = svgFontSize * (element.lineHeight || 1.2);
 
-  // Word-wrap: estimate average character width (~0.5× font size for proportional fonts).
-  // The bottom ZPL preview is the authoritative rendering; the SVG canvas is just for design.
-  const charWidth = svgFontSize * 0.5;
+  // Word-wrap: character width for thermal matches the ZPL charWidth setting
+  // (so wrapping decisions agree with ZPL's field-block wrapping). For sheet,
+  // 0.5 is a decent Arial average.
+  const textCharWidthRatio = element.charWidth ?? 0.6;
+  const charWidth = svgFontSize * (isThermal ? textCharWidthRatio : 0.5);
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -726,15 +728,24 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
       fill={color}
       transform={transform}
     >
-      {visibleLines.map((line, i) => (
-        <tspan
-          key={i}
-          x={baseX}
-          y={element.y + svgFontSize * 0.85 + i * lineHeight}
-        >
-          {line}
-        </tspan>
-      ))}
+      {visibleLines.map((line, i) => {
+        // Match ZPL's character-width ratio so the SVG designer shows the same
+        // horizontal density as the ZPL preview will print. For thermal, we
+        // force glyph spacing via textLength + spacingAndGlyphs.
+        const widthRatio = element.charWidth ?? 0.6;
+        const forcedLen = isThermal ? line.length * svgFontSize * widthRatio : undefined;
+        return (
+          <tspan
+            key={i}
+            x={baseX}
+            y={element.y + svgFontSize * 0.85 + i * lineHeight}
+            textLength={forcedLen}
+            lengthAdjust={forcedLen ? 'spacingAndGlyphs' : undefined}
+          >
+            {line}
+          </tspan>
+        );
+      })}
     </text>
   );
 }
