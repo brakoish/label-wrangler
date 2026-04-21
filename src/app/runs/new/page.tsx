@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useFormatStore } from '@/lib/store';
@@ -20,7 +20,7 @@ function NewRunContent() {
   const searchParams = useSearchParams();
   const presetId = searchParams.get('presetId');
 
-  const { templates } = useTemplateStore();
+  const { templates, updateElementLocal, saveTemplate } = useTemplateStore();
   const { formats, getFormatById } = useFormatStore();
   const { presets, createRun, createPreset, updatePreset } = useRunStore();
 
@@ -58,6 +58,41 @@ function NewRunContent() {
   const template = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
   const dynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+
+  // Self-heal: if the chosen template has dynamic elements without a fieldName
+  // (common for older templates + QRs that predate the auto-name fix), backfill
+  // names in-place and persist. The user would otherwise be locked out of
+  // using those elements in a run because they wouldn't show up in the picker.
+  const didHealTemplateRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!template) return;
+    if (didHealTemplateRef.current === template.id) return;
+    const needsHeal = template.elements.some((el) => !el.isStatic && (!el.fieldName || !el.fieldName.trim()));
+    if (!needsHeal) {
+      didHealTemplateRef.current = template.id;
+      return;
+    }
+    const used = new Set<string>();
+    for (const el of template.elements) {
+      if (el.fieldName && el.fieldName.trim()) used.add(el.fieldName.trim());
+    }
+    for (const el of template.elements) {
+      if (el.isStatic) continue;
+      if (el.fieldName && el.fieldName.trim()) continue;
+      // Generate a type-based name, incrementing until unique.
+      let n = 1;
+      let candidate = `${el.type}_${n}`;
+      while (used.has(candidate)) {
+        n++;
+        candidate = `${el.type}_${n}`;
+      }
+      used.add(candidate);
+      updateElementLocal(template.id, el.id, { fieldName: candidate });
+    }
+    // Persist once, then remember we've healed this template id.
+    void saveTemplate(template.id);
+    didHealTemplateRef.current = template.id;
+  }, [template, updateElementLocal, saveTemplate]);
 
   // Initialize field mappings when template changes: default all to static.
   // If it's the first time (no existing mappings), also auto-map any field
@@ -213,6 +248,26 @@ function NewRunContent() {
     if (run) setCreatedRunId(run.id);
   };
 
+  // Generate + download a blank CSV with headers for every template dynamic
+  // field, so users can open it in Excel / Sheets, fill in rows, and re-upload.
+  const downloadCsvTemplate = () => {
+    if (!template || dynamicFields.length === 0) return;
+    const escape = (s: string) => {
+      if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const header = dynamicFields.map(escape).join(',');
+    const sampleRow = dynamicFields.map(() => '').join(',');
+    const csv = `${header}\n${sampleRow}\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${template.name.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}-template.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleSaveAsPreset = async () => {
     if (!template || !saveAsPresetName.trim()) return;
     const preset = await createPreset({
@@ -335,12 +390,22 @@ function NewRunContent() {
                   </>
                 ) : (
                   <div className="space-y-3">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-300 transition-colors"
-                    >
-                      <Upload className="w-4 h-4" /> {csvHeaders.length > 0 ? 'Replace CSV' : 'Upload CSV'}
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-300 transition-colors"
+                      >
+                        <Upload className="w-4 h-4" /> {csvHeaders.length > 0 ? 'Replace CSV' : 'Upload CSV'}
+                      </button>
+                      <button
+                        onClick={downloadCsvTemplate}
+                        disabled={dynamicFields.length === 0}
+                        title="Download a blank CSV with headers matching your template fields"
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-400 transition-colors disabled:opacity-40"
+                      >
+                        <Download className="w-4 h-4" /> CSV Template
+                      </button>
+                    </div>
                     <input
                       ref={fileInputRef}
                       type="file"
