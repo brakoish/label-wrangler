@@ -13,6 +13,7 @@ import { parseCsv, detectUrlColumn } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPL } from '@/lib/zplGenerator';
 import { RunPrinter } from '@/components/runs/RunPrinter';
+import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 
 function NewRunContent() {
@@ -604,8 +605,9 @@ function NewRunContent() {
 }
 
 // Inline ZPL preview via zpl-renderer-js WASM. Accepts the extra thermal
-// fields needed to size the canvas for multi-across rolls.
-function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number } }) {
+// fields needed to size the canvas for multi-across rolls plus an optional
+// outlines overlay matching the designer + run detail page treatment.
+function LocalZplPreview({ zpl, format, showOutlines = true }: { zpl: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; showOutlines?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -637,13 +639,21 @@ function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number
 
   if (err) return <p className="text-xs text-red-400">{err}</p>;
   if (!url) return <p className="text-xs text-zinc-500">Rendering\u2026</p>;
+  // LabelOutlineOverlay needs the full LabelFormat shape; coerce the loose
+  // format prop (which only guarantees thermal fields) for the overlay. Safe
+  // because the overlay only reads those thermal fields.
   return (
-    <img
-      src={url}
-      alt="Label preview"
-      className="rounded-lg border border-zinc-800 bg-white mx-auto"
-      style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '400px' }}
-    />
+    <div className="relative inline-block mx-auto">
+      <img
+        src={url}
+        alt="Label preview"
+        className="rounded-lg border border-zinc-800 bg-white"
+        style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '400px', display: 'block' }}
+      />
+      {showOutlines && (format.labelsAcross ?? 1) > 1 && (
+        <LabelOutlineOverlay format={format as unknown as import('@/lib/types').LabelFormat} />
+      )}
+    </div>
   );
 }
 

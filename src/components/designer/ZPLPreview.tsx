@@ -5,6 +5,7 @@ import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed } f
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
 import { PrintControls } from './PrintControls';
+import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 
 interface ZPLPreviewProps {
   format: LabelFormat;
@@ -196,72 +197,6 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   );
 }
 
-/**
- * Transparent SVG overlay that draws each label's boundary on top of the
- * rendered ZPL preview. Sits absolutely positioned over the <img> and uses
- * the liner dimensions as its viewBox, so label outlines land exactly over
- * each printed label regardless of zoom.
- *
- * Preview-only — does not affect the ZPL sent to the printer.
- */
-function LabelOutlineOverlay({ format }: { format: LabelFormat }) {
-  const across = Math.max(1, format.labelsAcross || 1);
-  const labelW = format.width;
-  const labelH = format.height;
-  const gap = format.horizontalGapThermal || 0;
-  const sideM = format.sideMarginThermal || 0;
-  const computedLiner = sideM * 2 + across * labelW + (across - 1) * gap;
-  const linerW = format.linerWidth || computedLiner;
-  const effectiveSideM = sideM > 0
-    ? sideM
-    : Math.max(0, (linerW - (across * labelW + (across - 1) * gap)) / 2);
-  // Stroke scales with label size so it reads on both tiny 0.5" and big 4x6" labels.
-  const stroke = Math.max(0.005, Math.min(labelW, labelH) * 0.015);
-  const labelPillRadius = Math.min(labelW, labelH) * 0.08;
+// LabelOutlineOverlay is defined in @/components/LabelOutlineOverlay
+// so the Runs detail page can share the exact same visual treatment.
 
-  return (
-    <svg
-      className="absolute inset-0 pointer-events-none"
-      viewBox={`0 0 ${linerW} ${labelH}`}
-      preserveAspectRatio="none"
-      style={{ width: '100%', height: '100%', padding: '4px' }}
-    >
-      {/* One dashed rectangle per across-lane, positioned at the same
-          sideMargin + lane*(labelW+gap) origin used by generateZPL. */}
-      {Array.from({ length: across }).map((_, lane) => {
-        const x = effectiveSideM + lane * (labelW + gap);
-        return (
-          <g key={lane}>
-            <rect
-              x={x}
-              y={0}
-              width={labelW}
-              height={labelH}
-              fill="none"
-              stroke="#d97706"
-              strokeOpacity={0.8}
-              strokeWidth={stroke}
-              strokeDasharray={`${stroke * 4} ${stroke * 2}`}
-              rx={labelPillRadius}
-              ry={labelPillRadius}
-            />
-            {across > 1 && (
-              <text
-                x={x + labelW / 2}
-                y={stroke * 4}
-                fontSize={labelH * 0.12}
-                fill="#d97706"
-                fillOpacity={0.7}
-                textAnchor="middle"
-                dominantBaseline="hanging"
-                style={{ fontFamily: 'ui-sans-serif, system-ui' }}
-              >
-                L{lane + 1}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg>
-  );
-}

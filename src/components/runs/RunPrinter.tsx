@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed } from 'lucide-react';
+import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import type { Run, LabelTemplate, LabelFormat } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
@@ -64,6 +65,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   // Label preview state — which row to show in the small thumbnail.
   const [previewIndex, setPreviewIndex] = useState(0);
+  // Show dashed outlines around each label in the preview. Default on for
+  // multi-across formats where lane boundaries actually matter visually.
+  const [showOutlines, setShowOutlines] = useState<boolean>(((format?.labelsAcross ?? 1) > 1));
   // Reprint-range UI state.
   const [showReprint, setShowReprint] = useState(false);
   const [reprintFrom, setReprintFrom] = useState(1);
@@ -317,6 +321,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="pt-2 border-t border-zinc-800/60 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowOutlines((s) => !s)}
+                  title={showOutlines ? 'Hide label outlines' : 'Show label outlines'}
+                  className={`p-1 rounded transition-colors ${showOutlines ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                  <SquareDashed className="w-3.5 h-3.5" />
+                </button>
               {total > 0 && (
                 <div className="flex items-center gap-1.5 text-[11px]">
                   <button
@@ -343,9 +355,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   >\u203a</button>
                 </div>
               )}
+              </div>
             </div>
             <div className="rounded-xl bg-zinc-950/60 p-3 min-h-[120px] flex items-center justify-center">
-              <LocalZplPreview zpl={previewZpl} format={format} />
+              <LocalZplPreview zpl={previewZpl} format={format} showOutlines={showOutlines} />
             </div>
           </div>
         </section>
@@ -533,7 +546,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
 // Inline ZPL preview via zpl-renderer-js WASM \u2014 same renderer as the
 // designer, scaled into whatever space it's given. Caches module-level.
-function LocalZplPreview({ zpl, format }: { zpl: string; format: LabelFormat }) {
+function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: LabelFormat; showOutlines?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -566,11 +579,14 @@ function LocalZplPreview({ zpl, format }: { zpl: string; format: LabelFormat }) 
   if (err) return <p className="text-[11px] text-red-400">{err}</p>;
   if (!url) return <p className="text-[11px] text-zinc-500">Rendering\u2026</p>;
   return (
-    <img
-      src={url}
-      alt="Label preview"
-      className="rounded-md border border-zinc-800 bg-white"
-      style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '240px' }}
-    />
+    <div className="relative inline-block">
+      <img
+        src={url}
+        alt="Label preview"
+        className="rounded-md border border-zinc-800 bg-white"
+        style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '240px', display: 'block' }}
+      />
+      {showOutlines && <LabelOutlineOverlay format={format} />}
+    </div>
   );
 }
