@@ -524,30 +524,36 @@ function NewRunContent() {
                 </section>
               )}
 
-              {/* Preview */}
-              {labelCount > 0 && format && (
+              {/* Preview — always show once a format is selected; when there's
+                  no data yet, we still render the template with its placeholders
+                  so the user can see what they're working with. */}
+              {format && (
                 <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h2>
-                    <div className="flex items-center gap-2 text-xs">
-                      <button
-                        onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
-                        disabled={previewIndex === 0}
-                        className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
-                      >
-                        Prev
-                      </button>
-                      <span className="text-zinc-400 tabular-nums">
-                        Label {previewIndex + 1} / {labelCount}
-                      </span>
-                      <button
-                        onClick={() => setPreviewIndex((i) => Math.min(labelCount - 1, i + 1))}
-                        disabled={previewIndex >= labelCount - 1}
-                        className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
-                      >
-                        Next
-                      </button>
-                    </div>
+                    {labelCount > 0 ? (
+                      <div className="flex items-center gap-2 text-xs">
+                        <button
+                          onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
+                          disabled={previewIndex === 0}
+                          className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                        >
+                          Prev
+                        </button>
+                        <span className="text-zinc-400 tabular-nums">
+                          Label {previewIndex + 1} / {labelCount}
+                        </span>
+                        <button
+                          onClick={() => setPreviewIndex((i) => Math.min(labelCount - 1, i + 1))}
+                          disabled={previewIndex >= labelCount - 1}
+                          className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-zinc-500">Showing defaults — add data for per-label preview</span>
+                    )}
                   </div>
                   <div className="rounded-xl bg-zinc-950/60 p-4">
                     <LocalZplPreview zpl={previewZpl} format={format} />
