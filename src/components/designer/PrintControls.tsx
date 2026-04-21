@@ -165,7 +165,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
           setUsbPrinter(opened);
         }
       } catch (err) {
-        // Soft-fail \u2014 could be access-denied on Windows; user will see it when they try.
+        // Soft-fail — could be access-denied on Windows; user will see it when they try.
       }
     })();
   }, [transport, webUsbSupported]);
@@ -192,7 +192,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
     } catch (err) {
       const e = err as Error;
       if (e?.name === 'NotFoundError') {
-        // User cancelled \u2014 not really an error.
+        // User cancelled — not really an error.
       } else if (e?.message?.includes('Access denied') || e?.name === 'SecurityError') {
         setError('Windows has the printer claimed. Install Dazzle to print without a driver swap.');
       } else {
@@ -300,19 +300,19 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {/* Transport toggle \u2014 only show if both are available */}
+      {/* Transport toggle — only show if both are available */}
       {webUsbSupported && dazzleAvailable && (
         <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
           <button
             onClick={() => setTransport('dazzle')}
-            title="Use Dazzle (local desktop app) \u2014 works even when Windows owns the printer"
+            title="Use Dazzle (local desktop app) — works even when Windows owns the printer"
             className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${transport === 'dazzle' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             Dazzle
           </button>
           <button
             onClick={() => setTransport('webusb')}
-            title="Use WebUSB (direct browser\u2192USB, no app needed, fails on Windows without driver swap)"
+            title="Use WebUSB (direct browser→USB, no app needed, fails on Windows without driver swap)"
             className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${transport === 'webusb' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             WebUSB
@@ -377,7 +377,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5 border border-zinc-800 hover:border-amber-500/30 transition-colors disabled:opacity-50"
         >
           {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
-          {connecting ? 'Connecting\u2026' : 'Connect printer'}
+          {connecting ? 'Connecting…' : 'Connect printer'}
         </button>
       ) : (
         <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
@@ -386,7 +386,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
         </div>
       )}
 
-      {/* Print + Calibrate buttons \u2014 only shown when we have a usable printer */}
+      {/* Print + Calibrate buttons — only shown when we have a usable printer */}
       {canPrint && (
         <>
           <button

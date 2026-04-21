@@ -147,7 +147,7 @@ function PresetCard({
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors">{preset.name}</h3>
-          <p className="text-xs text-zinc-500 mt-0.5 truncate">{templateName} {formatName && <span className="text-zinc-600">\u00b7 {formatName}</span>}</p>
+          <p className="text-xs text-zinc-500 mt-0.5 truncate">{templateName} {formatName && <span className="text-zinc-600">· {formatName}</span>}</p>
         </div>
         <button
           onClick={onDelete}
@@ -158,7 +158,7 @@ function PresetCard({
         </button>
       </div>
       <div className="flex items-center gap-3 text-[10px] text-zinc-500 mt-3">
-        {preset.useCount > 0 && <span>Used {preset.useCount}\u00d7</span>}
+        {preset.useCount > 0 && <span>Used {preset.useCount}×</span>}
         {preset.lastUsedAt && <span>Last used {formatDate(preset.lastUsedAt)}</span>}
       </div>
       <Link
@@ -188,7 +188,7 @@ function RunRow({
 }) {
   const pct = run.totalLabels > 0 ? Math.round((run.printedCount / run.totalLabels) * 100) : 0;
   const resumable = run.status === 'paused' || run.status === 'draft' || (run.status === 'error' as RunStatus);
-  // Mapped columns \u2014 useful at a glance to tell "Metrc QR run" from "batch dates".
+  // Mapped columns — useful at a glance to tell "Metrc QR run" from "batch dates".
   const mappedCols = useMemo(() => {
     const cols: string[] = [];
     for (const m of Object.values(run.fieldMappings || {})) {
@@ -202,7 +202,7 @@ function RunRow({
       href={`/runs/${run.id}`}
       className="flex items-center gap-4 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group"
     >
-      {/* Thumbnail \u2014 first label, lazy WASM render. */}
+      {/* Thumbnail — first label, lazy WASM render. */}
       <div className="shrink-0 w-20 h-14 rounded-md bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center">
         {template && format ? (
           <RunThumbnail run={run} template={template} format={format} />
@@ -225,7 +225,7 @@ function RunRow({
           </span>
           {mappedCols.length > 0 && (
             <span className="hidden md:flex items-center gap-1 text-amber-500/70 truncate" title={mappedCols.join(', ')}>
-              \u2192 {mappedCols.slice(0, 2).join(', ')}{mappedCols.length > 2 && `, +${mappedCols.length - 2}`}
+              → {mappedCols.slice(0, 2).join(', ')}{mappedCols.length > 2 && `, +${mappedCols.length - 2}`}
             </span>
           )}
         </div>
@@ -262,7 +262,7 @@ function RunRow({
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-      {/* Suppress unused Copy import warning \u2014 Copy is reserved for a v2 duplicate-run action. */}
+      {/* Suppress unused Copy import warning — Copy is reserved for a v2 duplicate-run action. */}
       <Copy className="w-0 h-0" />
     </Link>
   );

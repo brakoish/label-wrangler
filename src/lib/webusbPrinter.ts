@@ -9,11 +9,11 @@
  * - HTTPS only (Vercel satisfies this). localhost also works for dev.
  * - Windows: on first connect the printer's driver may need to be switched
  *   from `usbprint.sys` to `winusb.sys` (via Zadig). This disables OS-level
- *   printing (Word, etc.) for that device \u2014 tradeoff for browser direct.
+ *   printing (Word, etc.) for that device — tradeoff for browser direct.
  * - macOS: typically works without fuss.
  * - Linux: needs a udev rule for the Zebra vendor id.
  *
- * Permissions persist per-origin once granted \u2014 navigator.usb.getDevices()
+ * Permissions persist per-origin once granted — navigator.usb.getDevices()
  * returns previously-authorized devices without re-prompting.
  */
 
@@ -112,7 +112,7 @@ export async function closePrinter(printer: ConnectedPrinter): Promise<void> {
       await printer.device.close();
     }
   } catch {
-    // Ignore close errors \u2014 device may already be gone.
+    // Ignore close errors — device may already be gone.
   }
 }
 

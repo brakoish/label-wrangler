@@ -4,7 +4,7 @@
  * Dazzle (https://github.com/StirlingMarketingGroup/dazzle) is a tiny open-source
  * desktop app that runs a localhost HTTP server (default :29100) and forwards
  * ZPL to any OS-installed printer via the platform's raw-spool API. Unlike WebUSB,
- * this keeps the printer usable by other Windows apps \u2014 no driver swap needed.
+ * this keeps the printer usable by other Windows apps — no driver swap needed.
  *
  * We use it as the Windows-friendly path; macOS/Linux users can still use
  * WebUSB for zero-install, but Dazzle works everywhere and is generally simpler.

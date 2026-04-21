@@ -101,7 +101,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             setUsbPrinter(opened);
           }
         } catch {
-          /* soft fail \u2014 user can reconnect */
+          /* soft fail — user can reconnect */
         }
       } else {
         setTransportError('No printer transport available. Install Dazzle or use Chrome/Edge.');
@@ -204,7 +204,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       startIndex: printedCount,
       onProgress: async (done) => {
         setPrintedCount(done);
-        // Fire-and-forget DB update \u2014 we don't block printing on persistence.
+        // Fire-and-forget DB update — we don't block printing on persistence.
         void persistProgress(done);
         if (done >= labels.length) {
           setStatus('completed');
@@ -259,7 +259,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   if (!run || !template || !format) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-500">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run\u2026
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run…
       </div>
     );
   }
@@ -271,7 +271,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-zinc-100 truncate">{run.name}</h1>
             <p className="text-sm text-zinc-500 mt-1">
-              {template.name} \u00b7 {format.name} \u00b7 {format.width}\u2033 \u00d7 {format.height}\u2033 \u00b7 {total} labels
+              {template.name} · {format.name} · {format.width}″ × {format.height}″ · {total} labels
             </p>
           </div>
           <div className="shrink-0 flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border"
@@ -300,7 +300,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </span>
           </div>
           {mappingRows.length === 0 ? (
-            <p className="text-xs text-zinc-500">No dynamic fields \u2014 every label prints the same.</p>
+            <p className="text-xs text-zinc-500">No dynamic fields — every label prints the same.</p>
           ) : (
             <div className="space-y-1">
               {mappingRows.map((m) => (
@@ -336,7 +336,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
                     disabled={previewIndex === 0}
                     className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
-                  >\u2039</button>
+                  >‹</button>
                   <input
                     type="number"
                     min={1}
@@ -353,7 +353,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     onClick={() => setPreviewIndex((i) => Math.min(total - 1, i + 1))}
                     disabled={previewIndex >= total - 1}
                     className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
-                  >\u203a</button>
+                  >›</button>
                 </div>
               )}
               </div>
@@ -446,7 +446,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
-              {printedCount} / {total} \u00b7 {pct}%
+              {printedCount} / {total} · {pct}%
             </span>
           </div>
           <div className="h-3 rounded-full bg-zinc-900 overflow-hidden">
@@ -496,7 +496,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )}
           </div>
 
-          {/* Reprint tools \u2014 always available once status is not 'running'. */}
+          {/* Reprint tools — always available once status is not 'running'. */}
           {status !== 'running' && total > 0 && (
             <div className="pt-3 border-t border-zinc-800/60 space-y-2">
               {!showReprint ? (
@@ -506,7 +506,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
                     title="Jam, ribbon out, bad print? Reprint a range."
                   >
-                    <Hash className="w-3 h-3" /> Reprint from label\u2026
+                    <Hash className="w-3 h-3" /> Reprint from label…
                   </button>
                   {status === 'completed' && (
                     <button
@@ -554,7 +554,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   );
 }
 
-// Inline ZPL preview via zpl-renderer-js WASM \u2014 same renderer as the
+// Inline ZPL preview via zpl-renderer-js WASM — same renderer as the
 // designer, scaled into whatever space it's given. Caches module-level.
 function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: LabelFormat; showOutlines?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -587,7 +587,7 @@ function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: L
   }, [zpl, format.width, format.height, format.dpi]);
 
   if (err) return <p className="text-[11px] text-red-400">{err}</p>;
-  if (!url) return <p className="text-[11px] text-zinc-500">Rendering\u2026</p>;
+  if (!url) return <p className="text-[11px] text-zinc-500">Rendering…</p>;
   return (
     <div className="relative inline-block">
       <img

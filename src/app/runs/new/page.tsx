@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download } from 'lucide-react';
+import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useFormatStore } from '@/lib/store';
@@ -47,7 +47,7 @@ function NewRunContent() {
     if (!presetId) return;
     const p = presets.find((x) => x.id === presetId);
     if (!p) return;
-    setName(`${p.name} \u2014 ${new Date().toLocaleDateString()}`);
+    setName(`${p.name} — ${new Date().toLocaleDateString()}`);
     setTemplateId(p.templateId);
     setStaticValues(p.staticDefaults);
     setFieldMappings(p.fieldMappings || {});
@@ -293,14 +293,10 @@ function NewRunContent() {
     );
   }
 
+  // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
+  // action is needed here.
   return (
-    <AppShell
-      headerAction={
-        <Link href="/runs" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Runs
-        </Link>
-      }
-    >
+    <AppShell>
       <div className="flex-1 overflow-auto">
         <div className="max-w-[1100px] mx-auto w-full p-8 space-y-6">
           <h1 className="text-2xl font-bold text-zinc-100">New Print Run</h1>
@@ -315,7 +311,7 @@ function NewRunContent() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Jack Herer 3.5g \u2014 Apr 21 batch"
+                  placeholder="e.g. Jack Herer 3.5g — Apr 21 batch"
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
                 />
               </div>
@@ -335,7 +331,7 @@ function NewRunContent() {
                       return {
                         value: t.id,
                         label: t.name,
-                        sublabel: f ? `${f.name} \u2014 ${f.width}" \u00d7 ${f.height}"` : '',
+                        sublabel: f ? `${f.name} — ${f.width}" × ${f.height}"` : '',
                       };
                     })}
                   />
@@ -447,7 +443,7 @@ function NewRunContent() {
                     />
                     {csvHeaders.length > 0 && (
                       <p className="text-xs text-zinc-500">
-                        {csvHeaders.length} columns \u00b7 {csvRows.length} rows
+                        {csvHeaders.length} columns · {csvRows.length} rows
                       </p>
                     )}
                   </div>
@@ -646,7 +642,7 @@ function LocalZplPreview({ zpl, format, showOutlines = true }: { zpl: string; fo
   }, [zpl, format.width, format.height, format.dpi, format.labelsAcross, format.horizontalGapThermal, format.sideMarginThermal, format.linerWidth]);
 
   if (err) return <p className="text-xs text-red-400">{err}</p>;
-  if (!url) return <p className="text-xs text-zinc-500">Rendering\u2026</p>;
+  if (!url) return <p className="text-xs text-zinc-500">Rendering…</p>;
   // LabelOutlineOverlay needs the full LabelFormat shape; coerce the loose
   // format prop (which only guarantees thermal fields) for the overlay. Safe
   // because the overlay only reads those thermal fields.
