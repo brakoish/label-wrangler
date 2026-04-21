@@ -41,17 +41,10 @@ export default function RunsPage() {
     return formats.find((f) => f.id === t.formatId)?.name ?? '';
   };
 
+  // New Run CTA lives in the page body (next to Recent Runs header) rather
+  // than the global AppShell nav, so the top bar stays clean.
   return (
-    <AppShell
-      headerAction={
-        <Link
-          href="/runs/new"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-        >
-          <Plus className="w-3.5 h-3.5" /> New Run
-        </Link>
-      }
-    >
+    <AppShell>
       <div className="flex-1 overflow-auto">
         <div className="max-w-[1600px] mx-auto w-full p-8 space-y-8">
           {/* Presets section */}
@@ -83,11 +76,21 @@ export default function RunsPage() {
 
           {/* Recent runs */}
           <section>
-            <div className="flex items-baseline justify-between mb-4">
-              <h2 className="text-lg font-semibold text-zinc-100">Recent Runs</h2>
-              <span className="text-xs text-zinc-500">
-                {runs.length === 0 ? 'None yet' : `${runs.length} total`}
-              </span>
+            <div className="flex items-baseline justify-between mb-4 gap-4">
+              <div className="flex items-baseline gap-3">
+                <h2 className="text-lg font-semibold text-zinc-100">Recent Runs</h2>
+                <span className="text-xs text-zinc-500">
+                  {runs.length === 0 ? 'None yet' : `${runs.length} total`}
+                </span>
+              </div>
+              {runs.length > 0 && (
+                <Link
+                  href="/runs/new"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New Run
+                </Link>
+              )}
             </div>
             {runs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
