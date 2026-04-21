@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown, Grid3x3 } from 'lucide-react';
+import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
 import {
@@ -59,7 +59,6 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
   const [printing, setPrinting] = useState<null | 'label' | 'calibration'>(null);
   const [error, setError] = useState<string | null>(null);
   // Calibration print options — persisted for convenience.
-  const [calibStyle, setCalibStyle] = useState<'crosshair' | 'grid'>('crosshair');
   const [calibCount, setCalibCount] = useState<number>(1);
   const [calibMenuOpen, setCalibMenuOpen] = useState(false);
   // Printer adjustment knobs (sent as ZPL control commands with every
@@ -232,14 +231,14 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
   const handlePrintCalibration = useCallback(() => {
     const zpl = calibrationZpl(format.width, format.height, format.dpi || 203, {
       count: calibCount,
-      style: calibStyle,
+      style: 'crosshair',
       topOffset,
       leftShift,
       darkness,
       speed,
     });
     return doPrint(zpl, 'calibration');
-  }, [doPrint, format, calibStyle, calibCount, topOffset, leftShift, darkness, speed]);
+  }, [doPrint, format, calibCount, topOffset, leftShift, darkness, speed]);
 
   const handleApplyAdjustments = useCallback(async (persist: boolean) => {
     setError(null);
@@ -402,10 +401,10 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
             <button
               onClick={handlePrintCalibration}
               disabled={!!printing}
-              title={`Print ${calibCount} ${calibStyle} calibration label${calibCount > 1 ? 's' : ''}`}
+              title={`Print ${calibCount} calibration label${calibCount > 1 ? 's' : ''}`}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-amber-400 hover:bg-amber-500/5 transition-colors disabled:opacity-50"
             >
-              {printing === 'calibration' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : calibStyle === 'grid' ? <Grid3x3 className="w-3.5 h-3.5" /> : <Target className="w-3.5 h-3.5" />}
+              {printing === 'calibration' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
               Calibrate {calibCount > 1 && <span className="text-zinc-500">×{calibCount}</span>}
             </button>
             <button
@@ -417,23 +416,6 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
             </button>
             {calibMenuOpen && (
               <div className="absolute top-full mt-1 right-auto min-w-[280px] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 p-3 space-y-3">
-                <div>
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-1.5">Style</div>
-                  <div className="flex gap-0.5">
-                    {([
-                      { id: 'crosshair', label: 'Crosshair', icon: <Target className="w-3 h-3" /> },
-                      { id: 'grid', label: 'Grid', icon: <Grid3x3 className="w-3 h-3" /> },
-                    ] as const).map((o) => (
-                      <button
-                        key={o.id}
-                        onClick={() => setCalibStyle(o.id)}
-                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[11px] font-medium transition-colors ${calibStyle === o.id ? 'bg-amber-500/20 text-amber-400' : 'bg-zinc-800/50 text-zinc-400 hover:text-zinc-200'}`}
-                      >
-                        {o.icon} {o.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 <div>
                   <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-1.5">Copies</div>
                   <div className="flex gap-0.5">
