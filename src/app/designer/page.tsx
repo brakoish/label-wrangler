@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Undo2, Redo2 } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
@@ -47,6 +47,9 @@ function DesignerContent() {
   // Convenience: single selected element for property panel
   const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
   const [testData, setTestData] = useState<Record<string, string>>({});
+  // Debounced save timer for arrow-key nudges so holding an arrow doesn't
+  // hit the DB on every frame.
+  const nudgeSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync template selection FROM the URL only (one-way). When users click the
   // Templates breadcrumb we update the URL first; this effect then clears the
@@ -113,25 +116,62 @@ function DesignerContent() {
     }
   }, [currentTemplate, redo, pushUndo, canRedo]);
 
-  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z (or Cmd on Mac)
+  // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z (or Cmd on Mac), + arrow key nudging.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Skip if typing in an input/textarea/contentEditable so property panel,
+      // text area edits, etc. aren't hijacked.
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable) {
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+        return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
         e.preventDefault();
         handleRedo();
+        return;
+      }
+
+      // Arrow key nudge for selected element(s).
+      const arrowMap: Record<string, { dx: number; dy: number }> = {
+        ArrowLeft: { dx: -1, dy: 0 },
+        ArrowRight: { dx: 1, dy: 0 },
+        ArrowUp: { dx: 0, dy: -1 },
+        ArrowDown: { dx: 0, dy: 1 },
+      };
+      const arrow = arrowMap[e.key];
+      if (arrow && currentTemplate && selectedIds.size > 0) {
+        e.preventDefault();
+        // Step: 1 dot (thermal) / 0.01" (sheet). Shift → 10×.
+        const isThermal = currentFormat?.type === 'thermal';
+        const baseStep = isThermal ? 1 : 0.01;
+        const step = (e.shiftKey ? 10 : 1) * baseStep;
+        pushUndoState();
+        for (const id of selectedIds) {
+          const el = currentTemplate.elements.find((x) => x.id === id);
+          if (!el) continue;
+          updateElementLocal(currentTemplate.id, id, {
+            x: el.x + arrow.dx * step,
+            y: el.y + arrow.dy * step,
+          });
+        }
+        // Debounce save to avoid hammering the DB on held arrow keys.
+        if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current);
+        nudgeSaveRef.current = setTimeout(() => {
+          if (currentTemplate) saveTemplate(currentTemplate.id);
+        }, 400);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, pushUndoState]);
 
   // Clear undo history when switching templates
   useEffect(() => {
