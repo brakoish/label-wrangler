@@ -22,8 +22,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     // Only copy known fields.
     for (const k of ['name', 'staticValues', 'fieldMappings', 'sourceData', 'mappedField', 'status',
-                     'totalLabels', 'printedCount', 'notes', 'completedAt', 'dataSource']) {
+                     'totalLabels', 'printedCount', 'notes', 'completedAt', 'dataSource',
+                     'pinnedAt']) {
       if (k in body) updates[k] = (body as Record<string, unknown>)[k];
+    }
+    // Convenience shortcut: clients can send `{ pinned: true|false }` and the
+    // server sets/clears the pinnedAt timestamp instead of computing it on
+    // the client. Keeps the clock authoritative.
+    if ('pinned' in body) {
+      updates.pinnedAt = body.pinned ? new Date().toISOString() : null;
     }
     if ('sourceData' in body && Array.isArray(body.sourceData)) {
       updates.totalLabels = body.sourceData.length;

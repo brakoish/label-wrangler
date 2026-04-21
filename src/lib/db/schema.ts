@@ -76,6 +76,10 @@ export const runs = pgTable("runs", {
   totalLabels: integer("total_labels").notNull().default(0),
   printedCount: integer("printed_count").notNull().default(0),
   notes: text("notes"),
+  // Pinned runs sort to the top of the Runs dashboard. Nullable text ISO
+  // timestamp — null means not pinned. Sort order uses pinned_at DESC
+  // among pinned, then created_at DESC for the rest.
+  pinnedAt: text("pinned_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   completedAt: text("completed_at"),

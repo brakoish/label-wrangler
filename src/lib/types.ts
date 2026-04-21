@@ -240,6 +240,9 @@ export interface Run {
   totalLabels: number;
   printedCount: number;
   notes: string | null;
+  /** ISO timestamp when the run was pinned. null = not pinned. Pinned runs
+   *  surface to the top of the Runs dashboard regardless of status. */
+  pinnedAt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;

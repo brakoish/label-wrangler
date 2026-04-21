@@ -14,6 +14,8 @@ interface RunStore {
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   setRunStatus: (id: string, status: RunStatus, printedCount?: number) => Promise<Run | null>;
   deleteRun: (id: string) => Promise<void>;
+  /** Toggle the pinned state of a run. Server stamps pinnedAt. */
+  togglePin: (id: string) => Promise<Run | null>;
 
   // Presets
   createPreset: (data: Partial<RunPreset> & { name: string; templateId: string }) => Promise<RunPreset>;
@@ -72,6 +74,21 @@ export const useRunStore = create<RunStore>((set, get) => ({
   deleteRun: async (id) => {
     await fetch(`/api/runs/${id}`, { method: 'DELETE' });
     set((state) => ({ runs: state.runs.filter((r) => r.id !== id) }));
+  },
+
+  togglePin: async (id) => {
+    const current = get().runs.find((r) => r.id === id);
+    if (!current) return null;
+    // Send the convenience flag; server decides the timestamp.
+    const res = await fetch(`/api/runs/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: !current.pinnedAt }),
+    });
+    if (!res.ok) return null;
+    const updated = (await res.json()) as Run;
+    set((state) => ({ runs: state.runs.map((r) => (r.id === id ? updated : r)) }));
+    return updated;
   },
 
   createPreset: async (data) => {

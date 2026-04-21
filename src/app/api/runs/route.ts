@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       totalLabels: Array.isArray(body.sourceData) ? body.sourceData.length : 0,
       printedCount: 0,
       notes: body.notes ?? null,
+      pinnedAt: null,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
