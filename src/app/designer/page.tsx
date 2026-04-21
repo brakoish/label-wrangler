@@ -174,9 +174,10 @@ function DesignerContent() {
     return () => window.removeEventListener('keydown', handler);
   }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, pushUndoState]);
 
-  // Clear undo history when switching templates
+  // Clear undo history + selection when switching templates
   useEffect(() => {
     clearUndo();
+    setSelectedIds(new Set());
   }, [selectedTemplateId, clearUndo]);
 
   // If no template is selected, show template list view

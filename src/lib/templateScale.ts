@@ -29,12 +29,18 @@ export function duplicateElementsForFormat(
   targetFormat: LabelFormat,
   { scale }: DuplicateOptions,
 ): TemplateElement[] {
+  // Generate a fresh, unique id + index pair for every cloned element.
+  // The template POST endpoint doesn't mint element ids for us, so if we
+  // passed through the source ids (or left them undefined) every element
+  // would end up colliding in the selection state.
+  const freshId = (i: number) => `el-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`;
+
   if (!scale) {
-    // Literal deep copy; drop id + zIndex so the DB assigns fresh ones.
-    return source.elements.map((el) => {
+    // Literal deep copy; fresh id + zIndex per element.
+    return source.elements.map((el, i) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, zIndex: _z, ...rest } = el as any;
-      return rest as TemplateElement;
+      return { ...rest, id: freshId(i), zIndex: i } as TemplateElement;
     });
   }
 
@@ -43,11 +49,13 @@ export function duplicateElementsForFormat(
   // Uniform scale preserves element aspect ratios even if label aspect changes.
   const ratio = Math.min(tgt.w / src.w, tgt.h / src.h);
 
-  return source.elements.map((el) => {
+  return source.elements.map((el, i) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _id, zIndex: _z, ...rest } = el as any;
     const base: TemplateElement = {
       ...rest,
+      id: freshId(i),
+      zIndex: i,
       x: el.x * ratio,
       y: el.y * ratio,
       width: el.width * ratio,
