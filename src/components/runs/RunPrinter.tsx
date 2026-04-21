@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed } from 'lucide-react';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
+import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { Run, LabelTemplate, LabelFormat } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
@@ -358,7 +359,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </div>
             </div>
             <div className="rounded-xl bg-zinc-950/60 p-3 min-h-[120px] flex items-center justify-center">
-              <LocalZplPreview zpl={previewZpl} format={format} showOutlines={showOutlines} />
+              {format.type === 'sheet' ? (
+                // Sheet formats can't be rendered by the ZPL WASM engine —
+                // show the SVG sheet-grid layout instead so the user actually
+                // sees 10x20 / 8x11 / whatever grid they designed.
+                <div className="w-full">
+                  <LayoutPreview format={format} elements={template.elements} />
+                </div>
+              ) : (
+                <LocalZplPreview zpl={previewZpl} format={format} showOutlines={showOutlines} />
+              )}
             </div>
           </div>
         </section>

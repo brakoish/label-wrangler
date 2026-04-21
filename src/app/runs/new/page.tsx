@@ -14,6 +14,7 @@ import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuil
 import { generateZPL } from '@/lib/zplGenerator';
 import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
+import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 
 function NewRunContent() {
@@ -557,7 +558,14 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="rounded-xl bg-zinc-950/60 p-4">
-                    <LocalZplPreview zpl={previewZpl} format={format} />
+                    {format.type === 'sheet' ? (
+                      // Sheets can't render via the ZPL WASM engine — show the
+                      // actual sheet-grid layout so the user sees 10x20 /
+                      // 8x11 / whatever their template actually is.
+                      <LayoutPreview format={format} elements={template.elements} />
+                    ) : (
+                      <LocalZplPreview zpl={previewZpl} format={format} />
+                    )}
                   </div>
                 </section>
               )}

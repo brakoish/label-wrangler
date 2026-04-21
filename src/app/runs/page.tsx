@@ -277,6 +277,12 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
 
   useEffect(() => {
     let cancelled = false;
+    // Sheet formats can't render via the ZPL WASM engine. Skip the fetch
+    // and let the caller render a sheet-style placeholder instead.
+    if (format.type !== 'thermal') {
+      setErr(true);
+      return;
+    }
     (async () => {
       try {
         const values = previewLabelValues(run, 0);
@@ -299,6 +305,23 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
     })();
     return () => { cancelled = true; };
   }, [run, template, format]);
+
+  // Sheet formats: draw a tiny SVG grid thumbnail so the user still sees
+  // "this is a sheet with N labels" instead of a generic printer icon.
+  if (format.type === 'sheet') {
+    const cols = format.columns || 1;
+    const rows = format.rows || 1;
+    return (
+      <svg viewBox={`0 0 ${cols} ${rows}`} className="w-full h-full p-1" preserveAspectRatio="xMidYMid meet">
+        <rect x={0} y={0} width={cols} height={rows} fill="#f9fafb" />
+        {Array.from({ length: rows }).map((_, r) =>
+          Array.from({ length: cols }).map((_, c) => (
+            <rect key={`${r}-${c}`} x={c + 0.1} y={r + 0.1} width={0.8} height={0.8} fill="#d97706" opacity={0.85} />
+          )),
+        )}
+      </svg>
+    );
+  }
 
   if (err || !url) return <Printer className="w-4 h-4 text-zinc-700" />;
   return (
