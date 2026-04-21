@@ -629,7 +629,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
     case 'text':
       return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} format={format} />;
+      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} />;
     case 'barcode':
       return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} />;
     case 'line':
@@ -779,49 +779,23 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
   );
 }
 
-function QRElementRenderer({ element, transform, format }: { element: QRElement; transform?: string; format: LabelFormat }) {
+function QRElementRenderer({ element, transform }: { element: QRElement; transform?: string; format?: LabelFormat }) {
   const [dataUrl, setDataUrl] = useState<string>('');
-  const [moduleCount, setModuleCount] = useState<number>(0);
 
   useEffect(() => {
     // Use toDataURL instead of toCanvas — canvas elements can't exist inside SVG.
-    // Also call .create() to get the real module count so we can size the SVG
-    // image to match what ZPL will actually render (mag × moduleCount dots).
-    const content = element.content || 'QR';
-    try {
-      const qr = QRCode.create(content, { errorCorrectionLevel: element.errorCorrection });
-      setModuleCount(qr.modules.size);
-    } catch {
-      setModuleCount(0);
-    }
-    // Margin = quiet zone in modules around the QR. ZPL ˆBQ renders with a
-    // ~2-module quiet zone by default, so SVG must include it too for the
-    // on-screen position to match the printed output.
-    QRCode.toDataURL(content, {
+    // margin: 0 so the SVG QR fills its full element.width/height bounding box
+    // cleanly — makes it simple to design around in the canvas. The bottom ZPL
+    // preview shows exactly what will print with the actual quiet zone.
+    QRCode.toDataURL(element.content || 'QR', {
       errorCorrectionLevel: element.errorCorrection,
       width: 256,
-      margin: 2,
+      margin: 0,
       color: { dark: '#000000', light: '#ffffff' },
     }).then((url: string) => {
       setDataUrl(url);
     }).catch(() => {});
   }, [element.content, element.errorCorrection]);
-
-  // Match ZPL's actual rendered QR size. ZPL uses ^BQN,2,<mag> where each
-  // module at magnification 1 is 1 dot; we compute mag the same way the ZPL
-  // generator does (round(width/25) clamped 1-10), then the rendered footprint
-  // is mag × (moduleCount + 2*quietZone) dots. For non-thermal, fall back
-  // to element.width/height.
-  const isThermal = format.type === 'thermal';
-  const quietZone = 2; // matches QRCode.toDataURL margin above
-  let renderW = element.width;
-  let renderH = element.height;
-  if (isThermal && moduleCount > 0) {
-    const mag = Math.max(1, Math.min(10, Math.round(element.width / 25)));
-    const sizeDots = mag * (moduleCount + 2 * quietZone);
-    renderW = sizeDots;
-    renderH = sizeDots;
-  }
 
   return (
     <>
@@ -829,8 +803,8 @@ function QRElementRenderer({ element, transform, format }: { element: QRElement;
         <image
           x={element.x}
           y={element.y}
-          width={renderW}
-          height={renderH}
+          width={element.width}
+          height={element.height}
           href={dataUrl}
           transform={transform}
           preserveAspectRatio="xMidYMid meet"
