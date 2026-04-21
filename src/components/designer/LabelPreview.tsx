@@ -629,7 +629,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
     case 'text':
       return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} />;
+      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} format={format} />;
     case 'barcode':
       return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} />;
     case 'line':
@@ -770,12 +770,22 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
   );
 }
 
-function QRElementRenderer({ element, transform }: { element: QRElement; transform?: string }) {
+function QRElementRenderer({ element, transform, format }: { element: QRElement; transform?: string; format: LabelFormat }) {
   const [dataUrl, setDataUrl] = useState<string>('');
+  const [moduleCount, setModuleCount] = useState<number>(0);
 
   useEffect(() => {
-    // Use toDataURL instead of toCanvas — canvas elements can't exist inside SVG
-    QRCode.toDataURL(element.content || 'QR', {
+    // Use toDataURL instead of toCanvas — canvas elements can't exist inside SVG.
+    // Also call .create() to get the real module count so we can size the SVG
+    // image to match what ZPL will actually render (mag × moduleCount dots).
+    const content = element.content || 'QR';
+    try {
+      const qr = QRCode.create(content, { errorCorrectionLevel: element.errorCorrection });
+      setModuleCount(qr.modules.size);
+    } catch {
+      setModuleCount(0);
+    }
+    QRCode.toDataURL(content, {
       errorCorrectionLevel: element.errorCorrection,
       width: 256,
       margin: 0,
@@ -785,14 +795,28 @@ function QRElementRenderer({ element, transform }: { element: QRElement; transfo
     }).catch(() => {});
   }, [element.content, element.errorCorrection]);
 
+  // Match ZPL's actual rendered QR size. ZPL uses ^BQN,2,<mag> where each
+  // module at magnification 1 is 1 dot; we compute mag the same way the ZPL
+  // generator does (round(width/25) clamped 1-10), then the rendered footprint
+  // is mag × moduleCount dots. For non-thermal, fall back to element.width/height.
+  const isThermal = format.type === 'thermal';
+  let renderW = element.width;
+  let renderH = element.height;
+  if (isThermal && moduleCount > 0) {
+    const mag = Math.max(1, Math.min(10, Math.round(element.width / 25)));
+    const sizeDots = mag * moduleCount;
+    renderW = sizeDots;
+    renderH = sizeDots;
+  }
+
   return (
     <>
       {dataUrl ? (
         <image
           x={element.x}
           y={element.y}
-          width={element.width}
-          height={element.height}
+          width={renderW}
+          height={renderH}
           href={dataUrl}
           transform={transform}
           preserveAspectRatio="xMidYMid meet"
