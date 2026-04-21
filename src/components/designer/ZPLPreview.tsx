@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
+import { PrintControls } from './PrintControls';
 
 interface ZPLPreviewProps {
   format: LabelFormat;
@@ -72,10 +73,15 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
 
   return (
     <div className="border-t border-zinc-800/50 px-6 py-4 flex flex-col" style={{ minHeight: '40vh' }}>
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Printer className="w-4 h-4 text-amber-400" />
         <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">ZPL Preview</span>
         <span className="text-xs text-zinc-500">Local render — actual thermal output</span>
+
+        <div className="w-px h-4 bg-zinc-800 mx-2" />
+
+        {/* WebUSB test print controls — connect, print current template, calibration. */}
+        <PrintControls format={format} template={template} testData={testData} />
 
         <div className="ml-auto flex items-center gap-1">
           <button
