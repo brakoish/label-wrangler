@@ -333,8 +333,8 @@ function DesignerContent() {
             onMoveElement={handleMoveElement}
             onAddElement={() => setShowAddElementMenu(true)}
             onBackToTemplates={() => {
-              // URL change triggers the sync effect which clears store state.
-              router.push('/designer');
+              // Hard navigate so the page fully re-renders as the template list.
+              window.location.href = '/designer';
             }}
           />
           <TestDataPanel
@@ -348,15 +348,12 @@ function DesignerContent() {
         <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
           {/* Breadcrumb bar */}
           <div className="px-6 py-3 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
-            <button
-              onClick={() => {
-                // URL change triggers sync effect which clears the store.
-                router.push('/designer');
-              }}
+            <a
+              href="/designer"
               className="text-zinc-500 hover:text-amber-400 transition-colors"
             >
               Templates
-            </button>
+            </a>
             <span className="text-zinc-700">/</span>
             <span className="text-zinc-100 font-semibold">{currentTemplate.name}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 ${
