@@ -108,7 +108,18 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
               Static
             </button>
             <button
-              onClick={() => onUpdate({ isStatic: false })}
+              onClick={() => {
+                // When flipping to dynamic, auto-assign a field name if the
+                // element doesn't have one yet. Derives from element type + a
+                // short timestamp suffix so multiple dynamic elements don't
+                // collide. User can still rename in the 'Field' input below.
+                const updates: Partial<TemplateElement> = { isStatic: false };
+                if (!element.fieldName || !element.fieldName.trim()) {
+                  const suffix = Math.random().toString(36).slice(2, 5);
+                  (updates as { fieldName?: string }).fieldName = `${element.type}_${suffix}`;
+                }
+                onUpdate(updates);
+              }}
               className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
                 !element.isStatic ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
               }`}

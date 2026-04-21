@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       templateId: body.templateId,
       presetId: body.presetId ?? null,
       staticValues: body.staticValues ?? {},
+      fieldMappings: body.fieldMappings ?? {},
       dataSource: body.dataSource ?? 'paste',
       sourceData: body.sourceData ?? [],
       mappedField: body.mappedField ?? null,

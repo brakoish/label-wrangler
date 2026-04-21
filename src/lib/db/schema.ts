@@ -48,6 +48,7 @@ export const runPresets = pgTable("run_presets", {
     .notNull()
     .references(() => templates.id),
   staticDefaults: jsonb("static_defaults").notNull().default({}),
+  fieldMappings: jsonb("field_mappings").notNull().default({}),
   mappedField: text("mapped_field"),
   csvColumn: text("csv_column"),
   lastUsedAt: text("last_used_at"),
@@ -67,6 +68,7 @@ export const runs = pgTable("runs", {
     .references(() => templates.id),
   presetId: text("preset_id").references(() => runPresets.id),
   staticValues: jsonb("static_values").notNull().default({}),
+  fieldMappings: jsonb("field_mappings").notNull().default({}),
   dataSource: text("data_source").notNull().default('paste'),
   sourceData: jsonb("source_data").notNull().default([]),
   mappedField: text("mapped_field"),

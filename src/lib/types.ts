@@ -188,16 +188,28 @@ export interface LabelTemplate {
 // Runs & Presets
 // ---------------------------------------------------------------------------
 
+/** Maps a template dynamic field to its source for a run/preset.
+ *  - 'static': value is the string in staticValues/staticDefaults keyed by field name.
+ *  - 'column': value is pulled from the CSV column named by `csvColumn` for each row.
+ */
+export interface FieldMapping {
+  mode: 'static' | 'column';
+  csvColumn?: string;
+}
+
 /** Reusable recipe for a repeating batch print job.
- *  Captures the template + static field defaults + CSV column mapping so
- *  the user can spin up a new Run without re-entering everything. */
+ *  Captures the template + static field defaults + per-field CSV column
+ *  mapping so the user can spin up a new Run without re-entering everything. */
 export interface RunPreset {
   id: string;
   name: string;
   templateId: string;
   staticDefaults: Record<string, string>;
-  mappedField: string | null;  // template dynamic field that receives the variable list
-  csvColumn: string | null;     // CSV header to pull values from
+  /** Per-field mapping: which fields are variable and which CSV column they pull from. */
+  fieldMappings: Record<string, FieldMapping>;
+  /** Legacy single-field mapping kept for presets created before multi-field support. */
+  mappedField: string | null;
+  csvColumn: string | null;
   lastUsedAt: string | null;
   useCount: number;
   createdAt: string;
@@ -213,11 +225,17 @@ export interface Run {
   name: string;
   templateId: string;
   presetId: string | null;
+  /** Static field values applied to every label. */
   staticValues: Record<string, string>;
+  /** Per-field mapping. Fields not in this map (or with mode='static') use staticValues. */
+  fieldMappings: Record<string, FieldMapping>;
   dataSource: RunDataSource;
-  /** Ordered list of variable values — one per label to print. */
-  sourceData: string[];
+  /** Legacy single-column mapping for runs created before multi-field support. */
   mappedField: string | null;
+  /** For multi-field CSV runs, this is an array of row objects (one per label)
+   *  keyed by CSV column name. For legacy paste-mode runs, this can be a flat
+   *  string array; we normalize when reading. */
+  sourceData: string[] | Record<string, string>[];
   status: RunStatus;
   totalLabels: number;
   printedCount: number;

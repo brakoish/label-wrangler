@@ -21,7 +21,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json();
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     // Only copy known fields.
-    for (const k of ['name', 'staticValues', 'sourceData', 'mappedField', 'status',
+    for (const k of ['name', 'staticValues', 'fieldMappings', 'sourceData', 'mappedField', 'status',
                      'totalLabels', 'printedCount', 'notes', 'completedAt', 'dataSource']) {
       if (k in body) updates[k] = (body as Record<string, unknown>)[k];
     }

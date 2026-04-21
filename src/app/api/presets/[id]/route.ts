@@ -20,7 +20,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const body = await req.json();
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    for (const k of ['name', 'staticDefaults', 'mappedField', 'csvColumn', 'templateId']) {
+    for (const k of ['name', 'staticDefaults', 'fieldMappings', 'mappedField', 'csvColumn', 'templateId']) {
       if (k in body) updates[k] = (body as Record<string, unknown>)[k];
     }
     // Increment-use sentinel: PUT with { touch: true } bumps lastUsedAt + useCount.

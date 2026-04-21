@@ -9,10 +9,11 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useFormatStore } from '@/lib/store';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useRunStore } from '@/lib/runStore';
-import { parseCsv, detectUrlColumn, extractColumn } from '@/lib/csv';
-import { dynamicFieldsForTemplate, staticFieldsForRun } from '@/lib/runBuilder';
+import { parseCsv, detectUrlColumn } from '@/lib/csv';
+import { dynamicFieldsForTemplate } from '@/lib/runBuilder';
 import { generateZPL } from '@/lib/zplGenerator';
 import { RunPrinter } from '@/components/runs/RunPrinter';
+import type { FieldMapping, RunDataSource } from '@/lib/types';
 
 function NewRunContent() {
   const router = useRouter();
@@ -27,19 +28,19 @@ function NewRunContent() {
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [staticValues, setStaticValues] = useState<Record<string, string>>({});
-  const [mappedField, setMappedField] = useState<string | null>(null);
-  const [inputMode, setInputMode] = useState<'paste' | 'csv'>('paste');
+  const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
+  const [inputMode, setInputMode] = useState<'paste' | 'csv'>('csv');
   const [pasteText, setPasteText] = useState('');
+  const [pasteField, setPasteField] = useState<string | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
-  const [csvColumn, setCsvColumn] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Apply preset on mount (or when presetId changes).
+  // Apply preset on mount.
   useEffect(() => {
     if (!presetId) return;
     const p = presets.find((x) => x.id === presetId);
@@ -47,96 +48,163 @@ function NewRunContent() {
     setName(`${p.name} \u2014 ${new Date().toLocaleDateString()}`);
     setTemplateId(p.templateId);
     setStaticValues(p.staticDefaults);
-    setMappedField(p.mappedField);
-    if (p.csvColumn) setCsvColumn(p.csvColumn);
+    setFieldMappings(p.fieldMappings || {});
+    // Legacy migration: if no fieldMappings but has a mappedField, synthesize one.
+    if ((!p.fieldMappings || Object.keys(p.fieldMappings).length === 0) && p.mappedField) {
+      setFieldMappings({ [p.mappedField]: { mode: 'column', csvColumn: p.csvColumn ?? undefined } });
+    }
   }, [presetId, presets]);
 
-  // Selected template + format.
   const template = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
-
-  // Dynamic fields the template exposes.
   const dynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
-  const staticFieldNames = useMemo(
-    () => (template ? staticFieldsForRun(template, mappedField) : []),
-    [template, mappedField],
-  );
 
-  // When a template is picked, auto-guess the variable field: prefer a 'qr'
-  // element's field name, else the first dynamic field.
+  // Initialize field mappings when template changes: default all to static.
+  // If it's the first time (no existing mappings), also auto-map any field
+  // whose name contains 'qr' to a column mode (waiting for CSV).
   useEffect(() => {
     if (!template) return;
-    if (mappedField && dynamicFields.includes(mappedField)) return;
-    const qrEl = template.elements.find((e) => e.type === 'qr' && !e.isStatic && e.fieldName);
-    const first = qrEl?.fieldName ?? dynamicFields[0] ?? null;
-    setMappedField(first);
-  }, [template, dynamicFields, mappedField]);
+    setFieldMappings((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const f of dynamicFields) {
+        if (!(f in next)) {
+          next[f] = { mode: 'static' };
+          changed = true;
+        }
+      }
+      // Remove mappings for fields no longer in this template.
+      for (const k of Object.keys(next)) {
+        if (!dynamicFields.includes(k)) {
+          delete next[k];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [template, dynamicFields]);
 
-  // Variable values list (the data source for each label).
-  const variableValues = useMemo<string[]>(() => {
-    if (inputMode === 'paste') {
-      return pasteText
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+  // When a CSV is loaded, attempt to auto-map any column whose header
+  // closely matches a dynamic field name.
+  const applyAutoColumnMapping = (headers: string[], rows: Record<string, string>[]) => {
+    if (!template) return;
+    setFieldMappings((prev) => {
+      const next = { ...prev };
+      const urlCol = detectUrlColumn({ headers, rows });
+      for (const field of dynamicFields) {
+        // 1) Exact/normalized name match.
+        const match = headers.find(
+          (h) => h.toLowerCase().replace(/\s+/g, '') === field.toLowerCase().replace(/\s+/g, ''),
+        );
+        if (match) {
+          next[field] = { mode: 'column', csvColumn: match };
+          continue;
+        }
+        // 2) If this is the QR-ish field and we have a URL column, map it.
+        const isQrField = /qr|url|code|tag/i.test(field);
+        if (isQrField && urlCol) {
+          next[field] = { mode: 'column', csvColumn: urlCol };
+        }
+      }
+      return next;
+    });
+    // Auto-fill static values from row 1 where column name matches.
+    if (rows.length > 0) {
+      setStaticValues((prev) => {
+        const next = { ...prev };
+        for (const f of dynamicFields) {
+          const match = headers.find(
+            (h) => h.toLowerCase().replace(/\s+/g, '') === f.toLowerCase().replace(/\s+/g, ''),
+          );
+          if (match && !next[f]) next[f] = rows[0][match] ?? '';
+        }
+        return next;
+      });
     }
-    if (csvColumn && csvRows.length > 0) {
-      return extractColumn({ headers: csvHeaders, rows: csvRows }, csvColumn);
-    }
-    return [];
-  }, [inputMode, pasteText, csvColumn, csvRows, csvHeaders]);
+  };
 
   const handleFile = async (file: File) => {
     const text = await file.text();
     const parsed = parseCsv(text);
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
-    // Auto-detect URL-ish column. If not found, fall back to first header.
-    const auto = detectUrlColumn(parsed);
-    setCsvColumn(auto ?? parsed.headers[0] ?? null);
-    // Auto-fill static fields from row 1 if they match dynamic-field names.
-    if (template && parsed.rows.length > 0) {
-      const next: Record<string, string> = { ...staticValues };
-      for (const f of staticFieldNames) {
-        const match = parsed.headers.find((h) => h.toLowerCase().replace(/\s+/g, '') === f.toLowerCase().replace(/\s+/g, ''));
-        if (match) next[f] = parsed.rows[0][match] ?? '';
-      }
-      setStaticValues(next);
-    }
+    applyAutoColumnMapping(parsed.headers, parsed.rows);
   };
+
+  // List of fields mapped to columns (variable fields).
+  const variableFields = useMemo(
+    () => dynamicFields.filter((f) => fieldMappings[f]?.mode === 'column' && fieldMappings[f]?.csvColumn),
+    [dynamicFields, fieldMappings],
+  );
+  const staticFieldNames = useMemo(
+    () => dynamicFields.filter((f) => !fieldMappings[f] || fieldMappings[f].mode === 'static'),
+    [dynamicFields, fieldMappings],
+  );
+
+  // Pick the pasteField default once template loads.
+  useEffect(() => {
+    if (!template || pasteField) return;
+    // Prefer a QR-ish field, else the first dynamic field.
+    const qr = dynamicFields.find((f) => /qr|url|code|tag/i.test(f));
+    setPasteField(qr ?? dynamicFields[0] ?? null);
+  }, [template, dynamicFields, pasteField]);
+
+  // Compute the effective sourceData based on input mode.
+  const sourceData = useMemo<string[] | Record<string, string>[]>(() => {
+    if (inputMode === 'paste') {
+      return pasteText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    }
+    return csvRows;
+  }, [inputMode, pasteText, csvRows]);
+
+  const labelCount = sourceData.length;
 
   // Preview ZPL for the current row.
   const previewZpl = useMemo(() => {
     if (!template || !format) return '';
     const values: Record<string, string> = { ...staticValues };
-    if (mappedField && variableValues[previewIndex]) {
-      values[mappedField] = variableValues[previewIndex];
+    const row = sourceData[previewIndex];
+
+    if (typeof row === 'string' && pasteField) {
+      values[pasteField] = row;
+    } else if (row && typeof row === 'object' && !Array.isArray(row)) {
+      for (const [field, mapping] of Object.entries(fieldMappings)) {
+        if (mapping.mode === 'column' && mapping.csvColumn) {
+          values[field] = (row as Record<string, string>)[mapping.csvColumn] ?? '';
+        }
+      }
     }
     return generateZPL(template, format, values);
-  }, [template, format, staticValues, mappedField, variableValues, previewIndex]);
+  }, [template, format, staticValues, fieldMappings, sourceData, previewIndex, pasteField]);
 
   const canCreate =
     name.trim().length > 0 &&
     !!template &&
     !!format &&
-    variableValues.length > 0;
+    labelCount > 0 &&
+    (inputMode === 'csv' ? variableFields.length > 0 : !!pasteField);
 
   const handleCreateRun = async (autoStart = false) => {
     if (!canCreate || !template) return null;
+    let finalMappings = fieldMappings;
+    let legacyField: string | null = null;
+    if (inputMode === 'paste' && pasteField) {
+      // Paste mode: model as a column mapping with a synthetic column key.
+      finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: '__paste__' } };
+      legacyField = pasteField;
+    }
     const run = await createRun({
       name: name.trim(),
       templateId: template.id,
       presetId: presetId ?? null,
       staticValues,
-      dataSource: inputMode,
-      sourceData: variableValues,
-      mappedField,
+      fieldMappings: finalMappings,
+      dataSource: inputMode as RunDataSource,
+      sourceData,
+      mappedField: legacyField,
       status: autoStart ? 'queued' : 'draft',
     });
-    if (presetId) {
-      // Bump preset usage stats.
-      void updatePreset(presetId, { touch: true });
-    }
+    if (presetId) void updatePreset(presetId, { touch: true });
     return run;
   };
 
@@ -151,14 +219,12 @@ function NewRunContent() {
       name: saveAsPresetName.trim(),
       templateId: template.id,
       staticDefaults: staticValues,
-      mappedField,
-      csvColumn,
+      fieldMappings,
     });
     setSaveAsPresetName('');
     alert(`Preset "${preset.name}" saved.`);
   };
 
-  // If we already created + queued the run, switch into the printer view.
   if (createdRunId) {
     return (
       <AppShell>
@@ -179,7 +245,7 @@ function NewRunContent() {
         <div className="max-w-[1100px] mx-auto w-full p-8 space-y-6">
           <h1 className="text-2xl font-bold text-zinc-100">New Print Run</h1>
 
-          {/* Step 1: name + template */}
+          {/* Setup */}
           <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Setup</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -218,12 +284,18 @@ function NewRunContent() {
             </div>
           </section>
 
-          {template && (
+          {template && dynamicFields.length === 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-300">
+              This template has no dynamic fields. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link> and mark elements as Dynamic to use them in a print run.
+            </div>
+          )}
+
+          {template && dynamicFields.length > 0 && (
             <>
-              {/* Step 2: variable data */}
+              {/* Data source */}
               <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Variable Data</h2>
+                  <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Data Source</h2>
                   <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
                     <button
                       onClick={() => setInputMode('paste')}
@@ -240,28 +312,27 @@ function NewRunContent() {
                   </div>
                 </div>
 
-                {dynamicFields.length > 1 && (
-                  <div>
-                    <label className="text-xs text-zinc-400 block mb-1.5">Which field varies per label?</label>
-                    <CustomSelect
-                      value={mappedField ?? ''}
-                      onChange={(v) => setMappedField(v || null)}
-                      options={dynamicFields.map((f) => ({ value: f, label: f }))}
-                    />
-                  </div>
-                )}
-
                 {inputMode === 'paste' ? (
-                  <div>
-                    <label className="text-xs text-zinc-400 block mb-1.5">One value per line (e.g. METRC URLs)</label>
-                    <textarea
-                      value={pasteText}
-                      onChange={(e) => setPasteText(e.target.value)}
-                      rows={8}
-                      placeholder={'HTTPS://1A4.COM/5LO1I9DSOPW43WR19JI8\nHTTPS://1A4.COM/5LO1I9DSOPW43WR19JI9\n...'}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-100 font-mono px-3 py-2 focus:outline-none focus:border-amber-500/40 resize-y"
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <label className="text-xs text-zinc-400 block mb-1.5">One value per line</label>
+                      <textarea
+                        value={pasteText}
+                        onChange={(e) => setPasteText(e.target.value)}
+                        rows={7}
+                        placeholder={'HTTPS://1A4.COM/5LO1I9DSOPW43WR19JI8\nHTTPS://1A4.COM/5LO1I9DSOPW43WR19JI9\n...'}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-100 font-mono px-3 py-2 focus:outline-none focus:border-amber-500/40 resize-y"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-400 block mb-1.5">Fill which field with these values?</label>
+                      <CustomSelect
+                        value={pasteField ?? ''}
+                        onChange={(v) => setPasteField(v || null)}
+                        options={dynamicFields.map((f) => ({ value: f, label: f }))}
+                      />
+                    </div>
+                  </>
                 ) : (
                   <div className="space-y-3">
                     <button
@@ -281,35 +352,72 @@ function NewRunContent() {
                       }}
                     />
                     {csvHeaders.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-zinc-400 block mb-1.5">Variable column</label>
-                          <CustomSelect
-                            value={csvColumn ?? ''}
-                            onChange={setCsvColumn}
-                            options={csvHeaders.map((h) => ({ value: h, label: h }))}
-                          />
-                        </div>
-                        <div className="flex items-end text-xs text-zinc-500">
-                          {csvRows.length} rows found
-                        </div>
-                      </div>
+                      <p className="text-xs text-zinc-500">
+                        {csvHeaders.length} columns \u00b7 {csvRows.length} rows
+                      </p>
                     )}
                   </div>
                 )}
-                <p className="text-xs text-zinc-500">
-                  {variableValues.length > 0
-                    ? <><span className="text-amber-400 font-semibold">{variableValues.length}</span> label{variableValues.length === 1 ? '' : 's'} queued</>
-                    : 'Add some values to queue labels.'}
-                </p>
               </section>
 
-              {/* Step 3: static fields */}
-              {staticFieldNames.length > 0 && (
+              {/* Field mapping (CSV mode only, after upload) */}
+              {inputMode === 'csv' && csvHeaders.length > 0 && (
+                <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
+                  <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Field Mapping</h2>
+                  <p className="text-xs text-zinc-500">
+                    For each dynamic field, pick <span className="text-zinc-300">Static</span> (one value for all labels) or
+                    <span className="text-zinc-300"> Column</span> (a different value per row from your CSV).
+                  </p>
+                  <div className="space-y-2">
+                    {dynamicFields.map((field) => {
+                      const mapping = fieldMappings[field] ?? { mode: 'static' };
+                      return (
+                        <div key={field} className="flex items-center gap-3 p-3 rounded-lg bg-zinc-950 border border-zinc-800/60">
+                          <div className="w-36 shrink-0 font-medium text-sm text-zinc-200">{field}</div>
+                          <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
+                            <button
+                              onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'static' } }))}
+                              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${mapping.mode === 'static' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500'}`}
+                            >
+                              Static
+                            </button>
+                            <button
+                              onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? csvHeaders[0] } }))}
+                              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
+                            >
+                              Column
+                            </button>
+                          </div>
+                          {mapping.mode === 'column' ? (
+                            <div className="flex-1 min-w-0">
+                              <CustomSelect
+                                value={mapping.csvColumn ?? ''}
+                                onChange={(v) => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: v } }))}
+                                options={csvHeaders.map((h) => ({ value: h, label: h }))}
+                              />
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              value={staticValues[field] ?? ''}
+                              onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
+                              placeholder={`Static value for ${field}`}
+                              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:border-amber-500/40"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {/* Paste-mode static fields */}
+              {inputMode === 'paste' && staticFieldNames.length > 0 && (
                 <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
                   <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Static Fields (same on every label)</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {staticFieldNames.map((f) => (
+                    {staticFieldNames.filter((f) => f !== pasteField).map((f) => (
                       <div key={f}>
                         <label className="text-xs text-zinc-400 block mb-1.5">{f}</label>
                         <input
@@ -324,8 +432,8 @@ function NewRunContent() {
                 </section>
               )}
 
-              {/* Step 4: preview */}
-              {variableValues.length > 0 && format && (
+              {/* Preview */}
+              {labelCount > 0 && format && (
                 <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h2>
@@ -338,11 +446,11 @@ function NewRunContent() {
                         Prev
                       </button>
                       <span className="text-zinc-400 tabular-nums">
-                        Label {previewIndex + 1} / {variableValues.length}
+                        Label {previewIndex + 1} / {labelCount}
                       </span>
                       <button
-                        onClick={() => setPreviewIndex((i) => Math.min(variableValues.length - 1, i + 1))}
-                        disabled={previewIndex >= variableValues.length - 1}
+                        onClick={() => setPreviewIndex((i) => Math.min(labelCount - 1, i + 1))}
+                        disabled={previewIndex >= labelCount - 1}
                         className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
                       >
                         Next
@@ -355,7 +463,7 @@ function NewRunContent() {
                 </section>
               )}
 
-              {/* Step 5: save preset + print */}
+              {/* Save preset + print */}
               <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-3">
                 <div className="flex items-center gap-2">
                   <input
@@ -376,7 +484,9 @@ function NewRunContent() {
                 {!canCreate && (
                   <p className="text-xs text-amber-500 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5" />
-                    Need a run name, template, and at least one variable value to proceed.
+                    {inputMode === 'csv' && variableFields.length === 0
+                      ? 'Map at least one field to a CSV column to proceed.'
+                      : 'Need a run name, template, and data to proceed.'}
                   </p>
                 )}
                 <button
@@ -384,7 +494,7 @@ function NewRunContent() {
                   disabled={!canCreate}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Play className="w-4 h-4" /> Start Run ({variableValues.length} labels)
+                  <Play className="w-4 h-4" /> Start Run ({labelCount} label{labelCount === 1 ? '' : 's'})
                 </button>
               </section>
             </>
@@ -395,7 +505,7 @@ function NewRunContent() {
   );
 }
 
-// Tiny inline ZPL preview image used in the wizard. Renders via zpl-renderer-js WASM.
+// Inline ZPL preview via zpl-renderer-js WASM.
 function LocalZplPreview({ zpl, format }: { zpl: string; format: { width: number; height: number; dpi?: number; type: string } }) {
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

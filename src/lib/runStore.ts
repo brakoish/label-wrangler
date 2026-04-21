@@ -10,7 +10,7 @@ interface RunStore {
   loadAll: () => Promise<void>;
 
   // Runs
-  createRun: (data: Partial<Run> & { name: string; templateId: string }) => Promise<Run>;
+  createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings'] }) => Promise<Run>;
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   setRunStatus: (id: string, status: RunStatus, printedCount?: number) => Promise<Run | null>;
   deleteRun: (id: string) => Promise<void>;

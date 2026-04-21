@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
       name: body.name,
       templateId: body.templateId,
       staticDefaults: body.staticDefaults ?? {},
+      fieldMappings: body.fieldMappings ?? {},
       mappedField: body.mappedField ?? null,
       csvColumn: body.csvColumn ?? null,
       lastUsedAt: null,
