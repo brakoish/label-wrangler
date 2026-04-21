@@ -48,13 +48,15 @@ function DesignerContent() {
   const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
   const [testData, setTestData] = useState<Record<string, string>>({});
 
-  // Sync template selection with URL
+  // Sync template selection FROM the URL only (one-way). When users click the
+  // Templates breadcrumb we update the URL first; this effect then clears the
+  // store in sync. Using templateId ¦| null as the source of truth prevents
+  // the old ping-pong where both directions were writing during the same
+  // render and the store got re-set to the previously-selected id.
   useEffect(() => {
-    if (templateId && templateId !== selectedTemplateId) {
-      selectTemplate(templateId);
-    } else if (!templateId && selectedTemplateId) {
-      // URL cleared but store still has selection — clear it
-      selectTemplate(null);
+    const next = templateId || null;
+    if (next !== selectedTemplateId) {
+      selectTemplate(next);
     }
   }, [templateId, selectedTemplateId, selectTemplate]);
 
@@ -331,7 +333,7 @@ function DesignerContent() {
             onMoveElement={handleMoveElement}
             onAddElement={() => setShowAddElementMenu(true)}
             onBackToTemplates={() => {
-              selectTemplate(null);
+              // URL change triggers the sync effect which clears store state.
               router.push('/designer');
             }}
           />
@@ -348,7 +350,7 @@ function DesignerContent() {
           <div className="px-6 py-3 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
             <button
               onClick={() => {
-                selectTemplate(null);
+                // URL change triggers sync effect which clears the store.
                 router.push('/designer');
               }}
               className="text-zinc-500 hover:text-amber-400 transition-colors"
