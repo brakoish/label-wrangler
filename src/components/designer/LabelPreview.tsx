@@ -666,10 +666,9 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
   const rawFontHDots = element.fontSize * (dpi / 72);
 
   // Calibration to match Zebra Font 0's visual footprint in the SVG preview.
-  // Arial renders noticeably taller than Zebra Font 0 for the same fontSize,
-  // so we scale the SVG glyph height down. Empirically ~0.72 gives a close
-  // match — what you design in SVG now approximates what ZPL will print.
-  const zebraHeightCalibration = isThermal ? 0.72 : 1.0;
+  // IBM Plex Mono (our new thermal default) renders somewhat closer to Zebra
+  // Font 0 than Arial did — 0.8 is a good starting point; tune if needed.
+  const zebraHeightCalibration = isThermal ? 0.8 : 1.0;
 
   const svgFontSize = isThermal
     ? rawFontHDots * zebraHeightCalibration
@@ -687,9 +686,8 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
   // native fontW) so wrapping decisions agree with ZPL's field-block wrapping.
   // For sheet, 0.5 is a decent Arial average.
   const textCharWidthRatio = element.charWidth ?? 0.5;
-  const charWidth = isThermal
-    ? rawFontHDots * textCharWidthRatio
-    : svgFontSize * 0.5;
+  const charWidthThermal = rawFontHDots * textCharWidthRatio;
+  const charWidth = isThermal ? charWidthThermal : svgFontSize * 0.5;
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -735,23 +733,34 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
     }
   }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.id, onMeasure]);
 
+  // Thermal text uses IBM Plex Mono to approximate Zebra Font 0's clean blocky
+  // monospace look — a much closer visual match than Arial/Helvetica and doesn't
+  // need horizontal compression tricks (monospace is already uniform-width).
+  // User-picked fonts win (so you can still override to Arial etc. if you want).
+  const thermalDefaultFont = 'var(--font-plex-mono), ui-monospace, "Menlo", "Courier New", monospace';
+  const isDefaultFont = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica';
+  const effectiveFontFamily = isThermal && isDefaultFont ? thermalDefaultFont : element.fontFamily;
+
+  // For non-default (user override) thermal fonts, still apply the textLength
+  // compression so Arial etc. match ZPL's character spacing. For Plex Mono
+  // we skip it since monospace is naturally close to Font 0's character grid.
+  const applyTextLengthCompression = isThermal && !isDefaultFont;
+
   return (
     <text
       ref={textRef}
       fontSize={svgFontSize}
-      fontFamily={element.fontFamily}
+      fontFamily={effectiveFontFamily}
       fontWeight={element.fontWeight}
       textAnchor={textAnchor}
       fill={color}
       transform={transform}
     >
       {visibleLines.map((line, i) => {
-        // Force SVG glyphs to occupy exactly the same horizontal space ZPL
-        // will use (line.length × raw fontH × charWidth ratio). Combined
-        // with the zebraHeightCalibration scaling, the SVG text now visually
-        // matches what the thermal printer will produce.
         const widthRatio = element.charWidth ?? 0.5;
-        const forcedLen = isThermal ? line.length * rawFontHDots * widthRatio : undefined;
+        const forcedLen = applyTextLengthCompression
+          ? line.length * rawFontHDots * widthRatio
+          : undefined;
         return (
           <tspan
             key={i}
