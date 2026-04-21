@@ -794,10 +794,13 @@ function QRElementRenderer({ element, transform, format }: { element: QRElement;
     } catch {
       setModuleCount(0);
     }
+    // Margin = quiet zone in modules around the QR. ZPL ˆBQ renders with a
+    // ~2-module quiet zone by default, so SVG must include it too for the
+    // on-screen position to match the printed output.
     QRCode.toDataURL(content, {
       errorCorrectionLevel: element.errorCorrection,
       width: 256,
-      margin: 0,
+      margin: 2,
       color: { dark: '#000000', light: '#ffffff' },
     }).then((url: string) => {
       setDataUrl(url);
@@ -807,13 +810,15 @@ function QRElementRenderer({ element, transform, format }: { element: QRElement;
   // Match ZPL's actual rendered QR size. ZPL uses ^BQN,2,<mag> where each
   // module at magnification 1 is 1 dot; we compute mag the same way the ZPL
   // generator does (round(width/25) clamped 1-10), then the rendered footprint
-  // is mag × moduleCount dots. For non-thermal, fall back to element.width/height.
+  // is mag × (moduleCount + 2*quietZone) dots. For non-thermal, fall back
+  // to element.width/height.
   const isThermal = format.type === 'thermal';
+  const quietZone = 2; // matches QRCode.toDataURL margin above
   let renderW = element.width;
   let renderH = element.height;
   if (isThermal && moduleCount > 0) {
     const mag = Math.max(1, Math.min(10, Math.round(element.width / 25)));
-    const sizeDots = mag * moduleCount;
+    const sizeDots = mag * (moduleCount + 2 * quietZone);
     renderW = sizeDots;
     renderH = sizeDots;
   }
