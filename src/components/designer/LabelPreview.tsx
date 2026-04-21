@@ -662,17 +662,34 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
 
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;
+  // Raw dots-per-point height (ZPL's fontH equivalent).
+  const rawFontHDots = element.fontSize * (dpi / 72);
+
+  // Calibration to match Zebra Font 0's visual footprint in the SVG preview.
+  // Arial renders noticeably taller than Zebra Font 0 for the same fontSize,
+  // so we scale the SVG glyph height down. Empirically ~0.72 gives a close
+  // match — what you design in SVG now approximates what ZPL will print.
+  const zebraHeightCalibration = isThermal ? 0.72 : 1.0;
+
   const svgFontSize = isThermal
-    ? element.fontSize * (dpi / 72)
+    ? rawFontHDots * zebraHeightCalibration
     : element.fontSize / 72;
 
-  const lineHeight = svgFontSize * (element.lineHeight || 1.2);
+  // Line height: ZPL Font 0 fits cleanly at 1.0× fontH between lines (no extra
+  // leading). Browsers/Arial need a little more. We use element.lineHeight as
+  // a multiplier on the RAW fontH (not the scaled svgFontSize) so spacing
+  // between lines matches ZPL exactly.
+  const lineHeight = isThermal
+    ? rawFontHDots * (element.lineHeight || 1.0)
+    : svgFontSize * (element.lineHeight || 1.2);
 
-  // Word-wrap: character width for thermal matches the ZPL charWidth setting
-  // (so wrapping decisions agree with ZPL's field-block wrapping). For sheet,
-  // 0.5 is a decent Arial average.
+  // Word-wrap: for thermal we use ZPL's raw fontH × charWidth ratio (ZPL's
+  // native fontW) so wrapping decisions agree with ZPL's field-block wrapping.
+  // For sheet, 0.5 is a decent Arial average.
   const textCharWidthRatio = element.charWidth ?? 0.6;
-  const charWidth = svgFontSize * (isThermal ? textCharWidthRatio : 0.5);
+  const charWidth = isThermal
+    ? rawFontHDots * textCharWidthRatio
+    : svgFontSize * 0.5;
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
   const lines: string[] = [];
@@ -729,16 +746,19 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
       transform={transform}
     >
       {visibleLines.map((line, i) => {
-        // Match ZPL's character-width ratio so the SVG designer shows the same
-        // horizontal density as the ZPL preview will print. For thermal, we
-        // force glyph spacing via textLength + spacingAndGlyphs.
+        // Force SVG glyphs to occupy exactly the same horizontal space ZPL
+        // will use (line.length × raw fontH × charWidth ratio). Combined
+        // with the zebraHeightCalibration scaling, the SVG text now visually
+        // matches what the thermal printer will produce.
         const widthRatio = element.charWidth ?? 0.6;
-        const forcedLen = isThermal ? line.length * svgFontSize * widthRatio : undefined;
+        const forcedLen = isThermal ? line.length * rawFontHDots * widthRatio : undefined;
         return (
           <tspan
             key={i}
             x={baseX}
-            y={element.y + svgFontSize * 0.85 + i * lineHeight}
+            // Baseline: ZPL positions top of char box at ^FO, baseline ~0.8× fontH down.
+            // For thermal we anchor to the raw fontH so text sits where ZPL will put it.
+            y={element.y + (isThermal ? rawFontHDots * 0.8 : svgFontSize * 0.85) + i * lineHeight}
             textLength={forcedLen}
             lengthAdjust={forcedLen ? 'spacingAndGlyphs' : undefined}
           >
