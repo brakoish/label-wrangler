@@ -16,6 +16,27 @@ export function dynamicFieldsForTemplate(template: LabelTemplate): string[] {
 }
 
 /**
+ * List of element ids that are STATIC but look like they'd make sense as
+ * dynamic fields in a print run (QR, barcode, empty-content text). Used in
+ * the Runs wizard to offer a one-click "make dynamic" shortcut.
+ */
+export function staticFlippableElements(template: LabelTemplate): Array<{ id: string; type: string; suggestedName: string }> {
+  const used = new Set(template.elements.map((e) => e.fieldName).filter((s): s is string => !!s));
+  return template.elements
+    .filter((el) => el.isStatic && (el.type === 'qr' || el.type === 'barcode'))
+    .map((el) => {
+      let n = 1;
+      let name = `${el.type}_${n}`;
+      while (used.has(name)) {
+        n++;
+        name = `${el.type}_${n}`;
+      }
+      used.add(name);
+      return { id: el.id, type: el.type, suggestedName: name };
+    });
+}
+
+/**
  * Given a template and saved mappings, figure out which fields the user should
  * still see as static inputs: every dynamic field that isn't mapped to a CSV
  * column.
