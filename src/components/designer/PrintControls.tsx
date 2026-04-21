@@ -11,6 +11,8 @@ import {
   openPrinter,
   printZpl as printZplWebUsb,
   calibrationZpl,
+  printerAdjustmentsZpl,
+  autoCalibrateZpl,
   type ConnectedPrinter,
 } from '@/lib/webusbPrinter';
 import {
@@ -60,6 +62,13 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
   const [calibStyle, setCalibStyle] = useState<'crosshair' | 'grid'>('crosshair');
   const [calibCount, setCalibCount] = useState<number>(1);
   const [calibMenuOpen, setCalibMenuOpen] = useState(false);
+  // Printer adjustment knobs (sent as ZPL control commands with every
+  // calibration print, and individually via the Apply button). Persisted in
+  // localStorage so user doesn't lose their dialed-in settings.
+  const [topOffset, setTopOffset] = useState<number>(0);
+  const [leftShift, setLeftShift] = useState<number>(0);
+  const [darkness, setDarkness] = useState<number>(10);
+  const [speed, setSpeed] = useState<number>(4);
 
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
 
@@ -108,6 +117,26 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       localStorage.setItem('lw:dazzle-printer', selectedDazzlePrinter);
     }
   }, [selectedDazzlePrinter]);
+
+  // Restore printer adjustment knobs on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = localStorage.getItem('lw:printer-adjust');
+    if (!raw) return;
+    try {
+      const v = JSON.parse(raw);
+      if (typeof v.topOffset === 'number') setTopOffset(v.topOffset);
+      if (typeof v.leftShift === 'number') setLeftShift(v.leftShift);
+      if (typeof v.darkness === 'number') setDarkness(v.darkness);
+      if (typeof v.speed === 'number') setSpeed(v.speed);
+    } catch {}
+  }, []);
+
+  // Persist printer adjustments.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('lw:printer-adjust', JSON.stringify({ topOffset, leftShift, darkness, speed }));
+  }, [topOffset, leftShift, darkness, speed]);
 
   // When switching to Dazzle, refresh printer list.
   useEffect(() => {
@@ -204,9 +233,51 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
     const zpl = calibrationZpl(format.width, format.height, format.dpi || 203, {
       count: calibCount,
       style: calibStyle,
+      topOffset,
+      leftShift,
+      darkness,
+      speed,
     });
     return doPrint(zpl, 'calibration');
-  }, [doPrint, format, calibStyle, calibCount]);
+  }, [doPrint, format, calibStyle, calibCount, topOffset, leftShift, darkness, speed]);
+
+  const handleApplyAdjustments = useCallback(async (persist: boolean) => {
+    setError(null);
+    setPrinting('calibration');
+    try {
+      const zpl = printerAdjustmentsZpl({ topOffset, leftShift, darkness, speed, persist });
+      if (transport === 'dazzle') {
+        await printViaDazzle(zpl, selectedDazzlePrinter ?? undefined);
+      } else if (usbPrinter) {
+        await printZplWebUsb(usbPrinter, zpl);
+      } else {
+        throw new Error('No printer connected');
+      }
+    } catch (err) {
+      setError((err as Error)?.message || 'Apply failed');
+    } finally {
+      setPrinting(null);
+    }
+  }, [transport, selectedDazzlePrinter, usbPrinter, topOffset, leftShift, darkness, speed]);
+
+  const handleAutoCalibrate = useCallback(async () => {
+    setError(null);
+    setPrinting('calibration');
+    try {
+      const zpl = autoCalibrateZpl();
+      if (transport === 'dazzle') {
+        await printViaDazzle(zpl, selectedDazzlePrinter ?? undefined);
+      } else if (usbPrinter) {
+        await printZplWebUsb(usbPrinter, zpl);
+      } else {
+        throw new Error('No printer connected');
+      }
+    } catch (err) {
+      setError((err as Error)?.message || 'Auto-calibrate failed');
+    } finally {
+      setPrinting(null);
+    }
+  }, [transport, selectedDazzlePrinter, usbPrinter]);
 
   const canPrint = transport === 'dazzle' ? !!selectedDazzlePrinter : !!usbPrinter;
   const connectedLabel = useMemo(() => {
@@ -345,7 +416,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
               <ChevronDown className="w-3 h-3" />
             </button>
             {calibMenuOpen && (
-              <div className="absolute top-full mt-1 right-auto min-w-[200px] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 p-3 space-y-3">
+              <div className="absolute top-full mt-1 right-auto min-w-[280px] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 p-3 space-y-3">
                 <div>
                   <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold mb-1.5">Style</div>
                   <div className="flex gap-0.5">
@@ -378,6 +449,71 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
                   </div>
                   <p className="text-[10px] text-zinc-600 mt-1.5">3+ copies help detect feed drift between labels</p>
                 </div>
+
+                {/* Printer adjustments */}
+                <div className="border-t border-zinc-800 pt-3 space-y-2">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Printer Adjustments</div>
+
+                  <NumberRow
+                    label="Top offset"
+                    value={topOffset}
+                    onChange={setTopOffset}
+                    min={-120} max={120} step={1}
+                    unit="dots"
+                    hint="+ down / − up"
+                  />
+                  <NumberRow
+                    label="Left shift"
+                    value={leftShift}
+                    onChange={setLeftShift}
+                    min={-200} max={200} step={1}
+                    unit="dots"
+                    hint="+ right / − left"
+                  />
+                  <NumberRow
+                    label="Darkness"
+                    value={darkness}
+                    onChange={setDarkness}
+                    min={0} max={30} step={1}
+                    unit=""
+                    hint="0–30"
+                  />
+                  <NumberRow
+                    label="Speed"
+                    value={speed}
+                    onChange={setSpeed}
+                    min={1} max={14} step={1}
+                    unit="ips"
+                    hint="in/sec"
+                  />
+
+                  <div className="flex gap-1 pt-1">
+                    <button
+                      onClick={() => handleApplyAdjustments(false)}
+                      disabled={!canPrint || !!printing}
+                      className="flex-1 py-1.5 rounded text-[11px] font-medium bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                      title="Send current values to the printer now (temporary, resets on power cycle)"
+                    >
+                      Apply
+                    </button>
+                    <button
+                      onClick={() => handleApplyAdjustments(true)}
+                      disabled={!canPrint || !!printing}
+                      className="flex-1 py-1.5 rounded text-[11px] font-medium bg-amber-600 text-white hover:bg-amber-500 transition-colors disabled:opacity-40"
+                      title="Send values + save persistently (~^JUS stores in printer memory)"
+                    >
+                      Apply & Save
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleAutoCalibrate}
+                    disabled={!canPrint || !!printing}
+                    className="w-full py-1.5 rounded text-[11px] font-medium bg-zinc-800/60 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                    title="Send ~JC to have the printer re-sense media gaps/length"
+                  >
+                    Auto-calibrate media (~JC)
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -389,6 +525,61 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
           {error}
         </span>
       )}
+    </div>
+  );
+}
+
+/** Compact number input row for printer adjustments. */
+function NumberRow({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  unit,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-[11px] text-zinc-400 w-20 shrink-0">{label}</label>
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={() => onChange(Math.max(min ?? -Infinity, value - (step ?? 1)))}
+          className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs flex items-center justify-center"
+        >
+          −
+        </button>
+        <input
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => {
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v)) onChange(v);
+          }}
+          className="w-14 h-6 rounded bg-zinc-950 border border-zinc-800 text-zinc-100 text-[11px] text-center focus:outline-none focus:border-amber-500/40"
+        />
+        <button
+          onClick={() => onChange(Math.min(max ?? Infinity, value + (step ?? 1)))}
+          className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs flex items-center justify-center"
+        >
+          +
+        </button>
+      </div>
+      {unit && <span className="text-[10px] text-zinc-500">{unit}</span>}
+      {hint && <span className="text-[10px] text-zinc-600 ml-auto">{hint}</span>}
     </div>
   );
 }

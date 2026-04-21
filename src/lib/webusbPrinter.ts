@@ -129,6 +129,44 @@ export interface CalibrationOptions {
    *  - 'grid': full dot grid every 0.25" + ruler labels at each inch
    *    (best for measuring exact offset in mm). */
   style?: 'crosshair' | 'grid';
+  /** ZPL ^LT: label top offset in dots, -120…120. Positive = shift down,
+   *  negative = shift up. Use to correct printed content sitting too high/low. */
+  topOffset?: number;
+  /** ZPL ^LS: label left shift in dots, -9999…9999. Positive = shift right. */
+  leftShift?: number;
+  /** ZPL ~SD: darkness 0–30. Higher = darker/blacker print. */
+  darkness?: number;
+  /** ZPL ^PR: print speed in inches per second (1–14 depending on printer). */
+  speed?: number;
+  /** If true, append ^JUS to persist the settings across printer reboots. */
+  persist?: boolean;
+}
+
+/**
+ * Send printer-level calibration adjustments without printing a label.
+ * Useful to dial in settings (darkness, offset, shift, speed) and optionally
+ * persist them across reboots.
+ */
+export function printerAdjustmentsZpl(opts: {
+  topOffset?: number;
+  leftShift?: number;
+  darkness?: number;
+  speed?: number;
+  persist?: boolean;
+}): string {
+  const lines: string[] = ['^XA'];
+  if (typeof opts.topOffset === 'number') lines.push(`^LT${Math.round(opts.topOffset)}`);
+  if (typeof opts.leftShift === 'number') lines.push(`^LS${Math.round(opts.leftShift)}`);
+  if (typeof opts.darkness === 'number') lines.push(`~SD${Math.round(Math.max(0, Math.min(30, opts.darkness)))}`);
+  if (typeof opts.speed === 'number') lines.push(`^PR${Math.round(Math.max(1, Math.min(14, opts.speed)))}`);
+  if (opts.persist) lines.push('^JUS');
+  lines.push('^XZ');
+  return lines.join('\n');
+}
+
+/** Send a ~JC command to trigger the printer's auto-calibration (media length sense). */
+export function autoCalibrateZpl(): string {
+  return '~JC';
 }
 
 /**
@@ -144,11 +182,18 @@ export function calibrationZpl(
   dpi = 203,
   options: CalibrationOptions = {},
 ): string {
-  const { count = 1, style = 'crosshair' } = options;
+  const { count = 1, style = 'crosshair', topOffset, leftShift, darkness, speed, persist } = options;
   const w = Math.round(widthIn * dpi);
   const h = Math.round(heightIn * dpi);
 
   const lines: string[] = ['^XA', `^PW${w}`, `^LL${h}`];
+
+  // Pre-label printer adjustments so the calibration print uses them.
+  if (typeof topOffset === 'number') lines.push(`^LT${Math.round(topOffset)}`);
+  if (typeof leftShift === 'number') lines.push(`^LS${Math.round(leftShift)}`);
+  if (typeof darkness === 'number') lines.push(`~SD${Math.round(Math.max(0, Math.min(30, darkness)))}`);
+  if (typeof speed === 'number') lines.push(`^PR${Math.round(Math.max(1, Math.min(14, speed)))}`);
+  if (persist) lines.push('^JUS');
 
   if (style === 'grid') {
     appendGridCalibration(lines, w, h, dpi, widthIn, heightIn);
