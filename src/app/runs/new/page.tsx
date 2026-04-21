@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useFormatStore } from '@/lib/store';
 import { useTemplateStore } from '@/lib/templateStore';
@@ -297,6 +298,7 @@ function NewRunContent() {
   // action is needed here.
   return (
     <AppShell>
+      <PageTitle title={name.trim() ? `New Run · ${name.trim()}` : 'New Run'} />
       <div className="flex-1 overflow-auto">
         <div className="max-w-[1100px] mx-auto w-full p-8 space-y-6">
           <h1 className="text-2xl font-bold text-zinc-100">New Print Run</h1>

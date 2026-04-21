@@ -8,6 +8,7 @@ import { useFormatStore } from '@/lib/store';
 import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
+import { PageTitle } from '@/components/PageTitle';
 import { LabelPreview } from '@/components/designer/LabelPreview';
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
@@ -384,6 +385,7 @@ function DesignerContent() {
 
   return (
     <AppShell>
+      <PageTitle title="Designer" />
       {/* Editor layout fills the content area */}
       <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}

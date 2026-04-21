@@ -329,7 +329,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             <label className="text-sm text-zinc-400 block mb-2">Label Format</label>
             {formats.length === 0 ? (
               <p className="text-sm text-zinc-500 py-2">
-                No formats yet — <a href="/" className="text-amber-400 hover:text-amber-300">create a format</a> first
+                No formats yet — <a href="/formats" className="text-amber-400 hover:text-amber-300">create a format</a> first
               </p>
             ) : (
               <CustomSelect

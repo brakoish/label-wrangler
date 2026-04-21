@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Printer, Clock, Trash2, Copy, Play } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { PageTitle } from '@/components/PageTitle';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -45,6 +46,7 @@ export default function RunsPage() {
   // than the global AppShell nav, so the top bar stays clean.
   return (
     <AppShell>
+      <PageTitle title="Runs" />
       <div className="flex-1 overflow-auto">
         <div className="max-w-[1600px] mx-auto w-full p-8 space-y-8">
           {/* Presets section */}
@@ -93,19 +95,10 @@ export default function RunsPage() {
               )}
             </div>
             {runs.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-zinc-800 p-12 text-center">
-                <Printer className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
-                <h3 className="text-zinc-300 font-semibold">Start your first run</h3>
-                <p className="text-sm text-zinc-500 mt-1 mb-4">
-                  Pick a template, fill in batch info, paste your METRC URLs, and print.
-                </p>
-                <Link
-                  href="/runs/new"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all"
-                >
-                  <Plus className="w-4 h-4" /> New Run
-                </Link>
-              </div>
+              <RunsEmptyState
+                hasFormats={formats.length > 0}
+                hasTemplates={templates.length > 0}
+              />
             ) : (
               <div className="space-y-2">
                 {runs.map((r) => {
@@ -131,6 +124,84 @@ export default function RunsPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * Onboarding-aware empty state for the Runs page. Detects whether the user
+ * has formats + templates yet; walks them through whichever step is missing
+ * before inviting them to create a run. Keeps them oriented instead of
+ * dropping them at a dead-end "you have no runs" screen.
+ */
+function RunsEmptyState({ hasFormats, hasTemplates }: { hasFormats: boolean; hasTemplates: boolean }) {
+  const steps = [
+    {
+      label: 'Create a label format',
+      detail: 'Describe the physical media (thermal roll size, sheet layout, DPI, etc.).',
+      href: '/formats',
+      done: hasFormats,
+    },
+    {
+      label: 'Design a template',
+      detail: 'Add QR codes, text, barcodes that turn into a printed label.',
+      href: '/designer',
+      done: hasTemplates,
+    },
+    {
+      label: 'Start a run',
+      detail: 'Pick your template, drop in a Metrc CSV, and print the batch.',
+      href: '/runs/new',
+      done: false,
+    },
+  ];
+  const nextIndex = steps.findIndex((s) => !s.done);
+
+  return (
+    <div className="rounded-2xl border border-dashed border-zinc-800 p-10">
+      <div className="text-center mb-6">
+        <Printer className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
+        <h3 className="text-zinc-200 font-semibold text-lg">Nothing printed yet</h3>
+        <p className="text-sm text-zinc-500 mt-1">
+          Label Wrangler needs a format and a template before it can run a batch.
+        </p>
+      </div>
+      <ol className="space-y-3 max-w-xl mx-auto">
+        {steps.map((step, i) => {
+          const isCurrent = i === nextIndex;
+          return (
+            <li key={step.label} className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${
+              step.done
+                ? 'border-emerald-500/20 bg-emerald-500/5'
+                : isCurrent
+                  ? 'border-amber-500/40 bg-amber-500/5'
+                  : 'border-zinc-800/70 bg-zinc-900/30'
+            }`}>
+              <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                step.done ? 'bg-emerald-500/30 text-emerald-300' : isCurrent ? 'bg-amber-500/30 text-amber-300' : 'bg-zinc-800 text-zinc-500'
+              }`}>
+                {step.done ? '✓' : i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-zinc-200">{step.label}</div>
+                <p className="text-xs text-zinc-500 mt-0.5">{step.detail}</p>
+              </div>
+              <Link
+                href={step.href}
+                className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  isCurrent
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 shadow-sm shadow-amber-500/20'
+                    : step.done
+                      ? 'text-emerald-400 hover:text-emerald-300'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {step.done ? 'Manage' : isCurrent ? 'Start' : 'Step ' + (i + 1)}
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 

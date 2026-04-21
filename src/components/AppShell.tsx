@@ -11,9 +11,11 @@ interface AppShellProps {
 
 export function AppShell({ children, headerAction }: AppShellProps) {
   const pathname = usePathname();
-  const isFormats = pathname === '/';
+  // Runs is the new home. Formats moved from '/' to '/formats'. Designer
+  // stays at /designer. Nav order reflects day-to-day usage.
+  const isRuns = pathname === '/' || pathname === '/runs' || pathname.startsWith('/runs');
   const isDesigner = pathname === '/designer' || pathname.startsWith('/designer');
-  const isRuns = pathname === '/runs' || pathname.startsWith('/runs');
+  const isFormats = pathname === '/formats' || pathname.startsWith('/formats');
 
   return (
     <div className="h-screen flex flex-col bg-[#0c0c0e]">
@@ -21,7 +23,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
       <header className="glass sticky top-0 z-40">
         <div className="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/">
+            <Link href="/runs">
               <img
                 src="/logo.png"
                 alt="Label Wrangler"
@@ -38,17 +40,17 @@ export function AppShell({ children, headerAction }: AppShellProps) {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Nav tabs */}
+            {/* Nav tabs — Runs is the primary surface. */}
             <nav className="flex items-center gap-1 px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
               <Link
-                href="/"
+                href="/runs"
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  isFormats
+                  isRuns
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Formats
+                Runs
               </Link>
               <Link
                 href="/designer"
@@ -61,14 +63,14 @@ export function AppShell({ children, headerAction }: AppShellProps) {
                 Designer
               </Link>
               <Link
-                href="/runs"
+                href="/formats"
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  isRuns
+                  isFormats
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Runs
+                Formats
               </Link>
             </nav>
 
