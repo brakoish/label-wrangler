@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy } from 'lucide-react';
+import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { Run, LabelTemplate, LabelFormat } from '@/lib/types';
@@ -303,15 +304,31 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               {template.name} · {format.name} · {format.width}″ × {format.height}″ · {total} labels
             </p>
           </div>
-          <div className="shrink-0 flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border"
-            style={{}}
-          >
-            <span className={
-              run.status === 'completed' ? 'text-emerald-400' :
-              run.status === 'printing' ? 'text-amber-400' :
-              run.status === 'paused' ? 'text-yellow-400' :
-              run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-400'
-            }>{run.status}</span>
+          <div className="shrink-0 flex items-center gap-2">
+            {/* Quick actions: re-run (clone this run with same data) and edit
+                template (designer round-trip — sends user back here on Done). */}
+            <Link
+              href={`/runs/new?duplicateFrom=${run.id}`}
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+              title="Start a new run with this run's data and mappings"
+            >
+              <Copy className="w-3 h-3" /> Re-run
+            </Link>
+            <Link
+              href={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+              title="Open this run's template in the designer"
+            >
+              <Pencil className="w-3 h-3" /> Edit template
+            </Link>
+            <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border border-zinc-800 bg-zinc-900/60">
+              <span className={
+                run.status === 'completed' ? 'text-emerald-400' :
+                run.status === 'printing' ? 'text-amber-400' :
+                run.status === 'paused' ? 'text-yellow-400' :
+                run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-400'
+              }>{run.status}</span>
+            </div>
           </div>
         </header>
 

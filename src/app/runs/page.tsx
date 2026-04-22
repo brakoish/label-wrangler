@@ -298,8 +298,32 @@ export default function RunsPage() {
             </section>
           )}
 
-          {/* Presets section — kept but lightly demoted. */}
-          {presets.length > 0 && (
+          {/* Presets section. If the user has only a few we keep them as a
+              compact horizontal chip strip (always visible, one click to run).
+              Once they have many, fall back to the grid cards so names aren't
+              squished. Threshold is arbitrary but feels right. */}
+          {presets.length > 0 && presets.length <= 6 && (
+            <section>
+              <div className="flex items-baseline justify-between mb-3">
+                <h2 className="text-sm font-semibold text-zinc-200">Saved Presets</h2>
+                <span className="text-xs text-zinc-500">Click to start a run</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {presets.map((p) => (
+                  <PresetChip
+                    key={p.id}
+                    preset={p}
+                    templateName={templateName(p.templateId)}
+                    formatName={formatName(p.templateId)}
+                    onDelete={() => {
+                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id);
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+          {presets.length > 6 && (
             <section>
               <div className="flex items-baseline justify-between mb-3">
                 <h2 className="text-sm font-semibold text-zinc-200">Saved Presets</h2>
@@ -451,6 +475,48 @@ function RunsEmptyState({ hasFormats, hasTemplates }: { hasFormats: boolean; has
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+/** Compact chip-sized preset — used when the user has a small number of
+ *  presets and we can afford to show them all inline as quick-launch pills
+ *  without eating vertical space. Click runs. Hover exposes delete. */
+function PresetChip({
+  preset,
+  templateName,
+  formatName,
+  onDelete,
+}: {
+  preset: RunPreset;
+  templateName: string;
+  formatName: string;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="group relative flex items-stretch">
+      <Link
+        href={`/runs/new?presetId=${preset.id}`}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900/60 border border-zinc-800 hover:border-amber-500/30 hover:bg-amber-500/5 transition-all"
+        title={`${templateName}${formatName ? ' · ' + formatName : ''}`}
+      >
+        <Play className="w-3 h-3 text-amber-400" />
+        <div className="flex flex-col leading-tight">
+          <span className="text-xs font-semibold text-zinc-200 group-hover:text-amber-400 transition-colors">
+            {preset.name}
+          </span>
+          <span className="text-[10px] text-zinc-500 truncate max-w-[200px]">
+            {templateName}{formatName && <> · {formatName}</>}
+          </span>
+        </div>
+      </Link>
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+        className="ml-1 opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition"
+        title="Delete preset"
+      >
+        <Trash2 className="w-3 h-3" />
+      </button>
     </div>
   );
 }

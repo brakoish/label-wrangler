@@ -3,12 +3,13 @@
 import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download } from 'lucide-react';
+import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useFormatStore } from '@/lib/store';
 import { useTemplateStore } from '@/lib/templateStore';
+import { NewTemplateDialog } from '@/components/designer/TemplateList';
 import { useRunStore } from '@/lib/runStore';
 import { parseCsv, detectUrlColumn } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
@@ -22,10 +23,15 @@ function NewRunContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetId = searchParams.get('presetId');
+  // Re-run action from the run detail page: `/runs/new?duplicateFrom=<runId>`.
+  // Clones the source run's template, static values, mappings, and data so
+  // the user just has to edit the name and hit Print. Static field values are
+  // preserved too so same-batch re-prints are one click.
+  const duplicateFrom = searchParams.get('duplicateFrom');
 
-  const { templates, updateElementLocal, saveTemplate } = useTemplateStore();
+  const { templates, addTemplate, updateElementLocal, saveTemplate } = useTemplateStore();
   const { formats, getFormatById } = useFormatStore();
-  const { presets, createRun, createPreset, updatePreset } = useRunStore();
+  const { runs, presets, createRun, createPreset, updatePreset } = useRunStore();
 
   // Form state
   const [name, setName] = useState('');
@@ -40,6 +46,10 @@ function NewRunContent() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
+  // Controls the 'create new template' dialog invoked from the template
+  // picker. Kept local to this page so the modal render + submit logic
+  // doesn't leak into the template store.
+  const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,6 +67,36 @@ function NewRunContent() {
       setFieldMappings({ [p.mappedField]: { mode: 'column', csvColumn: p.csvColumn ?? undefined } });
     }
   }, [presetId, presets]);
+
+  // Apply duplicateFrom on mount. Clones template + mappings + static values
+  // + source data so the user can re-run the same batch with a fresh name.
+  // Hydrated after the runs store loads, so we wait until runs is populated.
+  const didApplyDuplicateRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!duplicateFrom) return;
+    if (didApplyDuplicateRef.current === duplicateFrom) return;
+    const src = runs.find((r) => r.id === duplicateFrom);
+    if (!src) return;
+    didApplyDuplicateRef.current = duplicateFrom;
+    setName(`${src.name} — ${new Date().toLocaleDateString()}`);
+    setTemplateId(src.templateId);
+    setStaticValues(src.staticValues || {});
+    setFieldMappings(src.fieldMappings || {});
+    // Source data shape: if the original run used CSV (object rows), switch
+    // to CSV mode and reconstruct headers from the first row's keys. If it
+    // was paste mode (string rows), switch to paste and join with newlines.
+    const sd = src.sourceData as (string[] | Record<string, string>[]);
+    if (sd.length > 0 && typeof sd[0] === 'object' && !Array.isArray(sd[0])) {
+      const headers = Object.keys(sd[0] as Record<string, string>);
+      setInputMode('csv');
+      setCsvHeaders(headers);
+      setCsvRows(sd as Record<string, string>[]);
+    } else if (sd.length > 0 && typeof sd[0] === 'string') {
+      setInputMode('paste');
+      setPasteText((sd as string[]).join('\n'));
+      if (src.mappedField) setPasteField(src.mappedField);
+    }
+  }, [duplicateFrom, runs]);
 
   const template = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
@@ -318,10 +358,36 @@ function NewRunContent() {
                 />
               </div>
               <div>
-                <label className="text-xs text-zinc-400 block mb-1.5">Template</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs text-zinc-400">Template</label>
+                  <div className="flex items-center gap-2">
+                    {/* Edit the currently-selected template without losing
+                        your spot in the wizard — round-trips via ?returnTo. */}
+                    {template && (
+                      <Link
+                        href={`/designer?id=${template.id}&returnTo=${encodeURIComponent('/runs/new')}`}
+                        className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-amber-400 transition-colors"
+                        title="Open this template in the designer"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowNewTemplateDialog(true)}
+                      disabled={formats.length === 0}
+                      title={formats.length === 0 ? 'Create a format first' : 'Create a new template inline'}
+                      className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-amber-400 transition-colors disabled:opacity-40 disabled:hover:text-zinc-500"
+                    >
+                      <Plus className="w-3 h-3" /> New template
+                    </button>
+                  </div>
+                </div>
                 {templates.length === 0 ? (
                   <p className="text-xs text-zinc-500 py-2">
-                    No templates yet. <Link href="/designer" className="text-amber-400 hover:underline">Create one</Link>.
+                    No templates yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="text-amber-400 hover:underline disabled:opacity-40">Create one</button>
+                    {formats.length === 0 && <> (but you need a <Link href="/formats" className="text-amber-400 hover:underline">format</Link> first)</>}
+                    .
                   </p>
                 ) : (
                   <CustomSelect
@@ -606,6 +672,25 @@ function NewRunContent() {
           )}
         </div>
       </div>
+      {/* Inline 'New template' dialog. On submit we create the template,
+          select it in this wizard so the user can keep going, and send
+          them to the designer with a returnTo so they can lay out the
+          actual elements and come back. */}
+      <NewTemplateDialog
+        isOpen={showNewTemplateDialog}
+        onClose={() => setShowNewTemplateDialog(false)}
+        onCreate={async (tName, tDesc, tFormatId) => {
+          setShowNewTemplateDialog(false);
+          const t = await addTemplate({ name: tName, description: tDesc, formatId: tFormatId, elements: [] });
+          if (t) {
+            setTemplateId(t.id);
+            // Soft nudge to the designer so the user can actually lay out
+            // the template; a returnTo brings them back here to continue
+            // the run once they're done.
+            router.push(`/designer?id=${t.id}&returnTo=${encodeURIComponent('/runs/new')}`);
+          }
+        }}
+      />
     </AppShell>
   );
 }

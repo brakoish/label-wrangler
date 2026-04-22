@@ -22,6 +22,14 @@ function DesignerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const templateId = searchParams.get('id');
+  // Optional ?returnTo=/runs/<id> used by round-trip flows (e.g. "Tweak
+  // template" from a run detail page). When present we swap the breadcrumb
+  // for a 'Done' back button that sends the user home to where they started.
+  // Only allow same-origin paths to avoid open-redirect mischief.
+  const rawReturnTo = searchParams.get('returnTo');
+  const returnTo = rawReturnTo && rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//')
+    ? rawReturnTo
+    : null;
 
   const {
     templates,
@@ -407,7 +415,9 @@ function DesignerContent() {
             onAddElement={() => setShowAddElementMenu(true)}
             onBackToTemplates={() => {
               // Hard navigate so the page fully re-renders as the template list.
-              window.location.href = '/designer';
+              // If the user came from a run detail page, bounce them back
+              // instead of dropping them on the generic template list.
+              window.location.href = returnTo ?? '/designer';
             }}
           />
           <TestDataPanel
@@ -419,14 +429,25 @@ function DesignerContent() {
 
         {/* Center Panel - Preview */}
         <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-          {/* Breadcrumb bar */}
+          {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
+              so the round-trip feels like 'I edited this and came back'
+              rather than 'I'm lost in the designer'. */}
           <div className="px-6 py-3 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
-            <a
-              href="/designer"
-              className="text-zinc-500 hover:text-amber-400 transition-colors"
-            >
-              Templates
-            </a>
+            {returnTo ? (
+              <a
+                href={returnTo}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors"
+              >
+                ← Done editing
+              </a>
+            ) : (
+              <a
+                href="/designer"
+                className="text-zinc-500 hover:text-amber-400 transition-colors"
+              >
+                Templates
+              </a>
+            )}
             <span className="text-zinc-700">/</span>
             <span className="text-zinc-100 font-semibold">{currentTemplate.name}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 ${
