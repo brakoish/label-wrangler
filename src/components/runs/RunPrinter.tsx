@@ -11,6 +11,7 @@ import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
+import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
 import {
   isWebUsbSupported,
@@ -197,8 +198,20 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const persistProgress = async (next: number) => {
     if (!run) return;
-    await updateRun(run.id, { printedCount: next });
+    // Use the offline-friendly wrapper so a transient network flap during a
+    // long print doesn't cost us the latest printedCount. Failed calls
+    // queue in localStorage and flush on reconnect.
+    await updateRunWithQueue(run.id, { printedCount: next });
   };
+
+  // Flush any offline progress updates on mount + whenever the browser
+  // tells us we're back online. Cheap: no-op when the queue is empty.
+  useEffect(() => {
+    void flushOfflineQueue();
+    const onOnline = () => { void flushOfflineQueue(); };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
 
   const startOrResume = async () => {
     if (!run || labels.length === 0) return;
@@ -296,7 +309,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="max-w-[980px] mx-auto w-full p-8 space-y-6">
+      <div className="max-w-[980px] mx-auto w-full p-4 sm:p-8 space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-zinc-100 truncate">{run.name}</h1>
@@ -304,31 +317,34 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               {template.name} · {format.name} · {format.width}″ × {format.height}″ · {total} labels
             </p>
           </div>
-          <div className="shrink-0 flex items-center gap-2">
-            {/* Quick actions: re-run (clone this run with same data) and edit
-                template (designer round-trip — sends user back here on Done). */}
+          <div className="shrink-0 flex items-center gap-1 sm:gap-2">
+            {/* Quick actions. On mobile we render icon-only buttons (still
+                tappable, just tighter); labels appear from sm up. */}
             <Link
               href={`/runs/${run.id}/scan`}
-              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
               title="Open scan mode: one label per scan, hands-free"
             >
-              <ScanBarcode className="w-3 h-3" /> Scan mode
+              <ScanBarcode className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Scan mode</span>
             </Link>
             <Link
               href={`/runs/new?duplicateFrom=${run.id}`}
-              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
               title="Start a new run with this run's data and mappings"
             >
-              <Copy className="w-3 h-3" /> Re-run
+              <Copy className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Re-run</span>
             </Link>
             <Link
               href={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
-              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
               title="Open this run's template in the designer"
             >
-              <Pencil className="w-3 h-3" /> Edit template
+              <Pencil className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Edit template</span>
             </Link>
-            <div className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border border-zinc-800 bg-zinc-900/60">
+            <div className="hidden sm:flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border border-zinc-800 bg-zinc-900/60">
               <span className={
                 run.status === 'completed' ? 'text-emerald-400' :
                 run.status === 'printing' ? 'text-amber-400' :

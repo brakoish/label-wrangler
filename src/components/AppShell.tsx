@@ -19,20 +19,22 @@ export function AppShell({ children, headerAction }: AppShellProps) {
 
   return (
     <div className="h-screen flex flex-col bg-[#0c0c0e]">
-      {/* Shared Header */}
+      {/* Shared Header — tighter padding + smaller logo on mobile so the
+          nav tabs and any headerAction fit without wrapping below. */}
       <header className="glass sticky top-0 z-40">
-        <div className="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-[1600px] mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link href="/runs">
               <img
                 src="/logo.png"
                 alt="Label Wrangler"
-                className="w-14 h-14 transition-transform duration-300 hover:animate-buck cursor-pointer"
+                className="w-10 h-10 sm:w-14 sm:h-14 transition-transform duration-300 hover:animate-buck cursor-pointer"
                 style={{ filter: 'brightness(0) invert(1)' }}
               />
             </Link>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">
+            <div className="min-w-0">
+              {/* Hide the wordmark below sm so the logo + nav don't collide. */}
+              <h1 className="hidden sm:block text-xl font-bold tracking-tight truncate">
                 <span className="gradient-text">Label</span>
                 <span className="text-white">Wrangler</span>
               </h1>

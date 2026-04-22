@@ -177,10 +177,11 @@ export default function RunsPage() {
     <AppShell>
       <PageTitle title="Runs" />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-[1600px] mx-auto w-full p-8 space-y-8">
-          {/* Stats strip — one glance summary at the top. Hidden when empty. */}
+        <div className="max-w-[1600px] mx-auto w-full p-4 sm:p-8 space-y-6 sm:space-y-8">
+          {/* Stats strip — one glance summary at the top. Hidden when empty.
+              Stacks to single column on phone, then a 3-wide grid. */}
           {runs.length > 0 && (
-            <section className="grid grid-cols-3 gap-4">
+            <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <StatCard
                 icon={<Loader2 className="w-4 h-4" />}
                 label="Active"

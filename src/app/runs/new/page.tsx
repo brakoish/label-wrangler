@@ -340,7 +340,7 @@ function NewRunContent() {
     <AppShell>
       <PageTitle title={name.trim() ? `New Run · ${name.trim()}` : 'New Run'} />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-[1100px] mx-auto w-full p-8 space-y-6">
+        <div className="max-w-[1100px] mx-auto w-full p-4 sm:p-8 space-y-6">
           <h1 className="text-2xl font-bold text-zinc-100">New Print Run</h1>
 
           {/* Setup */}

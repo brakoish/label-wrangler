@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { StoreHydrator } from "@/components/StoreHydrator";
@@ -20,6 +20,16 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Label Wrangler",
   description: "Label format library and designer",
+};
+
+// Mobile-friendly viewport so phone browsers don't render the desktop
+// breakpoints zoomed out to fit. themeColor matches our dark background
+// so the status bar on iOS/Android blends in instead of flashing white.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 2,
+  themeColor: "#0c0c0e",
 };
 
 export default function RootLayout({
