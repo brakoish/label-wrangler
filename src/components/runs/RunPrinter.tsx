@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode } from 'lucide-react';
 import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
@@ -307,6 +307,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="shrink-0 flex items-center gap-2">
             {/* Quick actions: re-run (clone this run with same data) and edit
                 template (designer round-trip — sends user back here on Done). */}
+            <Link
+              href={`/runs/${run.id}/scan`}
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
+              title="Open scan mode: one label per scan, hands-free"
+            >
+              <ScanBarcode className="w-3 h-3" /> Scan mode
+            </Link>
             <Link
               href={`/runs/new?duplicateFrom=${run.id}`}
               className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
