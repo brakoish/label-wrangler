@@ -76,7 +76,21 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
         <div className="grid grid-cols-2 gap-1">
           <div>
             <SectionLabel icon={<RotateCw className="w-3 h-3" />} label="Rotate" />
-            <CompactInput label="°" value={element.rotation} onChange={(v) => onUpdate({ rotation: v })} step={1} labelRight />
+            <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
+              {[0, 90, 180, 270].map((deg) => (
+                <button
+                  key={deg}
+                  onClick={() => onUpdate({ rotation: deg })}
+                  className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                    element.rotation === deg
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'text-zinc-500 hover:text-zinc-200'
+                  }`}
+                >
+                  {deg}°
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
