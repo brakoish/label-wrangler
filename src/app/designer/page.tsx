@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Undo2, Redo2 } from 'lucide-react';
+import { Plus, Undo2, Redo2, Globe } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
+import { useGlobalElementStore } from '@/lib/globalStore';
 import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
@@ -17,6 +18,8 @@ import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { ZPLPreview } from '@/components/designer/ZPLPreview';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
+import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
+import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 
 function DesignerContent() {
   const router = useRouter();
@@ -48,11 +51,14 @@ function DesignerContent() {
   } = useTemplateStore();
 
   const { getFormatById } = useFormatStore();
+  const { globals, createGlobal, deleteGlobal } = useGlobalElementStore();
   const { push: pushUndo, undo, redo, setCurrent: setUndoCurrent, canUndo, canRedo, clear: clearUndo } = useUndoStore();
 
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<LabelTemplate | null>(null);
   const [showAddElementMenu, setShowAddElementMenu] = useState(false);
+  const [showGlobalSave, setShowGlobalSave] = useState(false);
+  const [showGlobalPicker, setShowGlobalPicker] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Convenience: single selected element for property panel
   const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
@@ -413,6 +419,8 @@ function DesignerContent() {
             }}
             onMoveElement={handleMoveElement}
             onAddElement={() => setShowAddElementMenu(true)}
+            onInsertGlobal={() => setShowGlobalPicker(true)}
+            onSaveAsGlobal={() => setShowGlobalSave(true)}
             onBackToTemplates={() => {
               // Hard navigate so the page fully re-renders as the template list.
               // If the user came from a run detail page, bounce them back
@@ -521,9 +529,46 @@ function DesignerContent() {
         isOpen={showAddElementMenu}
         onClose={() => setShowAddElementMenu(false)}
         onAddElement={handleAddElement}
+        onInsertGlobal={() => setShowGlobalPicker(true)}
       />
 
-      {/* New Template Dialog (accessible from editor too) */}
+      {/* Global Save Dialog */}
+      <GlobalSaveDialog
+        isOpen={showGlobalSave}
+        elements={selectedIds.size > 0
+          ? currentTemplate.elements.filter((e) => selectedIds.has(e.id))
+          : []}
+        onClose={() => setShowGlobalSave(false)}
+        onSave={async (name, description) => {
+          const toSave = selectedIds.size > 0
+            ? currentTemplate.elements.filter((e) => selectedIds.has(e.id))
+            : currentTemplate.elements;
+          await createGlobal(name, toSave, description);
+          setShowGlobalSave(false);
+          setShowGlobalPicker(true);
+        }}
+      />
+
+      {/* Global Element Picker */}
+      <GlobalElementPicker
+        isOpen={showGlobalPicker}
+        onClose={() => setShowGlobalPicker(false)}
+        globals={globals}
+        onInsert={(elements) => {
+          pushUndoState();
+          for (const el of elements) {
+            const newEl: TemplateElement = {
+              ...el,
+              id: `element-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              x: el.x + 10,
+              y: el.y + 10,
+            };
+            // eslint-disable-next-line no-await-in-loop
+            void addElement(currentTemplate.id, newEl as Omit<TemplateElement, 'id' | 'zIndex'>);
+          }
+        }}
+        onDelete={deleteGlobal}
+      />
       <NewTemplateDialog
         isOpen={showNewTemplateDialog}
         onClose={() => setShowNewTemplateDialog(false)}

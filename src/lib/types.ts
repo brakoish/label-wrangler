@@ -247,3 +247,13 @@ export interface Run {
   updatedAt: string;
   completedAt: string | null;
 }
+
+/** A saved design block that can be inserted as a copy into any template. */
+export interface GlobalElement {
+  id: string;
+  name: string;
+  description?: string;
+  elements: TemplateElement[];
+  createdAt: string;
+  updatedAt: string;
+}

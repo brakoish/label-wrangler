@@ -1,16 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Type, QrCode, Barcode, Minus, Square, Image, X } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, X, Globe } from 'lucide-react';
 import { ElementType } from '@/lib/types';
 
 interface AddElementMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onAddElement: (type: ElementType) => void;
+  onInsertGlobal: () => void;
 }
 
-export function AddElementMenu({ isOpen, onClose, onAddElement }: AddElementMenuProps) {
+export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }: AddElementMenuProps) {
   if (!isOpen) return null;
 
   const elementTypes: Array<{ type: ElementType; icon: typeof Type; label: string; description: string }> = [
@@ -87,6 +88,19 @@ export function AddElementMenu({ isOpen, onClose, onAddElement }: AddElementMenu
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => { onClose(); onInsertGlobal(); }}
+          className="w-full mt-3 flex items-center justify-center gap-2 p-4 rounded-xl bg-amber-500/10 border border-amber-600/30 hover:bg-amber-500/20 hover:border-amber-600/50 transition-all text-left group"
+        >
+          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-600/30">
+            <Globe className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <div className="font-medium text-amber-400 text-sm">Insert Global Element</div>
+            <div className="text-xs text-amber-500/60">Browse your saved design blocks</div>
+          </div>
+        </button>
       </div>
     </div>
   );

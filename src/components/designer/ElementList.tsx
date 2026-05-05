@@ -1,6 +1,6 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus, ArrowLeft, Copy } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus, ArrowLeft, Copy, Globe, Save } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 
 interface ElementListProps {
@@ -12,6 +12,8 @@ interface ElementListProps {
   onMoveElement: (id: string, direction: 'up' | 'down') => void;
   onAddElement: () => void;
   onBackToTemplates?: () => void;
+  onInsertGlobal?: () => void;
+  onSaveAsGlobal?: () => void;
 }
 
 export function ElementList({
@@ -23,6 +25,8 @@ export function ElementList({
   onMoveElement,
   onAddElement,
   onBackToTemplates,
+  onInsertGlobal,
+  onSaveAsGlobal,
 }: ElementListProps) {
   const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
@@ -48,6 +52,24 @@ export function ElementList({
           <Plus className="w-4 h-4" />
           Add Element
         </button>
+        {onInsertGlobal && (
+          <button
+            onClick={onInsertGlobal}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-all"
+          >
+            <Globe className="w-4 h-4" />
+            Insert Global
+          </button>
+        )}
+        {onSaveAsGlobal && elements.length > 0 && (
+          <button
+            onClick={onSaveAsGlobal}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-400 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-all"
+          >
+            <Save className="w-4 h-4" />
+            Save Selection as Global
+          </button>
+        )}
       </div>
 
       {/* Element list */}

@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useFormatStore } from "@/lib/store";
 import { useTemplateStore } from "@/lib/templateStore";
 import { useRunStore } from "@/lib/runStore";
+import { useGlobalElementStore } from "@/lib/globalStore";
 import { flushOfflineQueue } from "@/lib/offlineQueue";
 
 /**
@@ -15,11 +16,13 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
   const fetchFormats = useFormatStore((s) => s.fetchFormats);
   const fetchTemplates = useTemplateStore((s) => s.fetchTemplates);
   const loadRuns = useRunStore((s) => s.loadAll);
+  const fetchGlobals = useGlobalElementStore((s) => s.fetchGlobals);
 
   useEffect(() => {
     fetchFormats();
     fetchTemplates();
     loadRuns();
+    fetchGlobals();
     // Replay any pending progress patches from a previous session.
     void flushOfflineQueue().then((r) => {
       if (r.flushed > 0) {
