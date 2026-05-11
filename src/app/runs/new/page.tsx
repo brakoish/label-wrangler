@@ -38,7 +38,7 @@ function NewRunContent() {
   const [templateId, setTemplateId] = useState('');
   const [staticValues, setStaticValues] = useState<Record<string, string>>({});
   const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
-  const [inputMode, setInputMode] = useState<'paste' | 'csv'>('csv');
+  const [inputMode, setInputMode] = useState<'manual' | 'paste' | 'csv'>('manual');
   const [pasteText, setPasteText] = useState('');
   const [pasteField, setPasteField] = useState<string | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -232,13 +232,16 @@ function NewRunContent() {
 
   // Compute the effective sourceData based on input mode.
   const sourceData = useMemo<string[] | Record<string, string>[]>(() => {
+    if (inputMode === 'manual') {
+      return [{}];
+    }
     if (inputMode === 'paste') {
       return pasteText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     }
     return csvRows;
   }, [inputMode, pasteText, csvRows]);
 
-  const labelCount = sourceData.length;
+  const labelCount = inputMode === 'manual' ? 1 : sourceData.length;
 
   // Preview ZPL for the current row.
   const previewZpl = useMemo(() => {
@@ -262,14 +265,23 @@ function NewRunContent() {
     name.trim().length > 0 &&
     !!template &&
     !!format &&
-    labelCount > 0 &&
-    (inputMode === 'csv' ? variableFields.length > 0 : !!pasteField);
+    (inputMode === 'manual'
+      ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0)
+      : labelCount > 0 && (inputMode === 'csv' ? variableFields.length > 0 : !!pasteField));
 
   const handleCreateRun = async (autoStart = false) => {
     if (!canCreate || !template) return null;
     let finalMappings = fieldMappings;
     let legacyField: string | null = null;
-    if (inputMode === 'paste' && pasteField) {
+    let finalSourceData = sourceData;
+    if (inputMode === 'manual') {
+      // Manual mode: all fields are static, sourceData is a single empty row.
+      finalSourceData = [{}];
+      finalMappings = {};
+      for (const f of dynamicFields) {
+        finalMappings[f] = { mode: 'static' };
+      }
+    } else if (inputMode === 'paste' && pasteField) {
       // Paste mode: model as a column mapping with a synthetic column key.
       finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: '__paste__' } };
       legacyField = pasteField;
@@ -280,8 +292,8 @@ function NewRunContent() {
       presetId: presetId ?? null,
       staticValues,
       fieldMappings: finalMappings,
-      dataSource: inputMode as RunDataSource,
-      sourceData,
+      dataSource: inputMode === 'manual' ? 'csv' : (inputMode as RunDataSource),
+      sourceData: finalSourceData,
       mappedField: legacyField,
       status: autoStart ? 'queued' : 'draft',
     });
@@ -446,6 +458,12 @@ function NewRunContent() {
                   <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Data Source</h2>
                   <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
                     <button
+                      onClick={() => setInputMode('manual')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manual' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      <Pencil className="w-3 h-3" /> Manual
+                    </button>
+                    <button
                       onClick={() => setInputMode('paste')}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'paste' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                     >
@@ -460,7 +478,27 @@ function NewRunContent() {
                   </div>
                 </div>
 
-                {inputMode === 'paste' ? (
+                {inputMode === 'manual' ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-zinc-400">
+                      Enter values for each dynamic field. This creates a single label — perfect for one-offs or testing.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {dynamicFields.map((field) => (
+                        <div key={field}>
+                          <label className="text-xs text-zinc-400 block mb-1.5">{field}</label>
+                          <input
+                            type="text"
+                            value={staticValues[field] ?? ''}
+                            onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
+                            placeholder={`Value for ${field}`}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : inputMode === 'paste' ? (
                   <>
                     <div>
                       <label className="text-xs text-zinc-400 block mb-1.5">One value per line</label>
@@ -655,9 +693,11 @@ function NewRunContent() {
                 {!canCreate && (
                   <p className="text-xs text-amber-500 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5" />
-                    {inputMode === 'csv' && variableFields.length === 0
-                      ? 'Map at least one field to a CSV column to proceed.'
-                      : 'Need a run name, template, and data to proceed.'}
+                    {inputMode === 'manual'
+                      ? 'Fill in all dynamic fields to proceed.'
+                      : inputMode === 'csv' && variableFields.length === 0
+                        ? 'Map at least one field to a CSV column to proceed.'
+                        : 'Need a run name, template, and data to proceed.'}
                   </p>
                 )}
                 <button
