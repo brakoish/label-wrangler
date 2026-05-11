@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil } from 'lucide-react';
+import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Hash } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -45,6 +45,7 @@ function NewRunContent() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
+  const [manualQty, setManualQty] = useState(1);
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
   // Controls the 'create new template' dialog invoked from the template
   // picker. Kept local to this page so the modal render + submit logic
@@ -233,15 +234,16 @@ function NewRunContent() {
   // Compute the effective sourceData based on input mode.
   const sourceData = useMemo<string[] | Record<string, string>[]>(() => {
     if (inputMode === 'manual') {
-      return [{}];
+      // Repeat the same static values N times.
+      return Array.from({ length: Math.max(1, manualQty) }, () => ({}));
     }
     if (inputMode === 'paste') {
       return pasteText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     }
     return csvRows;
-  }, [inputMode, pasteText, csvRows]);
+  }, [inputMode, pasteText, csvRows, manualQty]);
 
-  const labelCount = inputMode === 'manual' ? 1 : sourceData.length;
+  const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
   // Preview ZPL for the current row.
   const previewZpl = useMemo(() => {
@@ -266,7 +268,7 @@ function NewRunContent() {
     !!template &&
     !!format &&
     (inputMode === 'manual'
-      ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0)
+      ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
       : labelCount > 0 && (inputMode === 'csv' ? variableFields.length > 0 : !!pasteField));
 
   const handleCreateRun = async (autoStart = false) => {
@@ -275,8 +277,8 @@ function NewRunContent() {
     let legacyField: string | null = null;
     let finalSourceData = sourceData;
     if (inputMode === 'manual') {
-      // Manual mode: all fields are static, sourceData is a single empty row.
-      finalSourceData = [{}];
+      // Manual mode: all fields are static, sourceData repeats N times.
+      finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
       finalMappings = {};
       for (const f of dynamicFields) {
         finalMappings[f] = { mode: 'static' };
@@ -481,7 +483,7 @@ function NewRunContent() {
                 {inputMode === 'manual' ? (
                   <div className="space-y-3">
                     <p className="text-xs text-zinc-400">
-                      Enter values for each dynamic field. This creates a single label — perfect for one-offs or testing.
+                      Enter values for each dynamic field, then set how many copies to print.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {dynamicFields.map((field) => (
@@ -496,6 +498,18 @@ function NewRunContent() {
                           />
                         </div>
                       ))}
+                    </div>
+                    <div className="flex items-center gap-3 pt-1">
+                      <label className="text-xs text-zinc-400">Quantity</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={9999}
+                        value={manualQty}
+                        onChange={(e) => setManualQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40 tabular-nums"
+                      />
+                      <span className="text-xs text-zinc-500">labels</span>
                     </div>
                   </div>
                 ) : inputMode === 'paste' ? (
