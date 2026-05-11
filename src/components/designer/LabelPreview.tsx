@@ -627,7 +627,8 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
 
   switch (element.type) {
     case 'text':
-      return <TextElementRenderer key={element.id} element={element as TextElement} transform={transform} format={format} onMeasure={onTextMeasure} testData={testData} />;
+      // Text handles its own rotation to match ZPL's field-origin rotation.
+      return <TextElementRenderer key={element.id} element={element as TextElement} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
       return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} />;
     case 'barcode':
@@ -643,7 +644,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
   }
 }
 
-function TextElementRenderer({ element, transform, format, onMeasure, testData }: { element: TextElement; transform?: string; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void; testData?: Record<string, string> }) {
+function TextElementRenderer({ element, format, onMeasure, testData }: { element: TextElement; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void; testData?: Record<string, string> }) {
   const textRef = useRef<SVGTextElement>(null);
 
   // Resolve display content: test data > default value > field placeholder
@@ -746,28 +747,39 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
   // we skip it since monospace is naturally close to Font 0's character grid.
   const applyTextLengthCompression = isThermal && !isDefaultFont;
 
-  return (
+  // Rotation handling: ZPL rotates around the field origin (^FO point, top-left
+  // of the text box). SVG's rotate-around-center doesn't match. We use a <g>
+  // transform: translate to the origin, then rotate, then render text at (0,0).
+  // This makes the preview match what ZPL prints.
+  const rotation = element.rotation || 0;
+  const needsRotation = rotation !== 0;
+
+  // ZPL positions the TOP of the character box at ^FO. SVG positions text by
+  // its baseline. The baseline is roughly 0.8× fontH below the top of the box.
+  // For the preview to match ZPL, we offset text by this amount so the top
+  // of the text aligns with the field origin.
+  const baselineOffset = isThermal ? rawFontHDots * 0.8 : svgFontSize * 0.85;
+
+  const textContent = (
     <text
       ref={textRef}
       fontSize={svgFontSize}
       fontFamily={effectiveFontFamily}
       fontWeight={element.fontWeight}
-      textAnchor={textAnchor}
+      textAnchor={needsRotation ? 'start' : textAnchor}
       fill={color}
-      transform={transform}
     >
       {visibleLines.map((line, i) => {
         const widthRatio = element.charWidth ?? 0.5;
         const forcedLen = applyTextLengthCompression
           ? line.length * rawFontHDots * widthRatio
           : undefined;
+        const lineOffset = i * lineHeight;
         return (
           <tspan
             key={i}
-            x={baseX}
-            // Baseline: ZPL positions top of char box at ^FO, baseline ~0.8× fontH down.
-            // For thermal we anchor to the raw fontH so text sits where ZPL will put it.
-            y={element.y + (isThermal ? rawFontHDots * 0.8 : svgFontSize * 0.85) + i * lineHeight}
+            x={needsRotation ? lineOffset : baseX}
+            y={needsRotation ? baselineOffset : (element.y + baselineOffset + lineOffset)}
             textLength={forcedLen}
             lengthAdjust={forcedLen ? 'spacingAndGlyphs' : undefined}
           >
@@ -776,6 +788,18 @@ function TextElementRenderer({ element, transform, format, onMeasure, testData }
         );
       })}
     </text>
+  );
+
+  if (!needsRotation) {
+    return textContent;
+  }
+
+  // Wrap in a group that translates to the element's origin then rotates.
+  // This matches ZPL's ^FO + ^A0R behavior: rotate around the field origin.
+  return (
+    <g transform={`translate(${element.x}, ${element.y}) rotate(${rotation})`}>
+      {textContent}
+    </g>
   );
 }
 
