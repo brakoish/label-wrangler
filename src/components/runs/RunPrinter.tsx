@@ -74,6 +74,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // Reprint-range UI state.
   const [showReprint, setShowReprint] = useState(false);
   const [reprintFrom, setReprintFrom] = useState(1);
+  const [stopAt, setStopAt] = useState(0); // 0 = print all; >0 = stop after this physical label
   const [showExport, setShowExport] = useState(false);
   const [exportFrom, setExportFrom] = useState(1);
   const [exportTo, setExportTo] = useState(0); // 0 = use total at render
@@ -248,8 +249,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // feed count (what the queue consumes) at the boundary so multi-across
     // progress bars behave intuitively.
     const startFeed = Math.floor(printedCount / across);
+    // If stopAt is set, slice labels so the queue stops at that physical label.
+    const stopFeed = stopAt > 0 ? Math.ceil(Math.min(stopAt, total) / across) : labels.length;
+    const labelsToSend = stopFeed < labels.length ? labels.slice(0, stopFeed) : labels;
     const handle = startPrintQueue(sender, {
-      labels,
+      labels: labelsToSend,
       batchSize: 25,
       startIndex: startFeed,
       onProgress: async (feedsDone) => {
@@ -645,6 +649,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <p className="text-xs text-red-400 flex items-center gap-1.5">
               <AlertCircle className="w-3.5 h-3.5" /> {errorMsg}
             </p>
+          )}
+
+          {/* Stop-at control: only show when idle/paused (not while running) */}
+          {(status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+              <span className="whitespace-nowrap">Stop after label</span>
+              <input
+                type="number"
+                min={printedCount + 1}
+                max={total}
+                placeholder={`all (${total - printedCount})`}
+                value={stopAt > 0 ? stopAt : ''}
+                onChange={(e) => setStopAt(parseInt(e.target.value, 10) || 0)}
+                className="w-28 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-200 tabular-nums focus:outline-none focus:border-amber-500/40 placeholder-zinc-600"
+              />
+              <span className="text-zinc-600">/ {total}</span>
+              {stopAt > 0 && (
+                <button onClick={() => setStopAt(0)} className="text-zinc-500 hover:text-zinc-300 text-[10px]">clear</button>
+              )}
+            </div>
           )}
 
           {/* Controls */}
