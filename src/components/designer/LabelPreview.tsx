@@ -683,11 +683,20 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
     ? rawFontHDots * (element.lineHeight || 1.0)
     : svgFontSize * (element.lineHeight || 1.2);
 
-  // Word-wrap: for thermal we use ZPL's raw fontH × charWidth ratio (ZPL's
-  // native fontW) so wrapping decisions agree with ZPL's field-block wrapping.
-  // For sheet, 0.5 is a decent Arial average.
+  // Word-wrap character width estimate.
+  // For thermal with default font (IBM Plex Mono), we use svgFontSize * 0.6.
+  // Plex Mono is a monospace font with ~0.6 em-width per glyph, and svgFontSize
+  // already bakes in the 0.8 zebraHeightCalibration — so the effective char width
+  // in SVG/dot units is rawFontHDots × 0.8 × 0.6 = rawFontHDots × 0.48.
+  // Using rawFontHDots × 0.5 (old) caused the wrap to fire ~4% too early, which
+  // at the boundary (e.g. 12–13 chars) produced an unwanted extra line break.
+  // For user-picked fonts with textLength compression the ZPL ratio is still used.
+  // For sheet labels Arial averages ~0.5 × em.
   const textCharWidthRatio = element.charWidth ?? 0.5;
-  const charWidthThermal = rawFontHDots * textCharWidthRatio;
+  const isDefaultFontForWrap = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica';
+  const charWidthThermal = isThermal && isDefaultFontForWrap
+    ? svgFontSize * 0.6   // IBM Plex Mono: actual monospace glyph width
+    : rawFontHDots * textCharWidthRatio;  // user font + ZPL textLength compression
   const charWidth = isThermal ? charWidthThermal : svgFontSize * 0.5;
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
 
