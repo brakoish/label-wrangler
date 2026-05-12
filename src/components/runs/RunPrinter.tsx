@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode, Download, FileText, FileCode2 } from 'lucide-react';
 import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
@@ -74,6 +74,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // Reprint-range UI state.
   const [showReprint, setShowReprint] = useState(false);
   const [reprintFrom, setReprintFrom] = useState(1);
+  const [showExport, setShowExport] = useState(false);
+  const [exportFrom, setExportFrom] = useState(1);
+  const [exportTo, setExportTo] = useState(0); // 0 = use total at render
+  const [exporting, setExporting] = useState<'zpl' | 'pdf' | null>(null);
+  const [exportProgress, setExportProgress] = useState(0);
 
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
 
@@ -297,6 +302,77 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setPrintedCount(0);
     setStatus('idle');
     await setRunStatus(run.id, 'queued', 0);
+  };
+
+  // --- Export handlers ---
+  const resolvedExportTo = exportTo > 0 ? exportTo : total;
+
+  const handleExportZPL = async () => {
+    if (!run || !template || !format) return;
+    setExporting('zpl');
+    try {
+      const allFeeds = generateLabelsForRun(run, template, format);
+      const from = Math.max(1, exportFrom);
+      const to = Math.min(total, resolvedExportTo);
+      const slice = allFeeds.slice(from - 1, to);
+      const content = slice.join('\n');
+      const blob = new Blob([content], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${from}-${to}.zpl`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    if (!run || !template || !format) return;
+    setExporting('pdf');
+    setExportProgress(0);
+    try {
+      const allFeeds = generateLabelsForRun(run, template, format);
+      const from = Math.max(1, exportFrom);
+      const to = Math.min(total, resolvedExportTo);
+      const slice = allFeeds.slice(from - 1, to);
+
+      const mod = await import('zpl-renderer-js');
+      const { api } = await mod.ready;
+      const widthMm = format.width * 25.4;
+      const heightMm = format.height * 25.4;
+      const dpmm = Math.round((format.dpi || 203) / 25.4);
+
+      const { PDFDocument } = await import('pdf-lib');
+      const pdfDoc = await PDFDocument.create();
+      // Page size in PDF points (72 pt = 1 inch)
+      const pageW = format.width * 72;
+      const pageH = format.height * 72;
+
+      for (let i = 0; i < slice.length; i++) {
+        const b64 = await api.zplToBase64Async(slice[i], widthMm, heightMm, dpmm);
+        const binStr = atob(b64);
+        const bytes = new Uint8Array(binStr.length);
+        for (let j = 0; j < binStr.length; j++) bytes[j] = binStr.charCodeAt(j);
+        const img = await pdfDoc.embedPng(bytes);
+        const page = pdfDoc.addPage([pageW, pageH]);
+        page.drawImage(img, { x: 0, y: 0, width: pageW, height: pageH });
+        setExportProgress(Math.round(((i + 1) / slice.length) * 100));
+      }
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${from}-${to}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } finally {
+      setExporting(null);
+      setExportProgress(0);
+    }
   };
 
   if (!run || !template || !format) {
@@ -614,6 +690,71 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               )}
             </div>
           )}
+
+          {/* Export section */}
+          <div className="pt-3 border-t border-zinc-800/60">
+            {!showExport ? (
+              <button
+                onClick={() => { setExportFrom(1); setExportTo(total); setShowExport(true); }}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
+              >
+                <Download className="w-3 h-3" /> Export labels…
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-zinc-400 whitespace-nowrap">Labels</span>
+                  <input
+                    type="number" min={1} max={total} value={exportFrom}
+                    onChange={(e) => setExportFrom(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
+                  />
+                  <span className="text-[11px] text-zinc-500">–</span>
+                  <input
+                    type="number" min={1} max={total} value={resolvedExportTo}
+                    onChange={(e) => setExportTo(Math.min(total, parseInt(e.target.value, 10) || total))}
+                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
+                  />
+                  <span className="text-[11px] text-zinc-500">/ {total}</span>
+                </div>
+                {resolvedExportTo - exportFrom > 499 && exporting === 'pdf' ? null : resolvedExportTo - exportFrom > 499 ? (
+                  <p className="text-[10px] text-yellow-500/80">PDF of {resolvedExportTo - exportFrom + 1} labels may take a minute — renders each one via WASM.</p>
+                ) : null}
+                {exporting === 'pdf' && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 rounded-full bg-zinc-900 overflow-hidden">
+                      <div className="h-full bg-amber-500 transition-all" style={{ width: `${exportProgress}%` }} />
+                    </div>
+                    <p className="text-[10px] text-zinc-500 text-right">{exportProgress}%</p>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void handleExportZPL()}
+                    disabled={!!exporting}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                  >
+                    {exporting === 'zpl' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCode2 className="w-3 h-3" />}
+                    ZPL
+                  </button>
+                  <button
+                    onClick={() => void handleExportPDF()}
+                    disabled={!!exporting}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                  >
+                    {exporting === 'pdf' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                    PDF
+                  </button>
+                  <button
+                    onClick={() => { setShowExport(false); setExporting(null); }}
+                    className="px-2 py-1.5 rounded-md text-[11px] text-zinc-500 hover:text-zinc-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </section>
 
           </div>
