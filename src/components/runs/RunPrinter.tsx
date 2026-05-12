@@ -80,6 +80,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [exporting, setExporting] = useState<'zpl' | 'pdf' | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
 
+  // Inline run editing
+  const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editStatic, setEditStatic] = useState<Record<string, string>>({});
+  const [editNotes, setEditNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
 
   // Detect transport once on mount.
@@ -304,6 +311,30 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     await setRunStatus(run.id, 'queued', 0);
   };
 
+  // --- Edit handlers ---
+  const openEdit = () => {
+    if (!run) return;
+    setEditName(run.name);
+    setEditStatic({ ...run.staticValues });
+    setEditNotes(run.notes ?? '');
+    setShowEdit(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!run) return;
+    setSaving(true);
+    try {
+      await updateRun(run.id, {
+        name: editName.trim() || run.name,
+        staticValues: editStatic,
+        notes: editNotes.trim() || null,
+      });
+      setShowEdit(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // --- Export handlers ---
   const resolvedExportTo = exportTo > 0 ? exportTo : total;
 
@@ -335,7 +366,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try {
       const allFeeds = generateLabelsForRun(run, template, format);
       const from = Math.max(1, exportFrom);
-      const to = Math.min(total, resolvedExportTo);
+      const to = Math.min(total, resolvedExportTo, from + 249); // hard cap: 250 labels
       const slice = allFeeds.slice(from - 1, to);
 
       const mod = await import('zpl-renderer-js');
@@ -351,6 +382,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       const pageH = format.height * 72;
 
       for (let i = 0; i < slice.length; i++) {
+        // Yield to the browser event loop every label so the page stays
+        // responsive during long renders. WASM + pdf-lib are synchronous
+        // under the hood and will lock the tab without this.
+        await new Promise<void>((r) => setTimeout(r, 0));
         const b64 = await api.zplToBase64Async(slice[i], widthMm, heightMm, dpmm);
         const binStr = atob(b64);
         const bytes = new Uint8Array(binStr.length);
@@ -384,6 +419,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   }
 
   return (
+    <>
     <div className="flex-1 overflow-auto">
       <div className="max-w-[980px] mx-auto w-full p-4 sm:p-8 space-y-6">
         <header className="flex items-start justify-between gap-4">
@@ -412,6 +448,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               <Copy className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Re-run</span>
             </Link>
+            <button
+              onClick={openEdit}
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+              title="Edit run name, static field values, notes"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Edit run</span>
+            </button>
             <Link
               href={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
               className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
@@ -717,9 +761,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   />
                   <span className="text-[11px] text-zinc-500">/ {total}</span>
                 </div>
-                {resolvedExportTo - exportFrom > 499 && exporting === 'pdf' ? null : resolvedExportTo - exportFrom > 499 ? (
-                  <p className="text-[10px] text-yellow-500/80">PDF of {resolvedExportTo - exportFrom + 1} labels may take a minute — renders each one via WASM.</p>
-                ) : null}
+                {(() => {
+                  const count = resolvedExportTo - exportFrom + 1;
+                  if (exporting === 'pdf') return null;
+                  if (count > 250) return <p className="text-[10px] text-red-400/80">PDF is capped at 250 labels — set a narrower range. Use ZPL for large exports.</p>;
+                  if (count > 100) return <p className="text-[10px] text-yellow-500/80">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
+                  return null;
+                })()}
                 {exporting === 'pdf' && (
                   <div className="space-y-1">
                     <div className="h-1.5 rounded-full bg-zinc-900 overflow-hidden">
@@ -761,6 +809,77 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         </div>
       </div>
     </div>
+
+    {/* Edit run modal */}
+    {showEdit && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-100">Edit Run</h2>
+            <button onClick={() => setShowEdit(false)} className="text-zinc-500 hover:text-zinc-300"><X className="w-4 h-4" /></button>
+          </div>
+
+          {/* Run name */}
+          <div className="space-y-1">
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Run name</label>
+            <input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
+            />
+          </div>
+
+          {/* Static field values */}
+          {Object.keys(editStatic).length > 0 && (
+            <div className="space-y-2">
+              <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Static fields</label>
+              <div className="space-y-2">
+                {Object.entries(editStatic).map(([field, val]) => (
+                  <div key={field} className="flex items-center gap-2">
+                    <span className="text-[11px] text-zinc-400 w-28 shrink-0 truncate">{field}</span>
+                    <input
+                      value={val}
+                      onChange={(e) => setEditStatic((prev) => ({ ...prev, [field]: e.target.value }))}
+                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div className="space-y-1">
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Notes</label>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              rows={2}
+              placeholder="Optional notes…"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => void handleSaveEdit()}
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40 transition-all"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+            <button
+              onClick={() => setShowEdit(false)}
+              className="px-4 py-2 rounded-lg text-sm text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
