@@ -159,33 +159,40 @@ function tryTransformGrid(streamText: string, pageW: number, pageH: number): Par
   let labelH = ySpacing;
 
   // Extract label dimensions from the path drawn after the first cm transform.
-  // The path is enclosed in q...Q (save/restore). We only want coordinates
-  // within the cm's scope — stop at the first S (stroke), f (fill), or Q (restore).
+  // The path anchor point may be anywhere relative to the label (e.g. right edge,
+  // center). We capture the true bounding box by tracking min AND max x/y so
+  // that width = maxX - minX and height = maxY - minY regardless of anchor.
+  // We also need pathMinX to correct the side-margin calculation:
+  //   actual left edge = cmOriginX + pathMinX
+  let pathMinX = 0; // in points, relative to cm anchor
   const firstCmStr = `1 0 0 1 ${positions[0].x}`;
   const firstCmIdx = streamText.indexOf(firstCmStr);
   if (firstCmIdx > -1) {
-    // Get text from cm to end of its scope (next S, f, or Q on its own line)
-    const afterCm = streamText.substring(firstCmIdx + firstCmStr.length + 4); // skip past "cm\n"
+    const afterCm = streamText.substring(firstCmIdx + firstCmStr.length + 4);
     const scopeEnd = afterCm.search(/\n[SfQ]\s*\n|\nS\n|\nh\nS/);
     const scopeText = scopeEnd > -1 ? afterCm.substring(0, scopeEnd + 2) : afterCm.substring(0, 300);
 
     const coordPattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+[mlc]/g;
-    let maxX = 0, maxY = 0;
+    let minX = 0, maxX = 0, minY = 0, maxY = 0;
     let cm;
     while ((cm = coordPattern.exec(scopeText)) !== null) {
-      const px = Math.abs(parseFloat(cm[1]));
-      const py = Math.abs(parseFloat(cm[2]));
-      if (px > maxX && px < 500) maxX = px;
-      if (py > maxY && py < 500) maxY = py;
+      const px = parseFloat(cm[1]);
+      const py = parseFloat(cm[2]);
+      if (isFinite(px) && Math.abs(px) < 1000) { if (px < minX) minX = px; if (px > maxX) maxX = px; }
+      if (isFinite(py) && Math.abs(py) < 1000) { if (py < minY) minY = py; if (py > maxY) maxY = py; }
     }
-    if (maxX > 10) labelW = maxX / 72;
-    if (maxY > 10) labelH = maxY / 72;
+    const pathW = maxX - minX;
+    const pathH = maxY - minY;
+    if (pathW > 10) { labelW = pathW / 72; pathMinX = minX; }
+    if (pathH > 10) labelH = pathH / 72;
   }
 
   const hGap = Math.max(0, round(xSpacing - labelW));
   const vGap = Math.max(0, round(ySpacing - labelH));
   const topMargin = round(pageH - Math.max(...uniqueY) - labelH);
-  const sideMargin = round(uniqueX[0]);
+  // Correct side margin: cm x-origin is not necessarily the label's left edge.
+  // Actual left edge (in inches) = cmOriginX + pathMinX (both in pts, then /72).
+  const sideMargin = round((uniqueX[0] * 72 + pathMinX) / 72);
 
   return {
     type: 'sheet',
