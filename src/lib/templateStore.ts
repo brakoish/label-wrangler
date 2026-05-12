@@ -247,13 +247,17 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     const element = template.elements.find((e) => e.id === elementId);
     if (!element) throw new Error('Element not found');
 
-    // Clone element with offset position
+    // Clone element with a proportional offset so the copy stays visible
+    // regardless of unit system (dots for thermal, inches for sheet).
+    // +10 was hardcoded before and threw sheet-label copies 10" off-canvas.
+    const offsetX = element.width * 0.12;
+    const offsetY = element.height * 0.12;
     const maxZIndex = Math.max(0, ...template.elements.map((e) => e.zIndex));
     const duplicated: TemplateElement = {
       ...element,
       id: `element-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      x: element.x + 10, // Offset by 10 units
-      y: element.y + 10,
+      x: element.x + offsetX,
+      y: element.y + offsetY,
       zIndex: maxZIndex + 1,
       // If it has a fieldName, append "-copy" to make it unique
       fieldName: element.fieldName ? `${element.fieldName}-copy` : undefined,
