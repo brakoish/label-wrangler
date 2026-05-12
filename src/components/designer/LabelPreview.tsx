@@ -693,7 +693,7 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   // For user-picked fonts with textLength compression the ZPL ratio is still used.
   // For sheet labels Arial averages ~0.5 × em.
   const textCharWidthRatio = element.charWidth ?? 0.5;
-  const isDefaultFontForWrap = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica';
+  const isDefaultFontForWrap = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
   const charWidthThermal = isThermal && isDefaultFontForWrap
     ? svgFontSize * 0.6   // IBM Plex Mono: actual monospace glyph width
     : rawFontHDots * textCharWidthRatio;  // user font + ZPL textLength compression
@@ -748,13 +748,13 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   // need horizontal compression tricks (monospace is already uniform-width).
   // User-picked fonts win (so you can still override to Arial etc. if you want).
   const thermalDefaultFont = 'var(--font-plex-mono), ui-monospace, "Menlo", "Courier New", monospace';
-  const isDefaultFont = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica';
-  const effectiveFontFamily = isThermal && isDefaultFont ? thermalDefaultFont : element.fontFamily;
+  const isPlexMono = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
+  const effectiveFontFamily = isThermal && isPlexMono ? thermalDefaultFont : element.fontFamily;
 
   // For non-default (user override) thermal fonts, still apply the textLength
   // compression so Arial etc. match ZPL's character spacing. For Plex Mono
   // we skip it since monospace is naturally close to Font 0's character grid.
-  const applyTextLengthCompression = isThermal && !isDefaultFont;
+  const applyTextLengthCompression = isThermal && !isPlexMono;
 
   // Rotation handling: ZPL rotates around the field origin (^FO point, top-left
   // of the text box). SVG's rotate-around-center doesn't match. We use a <g>

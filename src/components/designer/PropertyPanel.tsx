@@ -222,7 +222,7 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
           </div>
         </div>
       )}
-      <CompactSelect value={element.fontFamily} options={['Arial', 'Helvetica', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
+      <CompactSelect value={element.fontFamily} options={['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
       <div className="flex gap-0.5">
         {(['left', 'center', 'right'] as const).map((a) => (
           <button
