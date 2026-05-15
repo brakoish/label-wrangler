@@ -370,7 +370,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try {
       const allFeeds = generateLabelsForRun(run, template, format);
       const from = Math.max(1, exportFrom);
-      const to = Math.min(total, resolvedExportTo, from + 249); // hard cap: 250 labels
+      const to = Math.min(total, resolvedExportTo, from + 499); // hard cap: 500 labels
       const slice = allFeeds.slice(from - 1, to);
 
       const mod = await import('zpl-renderer-js');
@@ -788,7 +788,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 {(() => {
                   const count = resolvedExportTo - exportFrom + 1;
                   if (exporting === 'pdf') return null;
-                  if (count > 250) return <p className="text-[10px] text-red-400/80">PDF is capped at 250 labels — set a narrower range. Use ZPL for large exports.</p>;
+                  if (count > 500) return <p className="text-[10px] text-red-400/80">PDF is capped at 500 labels — set a narrower range. Use ZPL for large exports.</p>;
                   if (count > 100) return <p className="text-[10px] text-yellow-500/80">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
                   return null;
                 })()}
