@@ -36,7 +36,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
   };
 
   const d = (key: keyof LabelFormat) => (editing ? (draft[key] ?? format[key]) : format[key]);
-  const setD = (key: keyof LabelFormat, value: any) => setDraft((prev) => ({ ...prev, [key]: value }));
+  const setD = <K extends keyof LabelFormat>(key: K, value: LabelFormat[K]) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   return (
     <div className="h-full">

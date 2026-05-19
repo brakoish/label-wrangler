@@ -75,7 +75,6 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   }, [run, template]);
 
   // Transport wiring (mirrors RunPrinter).
-  const [dazzleAvailable, setDazzleAvailable] = useState(false);
   const [transport, setTransport] = useState<Transport | null>(null);
   const [usbPrinter, setUsbPrinter] = useState<ConnectedPrinter | null>(null);
   const [dazzlePrinters, setDazzlePrinters] = useState<DazzlePrinter[]>([]);
@@ -86,7 +85,6 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     (async () => {
       const dz = await isDazzleRunning();
-      setDazzleAvailable(dz);
       if (dz) {
         setTransport('dazzle');
         try {

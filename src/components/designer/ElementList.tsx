@@ -125,7 +125,7 @@ function ElementItem({
   canMoveUp: boolean;
   canMoveDown: boolean;
 }) {
-  const Icon = getElementIcon(element.type);
+  const icon = getElementIcon(element.type, `w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-zinc-400'}`);
   const label = getElementLabel(element);
   const typeLabel = element.type.charAt(0).toUpperCase() + element.type.slice(1);
 
@@ -144,7 +144,7 @@ function ElementItem({
           ? 'bg-amber-500/20'
           : 'bg-zinc-800/80'
       }`}>
-        <Icon className={`w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-zinc-400'}`} />
+        {icon}
       </div>
 
       {/* Label */}
@@ -201,22 +201,22 @@ function ElementItem({
   );
 }
 
-function getElementIcon(type: string) {
+function getElementIcon(type: string, className: string) {
   switch (type) {
-    case 'text': return Type;
-    case 'qr': return QrCode;
-    case 'barcode': return Barcode;
-    case 'line': return Minus;
-    case 'rectangle': return Square;
-    case 'image': return Image;
-    default: return Square;
+    case 'text': return <Type className={className} />;
+    case 'qr': return <QrCode className={className} />;
+    case 'barcode': return <Barcode className={className} />;
+    case 'line': return <Minus className={className} />;
+    case 'rectangle': return <Square className={className} />;
+    case 'image': return <Image className={className} />;
+    default: return <Square className={className} />;
   }
 }
 
 function getElementLabel(element: TemplateElement): string {
   if (element.fieldName && !element.isStatic) return element.fieldName;
   switch (element.type) {
-    case 'text': return (element as any).content || 'Text';
+    case 'text': return element.content || 'Text';
     case 'qr': return 'QR Code';
     case 'barcode': return 'Barcode';
     case 'line': return 'Line';

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
-import { LabelFormat, LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from '@/lib/types';
+import { useState, useCallback } from 'react';
+import { LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { parsePDFFile, generateFormatName } from '@/lib/pdfParser';
 import { PlusIcon, FileIcon } from '@/app/icons';
@@ -38,30 +38,6 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [pdfUploaded, setPdfUploaded] = useState(false);
-
-  // Calculate derived values
-  const derivedValues = useMemo(() => {
-    const w = parseFloat(width) || 0;
-    const h = parseFloat(height) || 0;
-    const cols = parseInt(columns) || 1;
-    const r = parseInt(rows) || 1;
-    const sheetW = 8.5;
-    const sheetH = 11;
-    const tM = parseFloat(topMargin) || 0;
-    const sM = parseFloat(sideMargin) || 0;
-    const hGap = parseFloat(horizontalGap) || 0;
-    const vGap = parseFloat(verticalGap) || 0;
-
-    return {
-      labelsPerSheet: type === 'sheet' ? cols * r : 1,
-      pageWidth: sheetW,
-      pageHeight: sheetH,
-      topMargin: tM,
-      sideMargin: sM,
-      horizontalGap: hGap,
-      verticalGap: vGap,
-    };
-  }, [width, height, columns, rows, topMargin, sideMargin, horizontalGap, verticalGap, type]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -658,7 +634,7 @@ function SheetPreview({
           {columns} × {rows} = <span className="text-zinc-200 font-medium">{totalLabels}</span> labels per sheet
         </div>
         <div className="text-xs text-zinc-600">
-          {labelWidth}" × {labelHeight}" labels · {topMargin.toFixed(2)}" top, {sideMargin.toFixed(2)}" side
+          {labelWidth}&quot; × {labelHeight}&quot; labels · {topMargin.toFixed(2)}&quot; top, {sideMargin.toFixed(2)}&quot; side
           {(horizontalGap > 0 || verticalGap > 0) && ` · ${horizontalGap.toFixed(2)}" h-gap, ${verticalGap.toFixed(2)}" v-gap`}
         </div>
       </div>

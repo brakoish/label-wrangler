@@ -126,7 +126,12 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
   const remaining: QueueMap = {};
   for (const [runId, patch] of entries) {
     try {
-      const { runId: _ignore, ...body } = patch;
+      const body: RunPatch = {
+        printedCount: patch.printedCount,
+        status: patch.status,
+        completedAt: patch.completedAt,
+        notes: patch.notes,
+      };
       const res = await fetch(`/api/runs/${runId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

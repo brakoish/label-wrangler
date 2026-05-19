@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { LabelTemplate, TemplateElement } from './types';
 
+type NewTemplateElement = TemplateElement extends infer T
+  ? T extends TemplateElement
+    ? Omit<T, 'id' | 'zIndex'>
+    : never
+  : never;
+
 interface TemplateStore {
   templates: LabelTemplate[];
   selectedTemplateId: string | null;
@@ -15,7 +21,7 @@ interface TemplateStore {
   getTemplateById: (id: string) => LabelTemplate | undefined;
 
   // Element actions
-  addElement: (templateId: string, element: Omit<TemplateElement, 'id' | 'zIndex'>) => Promise<void>;
+  addElement: (templateId: string, element: NewTemplateElement) => Promise<void>;
   updateElement: (templateId: string, elementId: string, updates: Partial<TemplateElement>) => Promise<void>;
   updateElementLocal: (templateId: string, elementId: string, updates: Partial<TemplateElement>) => void;
   saveTemplate: (templateId: string) => Promise<void>;

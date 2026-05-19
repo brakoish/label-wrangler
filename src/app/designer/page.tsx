@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Undo2, Redo2, Globe } from 'lucide-react';
+import { Undo2, Redo2 } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { useGlobalElementStore } from '@/lib/globalStore';
@@ -20,6 +20,12 @@ import { ZPLPreview } from '@/components/designer/ZPLPreview';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
+
+type NewTemplateElement = TemplateElement extends infer T
+  ? T extends TemplateElement
+    ? Omit<T, 'id' | 'zIndex'>
+    : never
+  : never;
 
 function DesignerContent() {
   const router = useRouter();
@@ -303,7 +309,7 @@ function DesignerContent() {
       isStatic: true,
     };
 
-    let elementData: any;
+    let elementData: NewTemplateElement;
 
     switch (type) {
       case 'text':
@@ -379,7 +385,7 @@ function DesignerContent() {
         return;
     }
 
-    addElement(currentTemplate.id, elementData as Omit<TemplateElement, 'id' | 'zIndex'>);
+    addElement(currentTemplate.id, elementData);
   };
 
   const handleUpdateElement = (updates: Partial<TemplateElement>) => {
@@ -563,8 +569,7 @@ function DesignerContent() {
               x: el.x + 10,
               y: el.y + 10,
             };
-            // eslint-disable-next-line no-await-in-loop
-            void addElement(currentTemplate.id, newEl as Omit<TemplateElement, 'id' | 'zIndex'>);
+            void addElement(currentTemplate.id, newEl as NewTemplateElement);
           }
         }}
         onDelete={deleteGlobal}

@@ -1,6 +1,5 @@
 import { neon } from '@neondatabase/serverless';
 import fs from 'fs';
-import path from 'path';
 
 const env = fs.readFileSync('.env.local', 'utf8');
 const url = env.match(/^DATABASE_URL=(.+)$/m)[1].trim();

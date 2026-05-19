@@ -1,5 +1,11 @@
 import type { LabelFormat, LabelTemplate, TemplateElement, TextElement } from './types';
 
+type ElementWithoutIdentity = TemplateElement extends infer T
+  ? T extends TemplateElement
+    ? Omit<T, 'id' | 'zIndex'>
+    : never
+  : never;
+
 /**
  * Compute the working-units width/height of a label format (thermal in dots,
  * sheet in inches). Used to compute scale ratios when duplicating across formats.
@@ -39,7 +45,7 @@ export function duplicateElementsForFormat(
     // Literal deep copy; fresh id + zIndex per element.
     return source.elements.map((el, i) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id: _id, zIndex: _z, ...rest } = el as any;
+      const { id: _id, zIndex: _z, ...rest } = el;
       return { ...rest, id: freshId(i), zIndex: i } as TemplateElement;
     });
   }
@@ -51,9 +57,9 @@ export function duplicateElementsForFormat(
 
   return source.elements.map((el, i) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { id: _id, zIndex: _z, ...rest } = el as any;
+    const { id: _id, zIndex: _z, ...rest } = el;
     const base: TemplateElement = {
-      ...rest,
+      ...(rest as ElementWithoutIdentity),
       id: freshId(i),
       zIndex: i,
       x: el.x * ratio,

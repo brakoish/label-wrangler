@@ -12,7 +12,6 @@ import { PlusIcon } from '../icons';
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'thermal' | 'sheet'>('all');
 
   const formats = useFormatStore((s) => s.formats);
@@ -20,8 +19,6 @@ export default function Home() {
   const selectFormat = useFormatStore((s) => s.selectFormat);
   const deleteFormat = useFormatStore((s) => s.deleteFormat);
   const updateFormat = useFormatStore((s) => s.updateFormat);
-  const exportFormats = useFormatStore((s) => s.exportFormats);
-  const importFormats = useFormatStore((s) => s.importFormats);
 
   const selectedFormat = useMemo(() => {
     return formats.find((f) => f.id === selectedFormatId);
@@ -49,49 +46,9 @@ export default function Home() {
   const thermalCount = formats.filter((f) => f.type === 'thermal').length;
   const sheetCount = formats.filter((f) => f.type === 'sheet').length;
 
-  const handleExport = () => {
-    const data = exportFormats();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `label-wrangler-formats-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const content = event.target?.result as string;
-        const result = importFormats(content);
-        if (!result.success) {
-          setImportError(result.error || 'Import failed');
-          setTimeout(() => setImportError(null), 3000);
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
-  };
-
   return (
     <AppShell>
       <PageTitle title="Formats" />
-      {/* Import error toast */}
-      {importError && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-red-500/90 backdrop-blur text-white text-sm rounded-lg shadow-xl">
-          {importError}
-        </div>
-      )}
-
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left sidebar */}

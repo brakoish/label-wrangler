@@ -151,7 +151,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     const origH = element.height;
     const isQR = element.type === 'qr';
     const isText = element.type === 'text';
-    const origFontSize = isText ? (element as any).fontSize : 0;
+    const origFontSize = isText ? (element as TextElement).fontSize : 0;
     const isThermal = format.type === 'thermal';
     const dpi = format.dpi || 203;
 
@@ -173,7 +173,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
           return [el.id, {
             x: el.x, y: el.y, width: el.width, height: el.height,
             effW: eff.w, effH: eff.h,
-            fontSize: el.type === 'text' ? (el as any).fontSize : 0,
+            fontSize: el.type === 'text' ? el.fontSize : 0,
             type: el.type,
           }] as const;
         })
@@ -263,7 +263,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
           if (snap.type === 'text') {
             const newFs = Math.max(4, Math.round(snap.fontSize * uniform * 10) / 10);
             const svgFs = isThermal ? newFs * (dpi / 72) : newFs / 72;
-            onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: svgFs * 1.2, fontSize: newFs } as any);
+            onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: svgFs * 1.2, fontSize: newFs });
           } else if (snap.type === 'qr') {
             const qrSize = Math.max(newElW, newElH);
             onUpdateElement(id, { x: newElX, y: newElY, width: qrSize, height: qrSize });
@@ -281,7 +281,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
         // Convert fontSize to viewBox units for height calc
         const svgFs = isThermal ? newFontSize * (dpi / 72) : newFontSize / 72;
         nH = svgFs * 1.2; // approximate line height
-        onUpdateElement(elementId, { x: nX, y: nY, width: nW, height: nH, fontSize: newFontSize } as any);
+        onUpdateElement(elementId, { x: nX, y: nY, width: nW, height: nH, fontSize: newFontSize });
         return;
       }
 
@@ -296,7 +296,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg, selectedElementIds]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format.type, format.dpi, textBounds]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
@@ -739,7 +739,7 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
         if (bbox.width > 0) {
           onMeasure(element.id, Math.max(bbox.width, element.width), Math.max(bbox.height, element.height));
         }
-      } catch (e) {}
+      } catch {}
     }
   }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.id, onMeasure]);
 
@@ -885,7 +885,7 @@ function BarcodeElementRenderer({ element, transform }: { element: BarcodeElemen
 
       document.body.removeChild(tempSvg);
       setBarcodeData({ svg: svgContent, viewBox });
-    } catch (err) {
+    } catch {
       setBarcodeData(null);
     }
   }, [element.content, element.barcodeFormat, element.showText]);

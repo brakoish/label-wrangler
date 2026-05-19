@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useFormatStore } from '@/lib/store';
 import { parsePDFFile, generateFormatName, PDFParseResult } from '@/lib/pdfParser';
-import { UploadIcon, FileIcon, XIcon } from '@/app/icons';
+import { UploadIcon, XIcon } from '@/app/icons';
 
 interface PDFImportModalProps {
   isOpen: boolean;
@@ -222,7 +222,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                 <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
                   <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Label Size</div>
                   <div className="font-medium text-zinc-200">
-                    {parseResult.spec.width.toFixed(3)}" × {parseResult.spec.height.toFixed(3)}"
+                    {parseResult.spec.width.toFixed(3)}&quot; × {parseResult.spec.height.toFixed(3)}&quot;
                   </div>
                 </div>
 

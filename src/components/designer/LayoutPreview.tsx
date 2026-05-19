@@ -25,7 +25,7 @@ function getLabelViewBox(format: LabelFormat) {
 }
 
 // Renders a simplified version of the label content (for tiling)
-function MiniElements({ elements, vbW, vbH, format }: { elements: TemplateElement[]; vbW: number; vbH: number; format: LabelFormat }) {
+function MiniElements({ elements, vbW, format }: { elements: TemplateElement[]; vbW: number; vbH: number; format: LabelFormat }) {
   const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;

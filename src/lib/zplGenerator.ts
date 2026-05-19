@@ -79,7 +79,8 @@ export function generateZPL(
 
 function resolveContent(element: TemplateElement, fieldValues?: Record<string, string>): string {
   if (element.isStatic) {
-    return (element as any).content || '';
+    if ('content' in element) return element.content || '';
+    return '';
   }
 
   const value = (element.fieldName && fieldValues?.[element.fieldName])

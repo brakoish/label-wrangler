@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Type, QrCode, Barcode, Minus, Square, Image, X, Globe } from 'lucide-react';
 import { ElementType } from '@/lib/types';
 

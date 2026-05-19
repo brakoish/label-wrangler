@@ -38,7 +38,7 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("online", onOnline);
     return () => window.removeEventListener("online", onOnline);
-  }, [fetchFormats, fetchTemplates, loadRuns]);
+  }, [fetchFormats, fetchTemplates, loadRuns, fetchGlobals]);
 
   return <>{children}</>;
 }

@@ -3,9 +3,9 @@
 import {
   AlignHorizontalJustifyCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyEnd,
   AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd,
-  Move, Maximize2, RotateCw, Type, QrCode, Barcode, Square, Image, Link2, Unlink2,
+  Move, Maximize2, RotateCw, Type, QrCode, Barcode, Square, Image,
 } from 'lucide-react';
-import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
+import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface PropertyPanelProps {
@@ -275,7 +275,7 @@ function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate
       <CompactSelect
         value={element.barcodeFormat}
         options={['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14']}
-        onChange={(v) => onUpdate({ barcodeFormat: v as any })}
+        onChange={(v) => onUpdate({ barcodeFormat: v as BarcodeFormat })}
       />
       <div className="flex items-center justify-between py-0.5">
         <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Text</span>
@@ -326,7 +326,7 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
         onChange={handleUpload}
         className="text-[10px] text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:cursor-pointer w-full"
       />
-      <CompactSelect value={element.objectFit} options={['contain', 'cover', 'fill']} onChange={(v) => onUpdate({ objectFit: v as any })} />
+      <CompactSelect value={element.objectFit} options={['contain', 'cover', 'fill']} onChange={(v) => onUpdate({ objectFit: v as ImageElement['objectFit'] })} />
     </>
   );
 }

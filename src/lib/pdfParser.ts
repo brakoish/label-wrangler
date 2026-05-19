@@ -41,7 +41,7 @@ export async function parsePDFFile(file: File): Promise<PDFParseResult> {
     // Try to decompress the content stream
     const contentStream = page.node.Contents();
     if (contentStream) {
-      const rawBytes = (contentStream as any).contents as Uint8Array;
+      const rawBytes = (contentStream as { contents?: Uint8Array }).contents;
       if (rawBytes && rawBytes.length > 0) {
         try {
           const decoded = pako.inflate(rawBytes);
@@ -88,7 +88,7 @@ function tryVectorRects(streamText: string, pageW: number, pageH: number): Parse
   if (!streamText.includes(' re')) return null;
 
   // Parse global transform
-  const { scaleX, scaleY, translateX, yFlipped } = parseGlobalTransform(streamText);
+  const { scaleX, scaleY, translateX } = parseGlobalTransform(streamText);
 
   const rePattern = /(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+re/g;
   const rects: Rect[] = [];

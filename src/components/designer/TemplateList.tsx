@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Copy } from 'lucide-react';
-import { LabelFormat, LabelTemplate, TemplateElement, TextElement } from '@/lib/types';
+import { LabelFormat, LabelTemplate, TextElement } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 

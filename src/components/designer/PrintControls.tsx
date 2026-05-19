@@ -164,7 +164,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
           const opened = await openPrinter(authorized[0]);
           setUsbPrinter(opened);
         }
-      } catch (err) {
+      } catch {
         // Soft-fail — could be access-denied on Windows; user will see it when they try.
       }
     })();

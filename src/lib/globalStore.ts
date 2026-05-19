@@ -10,7 +10,7 @@ interface GlobalElementStore {
   deleteGlobal: (id: string) => Promise<void>;
 }
 
-export const useGlobalElementStore = create<GlobalElementStore>((set, get) => ({
+export const useGlobalElementStore = create<GlobalElementStore>((set) => ({
   globals: [],
   hydrated: false,
 

@@ -5,7 +5,7 @@ import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, Rota
 import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import type { Run, LabelTemplate, LabelFormat } from '@/lib/types';
+import type { LabelTemplate, LabelFormat } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -145,9 +145,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !template || !format) return [] as string[];
     return generateLabelsForRun(run, template, format);
   }, [run, template, format]);
-  // Total printer feeds (may be < total physical labels when across > 1).
-  const totalFeeds = labels.length;
-
   const canStart = !!run && labels.length > 0 && (
     (transport === 'dazzle' && !!dazzleSelected) ||
     (transport === 'webusb' && !!usbPrinter)
@@ -937,7 +934,7 @@ function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: L
       }
     })();
     return () => { cancelled = true; };
-  }, [zpl, format.width, format.height, format.dpi]);
+  }, [zpl, format.width, format.height, format.dpi, format.horizontalGapThermal, format.labelsAcross, format.linerWidth, format.sideMarginThermal]);
 
   if (err) return <p className="text-[11px] text-red-400">{err}</p>;
   if (!url) return <p className="text-[11px] text-zinc-500">Rendering…</p>;
