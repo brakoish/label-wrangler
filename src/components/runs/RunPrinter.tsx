@@ -13,7 +13,6 @@ import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
-import { openSheetPrintWindow } from '@/lib/sheetPrint';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -82,7 +81,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [exportTo, setExportTo] = useState(0); // 0 = use total at render
   const [exporting, setExporting] = useState<'zpl' | 'pdf' | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
-  const [sheetPrintOpening, setSheetPrintOpening] = useState(false);
 
   // Inline run editing
   const [showEdit, setShowEdit] = useState(false);
@@ -340,20 +338,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     await setRunStatus(run.id, 'queued', 0);
   };
 
-  const handleOpenSheetPrint = async (range?: { from?: number; to?: number }) => {
-    if (!run || !template || !format) return;
-    setErrorMsg(null);
-    setSheetPrintOpening(true);
-    try {
-      await openSheetPrintWindow(run, template, format, {
-        from: range?.from ?? printedCount + 1,
-        to: range?.to ?? (stopAt > 0 ? Math.min(stopAt, total) : total),
-      });
-    } catch (err) {
-      setErrorMsg((err as Error)?.message || 'Could not open sheet print view');
-    } finally {
-      setSheetPrintOpening(false);
-    }
+  const sheetPrintHref = (range?: { from?: number; to?: number }) => {
+    const params = new URLSearchParams({
+      from: String(range?.from ?? printedCount + 1),
+      to: String(range?.to ?? (stopAt > 0 ? Math.min(stopAt, total) : total)),
+    });
+    return `/runs/${runId}/print?${params.toString()}`;
   };
 
   // --- Edit handlers ---
@@ -385,10 +375,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportZPL = async () => {
     if (!run || !template || !format) return;
-    if (format.type === 'sheet') {
-      await handleOpenSheetPrint({ from: exportFrom, to: resolvedExportTo });
-      return;
-    }
     setExporting('zpl');
     try {
       const allFeeds = generateLabelsForRun(run, template, format);
@@ -410,10 +396,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportPDF = async () => {
     if (!run || !template || !format) return;
-    if (format.type === 'sheet') {
-      await handleOpenSheetPrint({ from: exportFrom, to: resolvedExportTo });
-      return;
-    }
     setExporting('pdf');
     setExportProgress(0);
     try {
@@ -743,14 +725,15 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {/* Controls */}
           <div className="flex items-center gap-2 pt-2">
             {isSheetFormat && printedCount < total && (
-              <button
-                onClick={() => void handleOpenSheetPrint()}
-                disabled={sheetPrintOpening}
+              <Link
+                href={sheetPrintHref()}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
               >
-                {sheetPrintOpening ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                <FileText className="w-4 h-4" />
                 Open Print / PDF
-              </button>
+              </Link>
             )}
             {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
               <button
@@ -891,14 +874,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       ZPL
                     </button>
                   )}
-                  <button
-                    onClick={() => void handleExportPDF()}
-                    disabled={!!exporting || sheetPrintOpening}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
-                  >
-                    {exporting === 'pdf' || sheetPrintOpening ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                    {isSheetFormat ? 'Print / PDF' : 'PDF'}
-                  </button>
+                  {isSheetFormat ? (
+                    <Link
+                      href={sheetPrintHref({ from: exportFrom, to: resolvedExportTo })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                    >
+                      <FileText className="w-3 h-3" />
+                      Print / PDF
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => void handleExportPDF()}
+                      disabled={!!exporting}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                    >
+                      {exporting === 'pdf' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                      PDF
+                    </button>
+                  )}
                   <button
                     onClick={() => { setShowExport(false); setExporting(null); }}
                     className="px-2 py-1.5 rounded-md text-[11px] text-zinc-500 hover:text-zinc-300"

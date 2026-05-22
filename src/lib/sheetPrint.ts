@@ -74,7 +74,7 @@ function buildLoadingHtml(title: string): string {
 </html>`;
 }
 
-async function buildSheetPrintHtml(
+export async function buildSheetPrintHtml(
   run: Run,
   template: LabelTemplate,
   format: LabelFormat,
