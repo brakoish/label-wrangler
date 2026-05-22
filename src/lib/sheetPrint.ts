@@ -214,6 +214,46 @@ export async function buildSheetPrintHtml(
 </html>`;
 }
 
+export async function buildSheetPrintPdf(
+  run: Run,
+  template: LabelTemplate,
+  format: LabelFormat,
+  options: SheetPrintOptions,
+  onProgress?: (progress: number) => void,
+): Promise<Uint8Array> {
+  if (format.type !== 'sheet') {
+    throw new Error('Sheet PDF output requires a sheet label format.');
+  }
+
+  const { PDFDocument } = await import('pdf-lib');
+  const pdfDoc = await PDFDocument.create();
+  const sheetW = format.sheetWidth || 8.5;
+  const sheetH = format.sheetHeight || 11;
+  const positions = getSheetPositions(format);
+  if (positions.length === 0) {
+    throw new Error('This sheet format has no printable label positions.');
+  }
+
+  const from = Math.max(1, options.from || 1);
+  const to = Math.min(run.sourceData.length, options.to || run.sourceData.length);
+  const sorted = [...template.elements].sort((a, b) => a.zIndex - b.zIndex);
+  const totalPages = Math.max(1, Math.ceil((to - from + 1) / positions.length));
+  let pageNumber = 0;
+
+  for (let labelIndex = from - 1; labelIndex <= to - 1; labelIndex += positions.length) {
+    const pageSvg = await renderSheetPageSvg(run, sorted, format, positions, labelIndex, to);
+    const pngBytes = await svgToPngBytes(pageSvg, sheetW, sheetH);
+    const png = await pdfDoc.embedPng(pngBytes);
+    const page = pdfDoc.addPage([sheetW * 72, sheetH * 72]);
+    page.drawImage(png, { x: 0, y: 0, width: sheetW * 72, height: sheetH * 72 });
+    pageNumber += 1;
+    onProgress?.(Math.round((pageNumber / totalPages) * 100));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  return pdfDoc.save();
+}
+
 function getSheetPositions(format: LabelFormat): SheetPosition[] {
   const cols = format.columns || 1;
   const rows = format.rows || 1;
@@ -237,6 +277,77 @@ function getSheetPositions(format: LabelFormat): SheetPosition[] {
   }
 
   return positions;
+}
+
+async function renderSheetPageSvg(
+  run: Run,
+  elements: TemplateElement[],
+  format: LabelFormat,
+  positions: SheetPosition[],
+  labelIndex: number,
+  to: number,
+): Promise<string> {
+  const sheetW = format.sheetWidth || 8.5;
+  const sheetH = format.sheetHeight || 11;
+  const cells: string[] = [];
+
+  for (let slot = 0; slot < positions.length; slot++) {
+    const runIndex = labelIndex + slot;
+    if (runIndex > to - 1) break;
+
+    const pos = positions[slot];
+    const values = previewLabelValues(run, runIndex);
+    const labelSvg = await renderLabelSvg(elements, format, values);
+    cells.push(`<svg x="${pos.x}" y="${pos.y}" width="${format.width}" height="${format.height}" viewBox="0 0 ${format.width} ${format.height}" preserveAspectRatio="none">${extractSvgBody(labelSvg)}</svg>`);
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${sheetW}in" height="${sheetH}in" viewBox="0 0 ${sheetW} ${sheetH}"><rect width="${sheetW}" height="${sheetH}" fill="#ffffff"/>${cells.join('')}</svg>`;
+}
+
+async function svgToPngBytes(svg: string, sheetW: number, sheetH: number): Promise<Uint8Array> {
+  const dpi = 300;
+  const width = Math.round(sheetW * dpi);
+  const height = Math.round(sheetH * dpi);
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    const loaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Could not render the sheet PDF image.'));
+    });
+    img.src = url;
+    await loaded;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not prepare the sheet PDF canvas.');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) resolve(result);
+        else reject(new Error('Could not encode the sheet PDF image.'));
+      }, 'image/png');
+    });
+
+    return new Uint8Array(await pngBlob.arrayBuffer());
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function extractSvgBody(svg: string): string {
+  const start = svg.indexOf('>');
+  const end = svg.lastIndexOf('</svg>');
+  if (start === -1 || end === -1 || end <= start) return svg;
+  return svg.slice(start + 1, end);
 }
 
 async function renderLabelSvg(
