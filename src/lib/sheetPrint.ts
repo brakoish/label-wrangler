@@ -35,15 +35,43 @@ export async function openSheetPrintWindow(
     throw new Error('Sheet print output requires a sheet label format.');
   }
 
-  const html = await buildSheetPrintHtml(run, template, format, options);
-  const win = window.open('', '_blank', 'noopener,noreferrer');
+  const win = window.open('', '_blank');
   if (!win) {
     throw new Error('Popup blocked. Allow popups for Label Wrangler, then try again.');
   }
 
   win.document.open();
+  win.document.write(buildLoadingHtml(run.name || 'Sheet labels'));
+  win.document.close();
+
+  const html = await buildSheetPrintHtml(run, template, format, options);
+  win.document.open();
   win.document.write(html);
   win.document.close();
+}
+
+function buildLoadingHtml(title: string): string {
+  const safeTitle = escapeHtml(title);
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${safeTitle}</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #18181b; color: #e4e4e7; }
+    body { display: grid; place-items: center; font-family: Arial, Helvetica, sans-serif; }
+    .box { display: grid; gap: 8px; text-align: center; font-size: 13px; }
+    .title { color: #f59e0b; font-weight: 700; }
+    .sub { color: #a1a1aa; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="title">Preparing sheet output...</div>
+    <div class="sub">${safeTitle}</div>
+  </div>
+</body>
+</html>`;
 }
 
 async function buildSheetPrintHtml(
