@@ -407,9 +407,9 @@ function DesignerContent() {
     <AppShell>
       <PageTitle title="Designer" />
       {/* Editor layout fills the content area */}
-      <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
+      <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className="w-[280px] flex flex-col border-r border-zinc-800/50">
+        <div className="w-full xl:w-[280px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 max-h-[46vh] xl:max-h-none">
           <ElementList
             elements={currentTemplate.elements}
             selectedElementId={selectedElementId}
@@ -442,7 +442,7 @@ function DesignerContent() {
         </div>
 
         {/* Center Panel - Preview */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <div className="flex-1 flex flex-col min-w-0 min-h-[520px] xl:min-h-0 overflow-y-auto">
           {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
               so the round-trip feels like 'I edited this and came back'
               rather than 'I'm lost in the designer'. */}

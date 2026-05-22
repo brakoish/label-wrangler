@@ -17,7 +17,7 @@ interface PropertyPanelProps {
 export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps) {
   if (!element) {
     return (
-      <div className="w-[280px] border-l border-zinc-800/50 flex items-center justify-center">
+      <div className="w-full xl:w-[280px] xl:shrink-0 min-h-20 xl:min-h-0 border-t xl:border-t-0 xl:border-l border-zinc-800/50 flex items-center justify-center">
         <p className="text-zinc-600 text-xs">Select an element</p>
       </div>
     );
@@ -41,7 +41,7 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
   };
 
   return (
-    <div className="w-[280px] border-l border-zinc-800/50 overflow-y-auto">
+    <div className="w-full xl:w-[280px] xl:shrink-0 max-h-[48vh] xl:max-h-none border-t xl:border-t-0 xl:border-l border-zinc-800/50 overflow-y-auto">
       {/* Element type header */}
       <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
         <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">

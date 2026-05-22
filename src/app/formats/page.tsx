@@ -50,9 +50,9 @@ export default function Home() {
     <AppShell>
       <PageTitle title="Formats" />
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden max-w-[1600px] mx-auto w-full">
+      <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left sidebar */}
-        <div className="w-[400px] flex flex-col border-r border-zinc-800/50">
+        <div className="w-full xl:w-[400px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 max-h-[48vh] xl:max-h-none">
           {/* Search & filters */}
           <div className="p-4 space-y-4">
             {/* New Format button */}
@@ -166,7 +166,7 @@ export default function Home() {
         </div>
 
         {/* Right panel - Format detail */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-w-0 overflow-auto">
           {selectedFormat ? (
             <FormatDetail
               format={selectedFormat}
