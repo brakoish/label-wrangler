@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil } from 'lucide-react';
@@ -245,11 +245,9 @@ function NewRunContent() {
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
-  // Preview ZPL for the current row.
-  const previewZpl = useMemo(() => {
-    if (!template || !format) return '';
+  const previewValuesForIndex = useCallback((index: number) => {
     const values: Record<string, string> = { ...staticValues };
-    const row = sourceData[previewIndex];
+    const row = sourceData[index];
 
     if (typeof row === 'string' && pasteField) {
       values[pasteField] = row;
@@ -260,8 +258,34 @@ function NewRunContent() {
         }
       }
     }
-    return generateZPL(template, format, values);
-  }, [template, format, staticValues, fieldMappings, sourceData, previewIndex, pasteField]);
+    return values;
+  }, [staticValues, fieldMappings, sourceData, pasteField]);
+
+  // Preview values for the current row.
+  const previewValues = useMemo(() => previewValuesForIndex(previewIndex), [previewValuesForIndex, previewIndex]);
+
+  const sheetPreviewValues = useMemo(() => {
+    if (!format || format.type !== 'sheet') return undefined;
+    const labelsPerSheet = Math.max(1, (format.columns || 1) * (format.rows || 1));
+    const pageStart = Math.floor(previewIndex / labelsPerSheet) * labelsPerSheet;
+    return Array.from({ length: labelsPerSheet }, (_, offset) => {
+      const rowIndex = pageStart + offset;
+      if (rowIndex >= labelCount) return undefined;
+      return previewValuesForIndex(rowIndex);
+    });
+  }, [format, labelCount, previewIndex, previewValuesForIndex]);
+
+  const selectedSheetLabelOffset = useMemo(() => {
+    if (!format || format.type !== 'sheet') return undefined;
+    const labelsPerSheet = Math.max(1, (format.columns || 1) * (format.rows || 1));
+    return previewIndex % labelsPerSheet;
+  }, [format, previewIndex]);
+
+  // Preview ZPL for the current row.
+  const previewZpl = useMemo(() => {
+    if (!template || !format) return '';
+    return generateZPL(template, format, previewValues);
+  }, [template, format, previewValues]);
 
   const canCreate =
     name.trim().length > 0 &&
@@ -678,7 +702,13 @@ function NewRunContent() {
                       // Sheets can't render via the ZPL WASM engine — show the
                       // actual sheet-grid layout so the user sees 10x20 /
                       // 8x11 / whatever their template actually is.
-                      <LayoutPreview format={format} elements={template.elements} />
+                      <LayoutPreview
+                        format={format}
+                        elements={template.elements}
+                        testData={previewValues}
+                        testDataByLabel={sheetPreviewValues}
+                        selectedLabelOffset={selectedSheetLabelOffset}
+                      />
                     ) : (
                       <LocalZplPreview zpl={previewZpl} format={format} />
                     )}

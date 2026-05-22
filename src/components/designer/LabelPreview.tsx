@@ -630,9 +630,9 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
       // Text handles its own rotation to match ZPL's field-origin rotation.
       return <TextElementRenderer key={element.id} element={element as TextElement} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} />;
+      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} testData={testData} />;
     case 'barcode':
-      return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} />;
+      return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} testData={testData} />;
     case 'line':
       return <LineElementRenderer key={element.id} element={element as LineElement} transform={transform} format={format} />;
     case 'rectangle':
@@ -642,6 +642,17 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
     default:
       return null;
   }
+}
+
+function resolveElementContent(element: TemplateElement, testData?: Record<string, string>): string {
+  if (element.isStatic) {
+    if ('content' in element) return element.content || '';
+    return '';
+  }
+
+  const testValue = element.fieldName && testData?.[element.fieldName];
+  const rawContent = testValue || element.defaultValue || ('content' in element ? element.content : '');
+  return `${element.prefix || ''}${rawContent}${element.suffix || ''}`;
 }
 
 function TextElementRenderer({ element, format, onMeasure, testData }: { element: TextElement; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void; testData?: Record<string, string> }) {
@@ -812,15 +823,16 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   );
 }
 
-function QRElementRenderer({ element, transform }: { element: QRElement; transform?: string; format?: LabelFormat }) {
+function QRElementRenderer({ element, transform, testData }: { element: QRElement; transform?: string; format?: LabelFormat; testData?: Record<string, string> }) {
   const [dataUrl, setDataUrl] = useState<string>('');
+  const content = resolveElementContent(element, testData) || 'QR';
 
   useEffect(() => {
     // Use toDataURL instead of toCanvas — canvas elements can't exist inside SVG.
     // margin: 0 so the SVG QR fills its full element.width/height bounding box
     // cleanly — makes it simple to design around in the canvas. The bottom ZPL
     // preview shows exactly what will print with the actual quiet zone.
-    QRCode.toDataURL(element.content || 'QR', {
+    QRCode.toDataURL(content, {
       errorCorrectionLevel: element.errorCorrection,
       width: 256,
       margin: 0,
@@ -828,7 +840,7 @@ function QRElementRenderer({ element, transform }: { element: QRElement; transfo
     }).then((url: string) => {
       setDataUrl(url);
     }).catch(() => {});
-  }, [element.content, element.errorCorrection]);
+  }, [content, element.errorCorrection]);
 
   return (
     <>
@@ -860,15 +872,16 @@ function QRElementRenderer({ element, transform }: { element: QRElement; transfo
   );
 }
 
-function BarcodeElementRenderer({ element, transform }: { element: BarcodeElement; transform?: string }) {
+function BarcodeElementRenderer({ element, transform, testData }: { element: BarcodeElement; transform?: string; testData?: Record<string, string> }) {
   const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
+  const content = resolveElementContent(element, testData) || '123456789';
 
   useEffect(() => {
     try {
       const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       document.body.appendChild(tempSvg);
 
-      JsBarcode(tempSvg, element.content || '123456789', {
+      JsBarcode(tempSvg, content, {
         format: element.barcodeFormat,
         width: 2,
         height: 80,
@@ -888,7 +901,7 @@ function BarcodeElementRenderer({ element, transform }: { element: BarcodeElemen
     } catch {
       setBarcodeData(null);
     }
-  }, [element.content, element.barcodeFormat, element.showText]);
+  }, [content, element.barcodeFormat, element.showText]);
 
   if (!barcodeData) {
     return (

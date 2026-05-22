@@ -518,7 +518,7 @@ function DesignerContent() {
           {currentFormat.type === 'thermal' ? (
             <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
           ) : (
-            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} />
+            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={testData} />
           )}
         </div>
 

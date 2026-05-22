@@ -13,6 +13,7 @@ import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
+import { openSheetPrintWindow } from '@/lib/sheetPrint';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -65,6 +66,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const total = run?.totalLabels ?? 0;
   const pct = total > 0 ? Math.round((printedCount / total) * 100) : 0;
+  const isSheetFormat = format?.type === 'sheet';
 
   // Label preview state — which row to show in the small thumbnail.
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -80,6 +82,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [exportTo, setExportTo] = useState(0); // 0 = use total at render
   const [exporting, setExporting] = useState<'zpl' | 'pdf' | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
+  const [sheetPrintOpening, setSheetPrintOpening] = useState(false);
 
   // Inline run editing
   const [showEdit, setShowEdit] = useState(false);
@@ -146,9 +149,34 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     return generateLabelsForRun(run, template, format);
   }, [run, template, format]);
   const canStart = !!run && labels.length > 0 && (
-    (transport === 'dazzle' && !!dazzleSelected) ||
-    (transport === 'webusb' && !!usbPrinter)
+    !isSheetFormat &&
+    ((transport === 'dazzle' && !!dazzleSelected) ||
+    (transport === 'webusb' && !!usbPrinter))
   );
+
+  const previewValues = useMemo(() => {
+    if (!run) return {};
+    const maxIdx = Math.max(0, run.sourceData.length - 1);
+    const idx = Math.min(Math.max(0, previewIndex), maxIdx);
+    return previewLabelValues(run, idx);
+  }, [run, previewIndex]);
+
+  const sheetPreviewValues = useMemo(() => {
+    if (!run || !format || format.type !== 'sheet') return undefined;
+    const labelsPerSheet = Math.max(1, (format.columns || 1) * (format.rows || 1));
+    const pageStart = Math.floor(previewIndex / labelsPerSheet) * labelsPerSheet;
+    return Array.from({ length: labelsPerSheet }, (_, offset) => {
+      const rowIndex = pageStart + offset;
+      if (rowIndex >= run.sourceData.length) return undefined;
+      return previewLabelValues(run, rowIndex);
+    });
+  }, [run, format, previewIndex]);
+
+  const selectedSheetLabelOffset = useMemo(() => {
+    if (!format || format.type !== 'sheet') return undefined;
+    const labelsPerSheet = Math.max(1, (format.columns || 1) * (format.rows || 1));
+    return previewIndex % labelsPerSheet;
+  }, [format, previewIndex]);
 
   // Preview ZPL for whichever label index the user is inspecting.
   // For multi-across rolls we group rows by feed so the preview matches
@@ -312,6 +340,22 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     await setRunStatus(run.id, 'queued', 0);
   };
 
+  const handleOpenSheetPrint = async (range?: { from?: number; to?: number }) => {
+    if (!run || !template || !format) return;
+    setErrorMsg(null);
+    setSheetPrintOpening(true);
+    try {
+      await openSheetPrintWindow(run, template, format, {
+        from: range?.from ?? printedCount + 1,
+        to: range?.to ?? (stopAt > 0 ? Math.min(stopAt, total) : total),
+      });
+    } catch (err) {
+      setErrorMsg((err as Error)?.message || 'Could not open sheet print view');
+    } finally {
+      setSheetPrintOpening(false);
+    }
+  };
+
   // --- Edit handlers ---
   const openEdit = () => {
     if (!run) return;
@@ -341,6 +385,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportZPL = async () => {
     if (!run || !template || !format) return;
+    if (format.type === 'sheet') {
+      await handleOpenSheetPrint({ from: exportFrom, to: resolvedExportTo });
+      return;
+    }
     setExporting('zpl');
     try {
       const allFeeds = generateLabelsForRun(run, template, format);
@@ -362,6 +410,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportPDF = async () => {
     if (!run || !template || !format) return;
+    if (format.type === 'sheet') {
+      await handleOpenSheetPrint({ from: exportFrom, to: resolvedExportTo });
+      return;
+    }
     setExporting('pdf');
     setExportProgress(0);
     try {
@@ -554,7 +606,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 // show the SVG sheet-grid layout instead so the user actually
                 // sees 10x20 / 8x11 / whatever grid they designed.
                 <div className="w-full">
-                  <LayoutPreview format={format} elements={template.elements} />
+                  <LayoutPreview
+                    format={format}
+                    elements={template.elements}
+                    testData={previewValues}
+                    testDataByLabel={sheetPreviewValues}
+                    selectedLabelOffset={selectedSheetLabelOffset}
+                  />
                 </div>
               ) : (
                 <LocalZplPreview zpl={previewZpl} format={format} showOutlines={showOutlines} />
@@ -569,66 +627,80 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
         {/* Transport setup */}
         <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-3">
-          <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Printer</h2>
-          {dazzleAvailable && webUsbSupported && (
-            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 w-fit">
-              <button
-                onClick={() => setTransport('dazzle')}
-                className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'dazzle' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
-              >
-                Dazzle
-              </button>
-              <button
-                onClick={() => setTransport('webusb')}
-                className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'webusb' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
-              >
-                WebUSB
-              </button>
-            </div>
-          )}
-          {transport === 'dazzle' && (
-            dazzlePrinters.length > 0 ? (
-              <select
-                value={dazzleSelected ?? ''}
-                onChange={(e) => {
-                  setDazzleSelected(e.target.value);
-                  if (typeof window !== 'undefined') localStorage.setItem('lw:dazzle-printer', e.target.value);
-                }}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2"
-              >
-                {dazzlePrinters.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name}{p.is_default ? ' (default)' : ''}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-xs text-zinc-500">No printers found in Dazzle.</p>
-            )
-          )}
-          {transport === 'webusb' && (
-            usbPrinter ? (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <CheckCircle2 className="w-4 h-4" /> {usbPrinter.productName}
+          <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">{isSheetFormat ? 'Sheet Output' : 'Printer'}</h2>
+          {isSheetFormat ? (
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Sheets open as a print-ready page for regular printers or Save as PDF.
+              </p>
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Important print setting</p>
+                <p className="mt-1 text-xs text-amber-100">Set scale to 100% / Actual size. Do not use Fit to page or Shrink to printable area.</p>
               </div>
-            ) : (
-              <button
-                onClick={async () => {
-                  try {
-                    const d = await requestPrinter();
-                    const o = await openPrinter(d);
-                    setUsbPrinter(o);
-                  } catch (err) {
-                    if ((err as Error).name !== 'NotFoundError') setTransportError((err as Error).message);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-zinc-300 transition-colors"
-              >
-                <Plug className="w-3.5 h-3.5" /> Connect printer
-              </button>
-            )
+            </div>
+          ) : (
+            <>
+              {dazzleAvailable && webUsbSupported && (
+                <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 w-fit">
+                  <button
+                    onClick={() => setTransport('dazzle')}
+                    className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'dazzle' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
+                  >
+                    Dazzle
+                  </button>
+                  <button
+                    onClick={() => setTransport('webusb')}
+                    className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'webusb' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
+                  >
+                    WebUSB
+                  </button>
+                </div>
+              )}
+              {transport === 'dazzle' && (
+                dazzlePrinters.length > 0 ? (
+                  <select
+                    value={dazzleSelected ?? ''}
+                    onChange={(e) => {
+                      setDazzleSelected(e.target.value);
+                      if (typeof window !== 'undefined') localStorage.setItem('lw:dazzle-printer', e.target.value);
+                    }}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2"
+                  >
+                    {dazzlePrinters.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}{p.is_default ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-xs text-zinc-500">No printers found in Dazzle.</p>
+                )
+              )}
+              {transport === 'webusb' && (
+                usbPrinter ? (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" /> {usbPrinter.productName}
+                  </div>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const d = await requestPrinter();
+                        const o = await openPrinter(d);
+                        setUsbPrinter(o);
+                      } catch (err) {
+                        if ((err as Error).name !== 'NotFoundError') setTransportError((err as Error).message);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-zinc-300 transition-colors"
+                  >
+                    <Plug className="w-3.5 h-3.5" /> Connect printer
+                  </button>
+                )
+              )}
+            </>
           )}
-          {transportError && <p className="text-xs text-red-400">{transportError}</p>}
+          {transportError && !isSheetFormat && <p className="text-xs text-red-400">{transportError}</p>}
         </section>
 
         {/* Progress */}
@@ -670,7 +742,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           {/* Controls */}
           <div className="flex items-center gap-2 pt-2">
-            {(status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            {isSheetFormat && printedCount < total && (
+              <button
+                onClick={() => void handleOpenSheetPrint()}
+                disabled={sheetPrintOpening}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
+              >
+                {sheetPrintOpening ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                Open Print / PDF
+              </button>
+            )}
+            {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
               <button
                 onClick={startOrResume}
                 disabled={!canStart}
@@ -688,7 +770,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <Pause className="w-4 h-4" /> Pause
               </button>
             )}
-            {status !== 'completed' && status !== 'cancelled' && (
+            {!isSheetFormat && status !== 'completed' && status !== 'cancelled' && (
               <button
                 onClick={handleCancel}
                 className="px-4 py-2.5 rounded-lg text-sm font-medium bg-zinc-900 text-zinc-400 hover:text-red-400 hover:border-red-500/30 border border-zinc-800 transition-colors"
@@ -784,6 +866,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 </div>
                 {(() => {
                   const count = resolvedExportTo - exportFrom + 1;
+                  if (isSheetFormat) return <p className="text-[10px] text-zinc-500">Sheets open in a print-ready tab. Choose Save as PDF in the browser print dialog.</p>;
                   if (exporting === 'pdf') return null;
                   if (count > 500) return <p className="text-[10px] text-red-400/80">PDF is capped at 500 labels — set a narrower range. Use ZPL for large exports.</p>;
                   if (count > 100) return <p className="text-[10px] text-yellow-500/80">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
@@ -798,21 +881,23 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void handleExportZPL()}
-                    disabled={!!exporting}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
-                  >
-                    {exporting === 'zpl' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCode2 className="w-3 h-3" />}
-                    ZPL
-                  </button>
+                  {!isSheetFormat && (
+                    <button
+                      onClick={() => void handleExportZPL()}
+                      disabled={!!exporting}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                    >
+                      {exporting === 'zpl' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCode2 className="w-3 h-3" />}
+                      ZPL
+                    </button>
+                  )}
                   <button
                     onClick={() => void handleExportPDF()}
-                    disabled={!!exporting}
+                    disabled={!!exporting || sheetPrintOpening}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
                   >
-                    {exporting === 'pdf' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                    PDF
+                    {exporting === 'pdf' || sheetPrintOpening ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                    {isSheetFormat ? 'Print / PDF' : 'PDF'}
                   </button>
                   <button
                     onClick={() => { setShowExport(false); setExporting(null); }}

@@ -1,17 +1,31 @@
 'use client';
 
-import { LabelFormat, TemplateElement, TextElement } from '@/lib/types';
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import JsBarcode from 'jsbarcode';
+import { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from '@/lib/types';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
   elements: TemplateElement[];
+  testData?: Record<string, string>;
+  testDataByLabel?: Array<Record<string, string> | undefined>;
+  selectedLabelOffset?: number;
 }
 
-export function LayoutPreview({ format, elements }: LayoutPreviewProps) {
+export function LayoutPreview({ format, elements, testData, testDataByLabel, selectedLabelOffset }: LayoutPreviewProps) {
   if (format.type === 'sheet') {
-    return <SheetLayout format={format} elements={elements} />;
+    return (
+      <SheetLayout
+        format={format}
+        elements={elements}
+        testData={testData}
+        testDataByLabel={testDataByLabel}
+        selectedLabelOffset={selectedLabelOffset}
+      />
+    );
   }
-  return <RollLayout format={format} elements={elements} />;
+  return <RollLayout format={format} elements={elements} testData={testData} />;
 }
 
 // Get the viewBox dimensions for the label content (matches LabelPreview)
@@ -25,7 +39,20 @@ function getLabelViewBox(format: LabelFormat) {
 }
 
 // Renders a simplified version of the label content (for tiling)
-function MiniElements({ elements, vbW, format }: { elements: TemplateElement[]; vbW: number; vbH: number; format: LabelFormat }) {
+function resolveElementContent(element: TemplateElement, testData?: Record<string, string>): string {
+  if (element.isStatic) {
+    if ('content' in element) return element.content || '';
+    return '';
+  }
+
+  const value = (element.fieldName && testData?.[element.fieldName])
+    || element.defaultValue
+    || `{{${element.fieldName || 'field'}}}`;
+
+  return `${element.prefix || ''}${value}${element.suffix || ''}`;
+}
+
+function MiniElements({ elements, vbW, format, testData }: { elements: TemplateElement[]; vbW: number; vbH: number; format: LabelFormat; testData?: Record<string, string> }) {
   const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;
@@ -37,9 +64,7 @@ function MiniElements({ elements, vbW, format }: { elements: TemplateElement[]; 
             const te = el as TextElement;
             const fs = isThermal ? te.fontSize * (dpi / 72) : te.fontSize / 72;
             const lh = fs * (te.lineHeight || 1.2);
-            const prefix = (!te.isStatic && te.prefix) ? te.prefix : '';
-            const suffix = (!te.isStatic && te.suffix) ? te.suffix : '';
-            const fullText = `${prefix}${te.isStatic ? te.content : (te.defaultValue || te.fieldName || '...')}${suffix}`;
+            const fullText = resolveElementContent(te, testData);
 
             // Word wrap (same logic as LabelPreview)
             const charW = fs * 0.5;
@@ -71,9 +96,9 @@ function MiniElements({ elements, vbW, format }: { elements: TemplateElement[]; 
             );
           }
           case 'qr':
-            return <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} fill="#9ca3af" rx={vbW * 0.003} />;
+            return <MiniQr key={el.id} element={el as QRElement} testData={testData} vbW={vbW} />;
           case 'barcode':
-            return <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} fill="#d1d5db" stroke="#9ca3af" strokeWidth={vbW * 0.002} />;
+            return <MiniBarcode key={el.id} element={el as BarcodeElement} testData={testData} vbW={vbW} />;
           case 'rectangle':
             return <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="#9ca3af" strokeWidth={vbW * 0.003} />;
           case 'line':
@@ -86,7 +111,83 @@ function MiniElements({ elements, vbW, format }: { elements: TemplateElement[]; 
   );
 }
 
-function SheetLayout({ format, elements }: LayoutPreviewProps) {
+function MiniQr({ element, testData, vbW }: { element: QRElement; testData?: Record<string, string>; vbW: number }) {
+  const [dataUrl, setDataUrl] = useState('');
+  const content = resolveElementContent(element, testData) || 'QR';
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(content, {
+      errorCorrectionLevel: element.errorCorrection,
+      width: 128,
+      margin: 0,
+      color: { dark: '#111827', light: '#ffffff' },
+    }).then((url: string) => {
+      if (active) setDataUrl(url);
+    }).catch(() => {
+      if (active) setDataUrl('');
+    });
+    return () => { active = false; };
+  }, [content, element.errorCorrection]);
+
+  if (!dataUrl) {
+    return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#9ca3af" rx={vbW * 0.003} />;
+  }
+
+  return (
+    <image
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      href={dataUrl}
+      preserveAspectRatio="xMidYMid meet"
+    />
+  );
+}
+
+function MiniBarcode({ element, testData, vbW }: { element: BarcodeElement; testData?: Record<string, string>; vbW: number }) {
+  const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
+  const content = resolveElementContent(element, testData) || '123456789';
+
+  useEffect(() => {
+    try {
+      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(tempSvg, content, {
+        format: element.barcodeFormat,
+        width: 2,
+        height: 80,
+        displayValue: element.showText,
+        margin: 0,
+        fontSize: 14,
+      });
+      const w = tempSvg.getAttribute('width') || '200';
+      const h = tempSvg.getAttribute('height') || '100';
+      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: `0 0 ${w} ${h}` });
+    } catch {
+      setBarcodeData(null);
+    }
+  }, [content, element.barcodeFormat, element.showText]);
+
+  if (!barcodeData) {
+    return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#d1d5db" stroke="#9ca3af" strokeWidth={vbW * 0.002} />;
+  }
+
+  return (
+    <svg
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      viewBox={barcodeData.viewBox}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <g dangerouslySetInnerHTML={{ __html: barcodeData.svg }} />
+    </svg>
+  );
+}
+
+function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabelOffset }: LayoutPreviewProps) {
   const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const cols = format.columns || 1;
   const rows = format.rows || 1;
@@ -120,14 +221,25 @@ function SheetLayout({ format, elements }: LayoutPreviewProps) {
           {/* Labels */}
           {Array.from({ length: rows }).map((_, row) =>
             Array.from({ length: cols }).map((_, col) => {
+              const cellIndex = row * cols + col;
               const x = pad + sideM + col * (labelW + gapX);
               const y = pad + topM + row * (labelH + gapY);
               if (x + labelW > pad + sheetW + 0.01 || y + labelH > pad + sheetH + 0.01) return null;
+              const cellData = testDataByLabel ? testDataByLabel[cellIndex] : testData;
+              const isSelected = selectedLabelOffset === cellIndex;
               return (
                 <g key={`${row}-${col}`}>
-                  <rect x={x} y={y} width={labelW} height={labelH} fill="#ffffff" stroke="#e5e7eb" strokeWidth={0.01} />
+                  <rect
+                    x={x}
+                    y={y}
+                    width={labelW}
+                    height={labelH}
+                    fill="#ffffff"
+                    stroke={isSelected ? '#d97706' : '#e5e7eb'}
+                    strokeWidth={isSelected ? 0.025 : 0.01}
+                  />
                   <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${contentW} ${contentH}`} preserveAspectRatio="xMidYMid meet">
-                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} />
+                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} testData={cellData} />
                   </svg>
                 </g>
               );
@@ -139,7 +251,7 @@ function SheetLayout({ format, elements }: LayoutPreviewProps) {
   );
 }
 
-function RollLayout({ format, elements }: LayoutPreviewProps) {
+function RollLayout({ format, elements, testData }: LayoutPreviewProps) {
   const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const across = format.labelsAcross || 1;
   const labelW = format.width;
@@ -186,7 +298,7 @@ function RollLayout({ format, elements }: LayoutPreviewProps) {
                 <g key={`${row}-${col}`}>
                   <rect x={x} y={y} width={labelW} height={labelH} fill="#ffffff" stroke="#d1d5db" strokeWidth={linerW * 0.003} />
                   <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${contentW} ${contentH}`} preserveAspectRatio="xMidYMid meet">
-                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} />
+                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} testData={testData} />
                   </svg>
                 </g>
               );
