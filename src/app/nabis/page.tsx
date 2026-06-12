@@ -155,20 +155,20 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
         <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.1in] text-black shadow-2xl shadow-black/30">
-          <div className="grid h-full grid-rows-[0.5in_0.66in_0.46in_0.46in_0.48in_1fr] overflow-hidden border-[2px] border-black p-[0.04in] font-sans">
+          <div className="grid h-full grid-rows-[0.52fr_0.74fr_0.42fr_0.42fr_0.44fr_0.88fr] gap-[0.04in] overflow-hidden border-[2px] border-black p-[0.04in] font-sans">
             <div className="flex min-h-0 flex-col items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in] text-center">
               <p className="max-w-full truncate font-serif text-[16px] font-black uppercase leading-none tracking-normal">
                 {headerText}
               </p>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.1in] text-center">
+            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.1in] text-center">
               <p className="line-clamp-2 break-words text-[18px] font-black leading-tight tracking-normal">
                 {label.itemName || 'Item Description'}
               </p>
             </div>
 
-            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.25in_1fr] gap-[0.04in]">
+            <div className="grid min-h-0 grid-cols-[1.25in_1fr] gap-[0.04in]">
               <div className="flex items-center justify-center overflow-hidden border-[3px] border-black px-[0.04in]">
                 <p className="font-serif text-[20px] font-black uppercase leading-none">Batch</p>
               </div>
@@ -177,7 +177,7 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
               </div>
             </div>
 
-            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.25in_1fr] gap-[0.04in]">
+            <div className="grid min-h-0 grid-cols-[1.25in_1fr] gap-[0.04in]">
               <div className="flex items-center justify-center overflow-hidden border-[3px] border-black px-[0.04in]">
                 <p className="font-serif text-[20px] font-black uppercase leading-none">UID</p>
               </div>
@@ -186,13 +186,13 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
               </div>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in] text-center">
+            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in] text-center">
               <p className="font-serif text-[20px] font-black uppercase leading-none">
                 {label.unitsPerCase || '-'} Units Per Case
               </p>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.24in] py-[0.08in]">
+            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.24in] py-[0.06in]">
               {label.uid ? (
                 <Barcode value={label.uid} barWidth={3} stretch className="h-full max-h-[0.82in] w-full" />
               ) : (
