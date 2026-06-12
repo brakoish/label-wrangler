@@ -57,6 +57,8 @@ async function searchManifestDatabase(search: string) {
 
   const sql = neon(process.env.MANIFEST_DATABASE_URL);
   const pattern = `%${search}%`;
+  const digitSuffix = search.replace(/\D/g, '');
+  const digitSuffixPattern = digitSuffix.length >= 4 ? `%${digitSuffix}` : '';
   const rows = await sql`
     SELECT
       mp.id,
@@ -75,6 +77,7 @@ async function searchManifestDatabase(search: string) {
       AND mp.quantity::numeric > 0
       AND (
         mp.label ILIKE ${pattern}
+        OR (${digitSuffixPattern} <> '' AND regexp_replace(COALESCE(mp.label, ''), '[^0-9]', '', 'g') LIKE ${digitSuffixPattern})
         OR mp.product_name ILIKE ${pattern}
         OR mi.item_name ILIKE ${pattern}
       )
