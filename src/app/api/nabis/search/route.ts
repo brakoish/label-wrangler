@@ -14,6 +14,23 @@ type ManifestPackage = {
   packagedDate?: string | null;
 };
 
+type MetrcPackage = {
+  Id?: number | string | null;
+  Label?: string | null;
+  Item?: {
+    Name?: string | null;
+  } | null;
+  ItemName?: string | null;
+  ProductName?: string | null;
+  ProductionBatchNumber?: string | null;
+  SourceProductionBatchNumbers?: string | null;
+  SourceHarvestNames?: string | null;
+  Quantity?: number | string | null;
+  UnitOfMeasureName?: string | null;
+  UnitOfMeasure?: string | null;
+  PackagedDate?: string | null;
+};
+
 function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -68,6 +85,57 @@ async function searchManifestDatabase(search: string) {
   return rows.map((row) => normalizePackage(row as ManifestPackage)).filter((pkg) => pkg.tag && pkg.itemName);
 }
 
+function looksLikeMetrcPackageTag(search: string) {
+  return /^[A-Z0-9]{20,}$/.test(search.trim().toUpperCase());
+}
+
+function normalizeMetrcPackage(pkg: MetrcPackage) {
+  const tag = cleanText(pkg.Label);
+  const itemName = cleanText(pkg.Item?.Name) || cleanText(pkg.ItemName) || cleanText(pkg.ProductName);
+  const batch =
+    cleanText(pkg.ProductionBatchNumber) ||
+    cleanText(pkg.SourceProductionBatchNumbers) ||
+    cleanText(pkg.SourceHarvestNames);
+
+  return normalizePackage({
+    id: pkg.Id,
+    label: tag,
+    itemName,
+    batchName: batch,
+    quantity: pkg.Quantity,
+    unitOfMeasure: cleanText(pkg.UnitOfMeasureName) || cleanText(pkg.UnitOfMeasure),
+    packagedDate: pkg.PackagedDate,
+  });
+}
+
+async function searchMetrcByExactTag(search: string) {
+  if (!looksLikeMetrcPackageTag(search)) return null;
+
+  const baseUrl = process.env.METRC_BASE_URL;
+  const license = process.env.METRC_LICENSE_DISTRIBUTOR;
+  const integratorKey = process.env.METRC_INTEGRATOR_KEY;
+  const userKey = process.env.METRC_USER_KEY;
+  if (!baseUrl || !license || !integratorKey || !userKey) return null;
+
+  const endpoint = new URL(`/packages/v2/${encodeURIComponent(search.trim())}`, baseUrl);
+  endpoint.searchParams.set('licenseNumber', license);
+
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
+    },
+    cache: 'no-store',
+  });
+
+  if (response.status === 404) return [];
+  if (!response.ok) throw new Error(`Metrc returned ${response.status}`);
+
+  const data = (await response.json()) as MetrcPackage;
+  const pkg = normalizeMetrcPackage(data);
+  return pkg.tag && pkg.itemName ? [pkg] : [];
+}
+
 export async function GET(request: NextRequest) {
   const search = request.nextUrl.searchParams.get('q')?.trim() ?? '';
   if (search.length < 2) {
@@ -81,8 +149,17 @@ export async function GET(request: NextRequest) {
 
   try {
     const databasePackages = await searchManifestDatabase(search);
-    if (databasePackages) {
+    if (databasePackages && databasePackages.length > 0) {
       return NextResponse.json({ packages: databasePackages });
+    }
+
+    const metrcPackages = await searchMetrcByExactTag(search);
+    if (metrcPackages && metrcPackages.length > 0) {
+      return NextResponse.json({ packages: metrcPackages });
+    }
+
+    if (databasePackages) {
+      return NextResponse.json({ packages: [] });
     }
 
     const response = await fetch(endpoint, {
