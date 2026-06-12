@@ -113,7 +113,7 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
   );
 }
 
-function Barcode({ value }: { value: string }) {
+function Barcode({ value, className = 'h-[0.95in] w-full' }: { value: string; className?: string }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -127,47 +127,59 @@ function Barcode({ value }: { value: string }) {
     });
   }, [value]);
 
-  return <svg ref={svgRef} className="h-[0.95in] w-full" />;
+  return <svg ref={svgRef} className={className} />;
 }
 
 function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: LabelOrientation }) {
   if (orientation === 'landscape') {
+    const headerText = [label.distributor, label.license].filter(Boolean).join(' / ') || 'Distributor / License';
+
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
-        <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.2in] text-black shadow-2xl shadow-black/30">
-          <div className="grid h-full grid-rows-[1fr_auto] gap-[0.12in] border-[2px] border-black p-[0.12in] font-sans">
-            <div className="grid min-h-0 grid-cols-[1.3fr_0.9fr] border-b-[2px] border-black">
-              <div className="min-w-0 border-r-[2px] border-black">
-                <div className="border-b-[2px] border-black p-[0.09in] text-center">
-                  <p className="text-[11pt] font-black uppercase leading-tight">{label.distributor || 'Distributor'}</p>
-                  <p className="mt-[0.02in] text-[7pt] font-bold uppercase tracking-wide">{label.license || 'License'}</p>
-                </div>
-                <div className="p-[0.1in]">
-                  <p className="text-[6pt] font-black uppercase tracking-wide">Item Description</p>
-                  <p className="mt-[0.04in] min-h-[0.9in] break-words text-[15pt] font-black leading-[1.05]">
-                    {label.itemName || 'Item name'}
-                  </p>
-                </div>
-              </div>
+        <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.12in] text-black shadow-2xl shadow-black/30">
+          <div className="grid h-full grid-rows-[0.5in_0.72in_0.46in_0.46in_0.48in_1fr] border-[2px] border-black p-[0.04in] font-sans">
+            <div className="flex min-h-0 items-center justify-center border-[2px] border-black px-[0.08in] text-center">
+              <p className="line-clamp-2 font-serif text-[15pt] font-black uppercase leading-none tracking-normal">
+                {headerText}
+              </p>
+            </div>
 
-              <div className="grid min-w-0 grid-rows-[auto_auto_1fr]">
-                <div className="border-b border-black p-[0.08in]">
-                  <p className="text-[6pt] font-black uppercase tracking-wide">Batch</p>
-                  <p className="mt-[0.03in] break-words text-[10pt] font-bold">{label.batch || '-'}</p>
-                </div>
-                <div className="border-b border-black p-[0.08in]">
-                  <p className="text-[6pt] font-black uppercase tracking-wide">Units Per Case</p>
-                  <p className="mt-[0.03in] text-[22pt] font-black leading-none">{label.unitsPerCase || '-'}</p>
-                </div>
-                <div className="p-[0.08in]">
-                  <p className="text-[6pt] font-black uppercase tracking-wide">UID / Package Tag</p>
-                  <p className="mt-[0.04in] break-all font-mono text-[8.5pt] font-bold leading-tight">{label.uid || 'Tag'}</p>
-                </div>
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[2px] border-black px-[0.1in] text-center">
+              <p className="line-clamp-2 break-words text-[20pt] font-black leading-tight tracking-normal">
+                {label.itemName || 'Item Description'}
+              </p>
+            </div>
+
+            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.05in_1fr] gap-[0.04in]">
+              <div className="flex items-center justify-center border-[2px] border-black px-[0.04in]">
+                <p className="font-serif text-[20pt] font-black uppercase leading-none">Batch</p>
+              </div>
+              <div className="flex min-w-0 items-center justify-center border-[2px] border-black px-[0.08in]">
+                <p className="truncate text-[18pt] font-black leading-none">{label.batch || '-'}</p>
               </div>
             </div>
 
-            <div className="px-[0.08in] pb-[0.03in]">
-              {label.uid ? <Barcode value={label.uid} /> : <div className="h-[0.95in] w-full border border-dashed border-black/30" />}
+            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.05in_1fr] gap-[0.04in]">
+              <div className="flex items-center justify-center border-[2px] border-black px-[0.04in]">
+                <p className="font-serif text-[20pt] font-black uppercase leading-none">UID</p>
+              </div>
+              <div className="flex min-w-0 items-center justify-center border-[2px] border-black px-[0.08in]">
+                <p className="truncate font-serif text-[18pt] font-black leading-none">{label.uid || 'Tag'}</p>
+              </div>
+            </div>
+
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[2px] border-black px-[0.08in] text-center">
+              <p className="font-serif text-[20pt] font-black uppercase leading-none">
+                {label.unitsPerCase || '-'} Units Per Case
+              </p>
+            </div>
+
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[2px] border-black px-[0.22in] py-[0.08in]">
+              {label.uid ? (
+                <Barcode value={label.uid} className="h-full max-h-[0.72in] w-full" />
+              ) : (
+                <div className="h-full w-full border border-dashed border-black/30" />
+              )}
             </div>
           </div>
         </section>
