@@ -14,6 +14,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
   // Runs is the new home. Formats moved from '/' to '/formats'. Designer
   // stays at /designer. Nav order reflects day-to-day usage.
   const isRuns = pathname === '/' || pathname === '/runs' || pathname.startsWith('/runs');
+  const isNabis = pathname === '/nabis' || pathname.startsWith('/nabis');
   const isDesigner = pathname === '/designer' || pathname.startsWith('/designer');
   const isFormats = pathname === '/formats' || pathname.startsWith('/formats');
 
@@ -53,6 +54,16 @@ export function AppShell({ children, headerAction }: AppShellProps) {
                 }`}
               >
                 Runs
+              </Link>
+              <Link
+                href="/nabis"
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  isNabis
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                Nabis
               </Link>
               <Link
                 href="/designer"
