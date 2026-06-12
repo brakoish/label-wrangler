@@ -108,8 +108,9 @@ function FittedText({
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(box);
+    document.fonts?.ready.then(fit).catch(() => undefined);
     return () => observer.disconnect();
-  }, [children, maxPx, minPx]);
+  }, [children, maxPx, minPx, rows]);
 
   return (
     <p
@@ -226,16 +227,21 @@ function Barcode({
 
 function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: LabelOrientation }) {
   if (orientation === 'landscape') {
-    const headerText = `${label.distributor || 'HR Botanical Distribution LLC'} / ${label.license || 'OCM-DIST-24-000114'}`;
-
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
         <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30">
-          <div className="grid h-full grid-rows-[0.34fr_0.56fr_0.31fr_0.31fr_0.31fr_1.48fr] gap-[0.022in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
-            <div className="flex min-h-0 flex-col items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
-              <FittedText maxPx={11} minPx={6.5} uppercase fontFamily="serif">
-                {headerText}
-              </FittedText>
+          <div className="grid h-full grid-rows-[0.47fr_0.54fr_0.3fr_0.3fr_0.3fr_1.43fr] gap-[0.02in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
+            <div className="flex min-h-0 flex-col items-center justify-center gap-[0.015in] overflow-hidden border-[2px] border-black px-[0.045in] py-[0.025in] text-center">
+              <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
+                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="serif">
+                  {label.distributor || 'HR Botanical Distribution LLC'}
+                </FittedText>
+              </div>
+              <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
+                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="serif">
+                  {label.license || 'OCM-DIST-24-000114'}
+                </FittedText>
+              </div>
             </div>
 
             <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in] text-center">
