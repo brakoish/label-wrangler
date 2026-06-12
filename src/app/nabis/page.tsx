@@ -8,6 +8,8 @@ import {
   PackageCheck,
   Plus,
   Printer,
+  RectangleHorizontal,
+  RectangleVertical,
   Search,
   X,
 } from 'lucide-react';
@@ -32,6 +34,8 @@ type LabelInfo = {
   uid: string;
   unitsPerCase: string;
 };
+
+type LabelOrientation = 'portrait' | 'landscape';
 
 const EMPTY_LABEL: LabelInfo = {
   distributor: 'Excelsior Legacy',
@@ -126,7 +130,52 @@ function Barcode({ value }: { value: string }) {
   return <svg ref={svgRef} className="h-[0.95in] w-full" />;
 }
 
-function LabelPreview({ label }: { label: LabelInfo }) {
+function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: LabelOrientation }) {
+  if (orientation === 'landscape') {
+    return (
+      <div className="mx-auto flex w-full max-w-[6in] justify-center">
+        <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.2in] text-black shadow-2xl shadow-black/30">
+          <div className="grid h-full grid-rows-[1fr_auto] gap-[0.12in] border-[2px] border-black p-[0.12in] font-sans">
+            <div className="grid min-h-0 grid-cols-[1.3fr_0.9fr] border-b-[2px] border-black">
+              <div className="min-w-0 border-r-[2px] border-black">
+                <div className="border-b-[2px] border-black p-[0.09in] text-center">
+                  <p className="text-[12pt] font-black uppercase leading-tight">Nabis Pickup</p>
+                  <p className="text-[7.5pt] font-bold uppercase tracking-wide">{label.distributor || 'Distributor'}</p>
+                  <p className="text-[6.5pt] uppercase">{label.license || 'License'}</p>
+                </div>
+                <div className="p-[0.1in]">
+                  <p className="text-[6pt] font-black uppercase tracking-wide">Item Description</p>
+                  <p className="mt-[0.04in] min-h-[0.9in] break-words text-[15pt] font-black leading-[1.05]">
+                    {label.itemName || 'Item name'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid min-w-0 grid-rows-[auto_auto_1fr]">
+                <div className="border-b border-black p-[0.08in]">
+                  <p className="text-[6pt] font-black uppercase tracking-wide">Batch</p>
+                  <p className="mt-[0.03in] break-words text-[10pt] font-bold">{label.batch || '-'}</p>
+                </div>
+                <div className="border-b border-black p-[0.08in]">
+                  <p className="text-[6pt] font-black uppercase tracking-wide">Units Per Case</p>
+                  <p className="mt-[0.03in] text-[22pt] font-black leading-none">{label.unitsPerCase || '-'}</p>
+                </div>
+                <div className="p-[0.08in]">
+                  <p className="text-[6pt] font-black uppercase tracking-wide">UID / Package Tag</p>
+                  <p className="mt-[0.04in] break-all font-mono text-[8.5pt] font-bold leading-tight">{label.uid || 'Tag'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-[0.08in] pb-[0.03in]">
+              {label.uid ? <Barcode value={label.uid} /> : <div className="h-[0.95in] w-full border border-dashed border-black/30" />}
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[4in] justify-center">
       <section className="nabis-label aspect-[4/6] w-full bg-white p-[0.22in] text-black shadow-2xl shadow-black/30">
@@ -175,6 +224,7 @@ export default function NabisPage() {
   const [results, setResults] = useState<PackageResult[]>([]);
   const [selected, setSelected] = useState<PackageResult | null>(null);
   const [label, setLabel] = useState<LabelInfo>(EMPTY_LABEL);
+  const [orientation, setOrientation] = useState<LabelOrientation>('portrait');
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState('');
 
@@ -229,14 +279,14 @@ export default function NabisPage() {
       <style jsx global>{`
         @media print {
           @page {
-            size: 4in 6in;
+            size: ${orientation === 'landscape' ? '6in 4in' : '4in 6in'};
             margin: 0;
           }
 
           html,
           body {
-            width: 4in;
-            height: 6in;
+            width: ${orientation === 'landscape' ? '6in' : '4in'};
+            height: ${orientation === 'landscape' ? '4in' : '6in'};
             margin: 0 !important;
             background: white !important;
           }
@@ -253,13 +303,13 @@ export default function NabisPage() {
           .nabis-print {
             position: fixed !important;
             inset: 0 !important;
-            width: 4in !important;
-            height: 6in !important;
+            width: ${orientation === 'landscape' ? '6in' : '4in'} !important;
+            height: ${orientation === 'landscape' ? '4in' : '6in'} !important;
           }
 
           .nabis-label {
-            width: 4in !important;
-            height: 6in !important;
+            width: ${orientation === 'landscape' ? '6in' : '4in'} !important;
+            height: ${orientation === 'landscape' ? '4in' : '6in'} !important;
             max-width: none !important;
             box-shadow: none !important;
           }
@@ -369,6 +419,35 @@ export default function NabisPage() {
                 </button>
               </div>
 
+              <div className="mb-4">
+                <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-500">Orientation</span>
+                <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
+                  {(
+                    [
+                      ['portrait', 'Portrait', RectangleVertical],
+                      ['landscape', 'Horizontal', RectangleHorizontal],
+                    ] as const
+                  ).map(([value, labelText, Icon]) => {
+                    const active = orientation === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setOrientation(value)}
+                        className={`inline-flex h-10 items-center justify-center gap-2 rounded-md text-sm font-semibold transition ${
+                          active
+                            ? 'bg-amber-600 text-white'
+                            : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {labelText}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="space-y-3">
                 {(
                   [
@@ -393,7 +472,7 @@ export default function NabisPage() {
             </div>
 
             <div className="nabis-print">
-              <LabelPreview label={label} />
+              <LabelPreview label={label} orientation={orientation} />
             </div>
           </section>
         </div>
