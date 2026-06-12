@@ -60,7 +60,7 @@ function FittedText({
   uppercase = false,
   rows = 1,
   fontFamily = 'Arial, Helvetica, sans-serif',
-  fontWeight = 700,
+  fontWeight = 600,
 }: {
   children: string;
   maxPx: number;
@@ -231,8 +231,8 @@ function LabelPreview({ label }: { label: LabelInfo }) {
         className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30"
         style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
       >
-        <div className="grid h-full grid-rows-[0.47fr_0.54fr_0.3fr_0.3fr_0.3fr_1.43fr] gap-[0.02in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
-          <div className="flex min-h-0 flex-col items-center justify-center gap-[0.015in] overflow-hidden border-[2px] border-black px-[0.045in] py-[0.025in] text-center">
+        <div className="grid h-full grid-rows-[0.47fr_0.54fr_0.3fr_0.3fr_0.3fr_1.43fr] gap-[0.02in] overflow-hidden border border-black p-[0.025in] font-sans">
+          <div className="flex min-h-0 flex-col items-center justify-center gap-[0.015in] overflow-hidden border border-black px-[0.045in] py-[0.025in] text-center">
             <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
               <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
                 {label.distributor || 'HR Botanical Distribution LLC'}
@@ -245,19 +245,19 @@ function LabelPreview({ label }: { label: LabelInfo }) {
             </div>
           </div>
 
-          <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in] text-center">
+          <div className="flex min-h-0 items-center justify-center overflow-hidden border border-black px-[0.06in] text-center">
             <FittedText maxPx={12} minPx={7.5} rows={2}>
               {label.itemName || 'Item Description'}
             </FittedText>
           </div>
 
           <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
-            <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
+            <div className="flex items-center justify-center overflow-hidden border border-black px-[0.025in]">
               <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
                 Batch
               </FittedText>
             </div>
-            <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
+            <div className="flex min-w-0 items-center justify-center overflow-hidden border border-black px-[0.045in]">
               <FittedText maxPx={12} minPx={7.5}>
                 {label.batch || '-'}
               </FittedText>
@@ -265,27 +265,27 @@ function LabelPreview({ label }: { label: LabelInfo }) {
           </div>
 
           <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
-            <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
+            <div className="flex items-center justify-center overflow-hidden border border-black px-[0.025in]">
               <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
                 UID
               </FittedText>
             </div>
-            <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
+            <div className="flex min-w-0 items-center justify-center overflow-hidden border border-black px-[0.045in]">
               <FittedText maxPx={11} minPx={6.5} fontFamily="Arial, Helvetica, sans-serif">
                 {label.uid || 'Tag'}
               </FittedText>
             </div>
           </div>
 
-          <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
+          <div className="flex min-h-0 items-center justify-center overflow-hidden border border-black px-[0.045in] text-center">
             <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
               {`${label.unitsPerCase || '-'} Units Per Case`}
             </FittedText>
           </div>
 
-          <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.13in] py-[0.04in]">
+          <div className="flex min-h-0 items-center justify-center overflow-hidden border border-black px-[0.13in] py-[0.04in]">
             {label.uid ? (
-              <Barcode value={label.uid} barWidth={3} stretch className="h-full max-h-[1.08in] w-full" />
+              <Barcode value={label.uid} barWidth={2} stretch className="h-full max-h-[1.08in] w-full" />
             ) : (
               <div className="h-full w-full border border-dashed border-black/30" />
             )}
