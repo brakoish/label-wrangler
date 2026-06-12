@@ -135,47 +135,47 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
         <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.12in] text-black shadow-2xl shadow-black/30">
-          <div className="grid h-full grid-rows-[0.5in_0.72in_0.46in_0.46in_0.48in_1fr] border-[3px] border-black p-[0.04in] font-sans">
-            <div className="flex min-h-0 flex-col items-center justify-center border-[3px] border-black px-[0.08in] text-center">
-              <p className="font-serif text-[14pt] font-black uppercase leading-none tracking-normal">
+          <div className="grid h-full grid-rows-[0.46in_0.66in_0.42in_0.42in_0.42in_1fr] overflow-hidden border-[3px] border-black p-[0.04in] font-sans">
+            <div className="flex min-h-0 flex-col items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in] text-center">
+              <p className="max-w-full break-words font-serif text-[10.5pt] font-black uppercase leading-none tracking-normal">
                 {label.distributor || 'HR Botanical Distribution LLC'}
               </p>
-              <p className="mt-[0.03in] font-serif text-[10pt] font-black uppercase leading-none tracking-normal">
+              <p className="mt-[0.02in] max-w-full break-words font-serif text-[8pt] font-black uppercase leading-none tracking-normal">
                 {label.license || 'OCM-DIST-24-000114'}
               </p>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[3px] border-black px-[0.1in] text-center">
-              <p className="line-clamp-2 break-words text-[20pt] font-black leading-tight tracking-normal">
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.1in] text-center">
+              <p className="line-clamp-2 break-words text-[15pt] font-black leading-tight tracking-normal">
                 {label.itemName || 'Item Description'}
               </p>
             </div>
 
-            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.45in_1fr] gap-[0.04in]">
-              <div className="flex items-center justify-center border-[3px] border-black px-[0.04in]">
-                <p className="font-serif text-[22pt] font-black uppercase leading-none">Batch</p>
+            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.25in_1fr] gap-[0.04in]">
+              <div className="flex items-center justify-center overflow-hidden border-[3px] border-black px-[0.04in]">
+                <p className="font-serif text-[16pt] font-black uppercase leading-none">Batch</p>
               </div>
-              <div className="flex min-w-0 items-center justify-center border-[3px] border-black px-[0.08in]">
-                <p className="truncate text-[19pt] font-black leading-none">{label.batch || '-'}</p>
-              </div>
-            </div>
-
-            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.45in_1fr] gap-[0.04in]">
-              <div className="flex items-center justify-center border-[3px] border-black px-[0.04in]">
-                <p className="font-serif text-[22pt] font-black uppercase leading-none">UID</p>
-              </div>
-              <div className="flex min-w-0 items-center justify-center border-[3px] border-black px-[0.08in]">
-                <p className="truncate font-serif text-[19pt] font-black leading-none">{label.uid || 'Tag'}</p>
+              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in]">
+                <p className="truncate text-[13pt] font-black leading-none">{label.batch || '-'}</p>
               </div>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[3px] border-black px-[0.08in] text-center">
-              <p className="font-serif text-[21pt] font-black uppercase leading-none">
+            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.25in_1fr] gap-[0.04in]">
+              <div className="flex items-center justify-center overflow-hidden border-[3px] border-black px-[0.04in]">
+                <p className="font-serif text-[16pt] font-black uppercase leading-none">UID</p>
+              </div>
+              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in]">
+                <p className="truncate font-serif text-[13pt] font-black leading-none">{label.uid || 'Tag'}</p>
+              </div>
+            </div>
+
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.08in] text-center">
+              <p className="font-serif text-[15pt] font-black uppercase leading-none">
                 {label.unitsPerCase || '-'} Units Per Case
               </p>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[3px] border-black px-[0.24in] py-[0.08in]">
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.24in] py-[0.08in]">
               {label.uid ? (
                 <Barcode value={label.uid} className="h-full max-h-[0.78in] w-full" />
               ) : (
