@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import {
   Check,
@@ -53,6 +54,81 @@ function toLabelInfo(pkg: PackageResult): LabelInfo {
     batch: pkg.batch,
     uid: pkg.tag,
   };
+}
+
+function FittedText({
+  children,
+  maxPx,
+  minPx,
+  className = '',
+  uppercase = false,
+  rows = 1,
+  fontFamily,
+}: {
+  children: string;
+  maxPx: number;
+  minPx: number;
+  className?: string;
+  uppercase?: boolean;
+  rows?: number;
+  fontFamily?: CSSProperties['fontFamily'];
+}) {
+  const textRef = useRef<HTMLParagraphElement | null>(null);
+
+  useLayoutEffect(() => {
+    const text = textRef.current;
+    const box = text?.parentElement;
+    if (!text || !box) return;
+
+    const fit = () => {
+      const boxWidth = box.clientWidth;
+      const boxHeight = box.clientHeight;
+      if (!boxWidth || !boxHeight) return;
+
+      let low = minPx;
+      let high = maxPx;
+      let best = minPx;
+
+      for (let i = 0; i < 9; i += 1) {
+        const mid = (low + high) / 2;
+        text.style.fontSize = `${mid}px`;
+        const fits = text.scrollWidth <= boxWidth + 0.5 && text.scrollHeight <= boxHeight + 0.5;
+
+        if (fits) {
+          best = mid;
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      text.style.fontSize = `${best}px`;
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [children, maxPx, minPx]);
+
+  return (
+    <p
+      ref={textRef}
+      className={`w-full text-center font-black tracking-normal ${className}`}
+      style={{
+        fontFamily,
+        fontSize: maxPx,
+        lineHeight: rows > 1 ? 1.03 : 1,
+        maxHeight: '100%',
+        overflow: 'hidden',
+        overflowWrap: 'anywhere',
+        textTransform: uppercase ? 'uppercase' : undefined,
+        wordBreak: rows > 1 ? 'normal' : 'break-all',
+      }}
+    >
+      {children}
+    </p>
+  );
 }
 
 function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
@@ -154,45 +230,53 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
 
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
-        <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.08in] text-black shadow-2xl shadow-black/30">
-          <div className="grid h-full grid-rows-[0.4fr_0.58fr_0.32fr_0.32fr_0.32fr_1.36fr] gap-[0.025in] overflow-hidden border-[2px] border-black p-[0.03in] font-sans">
-            <div className="flex min-h-0 flex-col items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in] text-center">
-              <p className="max-w-full truncate font-serif text-[12px] font-black uppercase leading-none tracking-normal">
+        <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30">
+          <div className="grid h-full grid-rows-[0.34fr_0.56fr_0.31fr_0.31fr_0.31fr_1.48fr] gap-[0.022in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
+            <div className="flex min-h-0 flex-col items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
+              <FittedText maxPx={11} minPx={6.5} uppercase fontFamily="serif">
                 {headerText}
-              </p>
-            </div>
-
-            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.08in] text-center">
-              <p className="line-clamp-2 break-words text-[14px] font-black leading-tight tracking-normal">
-                {label.itemName || 'Item Description'}
-              </p>
-            </div>
-
-            <div className="grid min-h-0 grid-cols-[1.05in_1fr] gap-[0.025in]">
-              <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.035in]">
-                <p className="font-serif text-[15px] font-black uppercase leading-none">Batch</p>
-              </div>
-              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in]">
-                <p className="truncate text-[14px] font-black leading-none">{label.batch || '-'}</p>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 grid-cols-[1.05in_1fr] gap-[0.025in]">
-              <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.035in]">
-                <p className="font-serif text-[15px] font-black uppercase leading-none">UID</p>
-              </div>
-              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in]">
-                <p className="truncate font-serif text-[14px] font-black leading-none">{label.uid || 'Tag'}</p>
-              </div>
+              </FittedText>
             </div>
 
             <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in] text-center">
-              <p className="font-serif text-[15px] font-black uppercase leading-none">
-                {label.unitsPerCase || '-'} Units Per Case
-              </p>
+              <FittedText maxPx={12} minPx={7.5} rows={2}>
+                {label.itemName || 'Item Description'}
+              </FittedText>
             </div>
 
-            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.14in] py-[0.045in]">
+            <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
+              <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
+                <FittedText maxPx={12} minPx={8} uppercase fontFamily="serif">
+                  Batch
+                </FittedText>
+              </div>
+              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
+                <FittedText maxPx={12} minPx={7.5}>
+                  {label.batch || '-'}
+                </FittedText>
+              </div>
+            </div>
+
+            <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
+              <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
+                <FittedText maxPx={12} minPx={8} uppercase fontFamily="serif">
+                  UID
+                </FittedText>
+              </div>
+              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
+                <FittedText maxPx={11} minPx={6.5} fontFamily="serif">
+                  {label.uid || 'Tag'}
+                </FittedText>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
+              <FittedText maxPx={12} minPx={8} uppercase fontFamily="serif">
+                {`${label.unitsPerCase || '-'} Units Per Case`}
+              </FittedText>
+            </div>
+
+            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.13in] py-[0.04in]">
               {label.uid ? (
                 <Barcode value={label.uid} barWidth={3} stretch className="h-full max-h-[1.08in] w-full" />
               ) : (
