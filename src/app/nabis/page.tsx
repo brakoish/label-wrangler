@@ -32,6 +32,7 @@ type LabelInfo = {
   batch: string;
   uid: string;
   unitsPerCase: string;
+  cases: string;
 };
 
 const EMPTY_LABEL: LabelInfo = {
@@ -41,6 +42,7 @@ const EMPTY_LABEL: LabelInfo = {
   batch: '',
   uid: '',
   unitsPerCase: '',
+  cases: '',
 };
 
 function toLabelInfo(pkg: PackageResult): LabelInfo {
@@ -225,6 +227,11 @@ function Barcode({
 }
 
 function LabelPreview({ label }: { label: LabelInfo }) {
+  const unitsText = `${label.unitsPerCase || '-'} Units Per Case`;
+  const casesText = label.cases.trim()
+    ? `${label.cases.trim()} ${label.cases.trim() === '1' ? 'Case' : 'Cases'}`
+    : '';
+
   return (
     <div className="mx-auto flex w-full max-w-[6in] justify-center">
       <section
@@ -279,7 +286,7 @@ function LabelPreview({ label }: { label: LabelInfo }) {
 
           <div className="flex min-h-0 items-center justify-center overflow-hidden border border-black px-[0.045in] text-center">
             <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
-              {`${label.unitsPerCase || '-'} Units Per Case`}
+              {casesText ? `${unitsText}   ${casesText}` : unitsText}
             </FittedText>
           </div>
 
@@ -518,6 +525,7 @@ export default function NabisPage() {
                     ['batch', 'Batch'],
                     ['uid', 'UID / Package Tag'],
                     ['unitsPerCase', 'Units Per Case'],
+                    ['cases', 'Cases'],
                   ] as const
                 ).map(([field, labelText]) => (
                   <label key={field} className="block">
