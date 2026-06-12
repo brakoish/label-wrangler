@@ -38,8 +38,8 @@ type LabelInfo = {
 type LabelOrientation = 'portrait' | 'landscape';
 
 const EMPTY_LABEL: LabelInfo = {
-  distributor: 'Excelsior Legacy LLC',
-  license: 'OCM-MICR-25-000243-DX1',
+  distributor: 'HR Botanical Distribution LLC',
+  license: 'OCM-DIST-24-000114',
   itemName: '',
   batch: '',
   uid: '',
