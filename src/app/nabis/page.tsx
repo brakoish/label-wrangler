@@ -9,8 +9,6 @@ import {
   PackageCheck,
   Plus,
   Printer,
-  RectangleHorizontal,
-  RectangleVertical,
   Search,
   X,
 } from 'lucide-react';
@@ -35,8 +33,6 @@ type LabelInfo = {
   uid: string;
   unitsPerCase: string;
 };
-
-type LabelOrientation = 'portrait' | 'landscape';
 
 const EMPTY_LABEL: LabelInfo = {
   distributor: 'HR Botanical Distribution LLC',
@@ -228,114 +224,71 @@ function Barcode({
   return <svg ref={svgRef} className={className} style={{ shapeRendering: 'crispEdges' }} />;
 }
 
-function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: LabelOrientation }) {
-  if (orientation === 'landscape') {
-    return (
-      <div className="mx-auto flex w-full max-w-[6in] justify-center">
-        <section
-          className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30"
-          style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
-        >
-          <div className="grid h-full grid-rows-[0.47fr_0.54fr_0.3fr_0.3fr_0.3fr_1.43fr] gap-[0.02in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
-            <div className="flex min-h-0 flex-col items-center justify-center gap-[0.015in] overflow-hidden border-[2px] border-black px-[0.045in] py-[0.025in] text-center">
-              <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
-                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
-                  {label.distributor || 'HR Botanical Distribution LLC'}
-                </FittedText>
-              </div>
-              <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
-                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
-                  {label.license || 'OCM-DIST-24-000114'}
-                </FittedText>
-              </div>
-            </div>
-
-            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in] text-center">
-              <FittedText maxPx={12} minPx={7.5} rows={2}>
-                {label.itemName || 'Item Description'}
-              </FittedText>
-            </div>
-
-            <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
-              <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
-                <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
-                  Batch
-                </FittedText>
-              </div>
-              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
-                <FittedText maxPx={12} minPx={7.5}>
-                  {label.batch || '-'}
-                </FittedText>
-              </div>
-            </div>
-
-            <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
-              <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
-                <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
-                  UID
-                </FittedText>
-              </div>
-              <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
-                <FittedText maxPx={11} minPx={6.5} fontFamily="Arial, Helvetica, sans-serif">
-                  {label.uid || 'Tag'}
-                </FittedText>
-              </div>
-            </div>
-
-            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
-              <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
-                {`${label.unitsPerCase || '-'} Units Per Case`}
-              </FittedText>
-            </div>
-
-            <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.13in] py-[0.04in]">
-              {label.uid ? (
-                <Barcode value={label.uid} barWidth={3} stretch className="h-full max-h-[1.08in] w-full" />
-              ) : (
-                <div className="h-full w-full border border-dashed border-black/30" />
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-    );
-  }
-
+function LabelPreview({ label }: { label: LabelInfo }) {
   return (
-    <div className="mx-auto flex w-full max-w-[4in] justify-center">
-      <section className="nabis-label aspect-[4/6] w-full bg-white p-[0.22in] text-black shadow-2xl shadow-black/30">
-        <div className="flex h-full flex-col border-[2px] border-black p-[0.12in] font-sans">
-          <div className="border-b-[2px] border-black pb-[0.1in] text-center">
-            <p className="text-[12pt] font-black uppercase leading-tight">{label.distributor || 'Distributor'}</p>
-            <p className="mt-[0.02in] text-[7.5pt] font-bold uppercase tracking-wide">{label.license || 'License'}</p>
-          </div>
-
-          <div className="grid border-b-[2px] border-black">
-            <div className="border-b border-black p-[0.08in]">
-              <p className="text-[6pt] font-black uppercase tracking-wide">Item Description</p>
-              <p className="mt-[0.03in] min-h-[0.58in] break-words text-[13pt] font-black leading-[1.05]">
-                {label.itemName || 'Item name'}
-              </p>
+    <div className="mx-auto flex w-full max-w-[6in] justify-center">
+      <section
+        className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30"
+        style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
+      >
+        <div className="grid h-full grid-rows-[0.47fr_0.54fr_0.3fr_0.3fr_0.3fr_1.43fr] gap-[0.02in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
+          <div className="flex min-h-0 flex-col items-center justify-center gap-[0.015in] overflow-hidden border-[2px] border-black px-[0.045in] py-[0.025in] text-center">
+            <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
+              <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
+                {label.distributor || 'HR Botanical Distribution LLC'}
+              </FittedText>
             </div>
-            <div className="grid grid-cols-2">
-              <div className="border-r border-black p-[0.08in]">
-                <p className="text-[6pt] font-black uppercase tracking-wide">Batch</p>
-                <p className="mt-[0.03in] break-words text-[10pt] font-bold">{label.batch || '-'}</p>
-              </div>
-              <div className="p-[0.08in]">
-                <p className="text-[6pt] font-black uppercase tracking-wide">Units Per Case</p>
-                <p className="mt-[0.03in] text-[18pt] font-black leading-none">{label.unitsPerCase || '-'}</p>
-              </div>
+            <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
+              <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
+                {label.license || 'OCM-DIST-24-000114'}
+              </FittedText>
             </div>
           </div>
 
-          <div className="border-b-[2px] border-black p-[0.08in]">
-            <p className="text-[6pt] font-black uppercase tracking-wide">UID / Package Tag</p>
-            <p className="mt-[0.03in] break-all font-mono text-[8.5pt] font-bold leading-tight">{label.uid || 'Tag'}</p>
+          <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.06in] text-center">
+            <FittedText maxPx={12} minPx={7.5} rows={2}>
+              {label.itemName || 'Item Description'}
+            </FittedText>
           </div>
 
-          <div className="flex flex-1 items-end px-[0.04in] pb-[0.02in] pt-[0.14in]">
-            {label.uid ? <Barcode value={label.uid} /> : <div className="h-[0.95in] w-full border border-dashed border-black/30" />}
+          <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
+            <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
+              <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
+                Batch
+              </FittedText>
+            </div>
+            <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
+              <FittedText maxPx={12} minPx={7.5}>
+                {label.batch || '-'}
+              </FittedText>
+            </div>
+          </div>
+
+          <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
+            <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
+              <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
+                UID
+              </FittedText>
+            </div>
+            <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
+              <FittedText maxPx={11} minPx={6.5} fontFamily="Arial, Helvetica, sans-serif">
+                {label.uid || 'Tag'}
+              </FittedText>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
+            <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
+              {`${label.unitsPerCase || '-'} Units Per Case`}
+            </FittedText>
+          </div>
+
+          <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.13in] py-[0.04in]">
+            {label.uid ? (
+              <Barcode value={label.uid} barWidth={3} stretch className="h-full max-h-[1.08in] w-full" />
+            ) : (
+              <div className="h-full w-full border border-dashed border-black/30" />
+            )}
           </div>
         </div>
       </section>
@@ -348,7 +301,6 @@ export default function NabisPage() {
   const [results, setResults] = useState<PackageResult[]>([]);
   const [selected, setSelected] = useState<PackageResult | null>(null);
   const [label, setLabel] = useState<LabelInfo>(EMPTY_LABEL);
-  const [orientation, setOrientation] = useState<LabelOrientation>('portrait');
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState('');
 
@@ -403,14 +355,14 @@ export default function NabisPage() {
       <style jsx global>{`
         @media print {
           @page {
-            size: ${orientation === 'landscape' ? '6in 4in' : '4in 6in'};
+            size: 6in 4in;
             margin: 0;
           }
 
           html,
           body {
-            width: ${orientation === 'landscape' ? '6in' : '4in'};
-            height: ${orientation === 'landscape' ? '4in' : '6in'};
+            width: 6in;
+            height: 4in;
             margin: 0 !important;
             background: white !important;
           }
@@ -427,13 +379,13 @@ export default function NabisPage() {
           .nabis-print {
             position: fixed !important;
             inset: 0 !important;
-            width: ${orientation === 'landscape' ? '6in' : '4in'} !important;
-            height: ${orientation === 'landscape' ? '4in' : '6in'} !important;
+            width: 6in !important;
+            height: 4in !important;
           }
 
           .nabis-label {
-            width: ${orientation === 'landscape' ? '6in' : '4in'} !important;
-            height: ${orientation === 'landscape' ? '4in' : '6in'} !important;
+            width: 6in !important;
+            height: 4in !important;
             max-width: none !important;
             box-shadow: none !important;
             color: #000 !important;
@@ -557,35 +509,6 @@ export default function NabisPage() {
                 </button>
               </div>
 
-              <div className="mb-4">
-                <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-500">Orientation</span>
-                <div className="grid grid-cols-2 gap-2 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
-                  {(
-                    [
-                      ['portrait', 'Portrait', RectangleVertical],
-                      ['landscape', 'Horizontal', RectangleHorizontal],
-                    ] as const
-                  ).map(([value, labelText, Icon]) => {
-                    const active = orientation === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setOrientation(value)}
-                        className={`inline-flex h-10 items-center justify-center gap-2 rounded-md text-sm font-semibold transition ${
-                          active
-                            ? 'bg-amber-600 text-white'
-                            : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {labelText}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               <div className="space-y-3">
                 {(
                   [
@@ -610,7 +533,7 @@ export default function NabisPage() {
             </div>
 
             <div className="nabis-print">
-              <LabelPreview label={label} orientation={orientation} />
+              <LabelPreview label={label} />
             </div>
           </section>
         </div>
