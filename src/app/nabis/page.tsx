@@ -132,15 +132,16 @@ function Barcode({ value, className = 'h-[0.95in] w-full' }: { value: string; cl
 
 function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: LabelOrientation }) {
   if (orientation === 'landscape') {
-    const headerText = [label.distributor, label.license].filter(Boolean).join(' / ') || 'Distributor / License';
-
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
         <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.12in] text-black shadow-2xl shadow-black/30">
           <div className="grid h-full grid-rows-[0.5in_0.72in_0.46in_0.46in_0.48in_1fr] border-[3px] border-black p-[0.04in] font-sans">
-            <div className="flex min-h-0 items-center justify-center border-[3px] border-black px-[0.08in] text-center">
-              <p className="line-clamp-2 font-serif text-[15.5pt] font-black uppercase leading-none tracking-normal">
-                {headerText}
+            <div className="flex min-h-0 flex-col items-center justify-center border-[3px] border-black px-[0.08in] text-center">
+              <p className="font-serif text-[14pt] font-black uppercase leading-none tracking-normal">
+                {label.distributor || 'HR Botanical Distribution LLC'}
+              </p>
+              <p className="mt-[0.03in] font-serif text-[10pt] font-black uppercase leading-none tracking-normal">
+                {label.license || 'OCM-DIST-24-000114'}
               </p>
             </div>
 
