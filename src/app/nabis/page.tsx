@@ -63,7 +63,8 @@ function FittedText({
   className = '',
   uppercase = false,
   rows = 1,
-  fontFamily,
+  fontFamily = 'Arial, Helvetica, sans-serif',
+  fontWeight = 700,
 }: {
   children: string;
   maxPx: number;
@@ -72,6 +73,7 @@ function FittedText({
   uppercase?: boolean;
   rows?: number;
   fontFamily?: CSSProperties['fontFamily'];
+  fontWeight?: CSSProperties['fontWeight'];
 }) {
   const textRef = useRef<HTMLParagraphElement | null>(null);
 
@@ -115,10 +117,11 @@ function FittedText({
   return (
     <p
       ref={textRef}
-      className={`w-full text-center font-black tracking-normal ${className}`}
+      className={`w-full text-center tracking-normal ${className}`}
       style={{
         fontFamily,
         fontSize: maxPx,
+        fontWeight,
         lineHeight: rows > 1 ? 1.03 : 1,
         maxHeight: '100%',
         overflow: 'hidden',
@@ -222,23 +225,26 @@ function Barcode({
     }
   }, [barWidth, stretch, value]);
 
-  return <svg ref={svgRef} className={className} />;
+  return <svg ref={svgRef} className={className} style={{ shapeRendering: 'crispEdges' }} />;
 }
 
 function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: LabelOrientation }) {
   if (orientation === 'landscape') {
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
-        <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30">
+        <section
+          className="nabis-label aspect-[6/4] w-full bg-white p-[0.07in] text-black shadow-2xl shadow-black/30"
+          style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
+        >
           <div className="grid h-full grid-rows-[0.47fr_0.54fr_0.3fr_0.3fr_0.3fr_1.43fr] gap-[0.02in] overflow-hidden border-[2px] border-black p-[0.025in] font-sans">
             <div className="flex min-h-0 flex-col items-center justify-center gap-[0.015in] overflow-hidden border-[2px] border-black px-[0.045in] py-[0.025in] text-center">
               <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
-                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="serif">
+                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
                   {label.distributor || 'HR Botanical Distribution LLC'}
                 </FittedText>
               </div>
               <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden">
-                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="serif">
+                <FittedText maxPx={10.5} minPx={6.5} uppercase fontFamily="Arial, Helvetica, sans-serif">
                   {label.license || 'OCM-DIST-24-000114'}
                 </FittedText>
               </div>
@@ -252,7 +258,7 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
 
             <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
               <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
-                <FittedText maxPx={12} minPx={8} uppercase fontFamily="serif">
+                <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
                   Batch
                 </FittedText>
               </div>
@@ -265,19 +271,19 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
 
             <div className="grid min-h-0 grid-cols-[0.86in_1fr] gap-[0.022in]">
               <div className="flex items-center justify-center overflow-hidden border-[2px] border-black px-[0.025in]">
-                <FittedText maxPx={12} minPx={8} uppercase fontFamily="serif">
+                <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
                   UID
                 </FittedText>
               </div>
               <div className="flex min-w-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in]">
-                <FittedText maxPx={11} minPx={6.5} fontFamily="serif">
+                <FittedText maxPx={11} minPx={6.5} fontFamily="Arial, Helvetica, sans-serif">
                   {label.uid || 'Tag'}
                 </FittedText>
               </div>
             </div>
 
             <div className="flex min-h-0 items-center justify-center overflow-hidden border-[2px] border-black px-[0.045in] text-center">
-              <FittedText maxPx={12} minPx={8} uppercase fontFamily="serif">
+              <FittedText maxPx={12} minPx={8} uppercase fontFamily="Arial, Helvetica, sans-serif">
                 {`${label.unitsPerCase || '-'} Units Per Case`}
               </FittedText>
             </div>
@@ -430,6 +436,20 @@ export default function NabisPage() {
             height: ${orientation === 'landscape' ? '4in' : '6in'} !important;
             max-width: none !important;
             box-shadow: none !important;
+            color: #000 !important;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+            text-shadow: none !important;
+          }
+
+          .nabis-label,
+          .nabis-label * {
+            font-synthesis: none;
+          }
+
+          .nabis-label svg,
+          .nabis-label svg * {
+            shape-rendering: crispEdges;
           }
         }
       `}</style>
