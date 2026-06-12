@@ -137,46 +137,46 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
     return (
       <div className="mx-auto flex w-full max-w-[6in] justify-center">
         <section className="nabis-label aspect-[6/4] w-full bg-white p-[0.12in] text-black shadow-2xl shadow-black/30">
-          <div className="grid h-full grid-rows-[0.5in_0.72in_0.46in_0.46in_0.48in_1fr] border-[2px] border-black p-[0.04in] font-sans">
-            <div className="flex min-h-0 items-center justify-center border-[2px] border-black px-[0.08in] text-center">
-              <p className="line-clamp-2 font-serif text-[15pt] font-black uppercase leading-none tracking-normal">
+          <div className="grid h-full grid-rows-[0.5in_0.72in_0.46in_0.46in_0.48in_1fr] border-[3px] border-black p-[0.04in] font-sans">
+            <div className="flex min-h-0 items-center justify-center border-[3px] border-black px-[0.08in] text-center">
+              <p className="line-clamp-2 font-serif text-[15.5pt] font-black uppercase leading-none tracking-normal">
                 {headerText}
               </p>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[2px] border-black px-[0.1in] text-center">
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[3px] border-black px-[0.1in] text-center">
               <p className="line-clamp-2 break-words text-[20pt] font-black leading-tight tracking-normal">
                 {label.itemName || 'Item Description'}
               </p>
             </div>
 
-            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.05in_1fr] gap-[0.04in]">
-              <div className="flex items-center justify-center border-[2px] border-black px-[0.04in]">
-                <p className="font-serif text-[20pt] font-black uppercase leading-none">Batch</p>
+            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.45in_1fr] gap-[0.04in]">
+              <div className="flex items-center justify-center border-[3px] border-black px-[0.04in]">
+                <p className="font-serif text-[22pt] font-black uppercase leading-none">Batch</p>
               </div>
-              <div className="flex min-w-0 items-center justify-center border-[2px] border-black px-[0.08in]">
-                <p className="truncate text-[18pt] font-black leading-none">{label.batch || '-'}</p>
-              </div>
-            </div>
-
-            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.05in_1fr] gap-[0.04in]">
-              <div className="flex items-center justify-center border-[2px] border-black px-[0.04in]">
-                <p className="font-serif text-[20pt] font-black uppercase leading-none">UID</p>
-              </div>
-              <div className="flex min-w-0 items-center justify-center border-[2px] border-black px-[0.08in]">
-                <p className="truncate font-serif text-[18pt] font-black leading-none">{label.uid || 'Tag'}</p>
+              <div className="flex min-w-0 items-center justify-center border-[3px] border-black px-[0.08in]">
+                <p className="truncate text-[19pt] font-black leading-none">{label.batch || '-'}</p>
               </div>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[2px] border-black px-[0.08in] text-center">
-              <p className="font-serif text-[20pt] font-black uppercase leading-none">
+            <div className="mt-[0.04in] grid min-h-0 grid-cols-[1.45in_1fr] gap-[0.04in]">
+              <div className="flex items-center justify-center border-[3px] border-black px-[0.04in]">
+                <p className="font-serif text-[22pt] font-black uppercase leading-none">UID</p>
+              </div>
+              <div className="flex min-w-0 items-center justify-center border-[3px] border-black px-[0.08in]">
+                <p className="truncate font-serif text-[19pt] font-black leading-none">{label.uid || 'Tag'}</p>
+              </div>
+            </div>
+
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[3px] border-black px-[0.08in] text-center">
+              <p className="font-serif text-[21pt] font-black uppercase leading-none">
                 {label.unitsPerCase || '-'} Units Per Case
               </p>
             </div>
 
-            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[2px] border-black px-[0.22in] py-[0.08in]">
+            <div className="mt-[0.04in] flex min-h-0 items-center justify-center border-[3px] border-black px-[0.24in] py-[0.08in]">
               {label.uid ? (
-                <Barcode value={label.uid} className="h-full max-h-[0.72in] w-full" />
+                <Barcode value={label.uid} className="h-full max-h-[0.78in] w-full" />
               ) : (
                 <div className="h-full w-full border border-dashed border-black/30" />
               )}
