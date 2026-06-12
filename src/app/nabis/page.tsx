@@ -38,8 +38,8 @@ type LabelInfo = {
 type LabelOrientation = 'portrait' | 'landscape';
 
 const EMPTY_LABEL: LabelInfo = {
-  distributor: 'Excelsior Legacy',
-  license: '',
+  distributor: 'Excelsior Legacy LLC',
+  license: 'OCM-MICR-25-000243-DX1',
   itemName: '',
   batch: '',
   uid: '',
@@ -139,9 +139,8 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
             <div className="grid min-h-0 grid-cols-[1.3fr_0.9fr] border-b-[2px] border-black">
               <div className="min-w-0 border-r-[2px] border-black">
                 <div className="border-b-[2px] border-black p-[0.09in] text-center">
-                  <p className="text-[12pt] font-black uppercase leading-tight">Nabis Pickup</p>
-                  <p className="text-[7.5pt] font-bold uppercase tracking-wide">{label.distributor || 'Distributor'}</p>
-                  <p className="text-[6.5pt] uppercase">{label.license || 'License'}</p>
+                  <p className="text-[11pt] font-black uppercase leading-tight">{label.distributor || 'Distributor'}</p>
+                  <p className="mt-[0.02in] text-[7pt] font-bold uppercase tracking-wide">{label.license || 'License'}</p>
                 </div>
                 <div className="p-[0.1in]">
                   <p className="text-[6pt] font-black uppercase tracking-wide">Item Description</p>
@@ -181,9 +180,8 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
       <section className="nabis-label aspect-[4/6] w-full bg-white p-[0.22in] text-black shadow-2xl shadow-black/30">
         <div className="flex h-full flex-col border-[2px] border-black p-[0.12in] font-sans">
           <div className="border-b-[2px] border-black pb-[0.1in] text-center">
-            <p className="text-[13pt] font-black uppercase leading-tight">Nabis Pickup</p>
-            <p className="text-[8pt] font-bold uppercase tracking-wide">{label.distributor || 'Distributor'}</p>
-            <p className="text-[7pt] uppercase">{label.license || 'License'}</p>
+            <p className="text-[12pt] font-black uppercase leading-tight">{label.distributor || 'Distributor'}</p>
+            <p className="mt-[0.02in] text-[7.5pt] font-bold uppercase tracking-wide">{label.license || 'License'}</p>
           </div>
 
           <div className="grid border-b-[2px] border-black">
