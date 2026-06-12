@@ -117,10 +117,12 @@ function Barcode({
   value,
   className = 'h-[0.95in] w-full',
   barWidth = 2,
+  stretch = false,
 }: {
   value: string;
   className?: string;
   barWidth?: number;
+  stretch?: boolean;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -133,7 +135,15 @@ function Barcode({
       height: 82,
       width: barWidth,
     });
-  }, [barWidth, value]);
+    const width = svgRef.current.getAttribute('width');
+    const height = svgRef.current.getAttribute('height');
+    if (stretch && width && height) {
+      svgRef.current.setAttribute('viewBox', `0 0 ${parseFloat(width)} ${parseFloat(height)}`);
+      svgRef.current.setAttribute('preserveAspectRatio', 'none');
+      svgRef.current.removeAttribute('width');
+      svgRef.current.removeAttribute('height');
+    }
+  }, [barWidth, stretch, value]);
 
   return <svg ref={svgRef} className={className} />;
 }
@@ -184,7 +194,7 @@ function LabelPreview({ label, orientation }: { label: LabelInfo; orientation: L
 
             <div className="mt-[0.04in] flex min-h-0 items-center justify-center overflow-hidden border-[3px] border-black px-[0.24in] py-[0.08in]">
               {label.uid ? (
-                <Barcode value={label.uid} barWidth={3} className="h-full max-h-[0.78in] w-full" />
+                <Barcode value={label.uid} barWidth={3} stretch className="h-full max-h-[0.82in] w-full" />
               ) : (
                 <div className="h-full w-full border border-dashed border-black/30" />
               )}
