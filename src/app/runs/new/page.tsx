@@ -96,6 +96,10 @@ function manifestPackageKey(row: ManifestRow) {
   return row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`;
 }
 
+function shortRunDate(date = new Date()) {
+  return `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`;
+}
+
 function NewRunContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -142,6 +146,7 @@ function NewRunContent() {
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastAutoManifestNameRef = useRef('');
 
   useEffect(() => {
     if (!deepLinkTemplateId || presetId || duplicateFrom) return;
@@ -414,6 +419,20 @@ function NewRunContent() {
     () => manifestPackageSummaries.find(({ row }) => manifestPackageKey(row) === selectedManifestPackageKey) ?? null,
     [manifestPackageSummaries, selectedManifestPackageKey],
   );
+
+  useEffect(() => {
+    if (inputMode !== 'manifest' || !selectedManifestPackageSummary) return;
+    const itemName = selectedManifestPackageSummary.row.itemName?.trim();
+    if (!itemName) return;
+
+    const autoName = `${itemName} - ${shortRunDate()}`;
+    setName((current) => {
+      const trimmed = current.trim();
+      if (trimmed && trimmed !== lastAutoManifestNameRef.current) return current;
+      lastAutoManifestNameRef.current = autoName;
+      return autoName;
+    });
+  }, [inputMode, selectedManifestPackageSummary]);
 
   const previewValuesForIndex = useCallback((index: number) => {
     const values: Record<string, string> = { ...staticValues };
