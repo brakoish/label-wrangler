@@ -615,6 +615,19 @@ function NewRunContent() {
                 )}
               </div>
             </div>
+            {template && format && (
+              <div className="border-t border-zinc-800/60 pt-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Template Preview</span>
+                  <span className="truncate text-xs text-zinc-500" title={`${template.name} · ${format.name}`}>
+                    {template.name} · {format.name}
+                  </span>
+                </div>
+                <div className="max-h-[260px] overflow-auto rounded-xl bg-zinc-950/60 p-3">
+                  <LayoutPreview format={format} elements={template.elements} testData={previewValues} />
+                </div>
+              </div>
+            )}
           </section>
 
           {template && flippable.length > 0 && (
