@@ -71,6 +71,16 @@ function cleanValue(value: unknown): string {
   return cleanText(value);
 }
 
+function cleanDate(value: unknown): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = cleanText(value);
+  const datePart = text.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (datePart) return datePart;
+  return text;
+}
+
 function normalizePackage(pkg: ManifestPackage) {
   const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
@@ -94,11 +104,11 @@ function normalizePackage(pkg: ManifestPackage) {
     brandName: cleanText(pkg.brandName),
     quantity: pkg.quantity == null ? '' : String(pkg.quantity),
     unitOfMeasure: cleanText(pkg.unitOfMeasure),
-    packagedDate: cleanText(pkg.packagedDate) || cleanText(pkg.manufacturedDate),
-    manufacturedDate: cleanText(pkg.manufacturedDate) || cleanText(pkg.packagedDate),
-    expirationDate: cleanText(pkg.expirationDate),
-    sellByDate: cleanText(pkg.sellByDate),
-    useByDate: cleanText(pkg.useByDate),
+    packagedDate: cleanDate(pkg.packagedDate) || cleanDate(pkg.manufacturedDate),
+    manufacturedDate: cleanDate(pkg.manufacturedDate) || cleanDate(pkg.packagedDate),
+    expirationDate: cleanDate(pkg.expirationDate),
+    sellByDate: cleanDate(pkg.sellByDate),
+    useByDate: cleanDate(pkg.useByDate),
     retailId: cleanText(pkg.retailId),
     retailIdSource: cleanText(pkg.retailIdSource),
     thcPercent: cleanValue(pkg.thcPercent),
@@ -110,7 +120,7 @@ function normalizePackage(pkg: ManifestPackage) {
     tacPercent: cleanValue(pkg.tacPercent),
     tacMgG: cleanValue(pkg.tacMgG),
     labFacilityName: cleanText(pkg.labFacilityName),
-    testPerformedDate: cleanText(pkg.testPerformedDate),
+    testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
   };
 }

@@ -70,6 +70,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
   cbdpercent: ['cbdPercent'],
   cbdmg: ['cbdMgG'],
   cbdmgg: ['cbdMgG'],
+  qr1: ['retailId'],
   qrqpt: ['retailId'],
   qr: ['retailId'],
   qrcode: ['retailId'],
@@ -99,6 +100,8 @@ function findBestHeaderForField(field: string, headers: string[], rows: Record<s
   const normalizedField = normalizedFieldName(field);
   const exact = headers.find((h) => normalizedFieldName(h) === normalizedField);
   if (exact) return exact;
+
+  if (/^qr\d*$/.test(normalizedField) && headers.includes('retailId')) return 'retailId';
 
   for (const alias of FIELD_ALIASES[normalizedField] ?? []) {
     if (headers.includes(alias)) return alias;
