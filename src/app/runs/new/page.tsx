@@ -114,6 +114,10 @@ function findBestHeaderForField(field: string, headers: string[], rows: Record<s
   return null;
 }
 
+function manifestPackageKey(row: ManifestRow) {
+  return row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`;
+}
+
 function NewRunContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -140,6 +144,7 @@ function NewRunContent() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [manifestSearch, setManifestSearch] = useState('');
   const [manifestRows, setManifestRows] = useState<ManifestRow[]>([]);
+  const [selectedManifestPackageKey, setSelectedManifestPackageKey] = useState<string | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
   const [isSearchingManifest, setIsSearchingManifest] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -322,11 +327,14 @@ function NewRunContent() {
       if (!res.ok) throw new Error(data.error || 'Manifest search failed');
       const rows = Array.isArray(data.packages) ? data.packages as ManifestRow[] : [];
       setManifestRows(rows);
+      setSelectedManifestPackageKey(rows[0] ? manifestPackageKey(rows[0]) : null);
+      setPreviewIndex(0);
       applyAutoColumnMapping(MANIFEST_HEADERS, rows);
       if (data.error) setManifestError(data.error);
     } catch (error) {
       setManifestError(error instanceof Error ? error.message : 'Manifest search failed');
       setManifestRows([]);
+      setSelectedManifestPackageKey(null);
     } finally {
       setIsSearchingManifest(false);
     }
@@ -350,6 +358,11 @@ function NewRunContent() {
     setPasteField(qr ?? dynamicFields[0] ?? null);
   }, [template, dynamicFields, pasteField]);
 
+  const manifestSelectedRows = useMemo(() => {
+    if (!selectedManifestPackageKey) return [];
+    return manifestRows.filter((row) => manifestPackageKey(row) === selectedManifestPackageKey);
+  }, [manifestRows, selectedManifestPackageKey]);
+
   // Compute the effective sourceData based on input mode. New runs always use
   // row objects so manual/paste/CSV/Manifest can feed the same downstream shape.
   const sourceData = useMemo<Record<string, string>[]>(() => {
@@ -364,17 +377,17 @@ function NewRunContent() {
         .map((value) => ({ [PASTE_COLUMN]: value }));
     }
     if (inputMode === 'manifest') {
-      return manifestRows;
+      return manifestSelectedRows;
     }
     return csvRows;
-  }, [inputMode, pasteText, csvRows, manifestRows, manualQty, staticValues]);
+  }, [inputMode, pasteText, csvRows, manifestSelectedRows, manualQty, staticValues]);
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
   const manifestPackageSummaries = useMemo(() => {
     const packages = new Map<string, { row: ManifestRow; labelRows: number }>();
     for (const row of manifestRows) {
-      const key = row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`;
+      const key = manifestPackageKey(row);
       const existing = packages.get(key);
       if (existing) {
         existing.labelRows += 1;
@@ -761,14 +774,33 @@ function NewRunContent() {
                     {manifestError && <p className="text-xs text-amber-500">{manifestError}</p>}
                     {manifestRows.length > 0 && (
                       <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950/50">
-                        {manifestPackageSummaries.map(({ row, labelRows }) => (
-                          <div key={row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`} className="grid grid-cols-[1.5fr_1fr_1fr_auto] gap-3 border-b border-zinc-900 px-3 py-2 text-xs last:border-b-0">
-                            <span className="truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
-                            <span className="truncate font-mono text-zinc-400" title={row.tag}>{row.tag || '(no tag)'}</span>
-                            <span className="truncate text-zinc-500" title={row.lotNumber || row.batch}>{row.lotNumber || row.batch || '(no batch)'}</span>
-                            <span className="whitespace-nowrap text-zinc-600">{labelRows.toLocaleString()} label{labelRows === 1 ? '' : 's'}</span>
-                          </div>
-                        ))}
+                        {manifestPackageSummaries.map(({ row, labelRows }) => {
+                          const key = manifestPackageKey(row);
+                          const isSelected = key === selectedManifestPackageKey;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedManifestPackageKey(key);
+                                setPreviewIndex(0);
+                              }}
+                              className={`grid w-full grid-cols-[1.5fr_1fr_1fr_auto_auto] gap-3 border-b px-3 py-2 text-left text-xs transition-colors last:border-b-0 ${
+                                isSelected
+                                  ? 'border-amber-500/20 bg-amber-500/10'
+                                  : 'border-zinc-900 hover:bg-zinc-900/80'
+                              }`}
+                            >
+                              <span className="truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
+                              <span className="truncate font-mono text-zinc-400" title={row.tag}>{row.tag || '(no tag)'}</span>
+                              <span className="truncate text-zinc-500" title={row.lotNumber || row.batch}>{row.lotNumber || row.batch || '(no batch)'}</span>
+                              <span className="whitespace-nowrap text-zinc-600">{labelRows.toLocaleString()} label{labelRows === 1 ? '' : 's'}</span>
+                              <span className={`whitespace-nowrap font-medium ${isSelected ? 'text-amber-300' : 'text-zinc-500'}`}>
+                                {isSelected ? 'Selected' : 'Select'}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
