@@ -371,6 +371,20 @@ function NewRunContent() {
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
+  const manifestPackageSummaries = useMemo(() => {
+    const packages = new Map<string, { row: ManifestRow; labelRows: number }>();
+    for (const row of manifestRows) {
+      const key = row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`;
+      const existing = packages.get(key);
+      if (existing) {
+        existing.labelRows += 1;
+        continue;
+      }
+      packages.set(key, { row, labelRows: 1 });
+    }
+    return Array.from(packages.values());
+  }, [manifestRows]);
+
   const previewValuesForIndex = useCallback((index: number) => {
     const values: Record<string, string> = { ...staticValues };
     const row = sourceData[index];
@@ -747,11 +761,12 @@ function NewRunContent() {
                     {manifestError && <p className="text-xs text-amber-500">{manifestError}</p>}
                     {manifestRows.length > 0 && (
                       <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950/50">
-                        {manifestRows.map((row) => (
-                          <div key={row.id ?? row.tag ?? `${row.itemName}-${row.batch}`} className="grid grid-cols-[1.5fr_1fr_1fr] gap-3 border-b border-zinc-900 px-3 py-2 text-xs last:border-b-0">
+                        {manifestPackageSummaries.map(({ row, labelRows }) => (
+                          <div key={row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`} className="grid grid-cols-[1.5fr_1fr_1fr_auto] gap-3 border-b border-zinc-900 px-3 py-2 text-xs last:border-b-0">
                             <span className="truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
                             <span className="truncate font-mono text-zinc-400" title={row.tag}>{row.tag || '(no tag)'}</span>
-                            <span className="truncate text-zinc-500" title={row.batch}>{row.batch || '(no batch)'}</span>
+                            <span className="truncate text-zinc-500" title={row.lotNumber || row.batch}>{row.lotNumber || row.batch || '(no batch)'}</span>
+                            <span className="whitespace-nowrap text-zinc-600">{labelRows.toLocaleString()} label{labelRows === 1 ? '' : 's'}</span>
                           </div>
                         ))}
                       </div>
