@@ -100,6 +100,12 @@ function NewRunContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetId = searchParams.get('presetId');
+  const sourceParam = searchParams.get('source');
+  const manifestDeepLinkQuery =
+    searchParams.get('packageTag') ||
+    searchParams.get('manifestPackage') ||
+    (sourceParam === 'manifest' ? searchParams.get('q') : null);
+  const deepLinkTemplateId = searchParams.get('templateId');
   // Re-run action from the run detail page: `/runs/new?duplicateFrom=<runId>`.
   // Clones the source run's template, static values, mappings, and data so
   // the user just has to edit the name and hit Print. Static field values are
@@ -136,6 +142,12 @@ function NewRunContent() {
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!deepLinkTemplateId || presetId || duplicateFrom) return;
+    if (!templates.some((t) => t.id === deepLinkTemplateId)) return;
+    setTemplateId(deepLinkTemplateId);
+  }, [deepLinkTemplateId, duplicateFrom, presetId, templates]);
 
   // Apply preset on mount.
   useEffect(() => {
@@ -262,7 +274,7 @@ function NewRunContent() {
 
   // When a CSV is loaded, attempt to auto-map any column whose header
   // closely matches a dynamic field name.
-  const applyAutoColumnMapping = (headers: string[], rows: Record<string, string>[]) => {
+  const applyAutoColumnMapping = useCallback((headers: string[], rows: Record<string, string>[]) => {
     if (!template) return;
     setFieldMappings((prev) => {
       const next = { ...prev };
@@ -285,7 +297,7 @@ function NewRunContent() {
         return next;
       });
     }
-  };
+  }, [dynamicFields, template]);
 
   const handleFile = async (file: File) => {
     const text = await file.text();
@@ -295,8 +307,8 @@ function NewRunContent() {
     applyAutoColumnMapping(parsed.headers, parsed.rows);
   };
 
-  const handleManifestSearch = async () => {
-    const query = manifestSearch.trim();
+  const searchManifest = useCallback(async (rawQuery: string) => {
+    const query = rawQuery.trim();
     if (query.length < 2) return;
     setIsSearchingManifest(true);
     setHasSearchedManifest(true);
@@ -318,14 +330,27 @@ function NewRunContent() {
     } finally {
       setIsSearchingManifest(false);
     }
+  }, [applyAutoColumnMapping]);
+
+  const handleManifestSearch = async () => {
+    await searchManifest(manifestSearch);
   };
+
+  const didApplyManifestDeepLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    const query = manifestDeepLinkQuery?.trim();
+    if (!query || query.length < 2) return;
+    if (didApplyManifestDeepLinkRef.current === query) return;
+    didApplyManifestDeepLinkRef.current = query;
+    setInputMode('manifest');
+    setManifestSearch(query);
+    void searchManifest(query);
+  }, [manifestDeepLinkQuery, searchManifest]);
 
   useEffect(() => {
     if (inputMode !== 'manifest' || manifestRows.length === 0) return;
     applyAutoColumnMapping(MANIFEST_HEADERS, manifestRows);
-    // Re-run Manifest auto-mapping when template fields appear or change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dynamicFields, inputMode, manifestRows, template?.id]);
+  }, [applyAutoColumnMapping, inputMode, manifestRows]);
 
   // List of fields mapped to columns (variable fields).
   const variableFields = useMemo(
