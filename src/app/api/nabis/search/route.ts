@@ -3,6 +3,7 @@ import { neon } from '@neondatabase/serverless';
 
 type ManifestPackage = {
   id?: number | string | null;
+  metrcPackageId?: number | string | null;
   label?: string | null;
   packageTag?: string | null;
   itemName?: string | null;
@@ -31,6 +32,12 @@ type ManifestPackage = {
   cbdMgPackage?: number | string | null;
   tacPercent?: number | string | null;
   tacMgG?: number | string | null;
+  totalActiveCannabinoids?: number | string | null;
+  totalActiveCannabinoidsPercent?: number | string | null;
+  totalActiveCannabinoidsMgG?: number | string | null;
+  totalCannabinoids?: number | string | null;
+  totalCannabinoidsPercent?: number | string | null;
+  totalCannabinoidsMgG?: number | string | null;
   labFacilityName?: string | null;
   testPerformedDate?: string | null;
   coaDocumentId?: number | string | null;
@@ -68,6 +75,11 @@ type MetrcRetailIds = {
   LabelSource?: string | null;
 };
 
+type MetrcLabResult = {
+  TestTypeName?: string | null;
+  TestResultLevel?: number | string | null;
+};
+
 function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -87,9 +99,30 @@ function cleanDate(value: unknown): string {
   return text;
 }
 
+function mgGFromPercent(value: string): string {
+  const number = Number(value);
+  return Number.isFinite(number) ? String(Math.round(number * 1000) / 100) : '';
+}
+
+function hasPositiveNumber(value: unknown): boolean {
+  const number = Number(cleanValue(value));
+  return Number.isFinite(number) && number > 0;
+}
+
 function normalizePackage(pkg: ManifestPackage) {
   const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
+  const tacPercent =
+    cleanValue(pkg.tacPercent) ||
+    cleanValue(pkg.totalActiveCannabinoidsPercent) ||
+    cleanValue(pkg.totalCannabinoidsPercent) ||
+    cleanValue(pkg.totalActiveCannabinoids) ||
+    cleanValue(pkg.totalCannabinoids);
+  const tacMgG =
+    cleanValue(pkg.tacMgG) ||
+    cleanValue(pkg.totalActiveCannabinoidsMgG) ||
+    cleanValue(pkg.totalCannabinoidsMgG) ||
+    mgGFromPercent(tacPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
     cleanText(pkg.batchNumber) ||
@@ -99,6 +132,7 @@ function normalizePackage(pkg: ManifestPackage) {
 
   return {
     id: String(pkg.id ?? tag),
+    metrcPackageId: cleanValue(pkg.metrcPackageId),
     itemName,
     productName: cleanText(pkg.productName) || itemName,
     strain: cleanText(pkg.strain),
@@ -124,12 +158,54 @@ function normalizePackage(pkg: ManifestPackage) {
     cbdPercent: cleanValue(pkg.cbdPercent),
     cbdMgG: cleanValue(pkg.cbdMgG),
     cbdMgPackage: cleanValue(pkg.cbdMgPackage),
-    tacPercent: cleanValue(pkg.tacPercent),
-    tacMgG: cleanValue(pkg.tacMgG),
+    tacPercent,
+    tacMgG,
     labFacilityName: cleanText(pkg.labFacilityName),
     testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
   };
+}
+
+function extractTacFromLabResults(results: unknown): string {
+  const rows = Array.isArray(results) ? results : [];
+  for (const result of rows as MetrcLabResult[]) {
+    const name = cleanText(result.TestTypeName).toLowerCase();
+    if (
+      name.startsWith('total active cannabinoids (%)') ||
+      name.startsWith('total active cannabinoid (%)') ||
+      name.startsWith('total cannabinoids (%)') ||
+      name.startsWith('total cannabinoid (%)') ||
+      name.startsWith('tac (%)')
+    ) {
+      const value = cleanValue(result.TestResultLevel);
+      if (hasPositiveNumber(value)) return value;
+    }
+  }
+  return '';
+}
+
+async function fetchMetrcTacPercent(packageId: string): Promise<string> {
+  const baseUrl = process.env.METRC_BASE_URL;
+  const license = process.env.METRC_LICENSE_DISTRIBUTOR;
+  const integratorKey = process.env.METRC_INTEGRATOR_KEY;
+  const userKey = process.env.METRC_USER_KEY;
+  if (!baseUrl || !license || !integratorKey || !userKey || !packageId) return '';
+
+  const endpoint = new URL('/labtests/v2/results', baseUrl);
+  endpoint.searchParams.set('packageId', packageId);
+  endpoint.searchParams.set('licenseNumber', license);
+
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) return '';
+  const data = await response.json();
+  return extractTacFromLabResults(Array.isArray(data) ? data : data?.Data);
 }
 
 function expandRanges(ranges: unknown): number[] {
@@ -209,6 +285,19 @@ async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>) 
   });
 }
 
+async function rowWithMetrcLabFallback(pkg: ReturnType<typeof normalizePackage>) {
+  if (hasPositiveNumber(pkg.tacPercent) || !pkg.metrcPackageId) return pkg;
+
+  const tacPercent = await fetchMetrcTacPercent(pkg.metrcPackageId).catch(() => '');
+  if (!tacPercent) return pkg;
+
+  return {
+    ...pkg,
+    tacPercent,
+    tacMgG: mgGFromPercent(tacPercent),
+  };
+}
+
 async function fetchManifestLabelRows(packageTag: string) {
   const manifestBase = process.env.MANIFEST_API_BASE_URL ?? 'http://localhost:5000/api';
   const endpoint = new URL(`${manifestBase.replace(/\/$/, '')}/retail-labels/label-data/${encodeURIComponent(packageTag)}`);
@@ -231,7 +320,8 @@ async function enrichWithManifestLabelData(packages: ReturnType<typeof normalize
   const enriched = await Promise.all(
     packages.slice(0, 25).map(async (pkg) => {
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
-      return rows && rows.length > 0 ? rows : rowsWithMetrcRetailIds(pkg);
+      const labPkg = await rowWithMetrcLabFallback(pkg);
+      return rows && rows.length > 0 ? rows : rowsWithMetrcRetailIds(labPkg);
     }),
   );
   return enriched.flat();
@@ -247,6 +337,7 @@ async function searchManifestDatabase(search: string) {
   const rows = await sql`
     SELECT
       mp.id,
+      mp.metrc_package_id AS "metrcPackageId",
       mp.label,
       COALESCE(mi.item_name, mp.product_name) AS "itemName",
       mp.product_name AS "productName",
@@ -304,6 +395,7 @@ function normalizeMetrcPackage(pkg: MetrcPackage) {
 
   return normalizePackage({
     id: pkg.Id,
+    metrcPackageId: pkg.Id,
     label: tag,
     itemName,
     batchName: batch,
