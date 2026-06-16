@@ -62,6 +62,12 @@ type MetrcPackage = {
   PackagedDate?: string | null;
 };
 
+type MetrcRetailIds = {
+  Eaches?: string[] | null;
+  Ranges?: unknown;
+  LabelSource?: string | null;
+};
+
 function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -125,6 +131,21 @@ function normalizePackage(pkg: ManifestPackage) {
   };
 }
 
+function expandRanges(ranges: unknown): number[] {
+  if (!Array.isArray(ranges)) return [];
+  const indices: number[] = [];
+  for (const range of ranges) {
+    if (!Array.isArray(range) || range.length !== 2) continue;
+    const start = Number(range[0]);
+    const end = Number(range[1]);
+    if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+    for (let index = start; index <= end; index++) {
+      indices.push(index);
+    }
+  }
+  return indices;
+}
+
 function rowsFromLabelData(data: ManifestPackage) {
   const base = normalizePackage(data);
   const units = Array.isArray(data.units) ? data.units : [];
@@ -141,6 +162,50 @@ function rowsFromLabelData(data: ManifestPackage) {
     batch: cleanText(unit.lotNumber) || cleanText(unit.batchNumber) || base.batch,
     unitIndex: cleanValue(unit.index),
   }));
+}
+
+async function fetchMetrcRetailIdUnits(packageTag: string): Promise<ManifestLabelUnit[] | null> {
+  const baseUrl = process.env.METRC_BASE_URL;
+  const license = process.env.METRC_LICENSE_DISTRIBUTOR;
+  const integratorKey = process.env.METRC_INTEGRATOR_KEY;
+  const userKey = process.env.METRC_USER_KEY;
+  if (!baseUrl || !license || !integratorKey || !userKey) return null;
+
+  const endpoint = new URL(`/retailid/v2/receive/${encodeURIComponent(packageTag)}`, baseUrl);
+  endpoint.searchParams.set('licenseNumber', license);
+
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) return null;
+  const data = (await response.json()) as MetrcRetailIds;
+  const eaches = Array.isArray(data.Eaches) ? data.Eaches : [];
+  const indices = expandRanges(data.Ranges);
+
+  return eaches.map((retailId, index) => ({
+    retailId,
+    index: indices[index] ?? index + 1,
+    packageTag,
+  }));
+}
+
+async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>) {
+  const packageTag = pkg.packageTag || pkg.tag;
+  if (!packageTag) return [pkg];
+
+  const units = await fetchMetrcRetailIdUnits(packageTag).catch(() => null);
+  if (!units || units.length === 0) return [pkg];
+
+  return rowsFromLabelData({
+    ...pkg,
+    retailIdSource: pkg.retailIdSource || 'Metrc',
+    units,
+  });
 }
 
 async function fetchManifestLabelRows(packageTag: string) {
@@ -165,7 +230,7 @@ async function enrichWithManifestLabelData(packages: ReturnType<typeof normalize
   const enriched = await Promise.all(
     packages.slice(0, 25).map(async (pkg) => {
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
-      return rows && rows.length > 0 ? rows : [pkg];
+      return rows && rows.length > 0 ? rows : rowsWithMetrcRetailIds(pkg);
     }),
   );
   return enriched.flat();
@@ -185,10 +250,27 @@ async function searchManifestDatabase(search: string) {
       COALESCE(mi.item_name, mp.product_name) AS "itemName",
       mp.product_name AS "productName",
       b.name AS "brandName",
-      COALESCE(mp.production_batch_number, mp.source_production_batch_numbers, '') AS "batchName",
+      mp.production_batch_number AS "batchNumber",
+      mp.source_production_batch_numbers AS "sourceBatchNumbers",
+      COALESCE(mp.production_batch_number, mp.source_production_batch_numbers, '') AS "lotNumber",
       mp.quantity,
       mp.unit_of_measure AS "unitOfMeasure",
-      mp.packaged_date AS "packagedDate"
+      mp.packaged_date AS "packagedDate",
+      mp.packaged_date AS "manufacturedDate",
+      mp.expiration_date AS "expirationDate",
+      mp.sell_by_date AS "sellByDate",
+      mp.use_by_date AS "useByDate",
+      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_thc_percent END AS "thcPercent",
+      CASE WHEN mp.thc_unit = 'mg' THEN mp.total_thc_percent ELSE NULL END AS "thcMgPackage",
+      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_thc_percent * 10, 2) END AS "thcMgG",
+      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END AS "cbdPercent",
+      CASE WHEN mp.thc_unit = 'mg' THEN mp.total_cbd_percent ELSE NULL END AS "cbdMgPackage",
+      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_cbd_percent * 10, 2) END AS "cbdMgG",
+      mp.total_active_cannabinoids_percent AS "tacPercent",
+      ROUND(mp.total_active_cannabinoids_percent * 10, 2) AS "tacMgG",
+      mp.lab_facility_name AS "labFacilityName",
+      mp.test_performed_date AS "testPerformedDate",
+      mp.coa_document_id AS "coaDocumentId"
     FROM metrc_packages mp
     LEFT JOIN metrc_items mi ON mp.product_id = mi.metrc_item_id
     LEFT JOIN brands b ON mi.brand_id = b.id
