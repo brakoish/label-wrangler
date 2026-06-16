@@ -94,6 +94,7 @@ function normalizePackage(pkg: ManifestPackage) {
     cleanText(pkg.lotNumber) ||
     cleanText(pkg.batchNumber) ||
     cleanText(pkg.batchName) ||
+    cleanText(pkg.sourceBatchNumbers) ||
     cleanText(pkg.sourceHarvestName);
 
   return {
@@ -252,7 +253,7 @@ async function searchManifestDatabase(search: string) {
       b.name AS "brandName",
       mp.production_batch_number AS "batchNumber",
       mp.source_production_batch_numbers AS "sourceBatchNumbers",
-      COALESCE(mp.production_batch_number, mp.source_production_batch_numbers, '') AS "lotNumber",
+      COALESCE(NULLIF(mp.production_batch_number, ''), NULLIF(mp.source_production_batch_numbers, ''), '') AS "lotNumber",
       mp.quantity,
       mp.unit_of_measure AS "unitOfMeasure",
       mp.packaged_date AS "packagedDate",
