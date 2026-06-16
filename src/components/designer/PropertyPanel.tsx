@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { MANIFEST_FIELD_OPTIONS } from '@/lib/manifestFields';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -146,6 +147,14 @@ export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps)
         {!element.isStatic && (
           <div className="space-y-1">
             <CompactTextInput label="Field" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
+            <CustomSelect
+              compact
+              value={MANIFEST_FIELD_OPTIONS.some((option) => option.value === element.fieldName) ? element.fieldName || '' : ''}
+              onChange={(v) => {
+                if (v) onUpdate({ fieldName: v });
+              }}
+              options={[{ value: '', label: 'Manifest fields' }, ...MANIFEST_FIELD_OPTIONS]}
+            />
             <CompactTextInput label="Default" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Preview..." />
             {element.type === 'text' && (
               <div className="grid grid-cols-2 gap-1">

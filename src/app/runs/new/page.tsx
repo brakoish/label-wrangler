@@ -17,42 +17,11 @@ import { generateZPL } from '@/lib/zplGenerator';
 import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
+import { MANIFEST_FIELDS } from '@/lib/manifestFields';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 
 const PASTE_COLUMN = '__paste__';
-const MANIFEST_HEADERS = [
-  'productName',
-  'itemName',
-  'strain',
-  'packageTag',
-  'tag',
-  'retailId',
-  'lotNumber',
-  'batchNumber',
-  'batch',
-  'sourceBatchNumbers',
-  'manufacturedDate',
-  'packagedDate',
-  'expirationDate',
-  'sellByDate',
-  'useByDate',
-  'thcPercent',
-  'thcMgG',
-  'thcMgPackage',
-  'cbdPercent',
-  'cbdMgG',
-  'cbdMgPackage',
-  'tacPercent',
-  'tacMgG',
-  'labFacilityName',
-  'testPerformedDate',
-  'coaDocumentId',
-  'brandName',
-  'quantity',
-  'unitOfMeasure',
-  'unitIndex',
-  'retailIdSource',
-];
+const MANIFEST_HEADERS = [...MANIFEST_FIELDS];
 
 const FIELD_ALIASES: Record<string, string[]> = {
   strain: ['strain', 'productName', 'itemName'],

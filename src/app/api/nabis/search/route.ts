@@ -89,6 +89,16 @@ function cleanValue(value: unknown): string {
   return cleanText(value);
 }
 
+function cleanDecimalValue(value: unknown): string {
+  const text = cleanValue(value);
+  if (!text) return '';
+
+  const number = Number(text);
+  if (!Number.isFinite(number)) return text;
+
+  return number.toFixed(2).replace(/\.?0+$/, '');
+}
+
 function cleanDate(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10);
@@ -101,7 +111,7 @@ function cleanDate(value: unknown): string {
 
 function mgGFromPercent(value: string): string {
   const number = Number(value);
-  return Number.isFinite(number) ? String(Math.round(number * 1000) / 100) : '';
+  return Number.isFinite(number) ? cleanDecimalValue(number * 10) : '';
 }
 
 function hasPositiveNumber(value: unknown): boolean {
@@ -113,15 +123,15 @@ function normalizePackage(pkg: ManifestPackage) {
   const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
   const tacPercent =
-    cleanValue(pkg.tacPercent) ||
-    cleanValue(pkg.totalActiveCannabinoidsPercent) ||
-    cleanValue(pkg.totalCannabinoidsPercent) ||
-    cleanValue(pkg.totalActiveCannabinoids) ||
-    cleanValue(pkg.totalCannabinoids);
+    cleanDecimalValue(pkg.tacPercent) ||
+    cleanDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
+    cleanDecimalValue(pkg.totalCannabinoidsPercent) ||
+    cleanDecimalValue(pkg.totalActiveCannabinoids) ||
+    cleanDecimalValue(pkg.totalCannabinoids);
   const tacMgG =
-    cleanValue(pkg.tacMgG) ||
-    cleanValue(pkg.totalActiveCannabinoidsMgG) ||
-    cleanValue(pkg.totalCannabinoidsMgG) ||
+    cleanDecimalValue(pkg.tacMgG) ||
+    cleanDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
+    cleanDecimalValue(pkg.totalCannabinoidsMgG) ||
     mgGFromPercent(tacPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
@@ -152,12 +162,12 @@ function normalizePackage(pkg: ManifestPackage) {
     useByDate: cleanDate(pkg.useByDate),
     retailId: cleanText(pkg.retailId),
     retailIdSource: cleanText(pkg.retailIdSource),
-    thcPercent: cleanValue(pkg.thcPercent),
-    thcMgG: cleanValue(pkg.thcMgG),
-    thcMgPackage: cleanValue(pkg.thcMgPackage),
-    cbdPercent: cleanValue(pkg.cbdPercent),
-    cbdMgG: cleanValue(pkg.cbdMgG),
-    cbdMgPackage: cleanValue(pkg.cbdMgPackage),
+    thcPercent: cleanDecimalValue(pkg.thcPercent),
+    thcMgG: cleanDecimalValue(pkg.thcMgG),
+    thcMgPackage: cleanDecimalValue(pkg.thcMgPackage),
+    cbdPercent: cleanDecimalValue(pkg.cbdPercent),
+    cbdMgG: cleanDecimalValue(pkg.cbdMgG),
+    cbdMgPackage: cleanDecimalValue(pkg.cbdMgPackage),
     tacPercent,
     tacMgG,
     labFacilityName: cleanText(pkg.labFacilityName),
@@ -178,7 +188,7 @@ function extractTacFromLabResults(results: unknown): string {
       name.startsWith('tac (%)')
     ) {
       const value = cleanValue(result.TestResultLevel);
-      if (hasPositiveNumber(value)) return value;
+      if (hasPositiveNumber(value)) return cleanDecimalValue(value);
     }
   }
   return '';
