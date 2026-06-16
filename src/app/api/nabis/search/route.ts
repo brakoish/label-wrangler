@@ -4,14 +4,45 @@ import { neon } from '@neondatabase/serverless';
 type ManifestPackage = {
   id?: number | string | null;
   label?: string | null;
+  packageTag?: string | null;
   itemName?: string | null;
   productName?: string | null;
+  strain?: string | null;
   brandName?: string | null;
   batchName?: string | null;
+  batchNumber?: string | null;
+  lotNumber?: string | null;
+  sourceBatchNumbers?: string | null;
   sourceHarvestName?: string | null;
   quantity?: number | string | null;
   unitOfMeasure?: string | null;
   packagedDate?: string | null;
+  manufacturedDate?: string | null;
+  expirationDate?: string | null;
+  sellByDate?: string | null;
+  useByDate?: string | null;
+  retailId?: string | null;
+  retailIdSource?: string | null;
+  thcPercent?: number | string | null;
+  thcMgG?: number | string | null;
+  thcMgPackage?: number | string | null;
+  cbdPercent?: number | string | null;
+  cbdMgG?: number | string | null;
+  cbdMgPackage?: number | string | null;
+  tacPercent?: number | string | null;
+  tacMgG?: number | string | null;
+  labFacilityName?: string | null;
+  testPerformedDate?: string | null;
+  coaDocumentId?: number | string | null;
+  units?: ManifestLabelUnit[] | null;
+};
+
+type ManifestLabelUnit = {
+  retailId?: string | null;
+  index?: number | string | null;
+  packageTag?: string | null;
+  batchNumber?: string | null;
+  lotNumber?: string | null;
 };
 
 type MetrcPackage = {
@@ -35,21 +66,99 @@ function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function cleanValue(value: unknown): string {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  return cleanText(value);
+}
+
 function normalizePackage(pkg: ManifestPackage) {
-  const tag = cleanText(pkg.label);
+  const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
-  const batch = cleanText(pkg.batchName) || cleanText(pkg.sourceHarvestName);
+  const batch =
+    cleanText(pkg.lotNumber) ||
+    cleanText(pkg.batchNumber) ||
+    cleanText(pkg.batchName) ||
+    cleanText(pkg.sourceHarvestName);
 
   return {
     id: String(pkg.id ?? tag),
     itemName,
+    productName: cleanText(pkg.productName) || itemName,
+    strain: cleanText(pkg.strain),
     tag,
+    packageTag: tag,
     batch,
+    lotNumber: cleanText(pkg.lotNumber) || batch,
+    batchNumber: cleanText(pkg.batchNumber) || batch,
+    sourceBatchNumbers: cleanText(pkg.sourceBatchNumbers),
     brandName: cleanText(pkg.brandName),
     quantity: pkg.quantity == null ? '' : String(pkg.quantity),
     unitOfMeasure: cleanText(pkg.unitOfMeasure),
-    packagedDate: cleanText(pkg.packagedDate),
+    packagedDate: cleanText(pkg.packagedDate) || cleanText(pkg.manufacturedDate),
+    manufacturedDate: cleanText(pkg.manufacturedDate) || cleanText(pkg.packagedDate),
+    expirationDate: cleanText(pkg.expirationDate),
+    sellByDate: cleanText(pkg.sellByDate),
+    useByDate: cleanText(pkg.useByDate),
+    retailId: cleanText(pkg.retailId),
+    retailIdSource: cleanText(pkg.retailIdSource),
+    thcPercent: cleanValue(pkg.thcPercent),
+    thcMgG: cleanValue(pkg.thcMgG),
+    thcMgPackage: cleanValue(pkg.thcMgPackage),
+    cbdPercent: cleanValue(pkg.cbdPercent),
+    cbdMgG: cleanValue(pkg.cbdMgG),
+    cbdMgPackage: cleanValue(pkg.cbdMgPackage),
+    tacPercent: cleanValue(pkg.tacPercent),
+    tacMgG: cleanValue(pkg.tacMgG),
+    labFacilityName: cleanText(pkg.labFacilityName),
+    testPerformedDate: cleanText(pkg.testPerformedDate),
+    coaDocumentId: cleanValue(pkg.coaDocumentId),
   };
+}
+
+function rowsFromLabelData(data: ManifestPackage) {
+  const base = normalizePackage(data);
+  const units = Array.isArray(data.units) ? data.units : [];
+  if (units.length === 0) return [base];
+
+  return units.map((unit) => ({
+    ...base,
+    id: `${base.id}-${cleanValue(unit.index) || cleanText(unit.retailId)}`,
+    retailId: cleanText(unit.retailId) || base.retailId,
+    packageTag: cleanText(unit.packageTag) || base.packageTag,
+    tag: cleanText(unit.packageTag) || base.tag,
+    batchNumber: cleanText(unit.batchNumber) || base.batchNumber,
+    lotNumber: cleanText(unit.lotNumber) || base.lotNumber,
+    batch: cleanText(unit.lotNumber) || cleanText(unit.batchNumber) || base.batch,
+    unitIndex: cleanValue(unit.index),
+  }));
+}
+
+async function fetchManifestLabelRows(packageTag: string) {
+  const manifestBase = process.env.MANIFEST_API_BASE_URL ?? 'http://localhost:5000/api';
+  const endpoint = new URL(`${manifestBase.replace(/\/$/, '')}/retail-labels/label-data/${encodeURIComponent(packageTag)}`);
+  endpoint.searchParams.set('includeRetailIds', 'true');
+
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: 'application/json',
+      ...(process.env.MANIFEST_COOKIE ? { Cookie: process.env.MANIFEST_COOKIE } : {}),
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) return null;
+  const data = await response.json();
+  return rowsFromLabelData(data as ManifestPackage);
+}
+
+async function enrichWithManifestLabelData(packages: ReturnType<typeof normalizePackage>[]) {
+  const enriched = await Promise.all(
+    packages.slice(0, 25).map(async (pkg) => {
+      const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
+      return rows && rows.length > 0 ? rows : [pkg];
+    }),
+  );
+  return enriched.flat();
 }
 
 async function searchManifestDatabase(search: string) {
@@ -153,12 +262,19 @@ export async function GET(request: NextRequest) {
   try {
     const databasePackages = await searchManifestDatabase(search);
     if (databasePackages && databasePackages.length > 0) {
-      return NextResponse.json({ packages: databasePackages });
+      return NextResponse.json({ packages: await enrichWithManifestLabelData(databasePackages) });
+    }
+
+    const labelRows = looksLikeMetrcPackageTag(search)
+      ? await fetchManifestLabelRows(search).catch(() => null)
+      : null;
+    if (labelRows && labelRows.length > 0) {
+      return NextResponse.json({ packages: labelRows });
     }
 
     const metrcPackages = await searchMetrcByExactTag(search);
     if (metrcPackages && metrcPackages.length > 0) {
-      return NextResponse.json({ packages: metrcPackages });
+      return NextResponse.json({ packages: await enrichWithManifestLabelData(metrcPackages) });
     }
 
     if (databasePackages) {
@@ -185,7 +301,7 @@ export async function GET(request: NextRequest) {
       ? data.map(normalizePackage).filter((pkg) => pkg.tag && pkg.itemName)
       : [];
 
-    return NextResponse.json({ packages });
+    return NextResponse.json({ packages: await enrichWithManifestLabelData(packages) });
   } catch (error) {
     return NextResponse.json(
       {

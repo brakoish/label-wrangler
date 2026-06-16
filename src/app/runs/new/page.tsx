@@ -20,10 +20,96 @@ import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 
 const PASTE_COLUMN = '__paste__';
-const MANIFEST_HEADERS = ['itemName', 'tag', 'batch', 'brandName', 'quantity', 'unitOfMeasure', 'packagedDate'];
+const MANIFEST_HEADERS = [
+  'productName',
+  'itemName',
+  'strain',
+  'packageTag',
+  'tag',
+  'retailId',
+  'lotNumber',
+  'batchNumber',
+  'batch',
+  'sourceBatchNumbers',
+  'manufacturedDate',
+  'packagedDate',
+  'expirationDate',
+  'sellByDate',
+  'useByDate',
+  'thcPercent',
+  'thcMgG',
+  'thcMgPackage',
+  'cbdPercent',
+  'cbdMgG',
+  'cbdMgPackage',
+  'tacPercent',
+  'tacMgG',
+  'labFacilityName',
+  'testPerformedDate',
+  'coaDocumentId',
+  'brandName',
+  'quantity',
+  'unitOfMeasure',
+  'unitIndex',
+  'retailIdSource',
+];
+
+const FIELD_ALIASES: Record<string, string[]> = {
+  strain: ['strain', 'productName', 'itemName'],
+  product: ['productName', 'itemName'],
+  size: ['quantity'],
+  tac: ['tacPercent'],
+  tacpercent: ['tacPercent'],
+  tacmg: ['tacMgG'],
+  tacmgg: ['tacMgG'],
+  thc: ['thcPercent'],
+  thcpercent: ['thcPercent'],
+  thcmg: ['thcMgG'],
+  thcmgg: ['thcMgG'],
+  cbd: ['cbdPercent'],
+  cbdpercent: ['cbdPercent'],
+  cbdmg: ['cbdMgG'],
+  cbdmgg: ['cbdMgG'],
+  qrqpt: ['retailId'],
+  qr: ['retailId'],
+  qrcode: ['retailId'],
+  retailid: ['retailId'],
+  metrcretailid: ['retailId'],
+  mfgdate: ['manufacturedDate', 'packagedDate'],
+  manufactureddate: ['manufacturedDate', 'packagedDate'],
+  packageddate: ['packagedDate', 'manufacturedDate'],
+  expdate: ['expirationDate'],
+  expirationdate: ['expirationDate'],
+  lot: ['lotNumber', 'batchNumber', 'batch'],
+  lotnumber: ['lotNumber', 'batchNumber', 'batch'],
+  batch: ['batchNumber', 'lotNumber', 'batch'],
+  batchnumber: ['batchNumber', 'lotNumber', 'batch'],
+  uid: ['retailId', 'packageTag', 'tag'],
+  packagetag: ['packageTag', 'tag'],
+};
 
 type RunInputMode = 'manual' | 'paste' | 'csv' | 'manifest';
 type ManifestRow = Record<string, string>;
+
+function normalizedFieldName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function findBestHeaderForField(field: string, headers: string[], rows: Record<string, string>[]) {
+  const normalizedField = normalizedFieldName(field);
+  const exact = headers.find((h) => normalizedFieldName(h) === normalizedField);
+  if (exact) return exact;
+
+  for (const alias of FIELD_ALIASES[normalizedField] ?? []) {
+    if (headers.includes(alias)) return alias;
+  }
+
+  const urlCol = detectUrlColumn({ headers, rows });
+  const isQrField = /qr|url|code|tag/i.test(field);
+  if (isQrField && urlCol) return urlCol;
+
+  return null;
+}
 
 function NewRunContent() {
   const router = useRouter();
@@ -193,20 +279,10 @@ function NewRunContent() {
     if (!template) return;
     setFieldMappings((prev) => {
       const next = { ...prev };
-      const urlCol = detectUrlColumn({ headers, rows });
       for (const field of dynamicFields) {
-        // 1) Exact/normalized name match.
-        const match = headers.find(
-          (h) => h.toLowerCase().replace(/\s+/g, '') === field.toLowerCase().replace(/\s+/g, ''),
-        );
+        const match = findBestHeaderForField(field, headers, rows);
         if (match) {
           next[field] = { mode: 'column', csvColumn: match };
-          continue;
-        }
-        // 2) If this is the QR-ish field and we have a URL column, map it.
-        const isQrField = /qr|url|code|tag/i.test(field);
-        if (isQrField && urlCol) {
-          next[field] = { mode: 'column', csvColumn: urlCol };
         }
       }
       return next;
@@ -216,9 +292,7 @@ function NewRunContent() {
       setStaticValues((prev) => {
         const next = { ...prev };
         for (const f of dynamicFields) {
-          const match = headers.find(
-            (h) => h.toLowerCase().replace(/\s+/g, '') === f.toLowerCase().replace(/\s+/g, ''),
-          );
+          const match = findBestHeaderForField(f, headers, rows);
           if (match && !next[f]) next[f] = rows[0][match] ?? '';
         }
         return next;
