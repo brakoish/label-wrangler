@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search } from 'lucide-react';
+import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -125,6 +125,7 @@ function NewRunContent() {
   const [selectedManifestPackageKey, setSelectedManifestPackageKey] = useState<string | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
   const [isSearchingManifest, setIsSearchingManifest] = useState(false);
+  const [hasSearchedManifest, setHasSearchedManifest] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [manualQty, setManualQty] = useState(1);
@@ -298,6 +299,7 @@ function NewRunContent() {
     const query = manifestSearch.trim();
     if (query.length < 2) return;
     setIsSearchingManifest(true);
+    setHasSearchedManifest(true);
     setManifestError(null);
     try {
       const res = await fetch(`/api/nabis/search?q=${encodeURIComponent(query)}`);
@@ -382,6 +384,11 @@ function NewRunContent() {
     }
     return Array.from(packages.values());
   }, [manifestRows]);
+
+  const selectedManifestPackageSummary = useMemo(
+    () => manifestPackageSummaries.find(({ row }) => manifestPackageKey(row) === selectedManifestPackageKey) ?? null,
+    [manifestPackageSummaries, selectedManifestPackageKey],
+  );
 
   const previewValuesForIndex = useCallback((index: number) => {
     const values: Record<string, string> = { ...staticValues };
@@ -741,7 +748,10 @@ function NewRunContent() {
                     <div className="flex gap-2">
                       <input
                         value={manifestSearch}
-                        onChange={(e) => setManifestSearch(e.target.value)}
+                        onChange={(e) => {
+                          setManifestSearch(e.target.value);
+                          setHasSearchedManifest(false);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') void handleManifestSearch();
                         }}
@@ -757,8 +767,39 @@ function NewRunContent() {
                       </button>
                     </div>
                     {manifestError && <p className="text-xs text-amber-500">{manifestError}</p>}
+                    {selectedManifestPackageSummary && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-amber-100" title={selectedManifestPackageSummary.row.itemName}>
+                              {selectedManifestPackageSummary.row.itemName || '(no item)'}
+                            </p>
+                            <p className="truncate font-mono text-[11px] text-amber-200/70" title={selectedManifestPackageSummary.row.tag}>
+                              {selectedManifestPackageSummary.row.tag || '(no tag)'}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-md border border-amber-500/30 px-2 py-1 text-[11px] font-medium text-amber-200">
+                            {selectedManifestPackageSummary.labelRows.toLocaleString()} label{selectedManifestPackageSummary.labelRows === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-[11px] text-amber-200/60">
+                          <span className="truncate" title={selectedManifestPackageSummary.row.lotNumber || selectedManifestPackageSummary.row.batch}>
+                            Lot {selectedManifestPackageSummary.row.lotNumber || selectedManifestPackageSummary.row.batch || '-'}
+                          </span>
+                          <span aria-hidden="true">/</span>
+                          <span>Selected package</span>
+                        </div>
+                      </div>
+                    )}
                     {manifestRows.length > 0 && (
-                      <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950/50">
+                      <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/50">
+                        <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+                          <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Select Package</span>
+                          <span className="text-[11px] text-zinc-500">
+                            {manifestPackageSummaries.length.toLocaleString()} package{manifestPackageSummaries.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <div className="max-h-56 overflow-auto">
                         {manifestPackageSummaries.map(({ row, labelRows }) => {
                           const key = manifestPackageKey(row);
                           const isSelected = key === selectedManifestPackageKey;
@@ -770,22 +811,34 @@ function NewRunContent() {
                                 setSelectedManifestPackageKey(key);
                                 setPreviewIndex(0);
                               }}
-                              className={`grid w-full grid-cols-[1.5fr_1fr_1fr_auto_auto] gap-3 border-b px-3 py-2 text-left text-xs transition-colors last:border-b-0 ${
+                              className={`grid w-full grid-cols-[auto_minmax(0,1.6fr)_minmax(0,1fr)_auto] gap-3 border-b px-3 py-2.5 text-left text-xs transition-colors last:border-b-0 ${
                                 isSelected
                                   ? 'border-amber-500/20 bg-amber-500/10'
                                   : 'border-zinc-900 hover:bg-zinc-900/80'
                               }`}
                             >
-                              <span className="truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
-                              <span className="truncate font-mono text-zinc-400" title={row.tag}>{row.tag || '(no tag)'}</span>
-                              <span className="truncate text-zinc-500" title={row.lotNumber || row.batch}>{row.lotNumber || row.batch || '(no batch)'}</span>
-                              <span className="whitespace-nowrap text-zinc-600">{labelRows.toLocaleString()} label{labelRows === 1 ? '' : 's'}</span>
-                              <span className={`whitespace-nowrap font-medium ${isSelected ? 'text-amber-300' : 'text-zinc-500'}`}>
-                                {isSelected ? 'Selected' : 'Select'}
+                              <span className={`mt-0.5 ${isSelected ? 'text-amber-300' : 'text-zinc-600'}`}>
+                                {isSelected ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
+                                <span className="block truncate font-mono text-[11px] text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
+                              </span>
+                              <span className="min-w-0 truncate text-zinc-500" title={row.lotNumber || row.batch}>
+                                {row.lotNumber || row.batch || '(no batch)'}
+                              </span>
+                              <span className={`whitespace-nowrap text-right font-medium ${isSelected ? 'text-amber-300' : 'text-zinc-500'}`}>
+                                {labelRows.toLocaleString()} label{labelRows === 1 ? '' : 's'}
                               </span>
                             </button>
                           );
                         })}
+                        </div>
+                      </div>
+                    )}
+                    {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
+                      <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-3 text-xs text-zinc-500">
+                        No Manifest packages found.
                       </div>
                     )}
                   </div>
