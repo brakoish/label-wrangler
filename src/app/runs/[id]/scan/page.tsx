@@ -179,7 +179,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       <AppShell>
         <PageTitle title="Scan mode" />
         <div className="flex-1 flex items-center justify-center text-zinc-500">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run\u2026
+          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run...
         </div>
       </AppShell>
     );
@@ -268,7 +268,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 type="text"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder={canPrint ? 'Waiting for scan\u2026' : 'Connect a printer first'}
+                placeholder={canPrint ? 'Waiting for scan...' : 'Connect a printer first'}
                 autoFocus
                 disabled={!canPrint || busy}
                 className="w-full bg-zinc-950 rounded-2xl text-2xl font-mono text-zinc-100 px-5 py-5 pr-16 focus:outline-none disabled:opacity-40"

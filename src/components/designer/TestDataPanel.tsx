@@ -32,10 +32,10 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
   if (dynamicFields.length === 0) return null;
 
   return (
-    <div className="border-t border-zinc-800/50">
+    <div className="shrink-0 max-h-[45%] min-h-0 border-t border-zinc-800/50 flex flex-col">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-zinc-800/30 transition-all"
+        className="w-full shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-zinc-800/30 transition-all"
       >
         <FlaskConical className="w-4 h-4 text-amber-400" />
         <span className="text-zinc-300 font-medium flex-1 text-left">Test Data</span>
@@ -44,7 +44,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
       </button>
 
       {expanded && (
-        <div className="px-4 pb-4 space-y-2">
+        <div className="min-h-0 overflow-y-auto px-4 pb-4 space-y-2">
           {dynamicFields.map((field) => (
             <div key={field.fieldName}>
               <div className="flex items-center gap-1 mb-1">

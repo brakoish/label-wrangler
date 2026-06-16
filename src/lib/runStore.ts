@@ -1,11 +1,12 @@
 'use client';
 
 import { create } from 'zustand';
-import type { Run, RunPreset, RunStatus } from './types';
+import type { Run, RunPreset, RunPrintEvent, RunStatus } from './types';
 
 interface RunStore {
   runs: Run[];
   presets: RunPreset[];
+  printEvents: RunPrintEvent[];
   hydrated: boolean;
   loadAll: () => Promise<void>;
 
@@ -16,6 +17,11 @@ interface RunStore {
   deleteRun: (id: string) => Promise<void>;
   /** Toggle the pinned state of a run. Server stamps pinnedAt. */
   togglePin: (id: string) => Promise<Run | null>;
+  fetchPrintEvents: (runId: string) => Promise<RunPrintEvent[]>;
+  createPrintEvent: (
+    runId: string,
+    data: Omit<RunPrintEvent, 'id' | 'runId' | 'createdAt'>
+  ) => Promise<RunPrintEvent | null>;
 
   // Presets
   createPreset: (data: Partial<RunPreset> & { name: string; templateId: string }) => Promise<RunPreset>;
@@ -26,6 +32,7 @@ interface RunStore {
 export const useRunStore = create<RunStore>((set, get) => ({
   runs: [],
   presets: [],
+  printEvents: [],
   hydrated: false,
 
   loadAll: async () => {
@@ -89,6 +96,33 @@ export const useRunStore = create<RunStore>((set, get) => ({
     const updated = (await res.json()) as Run;
     set((state) => ({ runs: state.runs.map((r) => (r.id === id ? updated : r)) }));
     return updated;
+  },
+
+  fetchPrintEvents: async (runId) => {
+    const res = await fetch(`/api/runs/${runId}/print-events`);
+    if (!res.ok) return [];
+    const events = (await res.json()) as RunPrintEvent[];
+    set((state) => ({
+      printEvents: [
+        ...events,
+        ...state.printEvents.filter((event) => event.runId !== runId),
+      ],
+    }));
+    return events;
+  },
+
+  createPrintEvent: async (runId, data) => {
+    const res = await fetch(`/api/runs/${runId}/print-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) return null;
+    const event = (await res.json()) as RunPrintEvent;
+    set((state) => ({
+      printEvents: [event, ...state.printEvents],
+    }));
+    return event;
   },
 
   createPreset: async (data) => {

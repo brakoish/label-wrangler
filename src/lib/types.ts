@@ -217,7 +217,9 @@ export interface RunPreset {
 }
 
 export type RunStatus = 'draft' | 'queued' | 'printing' | 'paused' | 'completed' | 'cancelled';
-export type RunDataSource = 'paste' | 'csv' | 'manual';
+export type RunDataSource = 'paste' | 'csv' | 'manual' | 'manifest';
+export type RunPrintEventType = 'opened' | 'sent' | 'confirmed' | 'failed' | 'cancelled';
+export type RunPrintOutput = 'roll-zpl' | 'sheet-pdf' | 'roll-pdf' | 'scan';
 
 /** One execution of a print run. */
 export interface Run {
@@ -246,6 +248,23 @@ export interface Run {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+/** Audit trail entry for print/export activity on a run.
+ *  Ranges are 1-based physical label numbers, inclusive.
+ */
+export interface RunPrintEvent {
+  id: string;
+  runId: string;
+  eventType: RunPrintEventType;
+  output: RunPrintOutput;
+  rangeFrom: number;
+  rangeTo: number;
+  labelCount: number;
+  printedCountAfter: number | null;
+  printerName: string | null;
+  message: string | null;
+  createdAt: string;
 }
 
 /** A saved design block that can be inserted as a copy into any template. */

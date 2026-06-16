@@ -16,6 +16,8 @@ import type { Run, RunPreset, RunStatus, LabelFormat, LabelTemplate } from '@/li
 type ViewMode = 'list' | 'grid';
 type StatusFilter = 'all' | 'active' | RunStatus;
 
+const RUN_SCROLL_THRESHOLD = 15;
+
 const STATUS_STYLES: Record<RunStatus, string> = {
   draft: 'bg-zinc-800/60 text-zinc-400 border-zinc-700/50',
   queued: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -129,14 +131,44 @@ export default function RunsPage() {
         </div>
       );
     }
+    const scrollProps = collection.length > RUN_SCROLL_THRESHOLD
+      ? {
+          className: 'min-h-0 overflow-y-auto overscroll-contain pr-2 -mr-2',
+          style: { maxHeight: 'min(720px, calc(100vh - 18rem))' },
+        }
+      : { className: undefined, style: undefined };
     if (viewMode === 'grid') {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div {...scrollProps}>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {collection.map((r) => {
+              const t = templates.find((x) => x.id === r.templateId) ?? null;
+              const f = t ? formats.find((x) => x.id === t.formatId) ?? null : null;
+              return (
+                <RunCard
+                  key={r.id}
+                  run={r}
+                  template={t}
+                  format={f}
+                  templateName={templateName(r.templateId)}
+                  formatName={formatName(r.templateId)}
+                  onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id); }}
+                  onTogglePin={() => void togglePin(r.id)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div {...scrollProps}>
+        <div className="space-y-2">
           {collection.map((r) => {
             const t = templates.find((x) => x.id === r.templateId) ?? null;
             const f = t ? formats.find((x) => x.id === t.formatId) ?? null : null;
             return (
-              <RunCard
+              <RunRow
                 key={r.id}
                 run={r}
                 template={t}
@@ -149,26 +181,6 @@ export default function RunsPage() {
             );
           })}
         </div>
-      );
-    }
-    return (
-      <div className="space-y-2">
-        {collection.map((r) => {
-          const t = templates.find((x) => x.id === r.templateId) ?? null;
-          const f = t ? formats.find((x) => x.id === t.formatId) ?? null : null;
-          return (
-            <RunRow
-              key={r.id}
-              run={r}
-              template={t}
-              format={f}
-              templateName={templateName(r.templateId)}
-              formatName={formatName(r.templateId)}
-              onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id); }}
-              onTogglePin={() => void togglePin(r.id)}
-            />
-          );
-        })}
       </div>
     );
   };

@@ -409,7 +409,7 @@ function DesignerContent() {
       {/* Editor layout fills the content area */}
       <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className="w-full xl:w-[280px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 max-h-[46vh] xl:max-h-none">
+        <div className="w-full xl:w-[280px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 xl:max-h-none">
           <ElementList
             elements={currentTemplate.elements}
             selectedElementId={selectedElementId}

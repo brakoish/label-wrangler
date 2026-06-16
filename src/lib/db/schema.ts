@@ -96,3 +96,22 @@ export const runs = pgTable("runs", {
   updatedAt: text("updated_at").notNull(),
   completedAt: text("completed_at"),
 });
+
+// Append-only print/export activity for a run. Kept separate from `runs`
+// so progress (`printedCount`) stays fast and simple while reprints/sheet
+// confirmations still leave an auditable trail.
+export const runPrintEvents = pgTable("run_print_events", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => runs.id),
+  eventType: text("event_type").notNull(),
+  output: text("output").notNull(),
+  rangeFrom: integer("range_from").notNull(),
+  rangeTo: integer("range_to").notNull(),
+  labelCount: integer("label_count").notNull(),
+  printedCountAfter: integer("printed_count_after"),
+  printerName: text("printer_name"),
+  message: text("message"),
+  createdAt: text("created_at").notNull(),
+});

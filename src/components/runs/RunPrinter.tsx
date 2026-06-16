@@ -1,16 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode, Download, FileText, FileCode2 } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode, Download, FileText, FileCode2, Search } from 'lucide-react';
 import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import type { LabelTemplate, LabelFormat } from '@/lib/types';
+import type { LabelTemplate, LabelFormat, RunPrintEvent } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
+import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
 import {
@@ -30,9 +31,33 @@ import {
 
 type Transport = 'dazzle' | 'webusb';
 
+function runSourceMeta(source: string) {
+  if (source === 'csv') return { label: 'CSV import', fieldLabel: 'CSV', icon: FileSpreadsheet };
+  if (source === 'manifest') return { label: 'Manifest rows', fieldLabel: 'Manifest', icon: Search };
+  if (source === 'manual') return { label: 'Manual rows', fieldLabel: 'Manual', icon: Pencil };
+  return { label: 'Pasted rows', fieldLabel: 'Paste', icon: Clipboard };
+}
+
 interface RunPrinterProps {
   runId: string;
   onDone?: () => void;
+}
+
+function formatEventTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+function printEventLabel(event: RunPrintEvent) {
+  const range = `${event.rangeFrom}-${event.rangeTo}`;
+  if (event.eventType === 'opened') return `Opened ${event.output} labels ${range}`;
+  if (event.eventType === 'confirmed') return `Printed ${event.output} labels ${range}`;
+  if (event.eventType === 'failed') return `Failed ${event.output} labels ${range}`;
+  if (event.eventType === 'cancelled') return `Cancelled ${event.output} labels ${range}`;
+  return `${event.message || 'Sent'} labels ${range}`;
 }
 
 /**
@@ -41,7 +66,7 @@ interface RunPrinterProps {
  * batches with a live progress bar, pause/resume, and cancel.
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
-  const { runs, updateRun, setRunStatus } = useRunStore();
+  const { runs, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent } = useRunStore();
   const { templates } = useTemplateStore();
   const { formats } = useFormatStore();
 
@@ -81,6 +106,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [exportTo, setExportTo] = useState(0); // 0 = use total at render
   const [exporting, setExporting] = useState<'zpl' | 'pdf' | null>(null);
   const [exportProgress, setExportProgress] = useState(0);
+  const [pendingSheetRange, setPendingSheetRange] = useState<{ from: number; to: number } | null>(null);
 
   // Inline run editing
   const [showEdit, setShowEdit] = useState(false);
@@ -90,6 +116,15 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [saving, setSaving] = useState(false);
 
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
+
+  const eventsForRun = useMemo(
+    () => printEvents.filter((event) => event.runId === runId),
+    [printEvents, runId],
+  );
+
+  useEffect(() => {
+    void fetchPrintEvents(runId);
+  }, [fetchPrintEvents, runId]);
 
   // Detect transport once on mount.
   useEffect(() => {
@@ -203,6 +238,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const out: Array<{ field: string; source: string; sample: string }> = [];
     const row0 = run.sourceData[0];
     const isObjRow = row0 && typeof row0 === 'object' && !Array.isArray(row0);
+    const sourceMeta = runSourceMeta(run.dataSource);
     const fieldsSeen = new Set<string>();
     for (const el of template.elements) {
       if (el.isStatic) continue;
@@ -220,7 +256,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         }
         out.push({
           field: f,
-          source: col === '__paste__' ? 'pasted values' : `CSV → ${col}`,
+          source: col === '__paste__' ? 'pasted values' : `${sourceMeta.fieldLabel} → ${col}`,
           sample,
         });
       } else if (run.mappedField === f && typeof row0 === 'string') {
@@ -267,13 +303,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       },
     };
 
+    const printRange = normalizeLabelRange({
+      total,
+      fallbackFrom: printedCount + 1,
+      fallbackTo: stopAt > 0 ? Math.min(stopAt, total) : total,
+    });
     // The queue tracks feeds internally (startIndex/done are feed counts).
     // We convert between physical-label count (what the user + DB see) and
     // feed count (what the queue consumes) at the boundary so multi-across
     // progress bars behave intuitively.
-    const startFeed = Math.floor(printedCount / across);
-    // If stopAt is set, slice labels so the queue stops at that physical label.
-    const stopFeed = stopAt > 0 ? Math.ceil(Math.min(stopAt, total) / across) : labels.length;
+    const { startFeed, stopFeed } = feedRangeForLabels(printRange, across);
     const labelsToSend = stopFeed < labels.length ? labels.slice(0, stopFeed) : labels;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
@@ -286,9 +325,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         setPrintedCount(physical);
         // Fire-and-forget DB update — don't block printing on persistence.
         void persistProgress(physical);
-        if (feedsDone >= labels.length) {
+        if (feedsDone >= labelsToSend.length) {
           setStatus('completed');
           await setRunStatus(run.id, 'completed', physical);
+          await createPrintEvent(run.id, {
+            eventType: 'confirmed',
+            output: 'roll-zpl',
+            rangeFrom: printRange.from,
+            rangeTo: printRange.to,
+            labelCount: labelRangeCount(printRange),
+            printedCountAfter: physical,
+            printerName: transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null,
+            message: null,
+          });
         }
       },
       onError: async (err, atFeed) => {
@@ -297,6 +346,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         // Persist physical-label count corresponding to the failed feed.
         const atPhysical = Math.min(atFeed * across, total);
         await setRunStatus(run.id, 'paused', atPhysical);
+        await createPrintEvent(run.id, {
+          eventType: 'failed',
+          output: 'roll-zpl',
+          rangeFrom: printRange.from,
+          rangeTo: printRange.to,
+          labelCount: labelRangeCount(printRange),
+          printedCountAfter: atPhysical,
+          printerName: transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null,
+          message: (err as Error)?.message || 'Print failed',
+        });
       },
     });
 
@@ -312,7 +371,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const handleCancel = async () => {
     queueRef.current?.cancel();
     setStatus('cancelled');
-    if (run) await setRunStatus(run.id, 'cancelled', printedCount);
+    if (run) {
+      await setRunStatus(run.id, 'cancelled', printedCount);
+      await createPrintEvent(run.id, {
+        eventType: 'cancelled',
+        output: 'roll-zpl',
+        rangeFrom: Math.min(total, printedCount + 1),
+        rangeTo: stopAt > 0 ? Math.min(stopAt, total) : total,
+        labelCount: Math.max(0, (stopAt > 0 ? Math.min(stopAt, total) : total) - printedCount),
+        printedCountAfter: printedCount,
+        printerName: transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null,
+        message: null,
+      });
+    }
   };
 
   // Jump back to label N (1-based) and put the run back in 'paused' so Start
@@ -338,12 +409,64 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     await setRunStatus(run.id, 'queued', 0);
   };
 
+  const normalizeSheetRange = (range?: { from?: number; to?: number }) => normalizeLabelRange({
+    total,
+    from: range?.from,
+    to: range?.to,
+    fallbackFrom: printedCount + 1,
+    fallbackTo: stopAt > 0 ? Math.min(stopAt, total) : total,
+  });
+
   const sheetPrintHref = (range?: { from?: number; to?: number }) => {
+    const resolved = normalizeSheetRange(range);
     const params = new URLSearchParams({
-      from: String(range?.from ?? printedCount + 1),
-      to: String(range?.to ?? (stopAt > 0 ? Math.min(stopAt, total) : total)),
+      from: String(resolved.from),
+      to: String(resolved.to),
     });
     return `/runs/${runId}/print?${params.toString()}`;
+  };
+
+  const openSheetPrintRange = (range?: { from?: number; to?: number }) => {
+    const resolved = normalizeSheetRange(range);
+    const opened = window.open(sheetPrintHref(resolved), '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      setErrorMsg('Popup blocked. Allow popups, then try again.');
+      return;
+    }
+    setErrorMsg(null);
+    setPendingSheetRange(resolved);
+    if (run) {
+      void createPrintEvent(run.id, {
+        eventType: 'opened',
+        output: 'sheet-pdf',
+        rangeFrom: resolved.from,
+        rangeTo: resolved.to,
+        labelCount: labelRangeCount(resolved),
+        printedCountAfter: printedCount,
+        printerName: null,
+        message: 'Opened sheet print/PDF output',
+      });
+    }
+  };
+
+  const markSheetRangePrinted = async () => {
+    if (!run || !pendingSheetRange) return;
+    const nextPrinted = Math.max(printedCount, pendingSheetRange.to);
+    const nextStatus = nextPrinted >= total ? 'completed' : 'paused';
+    setPrintedCount(nextPrinted);
+    setStatus(nextStatus);
+    setPendingSheetRange(null);
+    await setRunStatus(run.id, nextStatus, nextPrinted);
+    await createPrintEvent(run.id, {
+      eventType: 'confirmed',
+      output: 'sheet-pdf',
+      rangeFrom: pendingSheetRange.from,
+      rangeTo: pendingSheetRange.to,
+      labelCount: labelRangeCount(pendingSheetRange),
+      printedCountAfter: nextPrinted,
+      printerName: null,
+      message: null,
+    });
   };
 
   // --- Edit handlers ---
@@ -378,17 +501,27 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setExporting('zpl');
     try {
       const allFeeds = generateLabelsForRun(run, template, format);
-      const from = Math.max(1, exportFrom);
-      const to = Math.min(total, resolvedExportTo);
-      const slice = allFeeds.slice(from - 1, to);
+      const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
+      const { startFeed, stopFeed } = feedRangeForLabels(range, across);
+      const slice = allFeeds.slice(startFeed, stopFeed);
       const content = slice.join('\n');
       const blob = new Blob([content], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${from}-${to}.zpl`;
+      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${range.from}-${range.to}.zpl`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await createPrintEvent(run.id, {
+        eventType: 'sent',
+        output: 'roll-zpl',
+        rangeFrom: range.from,
+        rangeTo: range.to,
+        labelCount: labelRangeCount(range),
+        printedCountAfter: null,
+        printerName: null,
+        message: 'Exported ZPL',
+      });
     } finally {
       setExporting(null);
     }
@@ -400,9 +533,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setExportProgress(0);
     try {
       const allFeeds = generateLabelsForRun(run, template, format);
-      const from = Math.max(1, exportFrom);
-      const to = Math.min(total, resolvedExportTo, from + 499); // hard cap: 500 labels
-      const slice = allFeeds.slice(from - 1, to);
+      const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
+      const cappedRange = normalizeLabelRange({ total, from: range.from, to: Math.min(range.to, range.from + 499) }); // hard cap: 500 labels
+      const { startFeed, stopFeed } = feedRangeForLabels(cappedRange, across);
+      const slice = allFeeds.slice(startFeed, stopFeed);
 
       const mod = await import('zpl-renderer-js');
       const { api } = await mod.ready;
@@ -436,9 +570,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${from}-${to}.pdf`;
+      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${cappedRange.from}-${cappedRange.to}.pdf`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await createPrintEvent(run.id, {
+        eventType: 'sent',
+        output: 'roll-pdf',
+        rangeFrom: cappedRange.from,
+        rangeTo: cappedRange.to,
+        labelCount: labelRangeCount(cappedRange),
+        printedCountAfter: null,
+        printerName: null,
+        message: 'Exported PDF',
+      });
     } finally {
       setExporting(null);
       setExportProgress(0);
@@ -519,8 +663,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Label Data</h2>
             <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
-              {run.dataSource === 'csv' ? <FileSpreadsheet className="w-3 h-3" /> : <Clipboard className="w-3 h-3" />}
-              {run.dataSource === 'csv' ? 'CSV import' : 'Pasted values'}
+              {(() => {
+                const SourceIcon = runSourceMeta(run.dataSource).icon;
+                return <SourceIcon className="w-3 h-3" />;
+              })()}
+              {runSourceMeta(run.dataSource).label}
             </span>
           </div>
           {mappingRows.length === 0 ? (
@@ -696,6 +843,28 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="h-3 rounded-full bg-zinc-900 overflow-hidden">
             <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{ width: `${pct}%` }} />
           </div>
+          {isSheetFormat && pendingSheetRange && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
+              <p className="text-xs text-amber-100">
+                Opened labels {pendingSheetRange.from}-{pendingSheetRange.to}. Mark this range printed after the sheet job finishes.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => void markSheetRangePrinted()}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-amber-500 text-black hover:bg-amber-400 transition-colors"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  Mark printed
+                </button>
+                <button
+                  onClick={() => setPendingSheetRange(null)}
+                  className="px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950/60 border border-zinc-800"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
           {errorMsg && (
             <p className="text-xs text-red-400 flex items-center gap-1.5">
               <AlertCircle className="w-3.5 h-3.5" /> {errorMsg}
@@ -725,15 +894,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {/* Controls */}
           <div className="flex items-center gap-2 pt-2">
             {isSheetFormat && printedCount < total && (
-              <Link
-                href={sheetPrintHref()}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => openSheetPrintRange()}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
               >
                 <FileText className="w-4 h-4" />
                 Open Print / PDF
-              </Link>
+              </button>
             )}
             {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
               <button
@@ -875,15 +1042,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     </button>
                   )}
                   {isSheetFormat ? (
-                    <Link
-                      href={sheetPrintHref({ from: exportFrom, to: resolvedExportTo })}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => openSheetPrintRange({ from: exportFrom, to: resolvedExportTo })}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
                     >
                       <FileText className="w-3 h-3" />
                       Print / PDF
-                    </Link>
+                    </button>
                   ) : (
                     <button
                       onClick={() => void handleExportPDF()}
@@ -904,6 +1069,27 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </div>
             )}
           </div>
+
+          {eventsForRun.length > 0 && (
+            <div className="pt-3 border-t border-zinc-800/60 space-y-2">
+              <h3 className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Print history</h3>
+              <div className="space-y-1">
+                {eventsForRun.slice(0, 5).map((event) => (
+                  <div key={event.id} className="flex items-center justify-between gap-3 rounded-md bg-zinc-950/40 px-2 py-1.5 text-[11px]">
+                    <span className={
+                      event.eventType === 'confirmed' ? 'text-emerald-400' :
+                      event.eventType === 'failed' ? 'text-red-400' :
+                      event.eventType === 'cancelled' ? 'text-yellow-400' :
+                      'text-zinc-300'
+                    }>
+                      {printEventLabel(event)}
+                    </span>
+                    <span className="shrink-0 text-zinc-600">{formatEventTime(event.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
           </div>

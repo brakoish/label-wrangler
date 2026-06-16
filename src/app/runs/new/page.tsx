@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil } from 'lucide-react';
+import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -18,6 +18,12 @@ import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
+
+const PASTE_COLUMN = '__paste__';
+const MANIFEST_HEADERS = ['itemName', 'tag', 'batch', 'brandName', 'quantity', 'unitOfMeasure', 'packagedDate'];
+
+type RunInputMode = 'manual' | 'paste' | 'csv' | 'manifest';
+type ManifestRow = Record<string, string>;
 
 function NewRunContent() {
   const router = useRouter();
@@ -38,11 +44,15 @@ function NewRunContent() {
   const [templateId, setTemplateId] = useState('');
   const [staticValues, setStaticValues] = useState<Record<string, string>>({});
   const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
-  const [inputMode, setInputMode] = useState<'manual' | 'paste' | 'csv'>('manual');
+  const [inputMode, setInputMode] = useState<RunInputMode>('manual');
   const [pasteText, setPasteText] = useState('');
   const [pasteField, setPasteField] = useState<string | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
+  const [manifestSearch, setManifestSearch] = useState('');
+  const [manifestRows, setManifestRows] = useState<ManifestRow[]>([]);
+  const [manifestError, setManifestError] = useState<string | null>(null);
+  const [isSearchingManifest, setIsSearchingManifest] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [manualQty, setManualQty] = useState(1);
@@ -83,15 +93,26 @@ function NewRunContent() {
     setTemplateId(src.templateId);
     setStaticValues(src.staticValues || {});
     setFieldMappings(src.fieldMappings || {});
-    // Source data shape: if the original run used CSV (object rows), switch
-    // to CSV mode and reconstruct headers from the first row's keys. If it
-    // was paste mode (string rows), switch to paste and join with newlines.
+    // Source data is migrating toward one row-object shape. Older paste runs
+    // may still be string arrays, and newer paste runs use a synthetic column.
     const sd = src.sourceData as (string[] | Record<string, string>[]);
     if (sd.length > 0 && typeof sd[0] === 'object' && !Array.isArray(sd[0])) {
-      const headers = Object.keys(sd[0] as Record<string, string>);
-      setInputMode('csv');
-      setCsvHeaders(headers);
-      setCsvRows(sd as Record<string, string>[]);
+      const rows = sd as Record<string, string>[];
+      const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+      const pasteMappedField = Object.entries(src.fieldMappings || {}).find(([, mapping]) => mapping.csvColumn === PASTE_COLUMN)?.[0] ?? src.mappedField;
+      if (src.dataSource === 'paste' || headers.includes(PASTE_COLUMN)) {
+        setInputMode('paste');
+        setPasteText(rows.map((row) => row[PASTE_COLUMN] ?? '').filter(Boolean).join('\n'));
+        if (pasteMappedField) setPasteField(pasteMappedField);
+      } else {
+        setInputMode(src.dataSource === 'manual' ? 'manual' : src.dataSource === 'manifest' ? 'manifest' : 'csv');
+        if (src.dataSource === 'manifest') {
+          setManifestRows(rows as ManifestRow[]);
+        } else {
+          setCsvHeaders(headers);
+          setCsvRows(rows);
+        }
+      }
     } else if (sd.length > 0 && typeof sd[0] === 'string') {
       setInputMode('paste');
       setPasteText((sd as string[]).join('\n'));
@@ -213,6 +234,27 @@ function NewRunContent() {
     applyAutoColumnMapping(parsed.headers, parsed.rows);
   };
 
+  const handleManifestSearch = async () => {
+    const query = manifestSearch.trim();
+    if (query.length < 2) return;
+    setIsSearchingManifest(true);
+    setManifestError(null);
+    try {
+      const res = await fetch(`/api/nabis/search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Manifest search failed');
+      const rows = Array.isArray(data.packages) ? data.packages as ManifestRow[] : [];
+      setManifestRows(rows);
+      applyAutoColumnMapping(MANIFEST_HEADERS, rows);
+      if (data.error) setManifestError(data.error);
+    } catch (error) {
+      setManifestError(error instanceof Error ? error.message : 'Manifest search failed');
+      setManifestRows([]);
+    } finally {
+      setIsSearchingManifest(false);
+    }
+  };
+
   // List of fields mapped to columns (variable fields).
   const variableFields = useMemo(
     () => dynamicFields.filter((f) => fieldMappings[f]?.mode === 'column' && fieldMappings[f]?.csvColumn),
@@ -231,17 +273,24 @@ function NewRunContent() {
     setPasteField(qr ?? dynamicFields[0] ?? null);
   }, [template, dynamicFields, pasteField]);
 
-  // Compute the effective sourceData based on input mode.
-  const sourceData = useMemo<string[] | Record<string, string>[]>(() => {
+  // Compute the effective sourceData based on input mode. New runs always use
+  // row objects so manual/paste/CSV/Manifest can feed the same downstream shape.
+  const sourceData = useMemo<Record<string, string>[]>(() => {
     if (inputMode === 'manual') {
-      // Repeat the same static values N times.
-      return Array.from({ length: Math.max(1, manualQty) }, () => ({}));
+      return Array.from({ length: Math.max(1, manualQty) }, () => ({ ...staticValues }));
     }
     if (inputMode === 'paste') {
-      return pasteText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      return pasteText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((value) => ({ [PASTE_COLUMN]: value }));
+    }
+    if (inputMode === 'manifest') {
+      return manifestRows;
     }
     return csvRows;
-  }, [inputMode, pasteText, csvRows, manualQty]);
+  }, [inputMode, pasteText, csvRows, manifestRows, manualQty, staticValues]);
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
@@ -249,9 +298,7 @@ function NewRunContent() {
     const values: Record<string, string> = { ...staticValues };
     const row = sourceData[index];
 
-    if (typeof row === 'string' && pasteField) {
-      values[pasteField] = row;
-    } else if (row && typeof row === 'object' && !Array.isArray(row)) {
+    if (row && typeof row === 'object' && !Array.isArray(row)) {
       for (const [field, mapping] of Object.entries(fieldMappings)) {
         if (mapping.mode === 'column' && mapping.csvColumn) {
           values[field] = (row as Record<string, string>)[mapping.csvColumn] ?? '';
@@ -259,7 +306,7 @@ function NewRunContent() {
       }
     }
     return values;
-  }, [staticValues, fieldMappings, sourceData, pasteField]);
+  }, [staticValues, fieldMappings, sourceData]);
 
   // Preview values for the current row.
   const previewValues = useMemo(() => previewValuesForIndex(previewIndex), [previewValuesForIndex, previewIndex]);
@@ -287,29 +334,32 @@ function NewRunContent() {
     return generateZPL(template, format, previewValues);
   }, [template, format, previewValues]);
 
+  const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
+
   const canCreate =
     name.trim().length > 0 &&
     !!template &&
     !!format &&
     (inputMode === 'manual'
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
-      : labelCount > 0 && (inputMode === 'csv' ? variableFields.length > 0 : !!pasteField));
+      : labelCount > 0 && (inputMode === 'csv' || inputMode === 'manifest' ? variableFields.length > 0 : !!pasteField));
 
   const handleCreateRun = async (autoStart = false) => {
     if (!canCreate || !template) return null;
     let finalMappings = fieldMappings;
     let legacyField: string | null = null;
-    let finalSourceData = sourceData;
+    let finalSourceData: Record<string, string>[] = sourceData;
     if (inputMode === 'manual') {
-      // Manual mode: all fields are static, sourceData repeats N times.
-      finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
+      // Manual mode: all fields are static, but the run still has one row per
+      // label so history, preview, and future adapters all count the same way.
+      finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({ ...staticValues }));
       finalMappings = {};
       for (const f of dynamicFields) {
         finalMappings[f] = { mode: 'static' };
       }
     } else if (inputMode === 'paste' && pasteField) {
       // Paste mode: model as a column mapping with a synthetic column key.
-      finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: '__paste__' } };
+      finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
       legacyField = pasteField;
     }
     const run = await createRun({
@@ -318,7 +368,7 @@ function NewRunContent() {
       presetId: presetId ?? null,
       staticValues,
       fieldMappings: finalMappings,
-      dataSource: inputMode === 'manual' ? 'csv' : (inputMode as RunDataSource),
+      dataSource: inputMode as RunDataSource,
       sourceData: finalSourceData,
       mappedField: legacyField,
       status: autoStart ? 'queued' : 'draft',
@@ -501,6 +551,12 @@ function NewRunContent() {
                     >
                       <FileSpreadsheet className="w-3 h-3" /> CSV
                     </button>
+                    <button
+                      onClick={() => setInputMode('manifest')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manifest' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      <Search className="w-3 h-3" /> Manifest
+                    </button>
                   </div>
                 </div>
 
@@ -557,7 +613,7 @@ function NewRunContent() {
                       />
                     </div>
                   </>
-                ) : (
+                ) : inputMode === 'csv' ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
@@ -591,16 +647,49 @@ function NewRunContent() {
                       </p>
                     )}
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        value={manifestSearch}
+                        onChange={(e) => setManifestSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void handleManifestSearch();
+                        }}
+                        placeholder="Search package tag, item, or batch"
+                        className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                      />
+                      <button
+                        onClick={handleManifestSearch}
+                        disabled={manifestSearch.trim().length < 2 || isSearchingManifest}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-300 transition-colors disabled:opacity-40"
+                      >
+                        <Search className="w-4 h-4" /> {isSearchingManifest ? 'Searching' : 'Search'}
+                      </button>
+                    </div>
+                    {manifestError && <p className="text-xs text-amber-500">{manifestError}</p>}
+                    {manifestRows.length > 0 && (
+                      <div className="max-h-48 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950/50">
+                        {manifestRows.map((row) => (
+                          <div key={row.id ?? row.tag ?? `${row.itemName}-${row.batch}`} className="grid grid-cols-[1.5fr_1fr_1fr] gap-3 border-b border-zinc-900 px-3 py-2 text-xs last:border-b-0">
+                            <span className="truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
+                            <span className="truncate font-mono text-zinc-400" title={row.tag}>{row.tag || '(no tag)'}</span>
+                            <span className="truncate text-zinc-500" title={row.batch}>{row.batch || '(no batch)'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </section>
 
-              {/* Field mapping (CSV mode only, after upload) */}
-              {inputMode === 'csv' && csvHeaders.length > 0 && (
+              {/* Field mapping for row-backed sources. */}
+              {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
                 <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
                   <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Field Mapping</h2>
                   <p className="text-xs text-zinc-500">
                     For each dynamic field, pick <span className="text-zinc-300">Static</span> (one value for all labels) or
-                    <span className="text-zinc-300"> Column</span> (a different value per row from your CSV).
+                    <span className="text-zinc-300"> Row field</span> (a different value per row from {inputMode === 'manifest' ? 'Manifest' : 'your CSV'}).
                   </p>
                   <div className="space-y-2">
                     {dynamicFields.map((field) => {
@@ -616,10 +705,10 @@ function NewRunContent() {
                               Static
                             </button>
                             <button
-                              onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? csvHeaders[0] } }))}
+                              onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? rowHeaders[0] } }))}
                               className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
                             >
-                              Column
+                              Row
                             </button>
                           </div>
                           {mapping.mode === 'column' ? (
@@ -627,7 +716,7 @@ function NewRunContent() {
                               <CustomSelect
                                 value={mapping.csvColumn ?? ''}
                                 onChange={(v) => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: v } }))}
-                                options={csvHeaders.map((h) => ({ value: h, label: h }))}
+                                options={rowHeaders.map((h) => ({ value: h, label: h }))}
                               />
                             </div>
                           ) : (
@@ -739,8 +828,8 @@ function NewRunContent() {
                     <AlertCircle className="w-3.5 h-3.5" />
                     {inputMode === 'manual'
                       ? 'Fill in all dynamic fields to proceed.'
-                      : inputMode === 'csv' && variableFields.length === 0
-                        ? 'Map at least one field to a CSV column to proceed.'
+                      : (inputMode === 'csv' || inputMode === 'manifest') && variableFields.length === 0
+                        ? 'Map at least one field to a row field to proceed.'
                         : 'Need a run name, template, and data to proceed.'}
                   </p>
                 )}
