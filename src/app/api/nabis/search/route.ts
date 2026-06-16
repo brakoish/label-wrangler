@@ -101,12 +101,16 @@ function cleanDecimalValue(value: unknown): string {
 
 function cleanDate(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
+    return formatShortDate(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
   }
   const text = cleanText(value);
-  const datePart = text.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
-  if (datePart) return datePart;
+  const datePart = text.match(/^(\d{4})-(\d{2})-(\d{2})/)?.slice(1, 4).map(Number);
+  if (datePart) return formatShortDate(datePart[0], datePart[1], datePart[2]);
   return text;
+}
+
+function formatShortDate(year: number, month: number, day: number): string {
+  return `${month}/${day}/${String(year).slice(-2)}`;
 }
 
 function mgGFromPercent(value: string): string {
