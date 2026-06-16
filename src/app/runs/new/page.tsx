@@ -29,8 +29,17 @@ const FIELD_ALIASES: Record<string, string[]> = {
   size: ['quantity'],
   tac: ['tacPercent'],
   tacpercent: ['tacPercent'],
+  totalcannabinoids: ['tacPercent'],
+  totalcannabinoidspercent: ['tacPercent'],
+  totalactivecannabinoids: ['tacPercent'],
+  totalactivecannabinoidspercent: ['tacPercent'],
   tacmg: ['tacMgG'],
   tacmgg: ['tacMgG'],
+  tacmggg: ['tacMgG'],
+  totalcannabinoidsmg: ['tacMgG'],
+  totalcannabinoidsmgg: ['tacMgG'],
+  totalactivecannabinoidsmg: ['tacMgG'],
+  totalactivecannabinoidsmgg: ['tacMgG'],
   thc: ['thcPercent'],
   thcpercent: ['thcPercent'],
   thcmg: ['thcMgG'],
@@ -308,6 +317,13 @@ function NewRunContent() {
       setIsSearchingManifest(false);
     }
   };
+
+  useEffect(() => {
+    if (inputMode !== 'manifest' || manifestRows.length === 0) return;
+    applyAutoColumnMapping(MANIFEST_HEADERS, manifestRows);
+    // Re-run Manifest auto-mapping when template fields appear or change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicFields, inputMode, manifestRows, template?.id]);
 
   // List of fields mapped to columns (variable fields).
   const variableFields = useMemo(
