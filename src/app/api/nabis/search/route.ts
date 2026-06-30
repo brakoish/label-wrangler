@@ -96,6 +96,19 @@ function cleanDecimalValue(value: unknown): string {
   return number.toFixed(2).replace(/\.?0+$/, '');
 }
 
+function cleanPositiveDecimalValue(value: unknown): string {
+  return hasPositiveNumber(value) ? cleanDecimalValue(value) : '';
+}
+
+function sumDecimalValues(...values: string[]): string {
+  const total = values.reduce((sum, value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? sum + number : sum;
+  }, 0);
+
+  return total > 0 ? cleanDecimalValue(total) : '';
+}
+
 function cleanDate(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return formatShortDate(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
@@ -123,13 +136,19 @@ function hasPositiveNumber(value: unknown): boolean {
 function normalizePackage(pkg: ManifestPackage) {
   const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
+  const thcPercent = cleanDecimalValue(pkg.thcPercent);
+  const thcMgG = cleanDecimalValue(pkg.thcMgG);
+  const cbdPercent = cleanDecimalValue(pkg.cbdPercent);
+  const cbdMgG = cleanDecimalValue(pkg.cbdMgG);
   const tacPercent =
-    cleanDecimalValue(pkg.tacPercent) ||
-    cleanDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
-    cleanDecimalValue(pkg.totalActiveCannabinoids);
+    cleanPositiveDecimalValue(pkg.tacPercent) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids) ||
+    sumDecimalValues(thcPercent, cbdPercent);
   const tacMgG =
-    cleanDecimalValue(pkg.tacMgG) ||
-    cleanDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
+    cleanPositiveDecimalValue(pkg.tacMgG) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
+    sumDecimalValues(thcMgG, cbdMgG) ||
     mgGFromPercent(tacPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
@@ -160,11 +179,11 @@ function normalizePackage(pkg: ManifestPackage) {
     useByDate: cleanDate(pkg.useByDate),
     retailId: cleanText(pkg.retailId),
     retailIdSource: cleanText(pkg.retailIdSource),
-    thcPercent: cleanDecimalValue(pkg.thcPercent),
-    thcMgG: cleanDecimalValue(pkg.thcMgG),
+    thcPercent,
+    thcMgG,
     thcMgPackage: cleanDecimalValue(pkg.thcMgPackage),
-    cbdPercent: cleanDecimalValue(pkg.cbdPercent),
-    cbdMgG: cleanDecimalValue(pkg.cbdMgG),
+    cbdPercent,
+    cbdMgG,
     cbdMgPackage: cleanDecimalValue(pkg.cbdMgPackage),
     tacPercent,
     tacMgG,
@@ -181,6 +200,8 @@ function extractTacFromLabResults(results: unknown): string {
     if (
       name.startsWith('total active cannabinoids (%)') ||
       name.startsWith('total active cannabinoid (%)') ||
+      name.startsWith('total active cannabinoids') ||
+      name.startsWith('total active cannabinoid') ||
       name.startsWith('tac (%)')
     ) {
       const value = cleanValue(result.TestResultLevel);
@@ -327,7 +348,9 @@ async function enrichWithManifestLabelData(packages: ReturnType<typeof normalize
     packages.slice(0, 25).map(async (pkg) => {
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
       const labPkg = await rowWithMetrcLabFallback(pkg);
-      return rows && rows.length > 0 ? rows : rowsWithMetrcRetailIds(labPkg);
+      return rows && rows.length > 0
+        ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row)))
+        : rowsWithMetrcRetailIds(labPkg);
     }),
   );
   return enriched.flat();
