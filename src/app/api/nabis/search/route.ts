@@ -100,15 +100,6 @@ function cleanPositiveDecimalValue(value: unknown): string {
   return hasPositiveNumber(value) ? cleanDecimalValue(value) : '';
 }
 
-function sumDecimalValues(...values: string[]): string {
-  const total = values.reduce((sum, value) => {
-    const number = Number(value);
-    return Number.isFinite(number) && number > 0 ? sum + number : sum;
-  }, 0);
-
-  return total > 0 ? cleanDecimalValue(total) : '';
-}
-
 function cleanDate(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return formatShortDate(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
@@ -143,12 +134,10 @@ function normalizePackage(pkg: ManifestPackage) {
   const tacPercent =
     cleanPositiveDecimalValue(pkg.tacPercent) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
-    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids) ||
-    sumDecimalValues(thcPercent, cbdPercent);
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids);
   const tacMgG =
     cleanPositiveDecimalValue(pkg.tacMgG) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
-    sumDecimalValues(thcMgG, cbdMgG) ||
     mgGFromPercent(tacPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
