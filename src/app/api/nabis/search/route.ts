@@ -77,6 +77,12 @@ type MetrcLabResult = {
   TestResultLevel?: number | string | null;
 };
 
+type LabPotency = {
+  thcPercent: string;
+  thcMgPackage: string;
+  tacPercent: string;
+};
+
 function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -183,30 +189,40 @@ function normalizePackage(pkg: ManifestPackage) {
   };
 }
 
-function extractTacFromLabResults(results: unknown): string {
+function extractPotencyFromLabResults(results: unknown): LabPotency {
   const rows = Array.isArray(results) ? results : [];
+  const potency: LabPotency = { thcPercent: '', thcMgPackage: '', tacPercent: '' };
+
   for (const result of rows as MetrcLabResult[]) {
     const name = cleanText(result.TestTypeName).toLowerCase();
-    if (
+    const value = cleanValue(result.TestResultLevel);
+    if (!hasPositiveNumber(value)) continue;
+
+    if (name.startsWith('total thc (%)')) {
+      potency.thcPercent = potency.thcPercent || cleanDecimalValue(value);
+    } else if (name.startsWith('total thc (mg/package)')) {
+      potency.thcMgPackage = potency.thcMgPackage || cleanDecimalValue(value);
+    } else if (
       name.startsWith('total active cannabinoids (%)') ||
       name.startsWith('total active cannabinoid (%)') ||
       name.startsWith('total active cannabinoids') ||
       name.startsWith('total active cannabinoid') ||
       name.startsWith('tac (%)')
     ) {
-      const value = cleanValue(result.TestResultLevel);
-      if (hasPositiveNumber(value)) return cleanDecimalValue(value);
+      potency.tacPercent = potency.tacPercent || cleanDecimalValue(value);
     }
   }
-  return '';
+
+  return potency;
 }
 
-async function fetchMetrcTacPercent(packageId: string): Promise<string> {
+async function fetchMetrcLabPotency(packageId: string): Promise<LabPotency> {
   const baseUrl = process.env.METRC_BASE_URL;
   const license = process.env.METRC_LICENSE_DISTRIBUTOR;
   const integratorKey = process.env.METRC_INTEGRATOR_KEY;
   const userKey = process.env.METRC_USER_KEY;
-  if (!baseUrl || !license || !integratorKey || !userKey || !packageId) return '';
+  const empty: LabPotency = { thcPercent: '', thcMgPackage: '', tacPercent: '' };
+  if (!baseUrl || !license || !integratorKey || !userKey || !packageId) return empty;
 
   const endpoint = new URL('/labtests/v2/results', baseUrl);
   endpoint.searchParams.set('packageId', packageId);
@@ -220,9 +236,9 @@ async function fetchMetrcTacPercent(packageId: string): Promise<string> {
     cache: 'no-store',
   });
 
-  if (!response.ok) return '';
+  if (!response.ok) return empty;
   const data = await response.json();
-  return extractTacFromLabResults(Array.isArray(data) ? data : data?.Data);
+  return extractPotencyFromLabResults(Array.isArray(data) ? data : data?.Data);
 }
 
 function expandRanges(ranges: unknown): number[] {
@@ -302,16 +318,28 @@ async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>) 
   });
 }
 
-async function rowWithMetrcLabFallback(pkg: ReturnType<typeof normalizePackage>) {
-  if (hasPositiveNumber(pkg.tacPercent) || !pkg.metrcPackageId) return pkg;
+async function rowWithMetrcLabFallback(
+  pkg: ReturnType<typeof normalizePackage>,
+  options: { preferLabThc?: boolean } = {},
+) {
+  if (!pkg.metrcPackageId) return pkg;
+  if (!options.preferLabThc && hasPositiveNumber(pkg.tacPercent)) return pkg;
 
-  const tacPercent = await fetchMetrcTacPercent(pkg.metrcPackageId).catch(() => '');
-  if (!tacPercent) return pkg;
+  const potency = await fetchMetrcLabPotency(pkg.metrcPackageId).catch(() => ({
+    thcPercent: '',
+    thcMgPackage: '',
+    tacPercent: '',
+  }));
+  const thcPercent = options.preferLabThc ? potency.thcPercent || pkg.thcPercent : pkg.thcPercent;
+  const tacPercent = hasPositiveNumber(pkg.tacPercent) ? pkg.tacPercent : potency.tacPercent;
 
   return {
     ...pkg,
+    thcPercent,
+    thcMgG: potency.thcPercent ? mgGFromPercent(potency.thcPercent) : pkg.thcMgG,
+    thcMgPackage: potency.thcMgPackage || pkg.thcMgPackage,
     tacPercent,
-    tacMgG: mgGFromPercent(tacPercent),
+    tacMgG: potency.tacPercent ? mgGFromPercent(potency.tacPercent) : pkg.tacMgG,
   };
 }
 
@@ -333,13 +361,16 @@ async function fetchManifestLabelRows(packageTag: string) {
   return rowsFromLabelData(data as ManifestPackage);
 }
 
-async function enrichWithManifestLabelData(packages: ReturnType<typeof normalizePackage>[]) {
+async function enrichWithManifestLabelData(
+  packages: ReturnType<typeof normalizePackage>[],
+  options: { preferLabThc?: boolean } = {},
+) {
   const enriched = await Promise.all(
     packages.slice(0, 25).map(async (pkg) => {
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
-      const labPkg = await rowWithMetrcLabFallback(pkg);
+      const labPkg = await rowWithMetrcLabFallback(pkg, options);
       return rows && rows.length > 0
-        ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row)))
+        ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row, options)))
         : rowsWithMetrcRetailIds(labPkg);
     }),
   );
@@ -462,23 +493,28 @@ export async function GET(request: NextRequest) {
   const endpoint = new URL(`${manifestBase.replace(/\/$/, '')}/packages`);
   endpoint.searchParams.set('search', search);
   endpoint.searchParams.set('status', 'active');
+  const isExactPackageSearch = looksLikeMetrcPackageTag(search);
 
   try {
     const databasePackages = await searchManifestDatabase(search);
     if (databasePackages && databasePackages.length > 0) {
-      return NextResponse.json({ packages: await enrichWithManifestLabelData(databasePackages) });
+      return NextResponse.json({
+        packages: await enrichWithManifestLabelData(databasePackages, { preferLabThc: isExactPackageSearch }),
+      });
     }
 
-    const labelRows = looksLikeMetrcPackageTag(search)
-      ? await fetchManifestLabelRows(search).catch(() => null)
-      : null;
+    const labelRows = isExactPackageSearch ? await fetchManifestLabelRows(search).catch(() => null) : null;
     if (labelRows && labelRows.length > 0) {
-      return NextResponse.json({ packages: labelRows });
+      return NextResponse.json({
+        packages: await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true }))),
+      });
     }
 
     const metrcPackages = await searchMetrcByExactTag(search);
     if (metrcPackages && metrcPackages.length > 0) {
-      return NextResponse.json({ packages: await enrichWithManifestLabelData(metrcPackages) });
+      return NextResponse.json({
+        packages: await enrichWithManifestLabelData(metrcPackages, { preferLabThc: isExactPackageSearch }),
+      });
     }
 
     if (databasePackages) {
