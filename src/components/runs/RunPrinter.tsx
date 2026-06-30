@@ -14,6 +14,7 @@ import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
+import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -1182,25 +1183,14 @@ function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: L
     if (!zpl) return;
     (async () => {
       try {
-        const mod = await import('zpl-renderer-js');
-        const { api } = await mod.ready;
-        // Multi-across: render the full liner width so all N labels fit in the preview.
-        const across = Math.max(1, format.labelsAcross || 1);
-        const gapIn = format.horizontalGapThermal || 0;
-        const sideIn = format.sideMarginThermal || 0;
-        const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
-        const linerIn = format.linerWidth || computedLinerIn;
-        const widthMm = linerIn * 25.4;
-        const heightMm = format.height * 25.4;
-        const dpmm = Math.round((format.dpi || 203) / 25.4);
-        const b64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
-        if (!cancelled) setUrl(`data:image/png;base64,${b64}`);
+        const nextUrl = await renderZplToDataUrl(zpl, format);
+        if (!cancelled) setUrl(nextUrl);
       } catch (e) {
         if (!cancelled) setErr((e as Error)?.message || 'Render failed');
       }
     })();
     return () => { cancelled = true; };
-  }, [zpl, format.width, format.height, format.dpi, format.horizontalGapThermal, format.labelsAcross, format.linerWidth, format.sideMarginThermal]);
+  }, [zpl, format]);
 
   if (err) return <p className="text-[11px] text-red-400">{err}</p>;
   if (!url) return <p className="text-[11px] text-zinc-500">Rendering…</p>;

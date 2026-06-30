@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
+import { generateZPL } from '@/lib/zplGenerator';
+import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -630,7 +632,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
       // Text handles its own rotation to match ZPL's field-origin rotation.
       return <TextElementRenderer key={element.id} element={element as TextElement} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} transform={transform} testData={testData} />;
+      return <QRElementRenderer key={element.id} element={element as QRElement} format={format} transform={transform} testData={testData} />;
     case 'barcode':
       return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} testData={testData} />;
     case 'line':
@@ -823,24 +825,78 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   );
 }
 
-function QRElementRenderer({ element, transform, testData }: { element: QRElement; transform?: string; format?: LabelFormat; testData?: Record<string, string> }) {
+function QRElementRenderer({ element, format, transform, testData }: { element: QRElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
   const [dataUrl, setDataUrl] = useState<string>('');
   const content = resolveElementContent(element, testData) || 'QR';
 
   useEffect(() => {
-    // Use toDataURL instead of toCanvas — canvas elements can't exist inside SVG.
-    // margin: 0 so the SVG QR fills its full element.width/height bounding box
-    // cleanly — makes it simple to design around in the canvas. The bottom ZPL
-    // preview shows exactly what will print with the actual quiet zone.
-    QRCode.toDataURL(content, {
+    let active = true;
+    setDataUrl('');
+
+    const renderBrowserQr = () => QRCode.toDataURL(content, {
       errorCorrectionLevel: element.errorCorrection,
       width: 256,
       margin: 0,
       color: { dark: '#000000', light: '#ffffff' },
-    }).then((url: string) => {
-      setDataUrl(url);
-    }).catch(() => {});
-  }, [content, element.errorCorrection]);
+    });
+
+    if (format.type !== 'thermal') {
+      renderBrowserQr()
+        .then((url: string) => { if (active) setDataUrl(url); })
+        .catch(() => { if (active) setDataUrl(''); });
+      return () => { active = false; };
+    }
+
+    const dpi = format.dpi || 203;
+    const widthDots = Math.max(1, Math.round(element.width));
+    const heightDots = Math.max(1, Math.round(element.height));
+    const zplElement: QRElement = {
+      ...element,
+      x: 0,
+      y: 0,
+      width: widthDots,
+      height: heightDots,
+      isStatic: true,
+      content,
+    };
+    const zpl = generateZPL(
+      {
+        id: `${element.id}-qr-preview`,
+        name: 'QR Preview',
+        formatId: format.id,
+        elements: [zplElement],
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        ...format,
+        width: widthDots / dpi,
+        height: heightDots / dpi,
+        labelsAcross: 1,
+        linerWidth: undefined,
+        horizontalGapThermal: 0,
+        sideMarginThermal: 0,
+      },
+    );
+
+    renderZplToDataUrl(zpl, {
+      ...format,
+      width: widthDots / dpi,
+      height: heightDots / dpi,
+      labelsAcross: 1,
+      linerWidth: undefined,
+      horizontalGapThermal: 0,
+      sideMarginThermal: 0,
+    })
+      .then((url) => { if (active) setDataUrl(url); })
+      .catch(() => renderBrowserQr().then((url: string) => {
+        if (active) setDataUrl(url);
+      }).catch(() => {
+        if (active) setDataUrl('');
+      }));
+
+    return () => { active = false; };
+  }, [content, element, format]);
 
   return (
     <>

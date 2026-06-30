@@ -35,9 +35,6 @@ type ManifestPackage = {
   totalActiveCannabinoids?: number | string | null;
   totalActiveCannabinoidsPercent?: number | string | null;
   totalActiveCannabinoidsMgG?: number | string | null;
-  totalCannabinoids?: number | string | null;
-  totalCannabinoidsPercent?: number | string | null;
-  totalCannabinoidsMgG?: number | string | null;
   labFacilityName?: string | null;
   testPerformedDate?: string | null;
   coaDocumentId?: number | string | null;
@@ -129,13 +126,10 @@ function normalizePackage(pkg: ManifestPackage) {
   const tacPercent =
     cleanDecimalValue(pkg.tacPercent) ||
     cleanDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
-    cleanDecimalValue(pkg.totalCannabinoidsPercent) ||
-    cleanDecimalValue(pkg.totalActiveCannabinoids) ||
-    cleanDecimalValue(pkg.totalCannabinoids);
+    cleanDecimalValue(pkg.totalActiveCannabinoids);
   const tacMgG =
     cleanDecimalValue(pkg.tacMgG) ||
     cleanDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
-    cleanDecimalValue(pkg.totalCannabinoidsMgG) ||
     mgGFromPercent(tacPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
@@ -187,8 +181,6 @@ function extractTacFromLabResults(results: unknown): string {
     if (
       name.startsWith('total active cannabinoids (%)') ||
       name.startsWith('total active cannabinoid (%)') ||
-      name.startsWith('total cannabinoids (%)') ||
-      name.startsWith('total cannabinoid (%)') ||
       name.startsWith('tac (%)')
     ) {
       const value = cleanValue(result.TestResultLevel);

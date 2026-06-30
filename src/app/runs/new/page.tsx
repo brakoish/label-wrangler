@@ -14,6 +14,7 @@ import { useRunStore } from '@/lib/runStore';
 import { parseCsv, detectUrlColumn } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPL } from '@/lib/zplGenerator';
+import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
@@ -29,15 +30,11 @@ const FIELD_ALIASES: Record<string, string[]> = {
   size: ['quantity'],
   tac: ['tacPercent'],
   tacpercent: ['tacPercent'],
-  totalcannabinoids: ['tacPercent'],
-  totalcannabinoidspercent: ['tacPercent'],
   totalactivecannabinoids: ['tacPercent'],
   totalactivecannabinoidspercent: ['tacPercent'],
   tacmg: ['tacMgG'],
   tacmgg: ['tacMgG'],
   tacmggg: ['tacMgG'],
-  totalcannabinoidsmg: ['tacMgG'],
-  totalcannabinoidsmgg: ['tacMgG'],
   totalactivecannabinoidsmg: ['tacMgG'],
   totalactivecannabinoidsmgg: ['tacMgG'],
   thc: ['thcPercent'],
@@ -1099,18 +1096,8 @@ function LocalZplPreview({ zpl, format, showOutlines = true }: { zpl: string; fo
     setErr(null);
     (async () => {
       try {
-        const mod = await import('zpl-renderer-js');
-        const { api } = await mod.ready;
-        const across = Math.max(1, format.labelsAcross || 1);
-        const gapIn = format.horizontalGapThermal || 0;
-        const sideIn = format.sideMarginThermal || 0;
-        const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
-        const linerIn = format.linerWidth || computedLinerIn;
-        const widthMm = linerIn * 25.4;
-        const heightMm = format.height * 25.4;
-        const dpmm = Math.round((format.dpi || 203) / 25.4);
-        const b64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
-        if (!cancelled) setUrl(`data:image/png;base64,${b64}`);
+        const nextUrl = await renderZplToDataUrl(zpl, format);
+        if (!cancelled) setUrl(nextUrl);
       } catch (e) {
         if (!cancelled) setErr((e as Error)?.message || 'Render failed');
       }
@@ -1118,7 +1105,7 @@ function LocalZplPreview({ zpl, format, showOutlines = true }: { zpl: string; fo
     return () => {
       cancelled = true;
     };
-  }, [zpl, format.width, format.height, format.dpi, format.labelsAcross, format.horizontalGapThermal, format.sideMarginThermal, format.linerWidth]);
+  }, [zpl, format]);
 
   if (err) return <p className="text-xs text-red-400">{err}</p>;
   if (!url) return <p className="text-xs text-zinc-500">Rendering…</p>;

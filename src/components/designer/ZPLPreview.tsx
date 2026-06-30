@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
+import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 
@@ -11,19 +12,6 @@ interface ZPLPreviewProps {
   format: LabelFormat;
   template: LabelTemplate;
   testData?: Record<string, string>;
-}
-
-// Module-level cache for the WASM ZPL renderer API.
-// Lazy-loaded on first ZPLPreview mount to avoid ~8MB bundle cost on page load.
-let zplApiPromise: Promise<{ zplToBase64Async: (zpl: string, widthMm?: number, heightMm?: number, dpmm?: number) => Promise<string> }> | null = null;
-async function getLocalZplApi() {
-  if (!zplApiPromise) {
-    zplApiPromise = import('zpl-renderer-js').then(async (m) => {
-      const { api } = await m.ready;
-      return api;
-    });
-  }
-  return zplApiPromise;
 }
 
 export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
@@ -48,20 +36,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
     try {
       // Render ZPL → PNG entirely in the browser via zpl-renderer-js (Zebrash WASM).
       // No network, no rate limits. 8MB WASM is lazy-loaded once and cached.
-      const api = await getLocalZplApi();
-      // Our format stores width/height in inches. Convert to mm (1 inch = 25.4 mm).
-      // For multi-across rolls we render the full liner width so all N labels
-      // appear side-by-side exactly as they'll come off the roll.
-      const across = Math.max(1, format.labelsAcross || 1);
-      const gapIn = format.horizontalGapThermal || 0;
-      const sideIn = format.sideMarginThermal || 0;
-      const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
-      const linerIn = format.linerWidth || computedLinerIn;
-      const widthMm = linerIn * 25.4;
-      const heightMm = format.height * 25.4;
-      const dpmm = Math.round((format.dpi || 203) / 25.4);
-      const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
-      setPreviewUrl(`data:image/png;base64,${base64}`);
+      setPreviewUrl(await renderZplToDataUrl(zpl, format));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed');
     } finally {
@@ -199,4 +174,3 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
 
 // LabelOutlineOverlay is defined in @/components/LabelOutlineOverlay
 // so the Runs detail page can share the exact same visual treatment.
-

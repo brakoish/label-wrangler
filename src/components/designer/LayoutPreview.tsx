@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from '@/lib/types';
+import { generateZPL } from '@/lib/zplGenerator';
+import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
@@ -96,7 +98,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
             );
           }
           case 'qr':
-            return <MiniQr key={el.id} element={el as QRElement} testData={testData} vbW={vbW} />;
+            return <MiniQr key={el.id} element={el as QRElement} format={format} testData={testData} vbW={vbW} />;
           case 'barcode':
             return <MiniBarcode key={el.id} element={el as BarcodeElement} testData={testData} vbW={vbW} />;
           case 'rectangle':
@@ -111,24 +113,69 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
   );
 }
 
-function MiniQr({ element, testData, vbW }: { element: QRElement; testData?: Record<string, string>; vbW: number }) {
+function MiniQr({ element, format, testData, vbW }: { element: QRElement; format: LabelFormat; testData?: Record<string, string>; vbW: number }) {
   const [dataUrl, setDataUrl] = useState('');
   const content = resolveElementContent(element, testData) || 'QR';
 
   useEffect(() => {
     let active = true;
-    QRCode.toDataURL(content, {
+
+    const renderBrowserQr = () => QRCode.toDataURL(content, {
       errorCorrectionLevel: element.errorCorrection,
       width: 128,
       margin: 0,
       color: { dark: '#111827', light: '#ffffff' },
-    }).then((url: string) => {
-      if (active) setDataUrl(url);
-    }).catch(() => {
-      if (active) setDataUrl('');
     });
+
+    if (format.type !== 'thermal') {
+      renderBrowserQr()
+        .then((url: string) => { if (active) setDataUrl(url); })
+        .catch(() => { if (active) setDataUrl(''); });
+      return () => { active = false; };
+    }
+
+    const dpi = format.dpi || 203;
+    const widthDots = Math.max(1, Math.round(element.width));
+    const heightDots = Math.max(1, Math.round(element.height));
+    const zplFormat = {
+      ...format,
+      width: widthDots / dpi,
+      height: heightDots / dpi,
+      labelsAcross: 1,
+      linerWidth: undefined,
+      horizontalGapThermal: 0,
+      sideMarginThermal: 0,
+    };
+    const zpl = generateZPL(
+      {
+        id: `${element.id}-mini-qr-preview`,
+        name: 'Mini QR Preview',
+        formatId: format.id,
+        elements: [{
+          ...element,
+          x: 0,
+          y: 0,
+          width: widthDots,
+          height: heightDots,
+          isStatic: true,
+          content,
+        }],
+        createdAt: '',
+        updatedAt: '',
+      },
+      zplFormat,
+    );
+
+    renderZplToDataUrl(zpl, zplFormat)
+      .then((url) => { if (active) setDataUrl(url); })
+      .catch(() => renderBrowserQr().then((url: string) => {
+        if (active) setDataUrl(url);
+      }).catch(() => {
+        if (active) setDataUrl('');
+      }));
+
     return () => { active = false; };
-  }, [content, element.errorCorrection]);
+  }, [content, element, format]);
 
   if (!dataUrl) {
     return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#9ca3af" rx={vbW * 0.003} />;
