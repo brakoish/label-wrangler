@@ -35,6 +35,9 @@ type ManifestPackage = {
   totalActiveCannabinoids?: number | string | null;
   totalActiveCannabinoidsPercent?: number | string | null;
   totalActiveCannabinoidsMgG?: number | string | null;
+  totalCannabinoids?: number | string | null;
+  totalCannabinoidsPercent?: number | string | null;
+  totalCannabinoidsMgG?: number | string | null;
   labFacilityName?: string | null;
   testPerformedDate?: string | null;
   coaDocumentId?: number | string | null;
@@ -141,10 +144,13 @@ function normalizePackage(pkg: ManifestPackage) {
   const tacPercent =
     cleanPositiveDecimalValue(pkg.tacPercent) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
-    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids);
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids) ||
+    cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
+    cleanPositiveDecimalValue(pkg.totalCannabinoids);
   const tacMgG =
     cleanPositiveDecimalValue(pkg.tacMgG) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
+    cleanPositiveDecimalValue(pkg.totalCannabinoidsMgG) ||
     mgGFromPercent(tacPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
@@ -183,6 +189,10 @@ function normalizePackage(pkg: ManifestPackage) {
     cbdMgPackage: cleanDecimalValue(pkg.cbdMgPackage),
     tacPercent,
     tacMgG,
+    totalActiveCannabinoidsPercent: tacPercent,
+    totalActiveCannabinoidsMgG: tacMgG,
+    totalCannabinoidsPercent: tacPercent,
+    totalCannabinoidsMgG: tacMgG,
     labFacilityName: cleanText(pkg.labFacilityName),
     testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
@@ -207,7 +217,12 @@ function extractPotencyFromLabResults(results: unknown): LabPotency {
       name.startsWith('total active cannabinoid (%)') ||
       name.startsWith('total active cannabinoids') ||
       name.startsWith('total active cannabinoid') ||
-      name.startsWith('tac (%)')
+      name.startsWith('total cannabinoids (%)') ||
+      name.startsWith('total cannabinoid (%)') ||
+      name.startsWith('total cannabinoids') ||
+      name.startsWith('total cannabinoid') ||
+      name.startsWith('tac (%)') ||
+      name === 'tac'
     ) {
       potency.tacPercent = potency.tacPercent || cleanDecimalValue(value);
     }
