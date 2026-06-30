@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useId } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
-import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -431,7 +431,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
               onPointerDown={(e) => handlePointerDown(e, element.id)}
               style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
             >
-              {renderElement(element, format, handleTextMeasure, testData)}
+              {renderElement(element, format, elements, handleTextMeasure, testData)}
               {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
               <rect
                 x={element.x}
@@ -622,7 +622,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
   );
 }
 
-function renderElement(element: TemplateElement, format: LabelFormat, onTextMeasure?: (id: string, w: number, h: number) => void, testData?: Record<string, string>): React.ReactNode {
+function renderElement(element: TemplateElement, format: LabelFormat, elements: TemplateElement[], onTextMeasure?: (id: string, w: number, h: number) => void, testData?: Record<string, string>): React.ReactNode {
   const transform = element.rotation !== 0
     ? `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`
     : undefined;
@@ -632,7 +632,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, onTextMeas
       // Text handles its own rotation to match ZPL's field-origin rotation.
       return <TextElementRenderer key={element.id} element={element as TextElement} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} format={format} transform={transform} testData={testData} />;
+      return <QRElementRenderer key={element.id} element={element as QRElement} elements={elements} format={format} transform={transform} testData={testData} />;
     case 'barcode':
       return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} testData={testData} />;
     case 'line':
@@ -825,9 +825,11 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   );
 }
 
-function QRElementRenderer({ element, format, transform, testData }: { element: QRElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
+function QRElementRenderer({ element, elements, format, transform, testData }: { element: QRElement; elements: TemplateElement[]; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
   const [dataUrl, setDataUrl] = useState<string>('');
+  const clipId = useId().replace(/:/g, '');
   const content = resolveElementContent(element, testData) || 'QR';
+  const thermalGeometry = format.type === 'thermal' ? thermalRenderGeometry(format) : null;
 
   useEffect(() => {
     let active = true;
@@ -847,56 +849,51 @@ function QRElementRenderer({ element, format, transform, testData }: { element: 
       return () => { active = false; };
     }
 
-    const dpi = format.dpi || 203;
-    const widthDots = Math.max(1, Math.round(element.width));
-    const heightDots = Math.max(1, Math.round(element.height));
-    const zplElement: QRElement = {
-      ...element,
-      x: 0,
-      y: 0,
-      width: widthDots,
-      height: heightDots,
-      isStatic: true,
-      content,
-    };
     const zpl = generateZPL(
       {
-        id: `${element.id}-qr-preview`,
-        name: 'QR Preview',
+        id: `${element.id}-thermal-preview`,
+        name: 'Thermal Preview',
         formatId: format.id,
-        elements: [zplElement],
+        elements,
         createdAt: '',
         updatedAt: '',
       },
-      {
-        ...format,
-        width: widthDots / dpi,
-        height: heightDots / dpi,
-        labelsAcross: 1,
-        linerWidth: undefined,
-        horizontalGapThermal: 0,
-        sideMarginThermal: 0,
-      },
+      format,
+      testData,
     );
 
-    renderZplToDataUrl(zpl, {
-      ...format,
-      width: widthDots / dpi,
-      height: heightDots / dpi,
-      labelsAcross: 1,
-      linerWidth: undefined,
-      horizontalGapThermal: 0,
-      sideMarginThermal: 0,
-    })
+    renderZplToDataUrl(zpl, format)
       .then((url) => { if (active) setDataUrl(url); })
-      .catch(() => renderBrowserQr().then((url: string) => {
-        if (active) setDataUrl(url);
-      }).catch(() => {
+      .catch(() => {
         if (active) setDataUrl('');
-      }));
+      });
 
     return () => { active = false; };
-  }, [content, element, format]);
+  }, [content, element.errorCorrection, element.id, elements, format, testData]);
+
+  if (dataUrl && thermalGeometry) {
+    return (
+      <>
+        <clipPath id={clipId}>
+          <rect
+            x={element.x}
+            y={element.y}
+            width={element.width}
+            height={element.height}
+          />
+        </clipPath>
+        <image
+          x={-thermalGeometry.effectiveSideMDots}
+          y={0}
+          width={thermalGeometry.linerDots}
+          height={thermalGeometry.heightDots}
+          href={dataUrl}
+          clipPath={`url(#${clipId})`}
+          preserveAspectRatio="none"
+        />
+      </>
+    );
+  }
 
   return (
     <>

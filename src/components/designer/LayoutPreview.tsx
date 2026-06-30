@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
-import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
@@ -98,7 +98,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
             );
           }
           case 'qr':
-            return <MiniQr key={el.id} element={el as QRElement} format={format} testData={testData} vbW={vbW} />;
+            return <MiniQr key={el.id} element={el as QRElement} elements={elements} format={format} testData={testData} vbW={vbW} />;
           case 'barcode':
             return <MiniBarcode key={el.id} element={el as BarcodeElement} testData={testData} vbW={vbW} />;
           case 'rectangle':
@@ -113,9 +113,11 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
   );
 }
 
-function MiniQr({ element, format, testData, vbW }: { element: QRElement; format: LabelFormat; testData?: Record<string, string>; vbW: number }) {
+function MiniQr({ element, elements, format, testData, vbW }: { element: QRElement; elements: TemplateElement[]; format: LabelFormat; testData?: Record<string, string>; vbW: number }) {
   const [dataUrl, setDataUrl] = useState('');
+  const clipId = useId().replace(/:/g, '');
   const content = resolveElementContent(element, testData) || 'QR';
+  const thermalGeometry = format.type === 'thermal' ? thermalRenderGeometry(format) : null;
 
   useEffect(() => {
     let active = true;
@@ -134,51 +136,49 @@ function MiniQr({ element, format, testData, vbW }: { element: QRElement; format
       return () => { active = false; };
     }
 
-    const dpi = format.dpi || 203;
-    const widthDots = Math.max(1, Math.round(element.width));
-    const heightDots = Math.max(1, Math.round(element.height));
-    const zplFormat = {
-      ...format,
-      width: widthDots / dpi,
-      height: heightDots / dpi,
-      labelsAcross: 1,
-      linerWidth: undefined,
-      horizontalGapThermal: 0,
-      sideMarginThermal: 0,
-    };
     const zpl = generateZPL(
       {
-        id: `${element.id}-mini-qr-preview`,
-        name: 'Mini QR Preview',
+        id: `${element.id}-mini-thermal-preview`,
+        name: 'Mini Thermal Preview',
         formatId: format.id,
-        elements: [{
-          ...element,
-          x: 0,
-          y: 0,
-          width: widthDots,
-          height: heightDots,
-          isStatic: true,
-          content,
-        }],
+        elements,
         createdAt: '',
         updatedAt: '',
       },
-      zplFormat,
+      format,
+      testData,
     );
 
-    renderZplToDataUrl(zpl, zplFormat)
+    renderZplToDataUrl(zpl, format)
       .then((url) => { if (active) setDataUrl(url); })
-      .catch(() => renderBrowserQr().then((url: string) => {
-        if (active) setDataUrl(url);
-      }).catch(() => {
+      .catch(() => {
         if (active) setDataUrl('');
-      }));
+      });
 
     return () => { active = false; };
-  }, [content, element, format]);
+  }, [content, element.errorCorrection, element.id, elements, format, testData]);
 
   if (!dataUrl) {
     return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#9ca3af" rx={vbW * 0.003} />;
+  }
+
+  if (thermalGeometry) {
+    return (
+      <>
+        <clipPath id={clipId}>
+          <rect x={element.x} y={element.y} width={element.width} height={element.height} />
+        </clipPath>
+        <image
+          x={-thermalGeometry.effectiveSideMDots}
+          y={0}
+          width={thermalGeometry.linerDots}
+          height={thermalGeometry.heightDots}
+          href={dataUrl}
+          clipPath={`url(#${clipId})`}
+          preserveAspectRatio="none"
+        />
+      </>
+    );
   }
 
   return (
