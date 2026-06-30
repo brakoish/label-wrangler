@@ -115,6 +115,7 @@ function formatShortDate(year: number, month: number, day: number): string {
 }
 
 function mgGFromPercent(value: string): string {
+  if (!hasPositiveNumber(value)) return '';
   const number = Number(value);
   return Number.isFinite(number) ? cleanDecimalValue(number * 10) : '';
 }
