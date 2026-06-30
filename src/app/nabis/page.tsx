@@ -45,6 +45,24 @@ const EMPTY_LABEL: LabelInfo = {
   cases: '',
 };
 
+function packageKey(pkg: PackageResult) {
+  return pkg.tag || pkg.id || `${pkg.itemName}-${pkg.batch}`;
+}
+
+function uniquePackageResults(packages: PackageResult[]) {
+  const seen = new Set<string>();
+  const unique: PackageResult[] = [];
+
+  for (const pkg of packages) {
+    const key = packageKey(pkg);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(pkg);
+  }
+
+  return unique;
+}
+
 function toLabelInfo(pkg: PackageResult): LabelInfo {
   return {
     ...EMPTY_LABEL,
@@ -347,6 +365,7 @@ export default function NabisPage() {
   }, [query]);
 
   const canPrint = useMemo(() => label.itemName.trim() && label.uid.trim(), [label.itemName, label.uid]);
+  const visibleResults = useMemo(() => uniquePackageResults(results), [results]);
 
   const selectPackage = (pkg: PackageResult) => {
     setSelected(pkg);
@@ -454,12 +473,12 @@ export default function NabisPage() {
                   No matching packages.
                 </div>
               )}
-              {results.map((pkg) => {
-                const active = selected?.id === pkg.id;
+              {visibleResults.map((pkg) => {
+                const active = selected ? packageKey(selected) === packageKey(pkg) : false;
                 return (
                   <button
                     type="button"
-                    key={`${pkg.id}-${pkg.tag}`}
+                    key={packageKey(pkg)}
                     onClick={() => selectPackage(pkg)}
                     className={`w-full rounded-lg border p-4 text-left transition ${
                       active
