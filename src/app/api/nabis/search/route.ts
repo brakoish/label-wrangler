@@ -508,7 +508,6 @@ export async function GET(request: NextRequest) {
   const manifestBase = process.env.MANIFEST_API_BASE_URL ?? 'http://localhost:5000/api';
   const endpoint = new URL(`${manifestBase.replace(/\/$/, '')}/packages`);
   endpoint.searchParams.set('search', search);
-  endpoint.searchParams.set('status', 'active');
   const isExactPackageSearch = looksLikeMetrcPackageTag(search);
 
   try {
@@ -531,10 +530,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         packages: await enrichWithManifestLabelData(metrcPackages, { preferLabThc: isExactPackageSearch }),
       });
-    }
-
-    if (databasePackages) {
-      return NextResponse.json({ packages: [] });
     }
 
     const response = await fetch(endpoint, {
