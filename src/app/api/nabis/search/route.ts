@@ -441,13 +441,12 @@ async function searchManifestDatabase(search: string) {
         OR mi.item_name ILIKE ${pattern}
         OR mp.production_batch_number ILIKE ${pattern}
         OR mp.source_production_batch_numbers ILIKE ${pattern}
-        OR mp.source_harvest_name ILIKE ${pattern}
       )
     ORDER BY mp.updated_at DESC NULLS LAST, mp.id DESC
     LIMIT 50
   `;
 
-  return rows.map((row) => normalizePackage(row as ManifestPackage)).filter((pkg) => pkg.tag && pkg.itemName);
+  return rows.map((row) => normalizePackage(row as ManifestPackage)).filter((pkg) => pkg.tag);
 }
 
 function looksLikeMetrcPackageTag(search: string) {
