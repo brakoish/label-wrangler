@@ -439,6 +439,9 @@ async function searchManifestDatabase(search: string) {
         OR (${digitSuffix} <> '' AND mp.metrc_package_id::text = ${digitSuffix})
         OR mp.product_name ILIKE ${pattern}
         OR mi.item_name ILIKE ${pattern}
+        OR mp.production_batch_number ILIKE ${pattern}
+        OR mp.source_production_batch_numbers ILIKE ${pattern}
+        OR mp.source_harvest_name ILIKE ${pattern}
       )
     ORDER BY mp.updated_at DESC NULLS LAST, mp.id DESC
     LIMIT 50
@@ -541,6 +544,10 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
+      if (response.status === 404) {
+        return NextResponse.json({ packages: [] });
+      }
+
       return NextResponse.json(
         { error: `Manifest returned ${response.status}`, packages: [] },
         { status: response.status === 401 || response.status === 403 ? 200 : 502 },
