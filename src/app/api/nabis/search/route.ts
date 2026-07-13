@@ -436,6 +436,8 @@ async function searchManifestDatabase(search: string) {
       AND (
         mp.label ILIKE ${pattern}
         OR (${digitSuffixPattern} <> '' AND regexp_replace(COALESCE(mp.label, ''), '[^0-9]', '', 'g') LIKE ${digitSuffixPattern})
+        OR (${digitSuffix} <> '' AND mp.id::text = ${digitSuffix})
+        OR (${digitSuffix} <> '' AND mp.metrc_package_id::text = ${digitSuffix})
         OR mp.product_name ILIKE ${pattern}
         OR mi.item_name ILIKE ${pattern}
       )
