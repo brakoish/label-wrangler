@@ -431,8 +431,7 @@ async function searchManifestDatabase(search: string) {
     FROM metrc_packages mp
     LEFT JOIN metrc_items mi ON mp.product_id = mi.metrc_item_id
     LEFT JOIN brands b ON mi.brand_id = b.id
-    WHERE mp.quantity::numeric > 0
-      AND (
+    WHERE (
         mp.label ILIKE ${pattern}
         OR (${digitSuffixPattern} <> '' AND regexp_replace(COALESCE(mp.label, ''), '[^0-9]', '', 'g') LIKE ${digitSuffixPattern})
         OR (${digitSuffix} <> '' AND mp.id::text = ${digitSuffix})
