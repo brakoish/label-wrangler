@@ -431,7 +431,7 @@ async function searchManifestDatabase(search: string) {
     FROM metrc_packages mp
     LEFT JOIN metrc_items mi ON mp.product_id = mi.metrc_item_id
     LEFT JOIN brands b ON mi.brand_id = b.id
-    WHERE mp.status = 'active'
+    WHERE LOWER(mp.status) IN ('active', 'processing')
       AND mp.quantity::numeric > 0
       AND (
         mp.label ILIKE ${pattern}
