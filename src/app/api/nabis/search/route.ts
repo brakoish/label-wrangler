@@ -24,6 +24,7 @@ type ManifestPackage = {
   useByDate?: string | null;
   retailId?: string | null;
   retailIdSource?: string | null;
+  retailIdCount?: number | string | null;
   thcPercent?: number | string | null;
   thcMgG?: number | string | null;
   thcMgPackage?: number | string | null;
@@ -184,6 +185,7 @@ function normalizePackage(pkg: ManifestPackage) {
     useByDate: cleanDate(pkg.useByDate),
     retailId: cleanText(pkg.retailId),
     retailIdSource: cleanText(pkg.retailIdSource),
+    retailIdCount: cleanValue(pkg.retailIdCount),
     thcPercent,
     thcMgG,
     thcMgPackage: cleanDecimalValue(pkg.thcMgPackage),
@@ -301,9 +303,37 @@ function capRowsToEachQuantity<T extends ReturnType<typeof normalizePackage>>(ro
   });
 }
 
+function dedupeRowsByRetailId<T extends ReturnType<typeof normalizePackage>>(rows: T[]): T[] {
+  const seen = new Set<string>();
+
+  return rows.filter((row) => {
+    const retailId = cleanText(row.retailId).toLowerCase();
+    if (!retailId) return true;
+    if (seen.has(retailId)) return false;
+    seen.add(retailId);
+    return true;
+  });
+}
+
+function finalizeLabelRows<T extends ReturnType<typeof normalizePackage>>(rows: T[]): T[] {
+  return capRowsToEachQuantity(dedupeRowsByRetailId(rows));
+}
+
+function dedupeUnitsByRetailId(units: ManifestLabelUnit[]): ManifestLabelUnit[] {
+  const seen = new Set<string>();
+
+  return units.filter((unit) => {
+    const retailId = cleanText(unit.retailId).toLowerCase();
+    if (!retailId) return true;
+    if (seen.has(retailId)) return false;
+    seen.add(retailId);
+    return true;
+  });
+}
+
 function rowsFromLabelData(data: ManifestPackage) {
   const base = normalizePackage(data);
-  const units = Array.isArray(data.units) ? data.units : [];
+  const units = Array.isArray(data.units) ? dedupeUnitsByRetailId(data.units) : [];
   if (units.length === 0) return [base];
 
   const quantity = integerEachQuantity(base);
@@ -422,7 +452,7 @@ async function enrichWithManifestLabelData(
         : rowsWithMetrcRetailIds(labPkg);
     }),
   );
-  return capRowsToEachQuantity(enriched.flat());
+  return finalizeLabelRows(enriched.flat());
 }
 
 async function searchManifestDatabase(search: string) {
@@ -555,7 +585,7 @@ export async function GET(request: NextRequest) {
     const labelRows = isExactPackageSearch ? await fetchManifestLabelRows(search).catch(() => null) : null;
     if (labelRows && labelRows.length > 0) {
       return NextResponse.json({
-        packages: await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true }))),
+        packages: finalizeLabelRows(await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true })))),
       });
     }
 

@@ -34,6 +34,7 @@ export const MANIFEST_FIELDS = [
   'unitOfMeasure',
   'unitIndex',
   'retailIdSource',
+  'retailIdCount',
 ] as const;
 
 const MANIFEST_PICKER_HIDDEN_FIELDS = new Set<(typeof MANIFEST_FIELDS)[number]>([
@@ -73,6 +74,7 @@ const MANIFEST_FIELD_LABELS: Partial<Record<(typeof MANIFEST_FIELDS)[number], st
   unitOfMeasure: 'Unit of measure',
   unitIndex: 'Unit #',
   retailIdSource: 'Retail ID source',
+  retailIdCount: 'Retail ID count',
 };
 
 export const MANIFEST_FIELD_OPTIONS = MANIFEST_FIELDS.filter((field) => !MANIFEST_PICKER_HIDDEN_FIELDS.has(field)).map((field) => ({
