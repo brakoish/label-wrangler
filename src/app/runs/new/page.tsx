@@ -18,7 +18,7 @@ import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import { MANIFEST_FIELDS } from '@/lib/manifestFields';
+import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 
 const PASTE_COLUMN = '__paste__';
@@ -936,7 +936,7 @@ function NewRunContent() {
                               <CustomSelect
                                 value={mapping.csvColumn ?? ''}
                                 onChange={(v) => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: v } }))}
-                                options={rowHeaders.map((h) => ({ value: h, label: h }))}
+                                options={inputMode === 'manifest' ? MANIFEST_FIELD_OPTIONS : rowHeaders.map((h) => ({ value: h, label: h }))}
                               />
                             </div>
                           ) : (

@@ -36,7 +36,44 @@ export const MANIFEST_FIELDS = [
   'retailIdSource',
 ] as const;
 
-export const MANIFEST_FIELD_OPTIONS = MANIFEST_FIELDS.map((field) => ({
+const MANIFEST_PICKER_HIDDEN_FIELDS = new Set<(typeof MANIFEST_FIELDS)[number]>([
+  'totalActiveCannabinoidsPercent',
+  'totalActiveCannabinoidsMgG',
+  'totalCannabinoidsPercent',
+  'totalCannabinoidsMgG',
+]);
+
+const MANIFEST_FIELD_LABELS: Partial<Record<(typeof MANIFEST_FIELDS)[number], string>> = {
+  productName: 'Product name',
+  itemName: 'Item name',
+  packageTag: 'Package tag',
+  retailId: 'Retail ID',
+  lotNumber: 'Lot #',
+  batchNumber: 'Batch #',
+  sourceBatchNumbers: 'Source batches',
+  manufacturedDate: 'MFG date',
+  packagedDate: 'Packaged date',
+  expirationDate: 'EXP date',
+  sellByDate: 'Sell-by date',
+  useByDate: 'Use-by date',
+  thcPercent: 'THC %',
+  thcMgG: 'THC mg/g',
+  thcMgPackage: 'THC mg/pkg',
+  cbdPercent: 'CBD %',
+  cbdMgG: 'CBD mg/g',
+  cbdMgPackage: 'CBD mg/pkg',
+  tacPercent: 'TAC %',
+  tacMgG: 'TAC mg/g',
+  labFacilityName: 'Lab facility',
+  testPerformedDate: 'Test date',
+  coaDocumentId: 'COA document',
+  brandName: 'Brand name',
+  unitOfMeasure: 'Unit of measure',
+  unitIndex: 'Unit #',
+  retailIdSource: 'Retail ID source',
+};
+
+export const MANIFEST_FIELD_OPTIONS = MANIFEST_FIELDS.filter((field) => !MANIFEST_PICKER_HIDDEN_FIELDS.has(field)).map((field) => ({
   value: field,
-  label: field,
+  label: MANIFEST_FIELD_LABELS[field] ?? field,
 }));

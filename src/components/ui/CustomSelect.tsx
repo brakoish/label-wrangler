@@ -27,7 +27,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   const menuRef = useRef<HTMLDivElement>(null);
   // Portal-positioned menu coords so the dropdown escapes parent stacking
   // contexts (our .glass cards use backdrop-filter which clips absolute children).
-  const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const selected = options.find((o) => o.value === value);
 
@@ -40,7 +40,12 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
     const update = () => {
       if (!triggerRef.current) return;
       const r = triggerRef.current.getBoundingClientRect();
-      setMenuRect({ top: r.bottom + 4, left: r.left, width: r.width });
+      setMenuRect({
+        top: r.bottom + 4,
+        left: r.left,
+        width: r.width,
+        maxHeight: Math.max(120, Math.min(320, window.innerHeight - r.bottom - 12)),
+      });
     };
     update();
     window.addEventListener('scroll', update, true);
@@ -90,7 +95,9 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
           zIndex: 1000,
         }}
       >
-        {content}
+        <div style={{ maxHeight: menuRect.maxHeight }} className="overflow-y-auto">
+          {content}
+        </div>
       </div>,
       document.body,
     );
@@ -133,7 +140,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   }
 
   const fullMenu = (
-    <div className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden max-h-[280px] overflow-y-auto">
+    <div className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden">
       {options.map((option) => (
         <button
           key={option.value}
