@@ -37,6 +37,8 @@ export const MANIFEST_FIELDS = [
 ] as const;
 
 const MANIFEST_PICKER_HIDDEN_FIELDS = new Set<(typeof MANIFEST_FIELDS)[number]>([
+  'tag',
+  'batch',
   'totalActiveCannabinoidsPercent',
   'totalActiveCannabinoidsMgG',
   'totalCannabinoidsPercent',
