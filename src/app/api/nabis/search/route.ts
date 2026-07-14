@@ -144,14 +144,17 @@ function normalizePackage(pkg: ManifestPackage) {
   const tacPercent =
     cleanPositiveDecimalValue(pkg.tacPercent) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
-    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids) ||
-    cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
-    cleanPositiveDecimalValue(pkg.totalCannabinoids);
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoids);
   const tacMgG =
     cleanPositiveDecimalValue(pkg.tacMgG) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
-    cleanPositiveDecimalValue(pkg.totalCannabinoidsMgG) ||
     mgGFromPercent(tacPercent);
+  const totalCannabinoidsPercent =
+    cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
+    cleanPositiveDecimalValue(pkg.totalCannabinoids);
+  const totalCannabinoidsMgG =
+    cleanPositiveDecimalValue(pkg.totalCannabinoidsMgG) ||
+    mgGFromPercent(totalCannabinoidsPercent);
   const batch =
     cleanText(pkg.lotNumber) ||
     cleanText(pkg.batchNumber) ||
@@ -191,8 +194,8 @@ function normalizePackage(pkg: ManifestPackage) {
     tacMgG,
     totalActiveCannabinoidsPercent: tacPercent,
     totalActiveCannabinoidsMgG: tacMgG,
-    totalCannabinoidsPercent: tacPercent,
-    totalCannabinoidsMgG: tacMgG,
+    totalCannabinoidsPercent,
+    totalCannabinoidsMgG,
     labFacilityName: cleanText(pkg.labFacilityName),
     testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
