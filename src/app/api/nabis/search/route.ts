@@ -274,12 +274,42 @@ function expandRanges(ranges: unknown): number[] {
   return indices;
 }
 
+function integerEachQuantity(pkg: ReturnType<typeof normalizePackage>): number | null {
+  if (pkg.unitOfMeasure && !/^each(?:es)?$/i.test(pkg.unitOfMeasure)) return null;
+
+  const quantity = Number(pkg.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isInteger(quantity)) return null;
+
+  return quantity;
+}
+
+function capRowsToEachQuantity<T extends ReturnType<typeof normalizePackage>>(rows: T[]): T[] {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = row.packageTag || row.tag || row.id;
+    const packageRows = grouped.get(key);
+    if (packageRows) {
+      packageRows.push(row);
+    } else {
+      grouped.set(key, [row]);
+    }
+  }
+
+  return Array.from(grouped.values()).flatMap((packageRows) => {
+    const quantity = integerEachQuantity(packageRows[0]);
+    return quantity && packageRows.length > quantity ? packageRows.slice(0, quantity) : packageRows;
+  });
+}
+
 function rowsFromLabelData(data: ManifestPackage) {
   const base = normalizePackage(data);
   const units = Array.isArray(data.units) ? data.units : [];
   if (units.length === 0) return [base];
 
-  return units.map((unit) => ({
+  const quantity = integerEachQuantity(base);
+  const labelUnits = quantity && units.length > quantity ? units.slice(0, quantity) : units;
+
+  return labelUnits.map((unit) => ({
     ...base,
     id: `${base.id}-${cleanValue(unit.index) || cleanText(unit.retailId)}`,
     retailId: cleanText(unit.retailId) || base.retailId,
@@ -392,7 +422,7 @@ async function enrichWithManifestLabelData(
         : rowsWithMetrcRetailIds(labPkg);
     }),
   );
-  return enriched.flat();
+  return capRowsToEachQuantity(enriched.flat());
 }
 
 async function searchManifestDatabase(search: string) {
