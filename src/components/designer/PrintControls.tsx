@@ -58,6 +58,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
   // Shared state
   const [printing, setPrinting] = useState<null | 'label' | 'calibration'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [labelQty, setLabelQty] = useState<number>(1);
   // Calibration print options — persisted for convenience.
   const [calibCount, setCalibCount] = useState<number>(1);
   const [calibMenuOpen, setCalibMenuOpen] = useState(false);
@@ -223,10 +224,28 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
     [transport, selectedDazzlePrinter, usbPrinter],
   );
 
+  const buildLabelZpl = useCallback(() => {
+    const qty = Math.max(1, Math.min(9999, Math.floor(labelQty) || 1));
+    const across = Math.max(1, format.labelsAcross || 1);
+
+    if (across <= 1) {
+      return generateZPL(template, format, testData).replace(/\^XZ\s*$/, `^PQ${qty},0,0,N,N\n^XZ`);
+    }
+
+    const labels: string[] = [];
+    for (let printed = 0; printed < qty; printed += across) {
+      const lanes = Array.from({ length: across }, (_, lane) => (
+        printed + lane < qty ? testData : undefined
+      ));
+      labels.push(generateZPL(template, format, lanes));
+    }
+    return labels.join('\n');
+  }, [format, labelQty, template, testData]);
+
   const handlePrintLabel = useCallback(() => {
-    const zpl = generateZPL(template, format, testData);
+    const zpl = buildLabelZpl();
     return doPrint(zpl, 'label');
-  }, [doPrint, template, format, testData]);
+  }, [buildLabelZpl, doPrint]);
 
   const handlePrintCalibration = useCallback(() => {
     // Pass the full format so calibration lays out across every lane on
@@ -389,14 +408,29 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       {/* Print + Calibrate buttons — only shown when we have a usable printer */}
       {canPrint && (
         <>
+          <label className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-zinc-800 bg-zinc-950/60 text-xs text-zinc-400">
+            Qty
+            <input
+              type="number"
+              min={1}
+              max={9999}
+              step={1}
+              value={labelQty}
+              onChange={(e) => {
+                const next = parseInt(e.target.value, 10);
+                setLabelQty(Number.isFinite(next) ? Math.max(1, Math.min(9999, next)) : 1);
+              }}
+              className="w-16 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:outline-none focus:border-amber-500/40"
+            />
+          </label>
           <button
             onClick={handlePrintLabel}
             disabled={!!printing}
-            title="Send current template to the printer"
+            title={`Send ${labelQty} label${labelQty === 1 ? '' : 's'} to the printer`}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-white bg-amber-600 hover:bg-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {printing === 'label' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-            Print
+            Print{labelQty > 1 && <span className="text-amber-100/80">×{labelQty}</span>}
           </button>
           {/* Calibrate button with adjacent options menu (style + copies). */}
           <div className="relative flex items-center rounded-md border border-zinc-800">

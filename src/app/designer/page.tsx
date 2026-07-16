@@ -20,6 +20,7 @@ import { ZPLPreview } from '@/components/designer/ZPLPreview';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 type NewTemplateElement = TemplateElement extends infer T
   ? T extends TemplateElement
@@ -54,9 +55,10 @@ function DesignerContent() {
     removeElement,
     reorderElement,
     duplicateElement,
+    updateTemplate,
   } = useTemplateStore();
 
-  const { getFormatById } = useFormatStore();
+  const { formats, getFormatById } = useFormatStore();
   const { globals, createGlobal, deleteGlobal } = useGlobalElementStore();
   const { push: pushUndo, undo, redo, setCurrent: setUndoCurrent, canUndo, canRedo, clear: clearUndo } = useUndoStore();
 
@@ -403,6 +405,25 @@ function DesignerContent() {
     reorderElement(currentTemplate.id, elementId, newZIndex);
   };
 
+  const handleChangeFormat = async (formatId: string) => {
+    const targetFormat = getFormatById(formatId);
+    if (!targetFormat || targetFormat.id === currentTemplate.formatId) return;
+
+    const { duplicateElementsForFormat } = await import('@/lib/templateScale');
+    const elements = duplicateElementsForFormat(
+      currentTemplate,
+      currentFormat,
+      targetFormat,
+      { scale: true },
+    ) as TemplateElement[];
+
+    clearUndo();
+    setSelectedIds(new Set());
+    await updateTemplate(currentTemplate.id, { formatId: targetFormat.id, elements });
+  };
+
+  const compatibleFormats = formats.filter((format) => format.type === currentFormat.type);
+
   return (
     <AppShell>
       <PageTitle title="Designer" />
@@ -471,6 +492,20 @@ function DesignerContent() {
             }`}>
               {currentFormat.name}
             </span>
+
+            {compatibleFormats.length > 1 && (
+              <div className="w-56 ml-2">
+                <CustomSelect
+                  value={currentFormat.id}
+                  onChange={(value) => void handleChangeFormat(value)}
+                  options={compatibleFormats.map((format) => ({
+                    value: format.id,
+                    label: format.name,
+                    sublabel: `${format.width}" × ${format.height}"`,
+                  }))}
+                />
+              </div>
+            )}
 
             {/* Undo/Redo */}
             <div className="ml-auto flex items-center gap-1">
