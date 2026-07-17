@@ -20,7 +20,7 @@ export default function SheetRunPrintPage({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
 
-  const { runs, hydrated: runsHydrated } = useRunStore();
+  const { runs, fetchRun, hydrated: runsHydrated } = useRunStore();
   const { templates, hydrated: templatesHydrated } = useTemplateStore();
   const { formats, hydrated: formatsHydrated } = useFormatStore();
 
@@ -35,7 +35,14 @@ export default function SheetRunPrintPage({
   }), [query.from, query.to, run?.totalLabels]);
 
   useEffect(() => {
+    if (!run || (run.totalLabels > 0 && run.sourceData.length === 0)) {
+      void fetchRun(id);
+    }
+  }, [fetchRun, id, run]);
+
+  useEffect(() => {
     if (!hydrated || wroteDocument.current) return;
+    if (!run || (run.totalLabels > 0 && run.sourceData.length === 0)) return;
 
     if (!run || !template || !format) {
       setError('Could not find this run, template, or label format.');

@@ -5,7 +5,27 @@ import { desc } from "drizzle-orm";
 
 export async function GET() {
   try {
-    const all = await db.select().from(runs).orderBy(desc(runs.createdAt));
+    const all = await db
+      .select({
+        id: runs.id,
+        name: runs.name,
+        templateId: runs.templateId,
+        presetId: runs.presetId,
+        staticValues: runs.staticValues,
+        fieldMappings: runs.fieldMappings,
+        dataSource: runs.dataSource,
+        mappedField: runs.mappedField,
+        status: runs.status,
+        totalLabels: runs.totalLabels,
+        printedCount: runs.printedCount,
+        notes: runs.notes,
+        pinnedAt: runs.pinnedAt,
+        createdAt: runs.createdAt,
+        updatedAt: runs.updatedAt,
+        completedAt: runs.completedAt,
+      })
+      .from(runs)
+      .orderBy(desc(runs.createdAt));
     return NextResponse.json(all);
   } catch (error) {
     console.error("Error fetching runs:", error);

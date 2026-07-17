@@ -9,6 +9,7 @@ interface RunStore {
   printEvents: RunPrintEvent[];
   hydrated: boolean;
   loadAll: () => Promise<void>;
+  fetchRun: (id: string) => Promise<Run | null>;
 
   // Runs
   createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings'] }) => Promise<Run>;
@@ -36,15 +37,37 @@ export const useRunStore = create<RunStore>((set, get) => ({
   hydrated: false,
 
   loadAll: async () => {
-    const [rRes, pRes] = await Promise.all([
-      fetch('/api/runs').then((r) => r.json()),
-      fetch('/api/presets').then((r) => r.json()),
-    ]);
-    set({
-      runs: Array.isArray(rRes) ? rRes : [],
-      presets: Array.isArray(pRes) ? pRes : [],
-      hydrated: true,
+    try {
+      const [rRes, pRes] = await Promise.all([
+        fetch('/api/runs').then((r) => r.json()),
+        fetch('/api/presets').then((r) => r.json()),
+      ]);
+      set({
+        runs: Array.isArray(rRes)
+          ? rRes.map((run) => ({ sourceData: [], ...run })) as Run[]
+          : [],
+        presets: Array.isArray(pRes) ? pRes : [],
+        hydrated: true,
+      });
+    } catch (error) {
+      console.error('Error loading runs:', error);
+      set({ hydrated: true });
+    }
+  },
+
+  fetchRun: async (id) => {
+    const res = await fetch(`/api/runs/${id}`);
+    if (!res.ok) return null;
+    const run = (await res.json()) as Run;
+    set((state) => {
+      const exists = state.runs.some((r) => r.id === id);
+      return {
+        runs: exists
+          ? state.runs.map((r) => (r.id === id ? run : r))
+          : [run, ...state.runs],
+      };
     });
+    return run;
   },
 
   createRun: async (data) => {

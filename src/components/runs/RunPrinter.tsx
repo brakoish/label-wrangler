@@ -67,7 +67,7 @@ function printEventLabel(event: RunPrintEvent) {
  * batches with a live progress bar, pause/resume, and cancel.
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
-  const { runs, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent } = useRunStore();
+  const { runs, fetchRun, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent } = useRunStore();
   const { templates } = useTemplateStore();
   const { formats } = useFormatStore();
 
@@ -117,6 +117,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [saving, setSaving] = useState(false);
 
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
+
+  useEffect(() => {
+    if (!run || (run.totalLabels > 0 && run.sourceData.length === 0)) {
+      void fetchRun(runId);
+    }
+  }, [fetchRun, run, runId]);
 
   const eventsForRun = useMemo(
     () => printEvents.filter((event) => event.runId === runId),

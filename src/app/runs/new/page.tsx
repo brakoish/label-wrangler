@@ -119,7 +119,7 @@ function NewRunContent() {
 
   const { templates, addTemplate, updateElementLocal, saveTemplate } = useTemplateStore();
   const { formats, getFormatById } = useFormatStore();
-  const { runs, presets, createRun, createPreset, updatePreset } = useRunStore();
+  const { runs, presets, fetchRun, createRun, createPreset, updatePreset } = useRunStore();
 
   // Form state
   const [name, setName] = useState('');
@@ -178,7 +178,10 @@ function NewRunContent() {
     if (!duplicateFrom) return;
     if (didApplyDuplicateRef.current === duplicateFrom) return;
     const src = runs.find((r) => r.id === duplicateFrom);
-    if (!src) return;
+    if (!src || (src.totalLabels > 0 && src.sourceData.length === 0)) {
+      void fetchRun(duplicateFrom);
+      return;
+    }
     didApplyDuplicateRef.current = duplicateFrom;
     setName(`${src.name} — ${new Date().toLocaleDateString()}`);
     setTemplateId(src.templateId);
@@ -209,7 +212,7 @@ function NewRunContent() {
       setPasteText((sd as string[]).join('\n'));
       if (src.mappedField) setPasteField(src.mappedField);
     }
-  }, [duplicateFrom, runs]);
+  }, [duplicateFrom, fetchRun, runs]);
 
   const template = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
