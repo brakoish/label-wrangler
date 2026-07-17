@@ -109,6 +109,7 @@ export interface TemplateElementBase {
   zIndex: number;
   isStatic: boolean;    // true = fixed value, false = dynamic placeholder
   fieldName?: string;   // for dynamic elements — the key used in label filler
+  hideInRuns?: boolean;  // true = keep dynamic, but hide from the Runs setup UI
   defaultValue?: string; // preview/placeholder value for dynamic fields
   prefix?: string;       // text before dynamic value (e.g. "SKU: ")
   suffix?: string;       // text after dynamic value (e.g. " oz")

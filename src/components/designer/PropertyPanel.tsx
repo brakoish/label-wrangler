@@ -191,6 +191,13 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
               }}
               options={[{ value: '', label: 'Manifest fields' }, ...MANIFEST_FIELD_OPTIONS]}
             />
+            <div className="flex items-center justify-between py-0.5">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Runs</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-500">{element.hideInRuns ? 'Hidden' : 'Shown'}</span>
+                <Toggle checked={!element.hideInRuns} onChange={(v) => onUpdate({ hideInRuns: !v })} />
+              </div>
+            </div>
             <CompactTextInput label="Default" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Preview..." />
             {element.type === 'text' && (
               <div className="grid grid-cols-2 gap-1">
