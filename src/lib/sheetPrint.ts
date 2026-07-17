@@ -304,6 +304,15 @@ async function renderSheetPageSvg(
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${sheetW}in" height="${sheetH}in" viewBox="0 0 ${sheetW} ${sheetH}"><rect width="${sheetW}" height="${sheetH}" fill="#ffffff"/>${cells.join('')}</svg>`;
 }
 
+export async function renderSheetLabelSvg(
+  elements: TemplateElement[],
+  format: LabelFormat,
+  values: Record<string, string>,
+): Promise<string> {
+  const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+  return renderLabelSvg(sorted, format, values);
+}
+
 async function svgToPngBytes(svg: string, sheetW: number, sheetH: number): Promise<Uint8Array> {
   const dpi = 300;
   const width = Math.round(sheetW * dpi);

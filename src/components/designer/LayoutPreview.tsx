@@ -6,6 +6,7 @@ import JsBarcode from 'jsbarcode';
 import { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from '@/lib/types';
 import { generateZPL } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
+import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
@@ -234,6 +235,52 @@ function MiniBarcode({ element, testData, vbW }: { element: BarcodeElement; test
   );
 }
 
+function extractSvgBody(svg: string): string {
+  const start = svg.indexOf('>');
+  const end = svg.lastIndexOf('</svg>');
+  if (start === -1 || end === -1 || end <= start) return svg;
+  return svg.slice(start + 1, end);
+}
+
+function SheetLabelCell({
+  elements,
+  format,
+  values,
+  contentW,
+  contentH,
+}: {
+  elements: TemplateElement[];
+  format: LabelFormat;
+  values?: Record<string, string>;
+  contentW: number;
+  contentH: number;
+}) {
+  const [svgBody, setSvgBody] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setSvgBody(null);
+    renderSheetLabelSvg(elements, format, values || {})
+      .then((svg) => {
+        if (active) setSvgBody(extractSvgBody(svg));
+      })
+      .catch(() => {
+        if (active) setSvgBody('');
+      });
+    return () => { active = false; };
+  }, [elements, format, values]);
+
+  if (svgBody === null) {
+    return <rect x={0} y={0} width={contentW} height={contentH} fill="#ffffff" />;
+  }
+
+  if (!svgBody) {
+    return <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} testData={values} />;
+  }
+
+  return <g dangerouslySetInnerHTML={{ __html: svgBody }} />;
+}
+
 function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabelOffset }: LayoutPreviewProps) {
   const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const cols = format.columns || 1;
@@ -286,7 +333,13 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
                     strokeWidth={isSelected ? 0.025 : 0.01}
                   />
                   <svg x={x} y={y} width={labelW} height={labelH} viewBox={`0 0 ${contentW} ${contentH}`} preserveAspectRatio="xMidYMid meet">
-                    <MiniElements elements={elements} vbW={contentW} vbH={contentH} format={format} testData={cellData} />
+                    <SheetLabelCell
+                      elements={elements}
+                      format={format}
+                      values={cellData}
+                      contentW={contentW}
+                      contentH={contentH}
+                    />
                   </svg>
                 </g>
               );

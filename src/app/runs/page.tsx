@@ -11,6 +11,7 @@ import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { generateZPL } from '@/lib/zplGenerator';
 import { previewLabelValues } from '@/lib/runBuilder';
+import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import type { Run, RunPreset, RunStatus, LabelFormat, LabelTemplate } from '@/lib/types';
 
 type ViewMode = 'list' | 'grid';
@@ -792,15 +793,15 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
 
   useEffect(() => {
     let cancelled = false;
-    // Sheet formats can't render via the ZPL WASM engine. Skip the fetch
-    // and let the caller render a sheet-style placeholder instead.
-    if (format.type !== 'thermal') {
-      setErr(true);
-      return;
-    }
     (async () => {
       try {
         const values = previewLabelValues(run, 0);
+        if (format.type === 'sheet') {
+          const svg = await renderSheetLabelSvg(template.elements, format, values);
+          if (!cancelled) setUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+          return;
+        }
+
         const zpl = generateZPL(template, format, values);
         const mod = await import('zpl-renderer-js');
         const { api } = await mod.ready;
@@ -821,8 +822,12 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
     return () => { cancelled = true; };
   }, [run, template, format]);
 
-  // Sheet formats: draw a tiny SVG grid thumbnail so the user still sees
-  // "this is a sheet with N labels" instead of a generic printer icon.
+  if (format.type === 'sheet' && url) {
+    return <img src={url} alt="" className="max-w-full max-h-full" />;
+  }
+
+  // Fallback for sheet formats while the real SVG thumbnail is rendering or
+  // if the browser cannot prepare a QR/barcode preview.
   if (format.type === 'sheet') {
     const cols = format.columns || 1;
     const rows = format.rows || 1;
