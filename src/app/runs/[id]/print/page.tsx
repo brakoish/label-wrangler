@@ -4,7 +4,7 @@ import { use, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { useFormatStore } from '@/lib/store';
 import { useRunStore } from '@/lib/runStore';
-import { buildSheetPrintPdf } from '@/lib/sheetPrint';
+import { buildSheetPrintHtml } from '@/lib/sheetPrint';
 import { useTemplateStore } from '@/lib/templateStore';
 
 export default function SheetRunPrintPage({
@@ -18,7 +18,6 @@ export default function SheetRunPrintPage({
   const query = use(searchParams);
   const wroteDocument = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
 
   const { runs, fetchRun, hydrated: runsHydrated } = useRunStore();
   const { templates, hydrated: templatesHydrated } = useTemplateStore();
@@ -55,11 +54,11 @@ export default function SheetRunPrintPage({
     }
 
     wroteDocument.current = true;
-    void buildSheetPrintPdf(run, template, format, range, setProgress)
-      .then((pdfBytes) => {
-        const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        window.location.replace(url);
+    void buildSheetPrintHtml(run, template, format, range)
+      .then((html) => {
+        document.open();
+        document.write(html);
+        document.close();
       })
       .catch((err) => {
         wroteDocument.current = false;
@@ -85,9 +84,8 @@ export default function SheetRunPrintPage({
     <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
       <div className="grid gap-2 text-center text-sm">
         <Loader2 className="w-5 h-5 animate-spin justify-self-center text-amber-500" />
-        <div className="font-semibold text-amber-400">Preparing PDF...</div>
+        <div className="font-semibold text-amber-400">Preparing print page...</div>
         <div className="text-zinc-500">{run?.name || 'Loading run'}</div>
-        {progress > 0 && <div className="text-zinc-600">{progress}%</div>}
       </div>
     </main>
   );
