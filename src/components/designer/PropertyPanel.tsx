@@ -11,11 +11,47 @@ import { MANIFEST_FIELD_OPTIONS } from '@/lib/manifestFields';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
+  selectedElements?: TemplateElement[];
   format: LabelFormat;
   onUpdate: (updates: Partial<TemplateElement>) => void;
+  onUpdateSelected?: (updates: Partial<TemplateElement>) => void;
 }
 
-export function PropertyPanel({ element, format, onUpdate }: PropertyPanelProps) {
+export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected }: PropertyPanelProps) {
+  const multiSelected = selectedElements.length > 1;
+  const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
+
+  if (multiSelected) {
+    const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
+
+    return (
+      <div className="w-full xl:w-[280px] xl:shrink-0 max-h-[48vh] xl:max-h-none border-t xl:border-t-0 xl:border-l border-zinc-800/50 overflow-y-auto">
+        <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <Type className="w-3 h-3" />
+          </div>
+          <span className="text-sm font-medium text-zinc-200">
+            {canEditTextGroup ? `${selectedTextElements.length} Text` : `${selectedElements.length} Selected`}
+          </span>
+        </div>
+
+        {canEditTextGroup ? (
+          <div className="p-3 space-y-1">
+            <MultiTextProps
+              elements={selectedTextElements}
+              onUpdate={onUpdateSelected}
+              format={format}
+            />
+          </div>
+        ) : (
+          <div className="min-h-20 flex items-center justify-center px-4">
+            <p className="text-zinc-600 text-xs">Mixed selection</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (!element) {
     return (
       <div className="w-full xl:w-[280px] xl:shrink-0 min-h-20 xl:min-h-0 border-t xl:border-t-0 xl:border-l border-zinc-800/50 flex items-center justify-center">
@@ -255,6 +291,81 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
             className="w-6 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
           />
           <span className="text-xs text-zinc-400 font-mono">{element.color}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+function MultiTextProps({ elements, onUpdate, format }: { elements: TextElement[]; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat }) {
+  const first = elements[0];
+  const isThermal = format.type === 'thermal';
+
+  if (!first) return null;
+
+  return (
+    <>
+      <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
+      <div className="grid grid-cols-3 gap-1">
+        <CompactInput label="Pt" value={first.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
+        <CompactInput label="LH" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
+        <CompactSelect value={first.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
+      </div>
+      {isThermal && (
+        <div className="grid grid-cols-3 gap-1">
+          <CompactInput
+            label="CW"
+            value={first.charWidth ?? 0.5}
+            onChange={(v) => onUpdate({ charWidth: v })}
+            step={0.05}
+            labelRight
+          />
+          <div className="col-span-2 flex items-center gap-0.5">
+            {([
+              { label: 'Tight', value: 0.5 },
+              { label: 'Normal', value: 0.6 },
+              { label: 'Roomy', value: 0.8 },
+            ] as const).map((p) => (
+              <button
+                key={p.label}
+                onClick={() => onUpdate({ charWidth: p.value })}
+                className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+                  (first.charWidth ?? 0.5) === p.value
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
+                }`}
+                title={`Set character width ratio to ${p.value}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <CompactSelect value={first.fontFamily} options={['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
+      <div className="flex gap-0.5">
+        {(['left', 'center', 'right'] as const).map((a) => (
+          <button
+            key={a}
+            onClick={() => onUpdate({ textAlign: a })}
+            className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+              first.textAlign === a ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {a.charAt(0).toUpperCase() + a.slice(1)}
+          </button>
+        ))}
+      </div>
+      {format.type === 'sheet' && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-500 uppercase tracking-wider w-10">Color</span>
+          <input
+            type="color"
+            value={first.color}
+            onChange={(e) => onUpdate({ color: e.target.value })}
+            className="w-6 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+          />
+          <span className="text-xs text-zinc-400 font-mono">{first.color}</span>
         </div>
       )}
     </>

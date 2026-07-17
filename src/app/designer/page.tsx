@@ -396,6 +396,21 @@ function DesignerContent() {
     updateElement(currentTemplate.id, selectedElementId, updates);
   };
 
+  const handleUpdateSelectedElements = (updates: Partial<TemplateElement>) => {
+    if (selectedIds.size === 0) return;
+    const selectedTextIds = currentTemplate.elements
+      .filter((el) => selectedIds.has(el.id) && el.type === 'text')
+      .map((el) => el.id);
+
+    if (selectedTextIds.length === 0) return;
+
+    pushUndoState();
+    for (const id of selectedTextIds) {
+      updateElementLocal(currentTemplate.id, id, updates);
+    }
+    void saveTemplate(currentTemplate.id);
+  };
+
   const handleMoveElement = (elementId: string, direction: 'up' | 'down') => {
     pushUndoState();
     const element = currentTemplate.elements.find((e) => e.id === elementId);
@@ -560,8 +575,10 @@ function DesignerContent() {
         {/* Right Panel - Properties */}
         <PropertyPanel
           element={selectedElement}
+          selectedElements={currentTemplate.elements.filter((e) => selectedIds.has(e.id))}
           format={currentFormat}
           onUpdate={handleUpdateElement}
+          onUpdateSelected={handleUpdateSelectedElements}
         />
       </div>
 
