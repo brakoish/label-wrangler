@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId, useMemo } from 'react';
+import QRCode from 'qrcode';
+import JsBarcode from 'jsbarcode';
 import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Copy } from 'lucide-react';
-import { LabelFormat, LabelTemplate, TextElement } from '@/lib/types';
+import { BarcodeElement, ImageElement, LabelFormat, LabelTemplate, LineElement, QRElement, RectangleElement, TemplateElement, TextElement } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { generateZPL } from '@/lib/zplGenerator';
+import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -75,20 +79,75 @@ export function TemplateList({
   );
 }
 
-// Mini label preview — renders elements as simplified shapes
+function sampleDataForTemplate(template: LabelTemplate) {
+  const values: Record<string, string> = {};
+  for (const element of template.elements) {
+    if (element.isStatic || !element.fieldName || values[element.fieldName]) continue;
+    values[element.fieldName] = element.defaultValue || element.fieldName;
+  }
+  return values;
+}
+
+function resolveElementContent(element: TemplateElement, testData?: Record<string, string>): string {
+  if (element.isStatic) {
+    if ('content' in element) return element.content || '';
+    return '';
+  }
+
+  const value = (element.fieldName && testData?.[element.fieldName])
+    || element.defaultValue
+    || element.fieldName
+    || '';
+
+  return `${element.prefix || ''}${value}${element.suffix || ''}`;
+}
+
+function labelViewBox(format: LabelFormat) {
+  const dpi = format.dpi || 203;
+  return {
+    vbW: format.type === 'thermal' ? format.width * dpi : format.width,
+    vbH: format.type === 'thermal' ? format.height * dpi : format.height,
+  };
+}
+
+// Mini label preview — renders the actual template instead of a gray skeleton.
 function MiniPreview({ template, format }: { template: LabelTemplate; format?: LabelFormat }) {
+  const [thermalUrl, setThermalUrl] = useState<string | null>(null);
+  const sampleData = useMemo(() => sampleDataForTemplate(template), [template]);
+
+  useEffect(() => {
+    let active = true;
+    setThermalUrl(null);
+    if (!format || format.type !== 'thermal') return () => { active = false; };
+
+    const zpl = generateZPL(template, format, sampleData);
+    renderZplToDataUrl(zpl, format)
+      .then((url) => { if (active) setThermalUrl(url); })
+      .catch(() => { if (active) setThermalUrl(null); });
+
+    return () => { active = false; };
+  }, [format, sampleData, template]);
+
   if (!format) return <div className="w-full h-full bg-zinc-900 rounded-lg" />;
 
-  const isThermal = format.type === 'thermal';
-  const dpi = format.dpi || 203;
-  const vbW = isThermal ? format.width * dpi : format.width;
-  const vbH = isThermal ? format.height * dpi : format.height;
+  if (format.type === 'thermal' && thermalUrl) {
+    return (
+      <div className="w-full h-full flex items-center justify-center rounded-lg bg-zinc-950">
+        <img
+          src={thermalUrl}
+          alt=""
+          className="max-w-full max-h-full object-contain"
+          style={{ imageRendering: 'pixelated' }}
+        />
+      </div>
+    );
+  }
+
+  const { vbW, vbH } = labelViewBox(format);
 
   const pad = Math.min(vbW, vbH) * 0.08;
   const totalW = vbW + pad * 2;
   const totalH = vbH + pad * 2;
-
-  const sorted = [...template.elements].sort((a, b) => a.zIndex - b.zIndex);
 
   return (
     <svg
@@ -99,59 +158,227 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       {/* Background */}
       <rect x={-pad} y={-pad} width={totalW} height={totalH} fill="#18181b" rx={pad * 0.4} />
       {/* Label surface */}
-      <rect x={0} y={0} width={vbW} height={vbH} fill={isThermal ? '#ffffff' : '#fafafa'} stroke="#3f3f46" strokeWidth={Math.min(vbW, vbH) * 0.006} rx={Math.min(vbW, vbH) * 0.01} />
-      {/* Elements as simplified shapes */}
-      {sorted.map((el) => {
-        switch (el.type) {
-          case 'text':
-            return (
-              <g key={el.id}>
-                <rect x={el.x} y={el.y} width={el.width} height={el.height || (el as TextElement).fontSize * 1.2} fill="#d4d4d8" rx={vbW * 0.005} opacity={0.6} />
-              </g>
-            );
-          case 'qr':
-            return (
-              <g key={el.id}>
-                <rect x={el.x} y={el.y} width={el.width} height={el.height} fill="#a1a1aa" rx={vbW * 0.005} />
-                {/* Mini QR pattern */}
-                <rect x={el.x + el.width * 0.1} y={el.y + el.height * 0.1} width={el.width * 0.25} height={el.height * 0.25} fill="#3f3f46" />
-                <rect x={el.x + el.width * 0.65} y={el.y + el.height * 0.1} width={el.width * 0.25} height={el.height * 0.25} fill="#3f3f46" />
-                <rect x={el.x + el.width * 0.1} y={el.y + el.height * 0.65} width={el.width * 0.25} height={el.height * 0.25} fill="#3f3f46" />
-              </g>
-            );
-          case 'barcode':
-            return (
-              <g key={el.id}>
-                {/* Mini barcode lines */}
-                {Array.from({ length: 12 }).map((_, i) => (
-                  <rect
-                    key={i}
-                    x={el.x + (el.width / 14) * (i + 1)}
-                    y={el.y}
-                    width={el.width / 28}
-                    height={el.height * 0.75}
-                    fill="#52525b"
-                  />
-                ))}
-              </g>
-            );
-          case 'rectangle':
-            return (
-              <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="#71717a" strokeWidth={Math.min(vbW, vbH) * 0.005} />
-            );
-          case 'line':
-            return (
-              <line key={el.id} x1={el.x} y1={el.y} x2={el.x + el.width} y2={el.y + el.height} stroke="#71717a" strokeWidth={Math.min(vbW, vbH) * 0.005} />
-            );
-          case 'image':
-            return (
-              <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} fill="#3f3f46" rx={vbW * 0.005} />
-            );
-          default:
-            return null;
-        }
-      })}
+      <rect x={0} y={0} width={vbW} height={vbH} fill="#ffffff" stroke="#3f3f46" strokeWidth={Math.min(vbW, vbH) * 0.006} rx={Math.min(vbW, vbH) * 0.01} />
+      <MiniPreviewElements template={template} format={format} testData={sampleData} vbW={vbW} />
     </svg>
+  );
+}
+
+function MiniPreviewElements({ template, format, testData, vbW }: { template: LabelTemplate; format: LabelFormat; testData: Record<string, string>; vbW: number }) {
+  return (
+    <>
+      {[...template.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => (
+        <MiniPreviewElement key={element.id} element={element} format={format} testData={testData} vbW={vbW} />
+      ))}
+    </>
+  );
+}
+
+function MiniPreviewElement({ element, format, testData, vbW }: { element: TemplateElement; format: LabelFormat; testData: Record<string, string>; vbW: number }) {
+  const transform = `translate(${element.x} ${element.y}) rotate(${element.rotation || 0})`;
+
+  switch (element.type) {
+    case 'text':
+      return <MiniText element={element as TextElement} format={format} testData={testData} transform={transform} />;
+    case 'qr':
+      return <MiniQr element={element as QRElement} testData={testData} transform={transform} />;
+    case 'barcode':
+      return <MiniBarcode element={element as BarcodeElement} testData={testData} transform={transform} />;
+    case 'rectangle':
+      return <MiniRectangle element={element as RectangleElement} format={format} transform={transform} />;
+    case 'line':
+      return <MiniLine element={element as LineElement} format={format} transform={transform} />;
+    case 'image':
+      return <MiniImage element={element as ImageElement} transform={transform} vbW={vbW} />;
+    default:
+      return null;
+  }
+}
+
+function MiniText({ element, format, testData, transform }: { element: TextElement; format: LabelFormat; testData: Record<string, string>; transform: string }) {
+  const content = resolveElementContent(element, testData);
+  if (!content) return null;
+
+  const dpi = format.dpi || 203;
+  const fontSize = format.type === 'thermal' ? element.fontSize * (dpi / 72) : element.fontSize / 72;
+  const lineHeight = fontSize * (element.lineHeight || 1.2);
+  const charWidth = fontSize * (element.charWidth ?? 0.5);
+  const maxChars = Math.max(1, Math.floor(element.width / Math.max(1, charWidth)));
+  const lines = wrapText(content, maxChars);
+  const maxLines = Math.max(1, Math.floor(element.height / lineHeight));
+  const visibleLines = lines.slice(0, maxLines);
+
+  let x = 0;
+  let anchor: 'start' | 'middle' | 'end' = 'start';
+  if (element.textAlign === 'center') {
+    x = element.width / 2;
+    anchor = 'middle';
+  } else if (element.textAlign === 'right') {
+    x = element.width;
+    anchor = 'end';
+  }
+
+  return (
+    <text
+      transform={transform}
+      fontSize={fontSize}
+      fontFamily={element.fontFamily}
+      fontWeight={element.fontWeight}
+      fill={format.type === 'thermal' ? '#000000' : element.color || '#111827'}
+      textAnchor={anchor}
+    >
+      {visibleLines.map((line, index) => (
+        <tspan key={`${element.id}-${index}`} x={x} y={fontSize * 0.85 + index * lineHeight}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
+function wrapText(content: string, maxChars: number) {
+  const words = content.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxChars) {
+      current = next;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [''];
+}
+
+function MiniQr({ element, testData, transform }: { element: QRElement; testData: Record<string, string>; transform: string }) {
+  const [dataUrl, setDataUrl] = useState('');
+  const content = resolveElementContent(element, testData) || 'QR';
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(content, {
+      errorCorrectionLevel: element.errorCorrection,
+      width: 128,
+      margin: 0,
+      color: { dark: '#000000', light: '#ffffff' },
+    })
+      .then((url: string) => { if (active) setDataUrl(url); })
+      .catch(() => { if (active) setDataUrl(''); });
+    return () => { active = false; };
+  }, [content, element.errorCorrection]);
+
+  if (!dataUrl) return <rect transform={transform} x={0} y={0} width={element.width} height={element.height} fill="#d4d4d8" />;
+
+  return (
+    <image
+      transform={transform}
+      x={0}
+      y={0}
+      width={element.width}
+      height={element.height}
+      href={dataUrl}
+      preserveAspectRatio="xMidYMid meet"
+    />
+  );
+}
+
+function MiniBarcode({ element, testData, transform }: { element: BarcodeElement; testData: Record<string, string>; transform: string }) {
+  const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
+  const clipId = useId().replace(/:/g, '');
+  const content = resolveElementContent(element, testData) || '123456789';
+
+  useEffect(() => {
+    try {
+      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(tempSvg, content, {
+        format: element.barcodeFormat,
+        width: 2,
+        height: 80,
+        displayValue: element.showText,
+        margin: 0,
+        fontSize: 14,
+      });
+      const w = tempSvg.getAttribute('width') || '200';
+      const h = tempSvg.getAttribute('height') || '100';
+      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: `0 0 ${w} ${h}` });
+    } catch {
+      setBarcodeData(null);
+    }
+  }, [content, element.barcodeFormat, element.showText]);
+
+  if (!barcodeData) return <rect transform={transform} x={0} y={0} width={element.width} height={element.height} fill="#d4d4d8" />;
+
+  return (
+    <g transform={transform}>
+      <clipPath id={clipId}>
+        <rect x={0} y={0} width={element.width} height={element.height} />
+      </clipPath>
+      <svg
+        x={0}
+        y={0}
+        width={element.width}
+        height={element.height}
+        viewBox={barcodeData.viewBox}
+        preserveAspectRatio="xMidYMid meet"
+        clipPath={`url(#${clipId})`}
+      >
+        <g dangerouslySetInnerHTML={{ __html: barcodeData.svg }} />
+      </svg>
+    </g>
+  );
+}
+
+function MiniRectangle({ element, format, transform }: { element: RectangleElement; format: LabelFormat; transform: string }) {
+  const dpi = format.dpi || 203;
+  const strokeWidth = format.type === 'thermal' ? Math.max(1, element.strokeWidth * (dpi / 72)) : element.strokeWidth / 72;
+  return (
+    <rect
+      transform={transform}
+      x={0}
+      y={0}
+      width={element.width}
+      height={element.height}
+      fill={element.fillColor || 'none'}
+      stroke={format.type === 'thermal' ? '#000000' : element.strokeColor || '#111827'}
+      strokeWidth={strokeWidth}
+      rx={element.borderRadius}
+    />
+  );
+}
+
+function MiniLine({ element, format, transform }: { element: LineElement; format: LabelFormat; transform: string }) {
+  const dpi = format.dpi || 203;
+  const strokeWidth = format.type === 'thermal' ? Math.max(1, element.strokeWidth * (dpi / 72)) : element.strokeWidth / 72;
+  return (
+    <line
+      transform={transform}
+      x1={0}
+      y1={0}
+      x2={element.width}
+      y2={element.height}
+      stroke={format.type === 'thermal' ? '#000000' : element.color || '#111827'}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+    />
+  );
+}
+
+function MiniImage({ element, transform, vbW }: { element: ImageElement; transform: string; vbW: number }) {
+  if (!element.src) return <rect transform={transform} x={0} y={0} width={element.width} height={element.height} fill="#3f3f46" rx={vbW * 0.005} />;
+  return (
+    <image
+      transform={transform}
+      x={0}
+      y={0}
+      width={element.width}
+      height={element.height}
+      href={element.src}
+      preserveAspectRatio={element.objectFit === 'fill' ? 'none' : element.objectFit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'}
+    />
   );
 }
 
