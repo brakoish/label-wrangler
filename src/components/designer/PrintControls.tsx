@@ -19,6 +19,7 @@ import {
   isDazzleRunning,
   listDazzlePrinters,
   printViaDazzle,
+  printAllViaDazzle,
   DAZZLE_DOWNLOAD_URL,
   type DazzlePrinter,
 } from '@/lib/dazzlePrinter';
@@ -205,15 +206,19 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
   }, []);
 
   const doPrint = useCallback(
-    async (zpl: string, kind: 'label' | 'calibration') => {
+    async (zpl: string | string[], kind: 'label' | 'calibration') => {
       setError(null);
       setPrinting(kind);
       try {
         if (transport === 'dazzle') {
-          await printViaDazzle(zpl, selectedDazzlePrinter ?? undefined);
+          if (Array.isArray(zpl)) {
+            await printAllViaDazzle(zpl, selectedDazzlePrinter ?? undefined);
+          } else {
+            await printViaDazzle(zpl, selectedDazzlePrinter ?? undefined);
+          }
         } else {
           if (!usbPrinter) throw new Error('No printer connected');
-          await printZplWebUsb(usbPrinter, zpl);
+          await printZplWebUsb(usbPrinter, Array.isArray(zpl) ? zpl.join('\n') : zpl);
         }
       } catch (err) {
         setError((err as Error)?.message || 'Print failed');
@@ -239,7 +244,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       ));
       labels.push(generateZPL(template, format, lanes));
     }
-    return labels.join('\n');
+    return labels;
   }, [format, labelQty, template, testData]);
 
   const handlePrintLabel = useCallback(() => {

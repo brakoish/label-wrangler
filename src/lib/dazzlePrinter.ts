@@ -35,5 +35,15 @@ export async function printViaDazzle(zpl: string, printerName?: string): Promise
   await client.print(zpl, printerName ? { printer: printerName } : undefined);
 }
 
+/** Send multiple ZPL labels as separate ordered jobs through Dazzle. */
+export async function printAllViaDazzle(zpls: string[], printerName?: string): Promise<void> {
+  if (zpls.length === 0) return;
+  if (zpls.length === 1) {
+    await printViaDazzle(zpls[0], printerName);
+    return;
+  }
+  await client.printAll(zpls, printerName ? { printer: printerName } : undefined);
+}
+
 /** Public download/install URL for the user. */
 export const DAZZLE_DOWNLOAD_URL = 'https://github.com/StirlingMarketingGroup/dazzle/releases';
