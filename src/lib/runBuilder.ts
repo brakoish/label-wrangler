@@ -9,7 +9,6 @@ export function dynamicFieldsForTemplate(template: LabelTemplate): string[] {
   const names = new Set<string>();
   for (const el of template.elements) {
     if (el.isStatic) continue;
-    if (el.hideInRuns) continue;
     const name = el.fieldName;
     if (name && name.trim()) names.add(name);
   }

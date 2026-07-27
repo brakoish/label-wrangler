@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle } from 'lucide-react';
+import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -126,6 +126,7 @@ function NewRunContent() {
   const [templateId, setTemplateId] = useState('');
   const [staticValues, setStaticValues] = useState<Record<string, string>>({});
   const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
+  const [hiddenRunFields, setHiddenRunFields] = useState<string[]>([]);
   const [inputMode, setInputMode] = useState<RunInputMode>('manual');
   const [pasteText, setPasteText] = useState('');
   const [pasteField, setPasteField] = useState<string | null>(null);
@@ -216,10 +217,33 @@ function NewRunContent() {
 
   const template = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
-  const dynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+  const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+  const hiddenRunFieldSet = useMemo(() => new Set(hiddenRunFields), [hiddenRunFields]);
+  const dynamicFields = useMemo(
+    () => allDynamicFields.filter((field) => !hiddenRunFieldSet.has(field)),
+    [allDynamicFields, hiddenRunFieldSet],
+  );
+  const visibleFieldSet = useMemo(() => new Set(dynamicFields), [dynamicFields]);
+  const visibleStaticValues = useMemo(() => {
+    const next: Record<string, string> = {};
+    for (const field of dynamicFields) {
+      if (staticValues[field] !== undefined) next[field] = staticValues[field];
+    }
+    return next;
+  }, [dynamicFields, staticValues]);
   // Static QR / barcode elements that would probably make sense as dynamic.
   // We surface them so the user can one-click convert without a trip to the designer.
   const flippable = useMemo(() => (template ? staticFlippableElements(template) : []), [template]);
+
+  useEffect(() => {
+    setHiddenRunFields((prev) => prev.filter((field) => allDynamicFields.includes(field)));
+  }, [allDynamicFields]);
+
+  const toggleRunFieldVisibility = (field: string) => {
+    setHiddenRunFields((prev) => (
+      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
+    ));
+  };
 
   // Self-heal: if the chosen template has dynamic elements without a fieldName
   // (common for older templates + QRs that predate the auto-name fix), backfill
@@ -264,7 +288,7 @@ function NewRunContent() {
     setFieldMappings((prev) => {
       const next = { ...prev };
       let changed = false;
-      for (const f of dynamicFields) {
+      for (const f of allDynamicFields) {
         if (!(f in next)) {
           next[f] = { mode: 'static' };
           changed = true;
@@ -272,14 +296,14 @@ function NewRunContent() {
       }
       // Remove mappings for fields no longer in this template.
       for (const k of Object.keys(next)) {
-        if (!dynamicFields.includes(k)) {
+        if (!allDynamicFields.includes(k)) {
           delete next[k];
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [template, dynamicFields]);
+  }, [template, allDynamicFields]);
 
   // When a CSV is loaded, attempt to auto-map any column whose header
   // closely matches a dynamic field name.
@@ -373,7 +397,8 @@ function NewRunContent() {
 
   // Pick the pasteField default once template loads.
   useEffect(() => {
-    if (!template || pasteField) return;
+    if (!template) return;
+    if (pasteField && dynamicFields.includes(pasteField)) return;
     // Prefer a QR-ish field, else the first dynamic field.
     const qr = dynamicFields.find((f) => /qr|url|code|tag/i.test(f));
     setPasteField(qr ?? dynamicFields[0] ?? null);
@@ -388,7 +413,7 @@ function NewRunContent() {
   // row objects so manual/paste/CSV/Manifest can feed the same downstream shape.
   const sourceData = useMemo<Record<string, string>[]>(() => {
     if (inputMode === 'manual') {
-      return Array.from({ length: Math.max(1, manualQty) }, () => ({ ...staticValues }));
+      return Array.from({ length: Math.max(1, manualQty) }, () => ({ ...visibleStaticValues }));
     }
     if (inputMode === 'paste') {
       return pasteText
@@ -401,7 +426,7 @@ function NewRunContent() {
       return manifestSelectedRows;
     }
     return csvRows;
-  }, [inputMode, pasteText, csvRows, manifestSelectedRows, manualQty, staticValues]);
+  }, [inputMode, pasteText, csvRows, manifestSelectedRows, manualQty, visibleStaticValues]);
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
@@ -439,18 +464,19 @@ function NewRunContent() {
   }, [inputMode, selectedManifestPackageSummary]);
 
   const previewValuesForIndex = useCallback((index: number) => {
-    const values: Record<string, string> = { ...staticValues };
+    const values: Record<string, string> = { ...visibleStaticValues };
     const row = sourceData[index];
 
     if (row && typeof row === 'object' && !Array.isArray(row)) {
       for (const [field, mapping] of Object.entries(fieldMappings)) {
+        if (!visibleFieldSet.has(field)) continue;
         if (mapping.mode === 'column' && mapping.csvColumn) {
           values[field] = (row as Record<string, string>)[mapping.csvColumn] ?? '';
         }
       }
     }
     return values;
-  }, [staticValues, fieldMappings, sourceData]);
+  }, [visibleStaticValues, sourceData, fieldMappings, visibleFieldSet]);
 
   // Preview values for the current row.
   const previewValues = useMemo(() => previewValuesForIndex(previewIndex), [previewValuesForIndex, previewIndex]);
@@ -496,7 +522,7 @@ function NewRunContent() {
     if (inputMode === 'manual') {
       // Manual mode: all fields are static, but the run still has one row per
       // label so history, preview, and future adapters all count the same way.
-      finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({ ...staticValues }));
+      finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({ ...visibleStaticValues }));
       finalMappings = {};
       for (const f of dynamicFields) {
         finalMappings[f] = { mode: 'static' };
@@ -506,11 +532,12 @@ function NewRunContent() {
       finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
       legacyField = pasteField;
     }
+    finalMappings = Object.fromEntries(Object.entries(finalMappings).filter(([field]) => visibleFieldSet.has(field)));
     const run = await createRun({
       name: name.trim(),
       templateId: template.id,
       presetId: presetId ?? null,
-      staticValues,
+      staticValues: visibleStaticValues,
       fieldMappings: finalMappings,
       dataSource: inputMode as RunDataSource,
       sourceData: finalSourceData,
@@ -551,8 +578,8 @@ function NewRunContent() {
     const preset = await createPreset({
       name: saveAsPresetName.trim(),
       templateId: template.id,
-      staticDefaults: staticValues,
-      fieldMappings,
+      staticDefaults: visibleStaticValues,
+      fieldMappings: Object.fromEntries(Object.entries(fieldMappings).filter(([field]) => visibleFieldSet.has(field))),
     });
     setSaveAsPresetName('');
     alert(`Preset "${preset.name}" saved.`);
@@ -566,21 +593,61 @@ function NewRunContent() {
     );
   }
 
+  const setupComplete = name.trim().length > 0 && !!template && !!format;
+  const fieldsComplete = !!template && allDynamicFields.length > 0 && dynamicFields.length > 0;
+  const dataComplete = inputMode === 'manual'
+    ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
+    : inputMode === 'paste'
+      ? pasteText.trim().length > 0 && !!pasteField
+      : labelCount > 0 && variableFields.length > 0;
+  const workflowSteps = [
+    { label: 'Setup', done: setupComplete },
+    { label: 'Fields', done: fieldsComplete },
+    { label: 'Data', done: dataComplete },
+    { label: 'Review', done: canCreate },
+  ];
+
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
   // action is needed here.
   return (
     <AppShell>
       <PageTitle title={name.trim() ? `New Run · ${name.trim()}` : 'New Run'} />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-[1100px] mx-auto w-full p-4 sm:p-8 space-y-6">
-          <h1 className="text-2xl font-bold text-zinc-100">New Print Run</h1>
+        <div className="max-w-[1180px] mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-5 pb-28">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Print workflow</p>
+              <h1 className="mt-1 text-2xl font-bold text-zinc-100">New print run</h1>
+            </div>
+            <ol className="grid grid-cols-4 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
+              {workflowSteps.map((step, index) => (
+                <li
+                  key={step.label}
+                  className={`flex min-w-0 items-center gap-2 border-r border-zinc-800 px-3 py-2 last:border-r-0 ${
+                    step.done ? 'text-emerald-300' : index === workflowSteps.findIndex((s) => !s.done) ? 'text-amber-300' : 'text-zinc-600'
+                  }`}
+                >
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                    step.done ? 'bg-emerald-500/20' : 'bg-zinc-900'
+                  }`}>
+                    {step.done ? '✓' : index + 1}
+                  </span>
+                  <span className="truncate text-xs font-medium">{step.label}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
 
           {/* Setup */}
-          <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
-            <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Setup</h2>
+          <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+            <SectionHeader
+              number="1"
+              title="Setup"
+              detail="Name the job and choose the label template."
+            />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-zinc-400 block mb-1.5">Run Name</label>
+                <label className="text-xs text-zinc-400 block mb-1.5">Run name</label>
                 <input
                   type="text"
                   value={name}
@@ -654,7 +721,7 @@ function NewRunContent() {
           </section>
 
           {template && flippable.length > 0 && (
-            <section className="glass rounded-2xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
+            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
               <h2 className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Convert to Dynamic</h2>
               <p className="text-xs text-zinc-400">
                 These elements are currently static. Convert them to dynamic so they can vary per label in this run.
@@ -677,19 +744,59 @@ function NewRunContent() {
               </div>
             </section>
           )}
-          {template && dynamicFields.length === 0 && flippable.length === 0 && (
+          {template && allDynamicFields.length === 0 && flippable.length === 0 && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-300">
               This template has no dynamic fields. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link> and mark elements as Dynamic to use them in a print run.
             </div>
           )}
 
-          {template && dynamicFields.length > 0 && (
+          {template && allDynamicFields.length > 0 && (
             <>
+              <section className="glass rounded-xl p-5 border border-zinc-800 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <SectionHeader
+                    number="2"
+                    title="Fields"
+                    detail="Hide anything that should not be filled for this run."
+                  />
+                  {hiddenRunFields.length > 0 && (
+                    <span className="text-[11px] text-zinc-500">
+                      {hiddenRunFields.length} hidden
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {allDynamicFields.map((field) => {
+                    const hidden = hiddenRunFieldSet.has(field);
+                    return (
+                      <button
+                        key={field}
+                        type="button"
+                        onClick={() => toggleRunFieldVisibility(field)}
+                        title={hidden ? `Show ${field} in this run` : `Hide ${field} from this run`}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                          hidden
+                            ? 'border-zinc-800 bg-zinc-950 text-zinc-500 hover:text-zinc-300'
+                            : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15'
+                        }`}
+                      >
+                        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        <span>{field}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
               {/* Data source */}
-              <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Data Source</h2>
-                  <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
+              <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <SectionHeader
+                    number="3"
+                    title="Data source"
+                    detail="Choose how Label Wrangler should fill the fields."
+                  />
+                  <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 sm:flex sm:items-center">
                     <button
                       onClick={() => setInputMode('manual')}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manual' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
@@ -908,8 +1015,12 @@ function NewRunContent() {
 
               {/* Field mapping for row-backed sources. */}
               {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
-                <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
-                  <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Field Mapping</h2>
+                <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+                  <SectionHeader
+                    number="3a"
+                    title="Field mapping"
+                    detail={`Match template fields to ${inputMode === 'manifest' ? 'Manifest' : 'CSV'} columns.`}
+                  />
                   <p className="text-xs text-zinc-500">
                     For each dynamic field, pick <span className="text-zinc-300">Static</span> (one value for all labels) or
                     <span className="text-zinc-300"> Row field</span> (a different value per row from {inputMode === 'manifest' ? 'Manifest' : 'your CSV'}).
@@ -960,8 +1071,12 @@ function NewRunContent() {
 
               {/* Paste-mode static fields */}
               {inputMode === 'paste' && staticFieldNames.length > 0 && (
-                <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
-                  <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Static Fields (same on every label)</h2>
+                <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+                  <SectionHeader
+                    number="3a"
+                    title="Static fields"
+                    detail="Values here print the same on every label."
+                  />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {staticFieldNames.filter((f) => f !== pasteField).map((f) => (
                       <div key={f}>
@@ -982,9 +1097,13 @@ function NewRunContent() {
                   no data yet, we still render the template with its placeholders
                   so the user can see what they're working with. */}
               {format && (
-                <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
+                <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h2>
+                    <SectionHeader
+                      number="4"
+                      title="Review"
+                      detail="Check the label output before starting the run."
+                    />
                     {labelCount > 0 ? (
                       <div className="flex items-center gap-2 text-xs">
                         <button
@@ -1029,7 +1148,7 @@ function NewRunContent() {
               )}
 
               {/* Save preset + print */}
-              <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-3">
+              <section className="glass rounded-xl p-5 border border-zinc-800 space-y-3">
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -1064,6 +1183,25 @@ function NewRunContent() {
                   <Play className="w-4 h-4" /> Start Run ({labelCount} label{labelCount === 1 ? '' : 's'})
                 </button>
               </section>
+              <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-[#0c0c0e]/95 px-4 py-3 backdrop-blur">
+                <div className="mx-auto flex max-w-[1180px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-zinc-100">
+                      {name.trim() || 'Untitled run'}
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      {template?.name || 'No template selected'} · {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleSaveAndPrint}
+                    disabled={!canCreate}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                  >
+                    <Play className="h-4 w-4" /> Start run
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -1088,6 +1226,28 @@ function NewRunContent() {
         }}
       />
     </AppShell>
+  );
+}
+
+function SectionHeader({
+  number,
+  title,
+  detail,
+}: {
+  number: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-[11px] font-bold text-amber-300 ring-1 ring-zinc-800">
+        {number}
+      </span>
+      <div className="min-w-0">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
+        <p className="mt-0.5 text-xs text-zinc-600">{detail}</p>
+      </div>
+    </div>
   );
 }
 
