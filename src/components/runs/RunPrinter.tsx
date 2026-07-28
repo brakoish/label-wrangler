@@ -608,14 +608,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     <>
     <div className="flex-1 overflow-auto">
       <div className="max-w-[980px] mx-auto w-full p-4 sm:p-8 space-y-6">
-        <header className="flex items-start justify-between gap-4">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-zinc-100 truncate">{run.name}</h1>
             <p className="text-sm text-zinc-500 mt-1">
               {template.name} · {format.name} · {format.width}″ × {format.height}″ · {total} labels
             </p>
           </div>
-          <div className="shrink-0 flex items-center gap-1 sm:gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-1 sm:gap-2">
             {/* Quick actions. On mobile we render icon-only buttons (still
                 tappable, just tighter); labels appear from sm up. */}
             <Link
@@ -663,10 +663,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
         {/* Two-column: left = summary + preview; right = printer + controls. */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-          <div className="space-y-6">
+          <div className="order-2 space-y-6 lg:order-1">
 
         {/* Run summary: how fields are mapped + a live label preview. */}
-        <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
+        <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Label Data</h2>
             <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
@@ -759,10 +759,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           </div>
 
-          <div className="space-y-6">
+          <div className="order-1 space-y-6 lg:order-2 lg:sticky lg:top-24 lg:self-start">
 
         {/* Transport setup */}
-        <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-3">
+        <section className="glass rounded-xl p-5 border border-zinc-800 space-y-3">
           <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">{isSheetFormat ? 'Sheet Output' : 'Printer'}</h2>
           {isSheetFormat ? (
             <div className="space-y-2">
@@ -840,7 +840,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         </section>
 
         {/* Progress */}
-        <section className="glass rounded-2xl p-5 border border-zinc-800 space-y-4">
+        <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
