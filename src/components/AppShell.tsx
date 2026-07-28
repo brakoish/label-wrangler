@@ -23,8 +23,8 @@ export function AppShell({ children, headerAction }: AppShellProps) {
       {/* Shared Header — tighter padding + smaller logo on mobile so the
           nav tabs and any headerAction fit without wrapping below. */}
       <header className="glass sticky top-0 z-40">
-        <div className="max-w-[1600px] mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="max-w-[1600px] mx-auto px-3 sm:px-6 min-h-14 sm:min-h-16 flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-0">
+          <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
             <Link href="/runs">
               <img
                 src="/logo.png"
@@ -42,12 +42,12 @@ export function AppShell({ children, headerAction }: AppShellProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center gap-3">
             {/* Nav tabs — Runs is the primary surface. */}
-            <nav className="flex items-center gap-1 px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
+            <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50 sm:flex-none">
               <Link
                 href="/runs"
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isRuns
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -57,7 +57,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
               </Link>
               <Link
                 href="/nabis"
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isNabis
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -67,7 +67,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
               </Link>
               <Link
                 href="/designer"
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isDesigner
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -77,7 +77,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
               </Link>
               <Link
                 href="/formats"
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isFormats
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -88,7 +88,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
             </nav>
 
             {/* Page-specific action button */}
-            {headerAction}
+            {headerAction && <div className="shrink-0">{headerAction}</div>}
           </div>
         </div>
       </header>

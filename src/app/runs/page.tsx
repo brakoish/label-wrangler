@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Printer, Clock, Trash2, Copy, Play, Search, LayoutGrid, List, Pin, PinOff, CheckCircle2, Loader2, TrendingUp } from 'lucide-react';
+import { Plus, Printer, Clock, Trash2, Copy, Play, Search, LayoutGrid, List, Pin, PinOff, CheckCircle2, Loader2, TrendingUp, FileSpreadsheet } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -190,7 +190,37 @@ export default function RunsPage() {
     <AppShell>
       <PageTitle title="Runs" />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-[1600px] mx-auto w-full p-4 sm:p-8 space-y-6 sm:space-y-8">
+        <div className="max-w-[1600px] mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+          <section className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Print cockpit</p>
+                <h1 className="mt-1 text-xl font-semibold text-zinc-100">Start, resume, or review label runs</h1>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[620px]">
+                <QuickAction
+                  href="/runs/new"
+                  icon={<Plus className="h-4 w-4" />}
+                  label="New run"
+                  detail="Manual, paste, CSV, or Manifest"
+                  primary
+                />
+                <QuickAction
+                  href="/runs/new?source=manifest"
+                  icon={<Search className="h-4 w-4" />}
+                  label="Manifest run"
+                  detail="Search packages first"
+                />
+                <QuickAction
+                  href="/runs/new?source=csv"
+                  icon={<FileSpreadsheet className="h-4 w-4" />}
+                  label="CSV run"
+                  detail="Upload row data"
+                />
+              </div>
+            </div>
+          </section>
+
           {/* Stats strip — one glance summary at the top. Hidden when empty.
               Stacks to single column on phone, then a 3-wide grid. */}
           {runs.length > 0 && (
@@ -220,12 +250,6 @@ export default function RunsPage() {
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (
             <section className="flex items-center gap-3 flex-wrap">
-              <Link
-                href="/runs/new"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
-              >
-                <Plus className="w-3.5 h-3.5" /> New Run
-              </Link>
               <div className="flex-1 min-w-[200px] max-w-md relative">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
                 <input
@@ -236,7 +260,7 @@ export default function RunsPage() {
                   className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg text-xs text-zinc-100 pl-8 pr-3 py-2 focus:outline-none focus:border-amber-500/40"
                 />
               </div>
-              <div className="w-36">
+              <div className="w-full sm:w-36">
                 <CustomSelect
                   value={statusFilter}
                   onChange={(v) => setStatusFilter(v as StatusFilter)}
@@ -251,7 +275,7 @@ export default function RunsPage() {
                   ]}
                 />
               </div>
-              <div className="w-44">
+              <div className="w-full sm:w-44">
                 <CustomSelect
                   value={templateFilter}
                   onChange={setTemplateFilter}
@@ -379,6 +403,41 @@ export default function RunsPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function QuickAction({
+  href,
+  icon,
+  label,
+  detail,
+  primary = false,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  detail: string;
+  primary?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+        primary
+          ? 'border-amber-500/40 bg-amber-500 text-black hover:bg-amber-400'
+          : 'border-zinc-800 bg-zinc-900/70 text-zinc-200 hover:border-amber-500/30 hover:bg-zinc-900'
+      }`}
+    >
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
+        primary ? 'bg-black/10' : 'bg-zinc-950 text-amber-400'
+      }`}>
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold">{label}</span>
+        <span className={`block truncate text-[11px] ${primary ? 'text-black/65' : 'text-zinc-500'}`}>{detail}</span>
+      </span>
+    </Link>
   );
 }
 
@@ -607,7 +666,7 @@ function RunRow({
   return (
     <Link
       href={`/runs/${run.id}`}
-      className="flex items-center gap-4 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group"
+      className="flex flex-col gap-3 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group sm:flex-row sm:items-center sm:gap-4"
     >
       {/* Thumbnail — first label, lazy WASM render. */}
       <div className="shrink-0 w-20 h-14 rounded-md bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center">
@@ -637,18 +696,18 @@ function RunRow({
           )}
         </div>
       </div>
-      <div className="flex-shrink-0 text-right">
+      <div className="w-full flex-shrink-0 text-left sm:w-auto sm:text-right">
         <div className="text-sm font-semibold text-zinc-200 tabular-nums">
           {run.printedCount} / {run.totalLabels}
         </div>
-        <div className="w-24 h-1 rounded-full bg-zinc-800 mt-1 overflow-hidden">
+        <div className="h-1 w-full rounded-full bg-zinc-800 mt-1 overflow-hidden sm:w-24">
           <div
             className="h-full bg-gradient-to-r from-amber-500 to-amber-400"
             style={{ width: `${pct}%` }}
           />
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex w-full items-center justify-end gap-1 sm:w-auto">
         {resumable && (
           <span
             className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-400 group-hover:bg-amber-500/25 transition-colors"
@@ -678,6 +737,17 @@ function RunRow({
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            window.location.href = `/runs/new?duplicateFrom=${run.id}`;
+          }}
+          className="p-1.5 rounded-md text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+          title="Duplicate run"
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
             onDelete();
           }}
           className="p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
@@ -686,8 +756,6 @@ function RunRow({
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
-      {/* Suppress unused Copy import warning — Copy is reserved for a v2 duplicate-run action. */}
-      <Copy className="w-0 h-0" />
     </Link>
   );
 }
@@ -773,6 +841,17 @@ function RunCard({
           </div>
         )}
       </div>
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.location.href = `/runs/new?duplicateFrom=${run.id}`;
+        }}
+        className="absolute bottom-2 right-10 p-1.5 rounded-md text-zinc-700 hover:text-amber-400 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition"
+        title="Duplicate run"
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
       <button
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
         className="absolute bottom-2 right-2 p-1.5 rounded-md text-zinc-700 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition"

@@ -136,7 +136,7 @@ export default function Home() {
                 <p className="text-zinc-400 text-sm font-medium">
                   {searchQuery || activeTab !== 'all'
                     ? 'No formats match your filters'
-                    : 'The corral\'s empty'}
+                    : 'No label formats yet'}
                 </p>
                 <p className="text-zinc-600 text-xs mt-1">
                   {searchQuery || activeTab !== 'all'
@@ -148,7 +148,7 @@ export default function Home() {
                     onClick={() => setIsAddModalOpen(true)}
                     className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium"
                   >
-                    Wrangle your first format
+                    Create first format
                   </button>
                 )}
               </div>
@@ -197,7 +197,7 @@ export default function Home() {
                     />
                   </svg>
                 </div>
-                <h3 className="text-zinc-300 font-semibold text-lg">Pick a format, partner</h3>
+                <h3 className="text-zinc-300 font-semibold text-lg">Select a format</h3>
                 <p className="text-zinc-500 text-sm mt-2">
                   Choose a label format from the list to view its specs and preview
                 </p>

@@ -156,6 +156,13 @@ function NewRunContent() {
     setTemplateId(deepLinkTemplateId);
   }, [deepLinkTemplateId, duplicateFrom, presetId, templates]);
 
+  useEffect(() => {
+    if (presetId || duplicateFrom) return;
+    if (sourceParam === 'manifest' || sourceParam === 'csv' || sourceParam === 'paste' || sourceParam === 'manual') {
+      setInputMode(sourceParam);
+    }
+  }, [duplicateFrom, presetId, sourceParam]);
+
   // Apply preset on mount.
   useEffect(() => {
     if (!presetId) return;
