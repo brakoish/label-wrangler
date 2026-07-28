@@ -333,6 +333,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             try {
               const printerStatus = await queryHostStatus(usbPrinter);
               webUsbStatusWorkingRef.current = true;
+              setPrinterStatusMessage(
+                printerStatus.labelsRemaining === null
+                  ? printerStatus.summary
+                  : `${printerStatus.summary} · ${printerStatus.labelsRemaining} label${printerStatus.labelsRemaining === 1 ? '' : 's'} remaining in printer batch`,
+              );
               if (!printerStatus.ready) {
                 throw new Error(printerStatus.summary);
               }
@@ -842,20 +847,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               )}
               {transport === 'dazzle' && (
                 dazzlePrinters.length > 0 ? (
-                  <select
-                    value={dazzleSelected ?? ''}
-                    onChange={(e) => {
-                      setDazzleSelected(e.target.value);
-                      if (typeof window !== 'undefined') localStorage.setItem('lw:dazzle-printer', e.target.value);
-                    }}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2"
-                  >
-                    {dazzlePrinters.map((p) => (
-                      <option key={p.name} value={p.name}>
-                        {p.name}{p.is_default ? ' (default)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="space-y-2">
+                    <select
+                      value={dazzleSelected ?? ''}
+                      onChange={(e) => {
+                        setDazzleSelected(e.target.value);
+                        if (typeof window !== 'undefined') localStorage.setItem('lw:dazzle-printer', e.target.value);
+                      }}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2"
+                    >
+                      {dazzlePrinters.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}{p.is_default ? ' (default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] leading-relaxed text-zinc-500">
+                      Dazzle accepts one label at a time, but this bridge does not expose printer status yet. Use WebUSB for live media/head/ribbon checks when available.
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-xs text-zinc-500">No printers found in Dazzle.</p>
                 )
