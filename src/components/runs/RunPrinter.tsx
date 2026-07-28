@@ -567,7 +567,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     }
     setErrorMsg(null);
     setPendingSheetRange(resolved);
+    setStatus('running');
     if (run) {
+      void setRunStatus(run.id, 'printing', printedCount);
       void createPrintEvent(run.id, {
         eventType: 'opened',
         output: 'sheet-pdf',
@@ -579,6 +581,27 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         message: 'Opened sheet print/PDF output',
       });
     }
+  };
+
+  const dismissPendingSheetRange = async () => {
+    if (!run || !pendingSheetRange) {
+      setPendingSheetRange(null);
+      return;
+    }
+    const range = pendingSheetRange;
+    setPendingSheetRange(null);
+    setStatus('paused');
+    await setRunStatus(run.id, 'paused', printedCount);
+    await createPrintEvent(run.id, {
+      eventType: 'cancelled',
+      output: 'sheet-pdf',
+      rangeFrom: range.from,
+      rangeTo: range.to,
+      labelCount: labelRangeCount(range),
+      printedCountAfter: printedCount,
+      printerName: null,
+      message: 'Sheet print/PDF confirmation dismissed',
+    });
   };
 
   const markSheetRangePrinted = async () => {
@@ -1044,7 +1067,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {isSheetFormat && pendingSheetRange && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
               <p className="text-xs text-amber-100">
-                Opened labels {pendingSheetRange.from}-{pendingSheetRange.to}. Mark this range printed after the sheet job finishes.
+                Opened labels {pendingSheetRange.from}-{pendingSheetRange.to}. This run stays in progress until the printed sheet is confirmed.
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -1055,10 +1078,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   Mark printed
                 </button>
                 <button
-                  onClick={() => setPendingSheetRange(null)}
+                  onClick={() => void dismissPendingSheetRange()}
                   className="px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950/60 border border-zinc-800"
                 >
-                  Dismiss
+                  Not printed
                 </button>
               </div>
             </div>
