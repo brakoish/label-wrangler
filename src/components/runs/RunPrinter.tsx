@@ -5,12 +5,12 @@ import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, Rota
 import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import type { LabelTemplate, LabelFormat, RunPrintEvent, RunStatus } from '@/lib/types';
+import type { LabelTemplate, LabelFormat, Run, RunPrintEvent, RunStatus } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
-import { generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
+import { dynamicFieldsForTemplate, generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
@@ -34,6 +34,7 @@ import {
 type Transport = 'dazzle' | 'webusb';
 type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 type PrintPacing = 'fast' | 'safe';
+type EditSourceField = { field: string; source: string; column: string | null; legacyPaste: boolean };
 type SheetPrintConfirmedMessage = {
   type: 'sheet-range-confirmed';
   runId: string;
@@ -150,6 +151,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [editName, setEditName] = useState('');
   const [editStatic, setEditStatic] = useState<Record<string, string>>({});
+  const [editSourceValues, setEditSourceValues] = useState<Record<string, string>>({});
+  const [editRowIndex, setEditRowIndex] = useState(0);
   const [editNotes, setEditNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -316,6 +319,38 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const labelsPerSheet = Math.max(1, (format.columns || 1) * (format.rows || 1));
     return previewIndex % labelsPerSheet;
   }, [format, previewIndex]);
+
+  const templateFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+  const sourceEditFields = useMemo<EditSourceField[]>(() => {
+    if (!run) return [];
+    const sourceMeta = runSourceMeta(run.dataSource);
+    return templateFields.flatMap<EditSourceField>((field) => {
+      const mapping = run.fieldMappings?.[field];
+      if (mapping?.mode === 'column' && mapping.csvColumn) {
+        return [{
+          field,
+          source: mapping.csvColumn === '__paste__' ? 'Pasted value' : `${sourceMeta.fieldLabel} -> ${mapping.csvColumn}`,
+          column: mapping.csvColumn,
+          legacyPaste: false,
+        }];
+      }
+      if (run.mappedField === field && run.sourceData.some((row) => typeof row === 'string')) {
+        return [{
+          field,
+          source: 'Pasted value',
+          column: null,
+          legacyPaste: true,
+        }];
+      }
+      return [];
+    });
+  }, [run, templateFields]);
+
+  const staticEditFields = useMemo(() => {
+    if (!run) return [] as string[];
+    const sourceFields = new Set(sourceEditFields.map((item) => item.field));
+    return templateFields.filter((field) => !sourceFields.has(field));
+  }, [run, sourceEditFields, templateFields]);
 
   // Preview ZPL for whichever label index the user is inspecting.
   // For multi-across rolls we group rows by feed so the preview matches
@@ -627,8 +662,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // --- Edit handlers ---
   const openEdit = () => {
     if (!run) return;
+    const rowIndex = Math.min(Math.max(0, previewIndex), Math.max(0, run.sourceData.length - 1));
+    const row = run.sourceData[rowIndex];
+    const nextSourceValues: Record<string, string> = {};
+    for (const item of sourceEditFields) {
+      if (item.legacyPaste || item.column === '__paste__') {
+        nextSourceValues[item.field] = typeof row === 'string' ? row : '';
+      } else if (item.column && row && typeof row === 'object' && !Array.isArray(row)) {
+        nextSourceValues[item.field] = (row as Record<string, string>)[item.column] ?? '';
+      } else {
+        nextSourceValues[item.field] = '';
+      }
+    }
+    const nextStaticValues = { ...run.staticValues };
+    for (const field of staticEditFields) {
+      nextStaticValues[field] = nextStaticValues[field] ?? '';
+    }
     setEditName(run.name);
-    setEditStatic({ ...run.staticValues });
+    setEditStatic(nextStaticValues);
+    setEditSourceValues(nextSourceValues);
+    setEditRowIndex(rowIndex);
     setEditNotes(run.notes ?? '');
     setShowEdit(true);
   };
@@ -637,9 +690,28 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run) return;
     setSaving(true);
     try {
+      let nextSourceData: Run['sourceData'] = run.sourceData;
+      if (sourceEditFields.length > 0 && run.sourceData.length > 0) {
+        const mutableSourceData = [...run.sourceData] as Array<string | Record<string, string>>;
+        nextSourceData = mutableSourceData as Run['sourceData'];
+        const currentRow = nextSourceData[editRowIndex];
+        if (typeof currentRow === 'string') {
+          const firstSourceField = sourceEditFields.find((item) => item.legacyPaste || item.column === '__paste__');
+          if (firstSourceField) mutableSourceData[editRowIndex] = editSourceValues[firstSourceField.field] ?? '';
+        } else if (currentRow && typeof currentRow === 'object' && !Array.isArray(currentRow)) {
+          const nextRow = { ...(currentRow as Record<string, string>) };
+          for (const item of sourceEditFields) {
+            if (item.column && item.column !== '__paste__') {
+              nextRow[item.column] = editSourceValues[item.field] ?? '';
+            }
+          }
+          mutableSourceData[editRowIndex] = nextRow;
+        }
+      }
       await updateRun(run.id, {
         name: editName.trim() || run.name,
         staticValues: editStatic,
+        sourceData: nextSourceData,
         notes: editNotes.trim() || null,
       });
       setShowEdit(false);
@@ -1347,17 +1419,41 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           </div>
 
           {/* Static field values */}
-          {Object.keys(editStatic).length > 0 && (
+          {staticEditFields.length > 0 && (
             <div className="space-y-2">
               <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Static fields</label>
               <div className="space-y-2">
-                {Object.entries(editStatic).map(([field, val]) => (
+                {staticEditFields.map((field) => (
                   <div key={field} className="flex items-center gap-2">
                     <span className="text-[11px] text-zinc-400 w-28 shrink-0 truncate">{field}</span>
                     <input
-                      value={val}
+                      value={editStatic[field] ?? ''}
                       onChange={(e) => setEditStatic((prev) => ({ ...prev, [field]: e.target.value }))}
                       className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500/50"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sourceEditFields.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Label {editRowIndex + 1} data</label>
+                <span className="text-[10px] text-zinc-600">Mapped source fields</span>
+              </div>
+              <div className="space-y-2">
+                {sourceEditFields.map((item) => (
+                  <div key={item.field} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-zinc-400 truncate">{item.field}</span>
+                      <span className="text-[10px] text-zinc-600 truncate">{item.source}</span>
+                    </div>
+                    <input
+                      value={editSourceValues[item.field] ?? ''}
+                      onChange={(e) => setEditSourceValues((prev) => ({ ...prev, [item.field]: e.target.value }))}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500/50"
                     />
                   </div>
                 ))}
