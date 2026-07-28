@@ -33,6 +33,7 @@ import {
 
 type Transport = 'dazzle' | 'webusb';
 type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
+type PrintPacing = 'fast' | 'safe';
 
 function runSourceMeta(source: string) {
   if (source === 'csv') return { label: 'CSV import', fieldLabel: 'CSV', icon: FileSpreadsheet };
@@ -101,6 +102,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const statusRef = useRef<PrinterUiStatus>('idle');
   const webUsbStatusUnavailableRef = useRef(false);
   const webUsbStatusWorkingRef = useRef(false);
+  const [printPacing, setPrintPacing] = useState<PrintPacing>('fast');
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -139,6 +141,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       void fetchRun(runId);
     }
   }, [fetchRun, run, runId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = localStorage.getItem('lw:print-pacing');
+    if (saved === 'fast' || saved === 'safe') setPrintPacing(saved);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('lw:print-pacing', printPacing);
+  }, [printPacing]);
 
   useEffect(() => {
     statusRef.current = status;
@@ -370,13 +383,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const labelsToSend = stopFeed < labels.length ? labels.slice(0, stopFeed) : labels;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
-      // Send one feed at a time. USB/Dazzle completion means "accepted by the
-      // connection", not "physically printed", so batching 25 at once can make
-      // progress jump far ahead of the printer if media runs out or the printer
-      // pauses. One-at-a-time keeps resume/reprint counts as close as the
-      // available printer APIs allow.
-      batchSize: 1,
-      delayBetweenBatchesMs: 150,
+      // Fast mode matches the original production-friendly throughput.
+      // Safe mode is available for high-risk runs or troubleshooting because
+      // browser/Dazzle success means "accepted by the connection", not
+      // guaranteed physically printed.
+      batchSize: printPacing === 'safe' ? 1 : 25,
+      delayBetweenBatchesMs: printPacing === 'safe' ? 150 : 0,
       startIndex: startFeed,
       onProgress: async (feedsDone) => {
         // Each feed produced up to `across` physical labels. Clamp to total
@@ -936,9 +948,38 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{ width: `${pct}%` }} />
           </div>
           {!isSheetFormat && (
-            <p className="text-[11px] leading-relaxed text-zinc-500">
-              Roll progress advances after each label is accepted by the printer connection. If the printer stops for media/ribbon, pause and reprint from the first bad label.
-            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-medium text-zinc-500">Pacing</span>
+                <div className="flex items-center gap-0.5 rounded-md border border-zinc-800 bg-zinc-900 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPrintPacing('fast')}
+                    disabled={status === 'running'}
+                    className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      printPacing === 'fast' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    Fast
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintPacing('safe')}
+                    disabled={status === 'running'}
+                    className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      printPacing === 'safe' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    Safe
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                {printPacing === 'fast'
+                  ? 'Fast sends up to 25 labels per transfer for normal production speed. If the printer stops, reprint from the first bad label.'
+                  : 'Safe sends one label at a time for tighter recovery when troubleshooting media/ribbon stops.'}
+              </p>
+            </div>
           )}
           {isSheetFormat && pendingSheetRange && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
