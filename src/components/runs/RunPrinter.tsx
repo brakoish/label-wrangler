@@ -103,6 +103,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const total = run?.totalLabels ?? 0;
   const pct = total > 0 ? Math.round((printedCount / total) * 100) : 0;
   const isSheetFormat = format?.type === 'sheet';
+  const progressLabel = isSheetFormat ? 'Printed' : 'Sent to printer';
 
   // Label preview state — which row to show in the small thumbnail.
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -344,7 +345,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const labelsToSend = stopFeed < labels.length ? labels.slice(0, stopFeed) : labels;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
-      batchSize: 25,
+      // Send one feed at a time. USB/Dazzle completion means "accepted by the
+      // connection", not "physically printed", so batching 25 at once can make
+      // progress jump far ahead of the printer if media runs out or the printer
+      // pauses. One-at-a-time keeps resume/reprint counts as close as the
+      // available printer APIs allow.
+      batchSize: 1,
+      delayBetweenBatchesMs: 150,
       startIndex: startFeed,
       onProgress: async (feedsDone) => {
         // Each feed produced up to `across` physical labels. Clamp to total
@@ -865,12 +872,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
-              {printedCount} / {total} · {pct}%
+              {progressLabel}: {printedCount} / {total} · {pct}%
             </span>
           </div>
           <div className="h-3 rounded-full bg-zinc-900 overflow-hidden">
             <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{ width: `${pct}%` }} />
           </div>
+          {!isSheetFormat && (
+            <p className="text-[11px] leading-relaxed text-zinc-500">
+              Roll progress advances after each label is accepted by the printer connection. If the printer stops for media/ribbon, pause and reprint from the first bad label.
+            </p>
+          )}
           {isSheetFormat && pendingSheetRange && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
               <p className="text-xs text-amber-100">
