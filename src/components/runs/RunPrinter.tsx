@@ -34,6 +34,25 @@ import {
 type Transport = 'dazzle' | 'webusb';
 type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 type PrintPacing = 'fast' | 'safe';
+type SheetPrintConfirmedMessage = {
+  type: 'sheet-range-confirmed';
+  runId: string;
+  rangeFrom: number;
+  rangeTo: number;
+  printedCountAfter: number;
+  status: 'paused' | 'completed';
+};
+
+function isSheetPrintConfirmedMessage(value: unknown): value is SheetPrintConfirmedMessage {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return record.type === 'sheet-range-confirmed' &&
+    typeof record.runId === 'string' &&
+    typeof record.rangeFrom === 'number' &&
+    typeof record.rangeTo === 'number' &&
+    typeof record.printedCountAfter === 'number' &&
+    (record.status === 'paused' || record.status === 'completed');
+}
 
 function runSourceMeta(source: string) {
   if (source === 'csv') return { label: 'CSV import', fieldLabel: 'CSV', icon: FileSpreadsheet };
@@ -171,6 +190,47 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   useEffect(() => {
     void fetchPrintEvents(runId);
   }, [fetchPrintEvents, runId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const applySheetConfirmation = (message: SheetPrintConfirmedMessage) => {
+      if (message.runId !== runId) return;
+      setPrintedCount(message.printedCountAfter);
+      setStatus(message.status);
+      setPendingSheetRange((current) => {
+        if (!current) return current;
+        if (current.from === message.rangeFrom && current.to === message.rangeTo) return null;
+        return current;
+      });
+      void fetchRun(runId);
+      void fetchPrintEvents(runId);
+    };
+
+    let channel: BroadcastChannel | null = null;
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel('label-wrangler-print');
+      channel.onmessage = (event: MessageEvent<unknown>) => {
+        if (isSheetPrintConfirmedMessage(event.data)) applySheetConfirmation(event.data);
+      };
+    }
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== 'lw:sheet-print-confirmed' || !event.newValue) return;
+      try {
+        const parsed: unknown = JSON.parse(event.newValue);
+        if (isSheetPrintConfirmedMessage(parsed)) applySheetConfirmation(parsed);
+      } catch {
+        // Ignore malformed localStorage values from older tabs.
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => {
+      channel?.close();
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [fetchPrintEvents, fetchRun, runId]);
 
   // Detect transport once on mount.
   useEffect(() => {

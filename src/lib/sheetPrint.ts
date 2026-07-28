@@ -112,6 +112,18 @@ export async function buildSheetPrintHtml(
   }
 
   const safeTitle = escapeHtml(run.name || 'Sheet labels');
+  const printedCountAfter = Math.max(run.printedCount || 0, to);
+  const nextRunStatus = printedCountAfter >= run.totalLabels ? 'completed' : 'paused';
+  const trackingPayload = JSON.stringify({
+    type: 'sheet-range-confirmed',
+    runId: run.id,
+    rangeFrom: from,
+    rangeTo: to,
+    labelCount: Math.max(0, to - from + 1),
+    printedCountAfter,
+    status: nextRunStatus,
+    completedAt: nextRunStatus === 'completed' ? new Date().toISOString() : null,
+  }).replace(/</g, '\\u003c');
   const autoPrintScript = options.autoPrint === false
     ? ''
     : '<script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250));</script>';
@@ -165,6 +177,32 @@ export async function buildSheetPrintHtml(
       font-weight: 700;
       cursor: pointer;
     }
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .toolbar button.secondary {
+      background: #27272a;
+      color: #f4f4f5;
+      border: 1px solid #3f3f46;
+    }
+    .toolbar button.done {
+      background: #22c55e;
+      color: #052e16;
+    }
+    .toolbar button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .track-status {
+      width: 100%;
+      text-align: right;
+      color: #a1a1aa;
+      font-size: 11px;
+    }
     .sheet-page {
       position: relative;
       width: ${sheetW}in;
@@ -206,9 +244,65 @@ export async function buildSheetPrintHtml(
       <div>${safeTitle} · labels ${from}-${to}</div>
       <div class="print-warning">Print setting: 100% / Actual size. Do not use Fit to page.</div>
     </div>
-    <button onclick="window.print()">Print / Save PDF</button>
+    <div class="toolbar-actions">
+      <button class="secondary" onclick="window.print()">Print / Save PDF</button>
+      <button class="done" id="markPrintedButton" onclick="markSheetRangePrinted()">Mark printed in run</button>
+      <div class="track-status" id="trackStatus">After the sheet prints, mark it printed to update the run.</div>
+    </div>
   </div>
   ${pages.join('')}
+  <script>
+    const sheetTracking = ${trackingPayload};
+    async function markSheetRangePrinted() {
+      const button = document.getElementById('markPrintedButton');
+      const status = document.getElementById('trackStatus');
+      if (!button || !status) return;
+      button.disabled = true;
+      status.textContent = 'Updating run...';
+      try {
+        const runRes = await fetch('/api/runs/' + encodeURIComponent(sheetTracking.runId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: sheetTracking.status,
+            printedCount: sheetTracking.printedCountAfter,
+            completedAt: sheetTracking.completedAt
+          })
+        });
+        if (!runRes.ok) throw new Error('Run update failed');
+        const eventRes = await fetch('/api/runs/' + encodeURIComponent(sheetTracking.runId) + '/print-events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventType: 'confirmed',
+            output: 'sheet-pdf',
+            rangeFrom: sheetTracking.rangeFrom,
+            rangeTo: sheetTracking.rangeTo,
+            labelCount: sheetTracking.labelCount,
+            printedCountAfter: sheetTracking.printedCountAfter,
+            printerName: null,
+            message: 'Confirmed from sheet print tab'
+          })
+        });
+        if (!eventRes.ok) throw new Error('Print history update failed');
+        status.textContent = sheetTracking.status === 'completed'
+          ? 'Run marked completed.'
+          : 'Run progress updated.';
+        button.textContent = 'Marked printed';
+        try {
+          const channel = new BroadcastChannel('label-wrangler-print');
+          channel.postMessage(sheetTracking);
+          channel.close();
+        } catch {}
+        try {
+          localStorage.setItem('lw:sheet-print-confirmed', JSON.stringify({ ...sheetTracking, at: Date.now() }));
+        } catch {}
+      } catch (err) {
+        button.disabled = false;
+        status.textContent = err && err.message ? err.message : 'Could not update the run.';
+      }
+    }
+  </script>
   ${autoPrintScript}
 </body>
 </html>`;
