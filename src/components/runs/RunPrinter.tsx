@@ -697,15 +697,39 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         const currentRow = nextSourceData[editRowIndex];
         if (typeof currentRow === 'string') {
           const firstSourceField = sourceEditFields.find((item) => item.legacyPaste || item.column === '__paste__');
-          if (firstSourceField) mutableSourceData[editRowIndex] = editSourceValues[firstSourceField.field] ?? '';
-        } else if (currentRow && typeof currentRow === 'object' && !Array.isArray(currentRow)) {
-          const nextRow = { ...(currentRow as Record<string, string>) };
-          for (const item of sourceEditFields) {
-            if (item.column && item.column !== '__paste__') {
-              nextRow[item.column] = editSourceValues[item.field] ?? '';
+          if (firstSourceField) {
+            const previousValue = currentRow;
+            const nextValue = editSourceValues[firstSourceField.field] ?? '';
+            const everyRowMatches = run.sourceData.every((row) => typeof row === 'string' && row === previousValue);
+            if (everyRowMatches) {
+              for (let i = 0; i < mutableSourceData.length; i++) mutableSourceData[i] = nextValue;
+            } else {
+              mutableSourceData[editRowIndex] = nextValue;
             }
           }
-          mutableSourceData[editRowIndex] = nextRow;
+        } else if (currentRow && typeof currentRow === 'object' && !Array.isArray(currentRow)) {
+          for (const item of sourceEditFields) {
+            if (item.column && item.column !== '__paste__') {
+              const previousValue = (currentRow as Record<string, string>)[item.column] ?? '';
+              const nextValue = editSourceValues[item.field] ?? '';
+              const everyRowMatches = run.sourceData.every(
+                (row) => row && typeof row === 'object' && !Array.isArray(row) && (row as Record<string, string>)[item.column!] === previousValue,
+              );
+              if (everyRowMatches) {
+                for (let i = 0; i < mutableSourceData.length; i++) {
+                  const row = mutableSourceData[i];
+                  if (row && typeof row === 'object' && !Array.isArray(row)) {
+                    mutableSourceData[i] = { ...row, [item.column]: nextValue };
+                  }
+                }
+              } else {
+                mutableSourceData[editRowIndex] = {
+                  ...(mutableSourceData[editRowIndex] as Record<string, string>),
+                  [item.column]: nextValue,
+                };
+              }
+            }
+          }
         }
       }
       await updateRun(run.id, {
@@ -1443,6 +1467,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Label {editRowIndex + 1} data</label>
                 <span className="text-[10px] text-zinc-600">Mapped source fields</span>
               </div>
+              <p className="text-[10px] leading-relaxed text-zinc-500">
+                If a mapped value is identical on every label, saving updates the whole run; otherwise it edits label {editRowIndex + 1}.
+              </p>
               <div className="space-y-2">
                 {sourceEditFields.map((item) => (
                   <div key={item.field} className="space-y-1">
