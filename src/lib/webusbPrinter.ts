@@ -24,6 +24,18 @@ export type ConnectedPrinter = {
   device: USBDevice;
   productName: string;
   endpointOut: number;
+  endpointIn: number | null;
+};
+
+export type ZebraHostStatus = {
+  raw: string;
+  paperOut: boolean;
+  paused: boolean;
+  headOpen: boolean;
+  ribbonOut: boolean;
+  labelsRemaining: number | null;
+  ready: boolean;
+  summary: string;
 };
 
 /** Check whether the current browser supports WebUSB at all. */
@@ -76,9 +88,14 @@ export async function openPrinter(device: USBDevice): Promise<ConnectedPrinter> 
   }
 
   // Find the bulk OUT endpoint. Fallback to endpoint 1 if detection fails.
+  // Some Zebra interfaces also expose a bulk IN endpoint; when present we can
+  // query ~HS host status for media/head/pause feedback over WebUSB.
   const alt = iface.alternates[0];
   const bulkOut = alt?.endpoints.find(
     (e) => e.direction === 'out' && e.type === 'bulk',
+  );
+  const bulkIn = alt?.endpoints.find(
+    (e) => e.direction === 'in' && e.type === 'bulk',
   );
   const endpointOut = bulkOut?.endpointNumber ?? 1;
 
@@ -86,6 +103,7 @@ export async function openPrinter(device: USBDevice): Promise<ConnectedPrinter> 
     device,
     productName: device.productName || 'Zebra Printer',
     endpointOut,
+    endpointIn: bulkIn?.endpointNumber ?? null,
   };
 }
 
@@ -99,6 +117,77 @@ export async function printZpl(
   if (result.status !== 'ok') {
     throw new Error(`Transfer failed: ${result.status}`);
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function parseHostStatus(raw: string): ZebraHostStatus {
+  const lines = raw
+    .replace(/[\x02\x03]/g, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const first = (lines[0] ?? '').split(',');
+  const second = (lines[1] ?? '').split(',');
+  const paperOut = first[1] === '1';
+  const paused = first[2] === '1';
+  const headOpen = second[2] === '1';
+  const ribbonOut = second[3] === '1';
+  const labelsRemainingRaw = second[8];
+  const labelsRemaining = labelsRemainingRaw && /^\d+$/.test(labelsRemainingRaw)
+    ? parseInt(labelsRemainingRaw, 10)
+    : null;
+  const problems = [
+    paperOut ? 'media out' : null,
+    ribbonOut ? 'ribbon out' : null,
+    headOpen ? 'head open' : null,
+    paused ? 'paused' : null,
+  ].filter(Boolean);
+
+  return {
+    raw,
+    paperOut,
+    paused,
+    headOpen,
+    ribbonOut,
+    labelsRemaining,
+    ready: problems.length === 0,
+    summary: problems.length > 0 ? `Printer ${problems.join(', ')}` : 'Printer ready',
+  };
+}
+
+/** Query Zebra ~HS host status over WebUSB when a bulk IN endpoint exists. */
+export async function queryHostStatus(
+  printer: ConnectedPrinter,
+  timeoutMs = 1000,
+): Promise<ZebraHostStatus> {
+  if (!printer.endpointIn) {
+    throw new Error('This USB interface does not expose a status read endpoint.');
+  }
+  await printZpl(printer, '~HS');
+  const result = await withTimeout(
+    printer.device.transferIn(printer.endpointIn, 512),
+    timeoutMs,
+    'Timed out waiting for printer status.',
+  );
+  if (result.status !== 'ok' || !result.data) {
+    throw new Error(`Status read failed: ${result.status}`);
+  }
+  return parseHostStatus(new TextDecoder().decode(result.data));
 }
 
 /** Release and close the printer device. Safe to call on already-closed devices. */

@@ -21,6 +21,7 @@ import {
   openPrinter,
   requestPrinter,
   printZpl,
+  queryHostStatus,
   type ConnectedPrinter,
 } from '@/lib/webusbPrinter';
 import {
@@ -92,11 +93,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [dazzlePrinters, setDazzlePrinters] = useState<DazzlePrinter[]>([]);
   const [dazzleSelected, setDazzleSelected] = useState<string | null>(null);
   const [transportError, setTransportError] = useState<string | null>(null);
+  const [printerStatusMessage, setPrinterStatusMessage] = useState<string | null>(null);
 
   // Print state
   const queueRef = useRef<RunQueueHandle | null>(null);
   const [status, setStatus] = useState<PrinterUiStatus>('idle');
   const statusRef = useRef<PrinterUiStatus>('idle');
+  const webUsbStatusUnavailableRef = useRef(false);
+  const webUsbStatusWorkingRef = useRef(false);
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -325,6 +329,22 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         if (transport === 'dazzle') {
           await printViaDazzle(zpl, dazzleSelected ?? undefined);
         } else if (transport === 'webusb' && usbPrinter) {
+          if (usbPrinter.endpointIn && !webUsbStatusUnavailableRef.current) {
+            try {
+              const printerStatus = await queryHostStatus(usbPrinter);
+              webUsbStatusWorkingRef.current = true;
+              if (!printerStatus.ready) {
+                throw new Error(printerStatus.summary);
+              }
+            } catch (err) {
+              const message = (err as Error)?.message || '';
+              if (/endpoint/i.test(message) || (!webUsbStatusWorkingRef.current && /timed out|Status read failed/i.test(message))) {
+                webUsbStatusUnavailableRef.current = true;
+              } else {
+                throw err;
+              }
+            }
+          }
           await printZpl(usbPrinter, zpl);
         } else {
           throw new Error('No printer connected');
@@ -842,8 +862,35 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               )}
               {transport === 'webusb' && (
                 usbPrinter ? (
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                    <CheckCircle2 className="w-4 h-4" /> {usbPrinter.productName}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                      <CheckCircle2 className="w-4 h-4" /> {usbPrinter.productName}
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                      {usbPrinter.endpointIn
+                        ? 'WebUSB status polling available before each label.'
+                        : 'No USB status read endpoint exposed; progress is send-confirmed only.'}
+                    </p>
+                    {usbPrinter.endpointIn && (
+                      <button
+                        onClick={async () => {
+                          setPrinterStatusMessage('Checking printer...');
+                          try {
+                            const next = await queryHostStatus(usbPrinter);
+                            webUsbStatusWorkingRef.current = true;
+                            setPrinterStatusMessage(next.summary);
+                          } catch (err) {
+                            setPrinterStatusMessage((err as Error)?.message || 'Status check failed');
+                          }
+                        }}
+                        className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-400 hover:text-amber-400"
+                      >
+                        Check status
+                      </button>
+                    )}
+                    {printerStatusMessage && (
+                      <p className="text-[11px] text-zinc-400">{printerStatusMessage}</p>
+                    )}
                   </div>
                 ) : (
                   <button
