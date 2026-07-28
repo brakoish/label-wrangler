@@ -5,7 +5,7 @@ import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, Rota
 import Link from 'next/link';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import type { LabelTemplate, LabelFormat, RunPrintEvent } from '@/lib/types';
+import type { LabelTemplate, LabelFormat, RunPrintEvent, RunStatus } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -31,12 +31,22 @@ import {
 } from '@/lib/dazzlePrinter';
 
 type Transport = 'dazzle' | 'webusb';
+type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 
 function runSourceMeta(source: string) {
   if (source === 'csv') return { label: 'CSV import', fieldLabel: 'CSV', icon: FileSpreadsheet };
   if (source === 'manifest') return { label: 'Manifest rows', fieldLabel: 'Manifest', icon: Search };
   if (source === 'manual') return { label: 'Manual rows', fieldLabel: 'Manual', icon: Pencil };
   return { label: 'Pasted rows', fieldLabel: 'Paste', icon: Clipboard };
+}
+
+function uiStatusForRunStatus(status: RunStatus): PrinterUiStatus {
+  if (status === 'completed' || status === 'cancelled' || status === 'paused') return status;
+  // If the page reloads while the DB says "printing", there is no live queue
+  // in this browser session anymore. Treat it as paused so the operator can
+  // deliberately resume from the persisted printed count.
+  if (status === 'printing') return 'paused';
+  return 'idle';
 }
 
 interface RunPrinterProps {
@@ -85,7 +95,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   // Print state
   const queueRef = useRef<RunQueueHandle | null>(null);
-  const [status, setStatus] = useState<'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error'>('idle');
+  const [status, setStatus] = useState<PrinterUiStatus>('idle');
+  const statusRef = useRef<PrinterUiStatus>('idle');
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -123,6 +134,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       void fetchRun(runId);
     }
   }, [fetchRun, run, runId]);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    if (!run || statusRef.current === 'running') return;
+    setPrintedCount(run.printedCount ?? 0);
+    setStatus(uiStatusForRunStatus(run.status));
+  }, [run?.id, run?.printedCount, run?.status, run]);
 
   const eventsForRun = useMemo(
     () => printEvents.filter((event) => event.runId === runId),
@@ -900,7 +921,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           {/* Controls */}
           <div className="flex items-center gap-2 pt-2">
-            {isSheetFormat && printedCount < total && (
+            {isSheetFormat && pendingSheetRange && (
+              <button
+                onClick={() => void markSheetRangePrinted()}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500 text-black hover:bg-emerald-400 transition-all"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Confirm printed
+              </button>
+            )}
+            {isSheetFormat && !pendingSheetRange && printedCount < total && (
               <button
                 onClick={() => openSheetPrintRange()}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
