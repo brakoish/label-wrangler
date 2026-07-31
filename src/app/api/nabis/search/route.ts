@@ -69,6 +69,12 @@ type MetrcPackage = {
   Label?: string | null;
   Item?: {
     Name?: string | null;
+    UnitThcContent?: number | string | null;
+    UnitThcContentUnitOfMeasureName?: string | null;
+    UnitThcContentDose?: number | string | null;
+    UnitThcContentDoseUnitOfMeasureName?: string | null;
+    ServingSize?: number | string | null;
+    NumberOfDoses?: number | string | null;
   } | null;
   ItemName?: string | null;
   ProductName?: string | null;
@@ -153,6 +159,11 @@ function divideDecimalValue(numerator: unknown, denominator: unknown): string {
   return Number.isFinite(result) ? cleanDecimalValue(result) : '';
 }
 
+function servingSizeFallback(unitOfMeasure: string, isEdibleMgPackage: boolean): string {
+  if (!isEdibleMgPackage) return '';
+  return /^each(?:es)?$/i.test(unitOfMeasure) ? '1 Each' : '1 serving';
+}
+
 function normalizePackage(pkg: ManifestPackage) {
   const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
@@ -160,6 +171,7 @@ function normalizePackage(pkg: ManifestPackage) {
   const thcMgG = cleanDecimalValue(pkg.thcMgG);
   const thcMgPackage = cleanDecimalValue(pkg.thcMgPackage) || cleanPositiveDecimalValue(pkg.unitThcContentMg);
   const isEdibleMgPackage = hasPositiveNumber(thcMgPackage);
+  const unitOfMeasure = cleanText(pkg.unitOfMeasure);
   const cbdPercent = cleanDecimalValue(pkg.cbdPercent);
   const cbdMgG = cleanDecimalValue(pkg.cbdMgG);
   const tacPercent =
@@ -170,14 +182,20 @@ function normalizePackage(pkg: ManifestPackage) {
     cleanPositiveDecimalValue(pkg.tacMgG) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
     mgGFromPercent(tacPercent);
-  const servingCount =
+  const explicitThcMgServing =
+    cleanPositiveDecimalValue(pkg.thcMgServing) ||
+    cleanPositiveDecimalValue(pkg.unitThcContentDoseMg);
+  const explicitServingCount =
     cleanPositiveDecimalValue(pkg.numberOfDoses) ||
     cleanPositiveDecimalValue(pkg.servingCount) ||
     cleanPositiveDecimalValue(pkg.servingsPerPackage);
+  const servingCount =
+    explicitServingCount ||
+    divideDecimalValue(thcMgPackage, explicitThcMgServing);
   const thcMgServing =
-    cleanPositiveDecimalValue(pkg.thcMgServing) ||
-    cleanPositiveDecimalValue(pkg.unitThcContentDoseMg) ||
-    divideDecimalValue(thcMgPackage, servingCount);
+    explicitThcMgServing ||
+    divideDecimalValue(thcMgPackage, servingCount) ||
+    (isEdibleMgPackage ? thcMgPackage : '');
   const tacMgPackage =
     cleanPositiveDecimalValue(pkg.tacMgPackage) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgPackage) ||
@@ -185,7 +203,8 @@ function normalizePackage(pkg: ManifestPackage) {
   const tacMgServing =
     cleanPositiveDecimalValue(pkg.tacMgServing) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgServing) ||
-    divideDecimalValue(tacMgPackage, servingCount);
+    divideDecimalValue(tacMgPackage, servingCount) ||
+    (isEdibleMgPackage ? tacMgPackage : '');
   const totalCannabinoidsPercent =
     cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
     cleanPositiveDecimalValue(pkg.totalCannabinoids);
@@ -213,7 +232,7 @@ function normalizePackage(pkg: ManifestPackage) {
     sourceBatchNumbers: cleanText(pkg.sourceBatchNumbers),
     brandName: cleanText(pkg.brandName),
     quantity: pkg.quantity == null ? '' : String(pkg.quantity),
-    unitOfMeasure: cleanText(pkg.unitOfMeasure),
+    unitOfMeasure,
     packagedDate: cleanDate(pkg.packagedDate) || cleanDate(pkg.manufacturedDate),
     manufacturedDate: cleanDate(pkg.manufacturedDate) || cleanDate(pkg.packagedDate),
     expirationDate: cleanDate(pkg.expirationDate),
@@ -244,7 +263,7 @@ function normalizePackage(pkg: ManifestPackage) {
     labFacilityName: cleanText(pkg.labFacilityName),
     testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
-    servingSize: cleanValue(pkg.servingSize),
+    servingSize: cleanValue(pkg.servingSize) || servingSizeFallback(unitOfMeasure, isEdibleMgPackage),
     servingCount,
     numberOfDoses: servingCount,
     servingsPerPackage: servingCount,
@@ -529,6 +548,7 @@ async function searchManifestDatabase(search: string) {
       mp.use_by_date AS "useByDate",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_thc_percent END AS "thcPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_thc_percent ELSE NULL END AS "thcMgPackage",
+      CASE WHEN mi.unit_thc_content_unit ILIKE 'milligram%' THEN mi.unit_thc_content ELSE NULL END AS "unitThcContentMg",
       CASE WHEN mi.unit_thc_content_dose_unit ILIKE 'milligram%' THEN mi.unit_thc_content_dose ELSE NULL END AS "thcMgServing",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_thc_percent * 10, 2) END AS "thcMgG",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END AS "cbdPercent",
@@ -569,6 +589,8 @@ function looksLikeMetrcPackageTag(search: string) {
 function normalizeMetrcPackage(pkg: MetrcPackage) {
   const tag = cleanText(pkg.Label);
   const itemName = cleanText(pkg.Item?.Name) || cleanText(pkg.ItemName) || cleanText(pkg.ProductName);
+  const itemThcContentUnit = cleanText(pkg.Item?.UnitThcContentUnitOfMeasureName).toLowerCase();
+  const itemThcDoseUnit = cleanText(pkg.Item?.UnitThcContentDoseUnitOfMeasureName).toLowerCase();
   const batch =
     cleanText(pkg.ProductionBatchNumber) ||
     cleanText(pkg.SourceProductionBatchNumbers) ||
@@ -583,6 +605,10 @@ function normalizeMetrcPackage(pkg: MetrcPackage) {
     quantity: pkg.Quantity,
     unitOfMeasure: cleanText(pkg.UnitOfMeasureName) || cleanText(pkg.UnitOfMeasure),
     packagedDate: pkg.PackagedDate,
+    unitThcContentMg: itemThcContentUnit.startsWith('milligram') ? pkg.Item?.UnitThcContent : null,
+    unitThcContentDoseMg: itemThcDoseUnit.startsWith('milligram') ? pkg.Item?.UnitThcContentDose : null,
+    servingSize: pkg.Item?.ServingSize,
+    numberOfDoses: pkg.Item?.NumberOfDoses,
   });
 }
 
