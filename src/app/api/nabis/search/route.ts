@@ -28,20 +28,31 @@ type ManifestPackage = {
   thcPercent?: number | string | null;
   thcMgG?: number | string | null;
   thcMgPackage?: number | string | null;
+  thcMgServing?: number | string | null;
+  unitThcContentMg?: number | string | null;
+  unitThcContentDoseMg?: number | string | null;
   cbdPercent?: number | string | null;
   cbdMgG?: number | string | null;
   cbdMgPackage?: number | string | null;
   tacPercent?: number | string | null;
   tacMgG?: number | string | null;
+  tacMgPackage?: number | string | null;
+  tacMgServing?: number | string | null;
   totalActiveCannabinoids?: number | string | null;
   totalActiveCannabinoidsPercent?: number | string | null;
   totalActiveCannabinoidsMgG?: number | string | null;
+  totalActiveCannabinoidsMgPackage?: number | string | null;
+  totalActiveCannabinoidsMgServing?: number | string | null;
   totalCannabinoids?: number | string | null;
   totalCannabinoidsPercent?: number | string | null;
   totalCannabinoidsMgG?: number | string | null;
   labFacilityName?: string | null;
   testPerformedDate?: string | null;
   coaDocumentId?: number | string | null;
+  servingSize?: number | string | null;
+  numberOfDoses?: number | string | null;
+  servingCount?: number | string | null;
+  servingsPerPackage?: number | string | null;
   units?: ManifestLabelUnit[] | null;
 };
 
@@ -135,11 +146,20 @@ function hasPositiveNumber(value: unknown): boolean {
   return Number.isFinite(number) && number > 0;
 }
 
+function divideDecimalValue(numerator: unknown, denominator: unknown): string {
+  if (!hasPositiveNumber(numerator) || !hasPositiveNumber(denominator)) return '';
+
+  const result = Number(cleanValue(numerator)) / Number(cleanValue(denominator));
+  return Number.isFinite(result) ? cleanDecimalValue(result) : '';
+}
+
 function normalizePackage(pkg: ManifestPackage) {
   const tag = cleanText(pkg.packageTag) || cleanText(pkg.label);
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
   const thcPercent = cleanDecimalValue(pkg.thcPercent);
   const thcMgG = cleanDecimalValue(pkg.thcMgG);
+  const thcMgPackage = cleanDecimalValue(pkg.thcMgPackage) || cleanPositiveDecimalValue(pkg.unitThcContentMg);
+  const isEdibleMgPackage = hasPositiveNumber(thcMgPackage);
   const cbdPercent = cleanDecimalValue(pkg.cbdPercent);
   const cbdMgG = cleanDecimalValue(pkg.cbdMgG);
   const tacPercent =
@@ -150,6 +170,22 @@ function normalizePackage(pkg: ManifestPackage) {
     cleanPositiveDecimalValue(pkg.tacMgG) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgG) ||
     mgGFromPercent(tacPercent);
+  const servingCount =
+    cleanPositiveDecimalValue(pkg.numberOfDoses) ||
+    cleanPositiveDecimalValue(pkg.servingCount) ||
+    cleanPositiveDecimalValue(pkg.servingsPerPackage);
+  const thcMgServing =
+    cleanPositiveDecimalValue(pkg.thcMgServing) ||
+    cleanPositiveDecimalValue(pkg.unitThcContentDoseMg) ||
+    divideDecimalValue(thcMgPackage, servingCount);
+  const tacMgPackage =
+    cleanPositiveDecimalValue(pkg.tacMgPackage) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgPackage) ||
+    (isEdibleMgPackage ? tacPercent : '');
+  const tacMgServing =
+    cleanPositiveDecimalValue(pkg.tacMgServing) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgServing) ||
+    divideDecimalValue(tacMgPackage, servingCount);
   const totalCannabinoidsPercent =
     cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
     cleanPositiveDecimalValue(pkg.totalCannabinoids);
@@ -188,19 +224,30 @@ function normalizePackage(pkg: ManifestPackage) {
     retailIdCount: cleanValue(pkg.retailIdCount),
     thcPercent,
     thcMgG,
-    thcMgPackage: cleanDecimalValue(pkg.thcMgPackage),
+    thcMgPackage,
+    thcMgServing,
+    thcPerServing: thcMgServing,
     cbdPercent,
     cbdMgG,
     cbdMgPackage: cleanDecimalValue(pkg.cbdMgPackage),
     tacPercent,
     tacMgG,
+    tacMgPackage,
+    tacMgServing,
+    tacPerServing: tacMgServing,
     totalActiveCannabinoidsPercent: tacPercent,
     totalActiveCannabinoidsMgG: tacMgG,
+    totalActiveCannabinoidsMgPackage: tacMgPackage,
+    totalActiveCannabinoidsMgServing: tacMgServing,
     totalCannabinoidsPercent,
     totalCannabinoidsMgG,
     labFacilityName: cleanText(pkg.labFacilityName),
     testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
+    servingSize: cleanValue(pkg.servingSize),
+    servingCount,
+    numberOfDoses: servingCount,
+    servingsPerPackage: servingCount,
   };
 }
 
@@ -482,15 +529,19 @@ async function searchManifestDatabase(search: string) {
       mp.use_by_date AS "useByDate",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_thc_percent END AS "thcPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_thc_percent ELSE NULL END AS "thcMgPackage",
+      CASE WHEN mi.unit_thc_content_dose_unit ILIKE 'milligram%' THEN mi.unit_thc_content_dose ELSE NULL END AS "thcMgServing",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_thc_percent * 10, 2) END AS "thcMgG",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END AS "cbdPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_cbd_percent ELSE NULL END AS "cbdMgPackage",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_cbd_percent * 10, 2) END AS "cbdMgG",
       mp.total_active_cannabinoids_percent AS "tacPercent",
+      CASE WHEN mp.thc_unit = 'mg' THEN mp.total_active_cannabinoids_percent ELSE NULL END AS "tacMgPackage",
       ROUND(mp.total_active_cannabinoids_percent * 10, 2) AS "tacMgG",
       mp.lab_facility_name AS "labFacilityName",
       mp.test_performed_date AS "testPerformedDate",
-      mp.coa_document_id AS "coaDocumentId"
+      mp.coa_document_id AS "coaDocumentId",
+      mi.serving_size AS "servingSize",
+      mi.number_of_doses AS "numberOfDoses"
     FROM metrc_packages mp
     LEFT JOIN metrc_items mi ON mp.product_id = mi.metrc_item_id
     LEFT JOIN brands b ON mi.brand_id = b.id
