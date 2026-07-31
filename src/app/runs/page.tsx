@@ -18,6 +18,7 @@ type ViewMode = 'list' | 'grid';
 type StatusFilter = 'all' | 'active' | RunStatus;
 
 const RUN_SCROLL_THRESHOLD = 15;
+const ACTIVE_STATUSES: RunStatus[] = ['draft', 'queued', 'printing', 'paused'];
 
 const STATUS_STYLES: Record<RunStatus, string> = {
   draft: 'bg-zinc-800/60 text-zinc-400 border-zinc-700/50',
@@ -61,7 +62,6 @@ export default function RunsPage() {
   // Pinned wins over active — an active run that's ALSO pinned appears in
   // the pinned section, not duplicated.
   const { active, pinned, history, stats } = useMemo(() => {
-    const activeStatuses: RunStatus[] = ['draft', 'queued', 'printing', 'paused'];
     const pinned: Run[] = [];
     const active: Run[] = [];
     const history: Run[] = [];
@@ -78,7 +78,7 @@ export default function RunsPage() {
         } catch { /* ignore */ }
       }
       if (r.pinnedAt) pinned.push(r);
-      else if (activeStatuses.includes(r.status)) active.push(r);
+      else if (ACTIVE_STATUSES.includes(r.status)) active.push(r);
       else history.push(r);
     }
     // Sort pinned by pinnedAt DESC (most recently pinned on top).
@@ -108,21 +108,37 @@ export default function RunsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runs, templates]);
 
-  // Apply search + filters to the history section (active/pinned show
-  // everything regardless so the user always sees work-in-progress).
-  const filteredHistory = useMemo(() => {
+  // Apply search + filters to every run bucket. Search has to include active
+  // and pinned work too; otherwise the box feels broken when the matching run
+  // is above History.
+  const filteredRuns = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return history.filter((r) => {
+    const matches = (r: Run) => {
+      if (statusFilter === 'active' && !ACTIVE_STATUSES.includes(r.status)) return false;
       if (statusFilter !== 'all' && statusFilter !== 'active' && r.status !== statusFilter) return false;
       if (templateFilter !== 'all' && r.templateId !== templateFilter) return false;
       if (q) {
-        const hay = `${r.name} ${templateName(r.templateId)} ${formatName(r.templateId)}`.toLowerCase();
+        const hay = [
+          r.name,
+          r.status,
+          r.dataSource,
+          r.notes ?? '',
+          templateName(r.templateId),
+          formatName(r.templateId),
+          JSON.stringify(r.staticValues ?? {}),
+          JSON.stringify(r.sourceData ?? []),
+        ].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
-    });
+    };
+    return {
+      active: active.filter(matches),
+      pinned: pinned.filter(matches),
+      history: history.filter(matches),
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, search, statusFilter, templateFilter, templates, formats]);
+  }, [active, pinned, history, search, statusFilter, templateFilter, templates, formats]);
 
   const renderRunCollection = (collection: Run[], emptyMsg: string) => {
     if (collection.length === 0) {
@@ -309,30 +325,33 @@ export default function RunsPage() {
             />
           )}
 
-          {/* Pinned runs — stay visible across filters. */}
-          {pinned.length > 0 && (
+          {/* Pinned runs */}
+          {filteredRuns.pinned.length > 0 && (
             <section>
               <div className="flex items-baseline gap-3 mb-3">
                 <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-1.5">
                   <Pin className="w-3.5 h-3.5 text-amber-400" /> Pinned
                 </h2>
-                <span className="text-xs text-zinc-500">{pinned.length}</span>
+                <span className="text-xs text-zinc-500">
+                  {filteredRuns.pinned.length}{filteredRuns.pinned.length !== pinned.length ? ` of ${pinned.length}` : ''}
+                </span>
               </div>
-              {renderRunCollection(pinned, 'No pinned runs.')}
+              {renderRunCollection(filteredRuns.pinned, 'No pinned runs match your filters.')}
             </section>
           )}
 
-          {/* Active runs — stay visible across filters. Only show if there's
-              actually something in progress, to avoid a big empty box. */}
-          {active.length > 0 && (
+          {/* Active runs */}
+          {filteredRuns.active.length > 0 && (
             <section>
               <div className="flex items-baseline gap-3 mb-3">
                 <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" /> Active
                 </h2>
-                <span className="text-xs text-zinc-500">{active.length}</span>
+                <span className="text-xs text-zinc-500">
+                  {filteredRuns.active.length}{filteredRuns.active.length !== active.length ? ` of ${active.length}` : ''}
+                </span>
               </div>
-              {renderRunCollection(active, 'No runs in progress.')}
+              {renderRunCollection(filteredRuns.active, 'No active runs match your filters.')}
             </section>
           )}
 
@@ -389,11 +408,11 @@ export default function RunsPage() {
               <div className="flex items-baseline gap-3 mb-3">
                 <h2 className="text-sm font-semibold text-zinc-200">History</h2>
                 <span className="text-xs text-zinc-500">
-                  {filteredHistory.length}{filteredHistory.length !== history.length ? ` of ${history.length}` : ''}
+                  {filteredRuns.history.length}{filteredRuns.history.length !== history.length ? ` of ${history.length}` : ''}
                 </span>
               </div>
               {renderRunCollection(
-                filteredHistory,
+                filteredRuns.history,
                 history.length === 0
                   ? 'No completed runs yet.'
                   : 'No runs match your filters.',
