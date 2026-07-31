@@ -34,6 +34,10 @@ type ManifestPackage = {
   cbdPercent?: number | string | null;
   cbdMgG?: number | string | null;
   cbdMgPackage?: number | string | null;
+  cbdMgServing?: number | string | null;
+  cbdPerServing?: number | string | null;
+  unitCbdContentMg?: number | string | null;
+  unitCbdContentDoseMg?: number | string | null;
   tacPercent?: number | string | null;
   tacMgG?: number | string | null;
   tacMgPackage?: number | string | null;
@@ -73,6 +77,10 @@ type MetrcPackage = {
     UnitThcContentUnitOfMeasureName?: string | null;
     UnitThcContentDose?: number | string | null;
     UnitThcContentDoseUnitOfMeasureName?: string | null;
+    UnitCbdContent?: number | string | null;
+    UnitCbdContentUnitOfMeasureName?: string | null;
+    UnitCbdContentDose?: number | string | null;
+    UnitCbdContentDoseUnitOfMeasureName?: string | null;
     ServingSize?: number | string | null;
     NumberOfDoses?: number | string | null;
   } | null;
@@ -174,6 +182,7 @@ function normalizePackage(pkg: ManifestPackage) {
   const unitOfMeasure = cleanText(pkg.unitOfMeasure);
   const cbdPercent = cleanDecimalValue(pkg.cbdPercent);
   const cbdMgG = cleanDecimalValue(pkg.cbdMgG);
+  const cbdMgPackage = cleanDecimalValue(pkg.cbdMgPackage) || cleanPositiveDecimalValue(pkg.unitCbdContentMg);
   const tacPercent =
     cleanPositiveDecimalValue(pkg.tacPercent) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
@@ -205,6 +214,12 @@ function normalizePackage(pkg: ManifestPackage) {
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgServing) ||
     divideDecimalValue(tacMgPackage, servingCount) ||
     (isEdibleMgPackage ? tacMgPackage : '');
+  const cbdMgServing =
+    cleanPositiveDecimalValue(pkg.cbdMgServing) ||
+    cleanPositiveDecimalValue(pkg.cbdPerServing) ||
+    cleanPositiveDecimalValue(pkg.unitCbdContentDoseMg) ||
+    divideDecimalValue(cbdMgPackage, servingCount) ||
+    (isEdibleMgPackage ? cbdMgPackage : '');
   const totalCannabinoidsPercent =
     cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
     cleanPositiveDecimalValue(pkg.totalCannabinoids);
@@ -248,7 +263,9 @@ function normalizePackage(pkg: ManifestPackage) {
     thcPerServing: thcMgServing,
     cbdPercent,
     cbdMgG,
-    cbdMgPackage: cleanDecimalValue(pkg.cbdMgPackage),
+    cbdMgPackage,
+    cbdMgServing,
+    cbdPerServing: cbdMgServing,
     tacPercent,
     tacMgG,
     tacMgPackage,
@@ -553,6 +570,8 @@ async function searchManifestDatabase(search: string) {
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_thc_percent * 10, 2) END AS "thcMgG",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END AS "cbdPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_cbd_percent ELSE NULL END AS "cbdMgPackage",
+      CASE WHEN mi.unit_cbd_content_unit ILIKE 'milligram%' THEN mi.unit_cbd_content ELSE NULL END AS "unitCbdContentMg",
+      CASE WHEN mi.unit_cbd_content_dose_unit ILIKE 'milligram%' THEN mi.unit_cbd_content_dose ELSE NULL END AS "cbdMgServing",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_cbd_percent * 10, 2) END AS "cbdMgG",
       mp.total_active_cannabinoids_percent AS "tacPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_active_cannabinoids_percent ELSE NULL END AS "tacMgPackage",
@@ -591,6 +610,8 @@ function normalizeMetrcPackage(pkg: MetrcPackage) {
   const itemName = cleanText(pkg.Item?.Name) || cleanText(pkg.ItemName) || cleanText(pkg.ProductName);
   const itemThcContentUnit = cleanText(pkg.Item?.UnitThcContentUnitOfMeasureName).toLowerCase();
   const itemThcDoseUnit = cleanText(pkg.Item?.UnitThcContentDoseUnitOfMeasureName).toLowerCase();
+  const itemCbdContentUnit = cleanText(pkg.Item?.UnitCbdContentUnitOfMeasureName).toLowerCase();
+  const itemCbdDoseUnit = cleanText(pkg.Item?.UnitCbdContentDoseUnitOfMeasureName).toLowerCase();
   const batch =
     cleanText(pkg.ProductionBatchNumber) ||
     cleanText(pkg.SourceProductionBatchNumbers) ||
@@ -607,6 +628,8 @@ function normalizeMetrcPackage(pkg: MetrcPackage) {
     packagedDate: pkg.PackagedDate,
     unitThcContentMg: itemThcContentUnit.startsWith('milligram') ? pkg.Item?.UnitThcContent : null,
     unitThcContentDoseMg: itemThcDoseUnit.startsWith('milligram') ? pkg.Item?.UnitThcContentDose : null,
+    unitCbdContentMg: itemCbdContentUnit.startsWith('milligram') ? pkg.Item?.UnitCbdContent : null,
+    unitCbdContentDoseMg: itemCbdDoseUnit.startsWith('milligram') ? pkg.Item?.UnitCbdContentDose : null,
     servingSize: pkg.Item?.ServingSize,
     numberOfDoses: pkg.Item?.NumberOfDoses,
   });
