@@ -571,7 +571,6 @@ async function searchManifestDatabase(search: string) {
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END AS "cbdPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_cbd_percent ELSE NULL END AS "cbdMgPackage",
       CASE WHEN mi.unit_cbd_content_unit ILIKE 'milligram%' THEN mi.unit_cbd_content ELSE NULL END AS "unitCbdContentMg",
-      CASE WHEN mi.unit_cbd_content_dose_unit ILIKE 'milligram%' THEN mi.unit_cbd_content_dose ELSE NULL END AS "cbdMgServing",
       CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_cbd_percent * 10, 2) END AS "cbdMgG",
       mp.total_active_cannabinoids_percent AS "tacPercent",
       CASE WHEN mp.thc_unit = 'mg' THEN mp.total_active_cannabinoids_percent ELSE NULL END AS "tacMgPackage",
