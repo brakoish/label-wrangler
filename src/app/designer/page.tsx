@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Undo2, Redo2 } from 'lucide-react';
+import { Undo2, Redo2, Pencil } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { useGlobalElementStore } from '@/lib/globalStore';
@@ -13,7 +13,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { LabelPreview } from '@/components/designer/LabelPreview';
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
-import { TemplateList, NewTemplateDialog, DuplicateTemplateDialog } from '@/components/designer/TemplateList';
+import { TemplateList, NewTemplateDialog, DuplicateTemplateDialog, RenameTemplateDialog } from '@/components/designer/TemplateList';
 import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { ZPLPreview } from '@/components/designer/ZPLPreview';
@@ -64,6 +64,7 @@ function DesignerContent() {
 
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<LabelTemplate | null>(null);
+  const [renameSource, setRenameSource] = useState<LabelTemplate | null>(null);
   const [showAddElementMenu, setShowAddElementMenu] = useState(false);
   const [showGlobalSave, setShowGlobalSave] = useState(false);
   const [showGlobalPicker, setShowGlobalPicker] = useState(false);
@@ -217,6 +218,7 @@ function DesignerContent() {
             }}
             onDeleteTemplate={deleteTemplate}
             onDuplicateTemplate={(t) => setDuplicateSource(t)}
+            onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
         </div>
@@ -263,6 +265,17 @@ function DesignerContent() {
             });
             setDuplicateSource(null);
             router.push(`/designer?id=${newTemplate.id}`);
+          }}
+        />
+
+        <RenameTemplateDialog
+          isOpen={!!renameSource}
+          source={renameSource}
+          onClose={() => setRenameSource(null)}
+          onSave={async (name, description) => {
+            if (!renameSource) return;
+            await updateTemplate(renameSource.id, { name, description });
+            setRenameSource(null);
           }}
         />
       </AppShell>
@@ -499,7 +512,14 @@ function DesignerContent() {
               </a>
             )}
             <span className="text-zinc-700">/</span>
-            <span className="text-zinc-100 font-semibold">{currentTemplate.name}</span>
+            <button
+              onClick={() => setRenameSource(currentTemplate)}
+              className="flex min-w-0 items-center gap-1.5 text-zinc-100 font-semibold hover:text-amber-400 transition-colors"
+              title="Rename template"
+            >
+              <span className="truncate">{currentTemplate.name}</span>
+              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-600" />
+            </button>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 ${
               currentFormat.type === 'thermal'
                 ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
@@ -639,6 +659,17 @@ function DesignerContent() {
           selectTemplate(newTemplate.id);
           router.push(`/designer?id=${newTemplate.id}`);
           setShowNewTemplateDialog(false);
+        }}
+      />
+
+      <RenameTemplateDialog
+        isOpen={!!renameSource}
+        source={renameSource}
+        onClose={() => setRenameSource(null)}
+        onSave={async (name, description) => {
+          if (!renameSource) return;
+          await updateTemplate(renameSource.id, { name, description });
+          setRenameSource(null);
         }}
       />
     </AppShell>

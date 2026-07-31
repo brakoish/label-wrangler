@@ -3,7 +3,7 @@
 import { useState, useEffect, useId, useMemo } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
-import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Copy } from 'lucide-react';
+import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Copy, Pencil } from 'lucide-react';
 import { BarcodeElement, ImageElement, LabelFormat, LabelTemplate, LineElement, QRElement, RectangleElement, TemplateElement, TextElement } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -15,6 +15,7 @@ interface TemplateListProps {
   onSelectTemplate: (id: string) => void;
   onDeleteTemplate: (id: string) => void;
   onDuplicateTemplate?: (template: LabelTemplate) => void;
+  onRenameTemplate?: (template: LabelTemplate) => void;
   onNewTemplate: () => void;
 }
 
@@ -23,6 +24,7 @@ export function TemplateList({
   onSelectTemplate,
   onDeleteTemplate,
   onDuplicateTemplate,
+  onRenameTemplate,
   onNewTemplate,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
@@ -70,6 +72,7 @@ export function TemplateList({
                 onSelect={() => onSelectTemplate(template.id)}
                 onDelete={() => onDeleteTemplate(template.id)}
                 onDuplicate={onDuplicateTemplate ? () => onDuplicateTemplate(template) : undefined}
+                onRename={onRenameTemplate ? () => onRenameTemplate(template) : undefined}
               />
             );
           })}
@@ -388,12 +391,14 @@ function TemplateCard({
   onSelect,
   onDelete,
   onDuplicate,
+  onRename,
 }: {
   template: LabelTemplate;
   format?: LabelFormat;
   onSelect: () => void;
   onDelete: () => void;
   onDuplicate?: () => void;
+  onRename?: () => void;
 }) {
   const dynamicCount = template.elements.filter((e) => !e.isStatic).length;
   const formatName = format?.name || 'Unknown Format';
@@ -437,6 +442,18 @@ function TemplateCard({
             {template.name}
           </h3>
           <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
+            {onRename && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRename();
+                }}
+                className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-600 hover:text-amber-400 transition-colors"
+                title="Rename template"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
             {onDuplicate && (
               <button
                 onClick={(e) => {
@@ -495,6 +512,83 @@ function TemplateCard({
           </div>
           <span className="text-[10px] text-zinc-600">{new Date(template.updatedAt).toLocaleDateString()}</span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+interface RenameTemplateDialogProps {
+  isOpen: boolean;
+  source: LabelTemplate | null;
+  onClose: () => void;
+  onSave: (name: string, description: string) => void;
+}
+
+export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: RenameTemplateDialogProps) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+
+  useEffect(() => {
+    if (isOpen && source) {
+      setName(source.name);
+      setDescription(source.description ?? '');
+    }
+  }, [isOpen, source]);
+
+  if (!isOpen || !source) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave(name.trim(), description.trim());
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="glass rounded-2xl p-6 max-w-md w-full border border-zinc-800">
+        <h3 className="text-xl font-semibold text-zinc-100 mb-6 gradient-text">Rename Template</h3>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm text-zinc-400 block mb-2">Template Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Product Label"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="text-sm text-zinc-400 block mb-2">Description (optional)</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe this template..."
+              rows={3}
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50 resize-none"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-medium hover:bg-zinc-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
+            >
+              Save
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
