@@ -14,7 +14,7 @@ import { dynamicFieldsForTemplate, generateLabelsForRun, previewLabelValues } fr
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
-import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { renderZplToDataUrl, thermalRenderDimensions } from '@/lib/zplRenderClient';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -791,15 +791,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
       const mod = await import('zpl-renderer-js');
       const { api } = await mod.ready;
-      const widthMm = format.width * 25.4;
-      const heightMm = format.height * 25.4;
-      const dpmm = Math.round((format.dpi || 203) / 25.4);
+      const { widthMm, heightMm, dpmm } = thermalRenderDimensions(format);
 
       const { PDFDocument } = await import('pdf-lib');
       const pdfDoc = await PDFDocument.create();
       // Page size in PDF points (72 pt = 1 inch)
-      const pageW = format.width * 72;
-      const pageH = format.height * 72;
+      const pageW = widthMm * (72 / 25.4);
+      const pageH = heightMm * (72 / 25.4);
 
       for (let i = 0; i < slice.length; i++) {
         // Yield to the browser event loop every label so the page stays

@@ -109,7 +109,23 @@ type MetrcLabResult = {
 type LabPotency = {
   thcPercent: string;
   thcMgPackage: string;
+  thcMgServing: string;
   tacPercent: string;
+  tacMgPackage: string;
+  tacMgServing: string;
+  cbdMgPackage: string;
+  cbdMgServing: string;
+};
+
+const EMPTY_LAB_POTENCY: LabPotency = {
+  thcPercent: '',
+  thcMgPackage: '',
+  thcMgServing: '',
+  tacPercent: '',
+  tacMgPackage: '',
+  tacMgServing: '',
+  cbdMgPackage: '',
+  cbdMgServing: '',
 };
 
 function cleanText(value: unknown): string {
@@ -167,6 +183,15 @@ function divideDecimalValue(numerator: unknown, denominator: unknown): string {
   return Number.isFinite(result) ? cleanDecimalValue(result) : '';
 }
 
+function packageMgFromServing(packageMg: unknown, servingMg: unknown): string {
+  const count = divideDecimalValue(packageMg, servingMg);
+  if (!hasPositiveNumber(count)) return '';
+
+  const rounded = Math.round(Number(count));
+  if (!Number.isFinite(rounded) || rounded < 1) return '';
+  return Math.abs(Number(count) - rounded) < 0.001 ? String(rounded) : count;
+}
+
 function servingSizeFallback(unitOfMeasure: string, isEdibleMgPackage: boolean): string {
   if (!isEdibleMgPackage) return '';
   return /^each(?:es)?$/i.test(unitOfMeasure) ? '1 Each' : '1 serving';
@@ -200,7 +225,7 @@ function normalizePackage(pkg: ManifestPackage) {
     cleanPositiveDecimalValue(pkg.servingsPerPackage);
   const servingCount =
     explicitServingCount ||
-    divideDecimalValue(thcMgPackage, explicitThcMgServing);
+    packageMgFromServing(thcMgPackage, explicitThcMgServing);
   const thcMgServing =
     explicitThcMgServing ||
     divideDecimalValue(thcMgPackage, servingCount) ||
@@ -289,29 +314,39 @@ function normalizePackage(pkg: ManifestPackage) {
 
 function extractPotencyFromLabResults(results: unknown): LabPotency {
   const rows = Array.isArray(results) ? results : [];
-  const potency: LabPotency = { thcPercent: '', thcMgPackage: '', tacPercent: '' };
+  const potency: LabPotency = { ...EMPTY_LAB_POTENCY };
 
   for (const result of rows as MetrcLabResult[]) {
     const name = cleanText(result.TestTypeName).toLowerCase();
     const value = cleanValue(result.TestResultLevel);
     if (!hasPositiveNumber(value)) continue;
 
-    if (name.startsWith('total thc (%)')) {
+    const isThc = /^total thc\b/.test(name);
+    const isCbd = /^total cbd\b/.test(name);
+    const isTac =
+      /^tac\b/.test(name) ||
+      /^total active cannabinoids?\b/.test(name) ||
+      /^total cannabinoids?\b/.test(name);
+    const isPercent = /%|percent/.test(name);
+    const isServingMg = /\bmg\b.*\bserving\b|\bserving\b.*\bmg\b/.test(name);
+    const isGramMg = /\bmg\s*\/\s*g\b|\bmg\b.*\bgram\b/.test(name);
+    const isPackageMg = /\bmg\b/.test(name) && !isServingMg && !isGramMg && !isPercent;
+
+    if (isThc && isPercent) {
       potency.thcPercent = potency.thcPercent || cleanDecimalValue(value);
-    } else if (name.startsWith('total thc (mg/package)')) {
+    } else if (isThc && isServingMg) {
+      potency.thcMgServing = potency.thcMgServing || cleanDecimalValue(value);
+    } else if (isThc && isPackageMg) {
       potency.thcMgPackage = potency.thcMgPackage || cleanDecimalValue(value);
-    } else if (
-      name.startsWith('total active cannabinoids (%)') ||
-      name.startsWith('total active cannabinoid (%)') ||
-      name.startsWith('total active cannabinoids') ||
-      name.startsWith('total active cannabinoid') ||
-      name.startsWith('total cannabinoids (%)') ||
-      name.startsWith('total cannabinoid (%)') ||
-      name.startsWith('total cannabinoids') ||
-      name.startsWith('total cannabinoid') ||
-      name.startsWith('tac (%)') ||
-      name === 'tac'
-    ) {
+    } else if (isCbd && isServingMg) {
+      potency.cbdMgServing = potency.cbdMgServing || cleanDecimalValue(value);
+    } else if (isCbd && isPackageMg) {
+      potency.cbdMgPackage = potency.cbdMgPackage || cleanDecimalValue(value);
+    } else if (isTac && isServingMg) {
+      potency.tacMgServing = potency.tacMgServing || cleanDecimalValue(value);
+    } else if (isTac && isPackageMg) {
+      potency.tacMgPackage = potency.tacMgPackage || cleanDecimalValue(value);
+    } else if (isTac && isPercent) {
       potency.tacPercent = potency.tacPercent || cleanDecimalValue(value);
     }
   }
@@ -324,7 +359,7 @@ async function fetchMetrcLabPotency(packageId: string): Promise<LabPotency> {
   const license = process.env.METRC_LICENSE_DISTRIBUTOR;
   const integratorKey = process.env.METRC_INTEGRATOR_KEY;
   const userKey = process.env.METRC_USER_KEY;
-  const empty: LabPotency = { thcPercent: '', thcMgPackage: '', tacPercent: '' };
+  const empty: LabPotency = { ...EMPTY_LAB_POTENCY };
   if (!baseUrl || !license || !integratorKey || !userKey || !packageId) return empty;
 
   const endpoint = new URL('/labtests/v2/results', baseUrl);
@@ -484,23 +519,55 @@ async function rowWithMetrcLabFallback(
   options: { preferLabThc?: boolean } = {},
 ) {
   if (!pkg.metrcPackageId) return pkg;
-  if (!options.preferLabThc && hasPositiveNumber(pkg.tacPercent)) return pkg;
+  if (
+    !options.preferLabThc &&
+    hasPositiveNumber(pkg.tacPercent) &&
+    (
+      (hasPositiveNumber(pkg.thcMgPackage) && hasPositiveNumber(pkg.thcMgServing)) ||
+      (hasPositiveNumber(pkg.tacMgPackage) && hasPositiveNumber(pkg.tacMgServing)) ||
+      (hasPositiveNumber(pkg.cbdMgPackage) && hasPositiveNumber(pkg.cbdMgServing))
+    )
+  ) {
+    return pkg;
+  }
 
   const potency = await fetchMetrcLabPotency(pkg.metrcPackageId).catch(() => ({
-    thcPercent: '',
-    thcMgPackage: '',
-    tacPercent: '',
+    ...EMPTY_LAB_POTENCY,
   }));
   const thcPercent = options.preferLabThc ? potency.thcPercent || pkg.thcPercent : pkg.thcPercent;
   const tacPercent = hasPositiveNumber(pkg.tacPercent) ? pkg.tacPercent : potency.tacPercent;
+  const thcMgPackage = potency.thcMgPackage || pkg.thcMgPackage;
+  const tacMgPackage = potency.tacMgPackage || pkg.tacMgPackage;
+  const cbdMgPackage = potency.cbdMgPackage || pkg.cbdMgPackage;
+  const servingCount =
+    pkg.servingCount ||
+    packageMgFromServing(thcMgPackage, potency.thcMgServing || pkg.thcMgServing) ||
+    packageMgFromServing(tacMgPackage, potency.tacMgServing || pkg.tacMgServing) ||
+    packageMgFromServing(cbdMgPackage, potency.cbdMgServing || pkg.cbdMgServing);
+  const thcMgServing = potency.thcMgServing || pkg.thcMgServing || divideDecimalValue(thcMgPackage, servingCount);
+  const tacMgServing = potency.tacMgServing || pkg.tacMgServing || divideDecimalValue(tacMgPackage, servingCount);
+  const cbdMgServing = potency.cbdMgServing || pkg.cbdMgServing || divideDecimalValue(cbdMgPackage, servingCount);
 
   return {
     ...pkg,
     thcPercent,
     thcMgG: potency.thcPercent ? mgGFromPercent(potency.thcPercent) : pkg.thcMgG,
-    thcMgPackage: potency.thcMgPackage || pkg.thcMgPackage,
+    thcMgPackage,
+    thcMgServing,
+    thcPerServing: thcMgServing,
     tacPercent,
     tacMgG: potency.tacPercent ? mgGFromPercent(potency.tacPercent) : pkg.tacMgG,
+    tacMgPackage,
+    tacMgServing,
+    tacPerServing: tacMgServing,
+    totalActiveCannabinoidsMgPackage: tacMgPackage,
+    totalActiveCannabinoidsMgServing: tacMgServing,
+    cbdMgPackage,
+    cbdMgServing,
+    cbdPerServing: cbdMgServing,
+    servingCount,
+    numberOfDoses: servingCount,
+    servingsPerPackage: servingCount,
   };
 }
 
