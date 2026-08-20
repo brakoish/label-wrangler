@@ -165,6 +165,8 @@ function NewRunContent() {
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [manualQty, setManualQty] = useState(1);
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
+  const [isCreatingRun, setIsCreatingRun] = useState(false);
+  const [createRunError, setCreateRunError] = useState<string | null>(null);
   // Controls the 'create new template' dialog invoked from the template
   // picker. Kept local to this page so the modal render + submit logic
   // doesn't leak into the template store.
@@ -544,38 +546,67 @@ function NewRunContent() {
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
       : labelCount > 0 && (inputMode === 'csv' || inputMode === 'manifest' ? variableFields.length > 0 : !!pasteField));
 
+  const compactSourceDataForRun = (
+    rows: Record<string, string>[],
+    mappings: Record<string, FieldMapping>,
+  ): Record<string, string>[] => {
+    const mappedColumns = new Set(
+      Object.values(mappings)
+        .filter((mapping) => mapping.mode === 'column' && mapping.csvColumn)
+        .map((mapping) => mapping.csvColumn as string),
+    );
+    return rows.map((row) => {
+      const compactRow: Record<string, string> = {};
+      for (const column of mappedColumns) {
+        if (column in row) compactRow[column] = row[column];
+      }
+      return compactRow;
+    });
+  };
+
   const handleCreateRun = async (autoStart = false) => {
-    if (!canCreate || !template) return null;
+    if (!canCreate || !template || isCreatingRun) return null;
+    setIsCreatingRun(true);
+    setCreateRunError(null);
     let finalMappings = fieldMappings;
     let legacyField: string | null = null;
     let finalSourceData: Record<string, string>[] = sourceData;
-    if (inputMode === 'manual') {
-      // Manual mode: all fields are static, but the run still has one row per
-      // label so history, preview, and future adapters all count the same way.
-      finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({ ...visibleStaticValues }));
-      finalMappings = {};
-      for (const f of dynamicFields) {
-        finalMappings[f] = { mode: 'static' };
+    try {
+      if (inputMode === 'manual') {
+        // Manual mode only needs placeholder rows for count/progress; values
+        // come from staticValues.
+        finalSourceData = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
+        finalMappings = {};
+        for (const f of dynamicFields) {
+          finalMappings[f] = { mode: 'static' };
+        }
+      } else if (inputMode === 'paste' && pasteField) {
+        // Paste mode: model as a column mapping with a synthetic column key.
+        finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
+        legacyField = pasteField;
       }
-    } else if (inputMode === 'paste' && pasteField) {
-      // Paste mode: model as a column mapping with a synthetic column key.
-      finalMappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
-      legacyField = pasteField;
+      finalMappings = Object.fromEntries(Object.entries(finalMappings).filter(([field]) => visibleFieldSet.has(field)));
+      finalSourceData = compactSourceDataForRun(finalSourceData, finalMappings);
+      const run = await createRun({
+        name: name.trim(),
+        templateId: template.id,
+        presetId: presetId ?? null,
+        staticValues: visibleStaticValues,
+        fieldMappings: finalMappings,
+        dataSource: inputMode as RunDataSource,
+        sourceData: finalSourceData,
+        mappedField: legacyField,
+        status: autoStart ? 'queued' : 'draft',
+      });
+      if (presetId) void updatePreset(presetId, { touch: true });
+      return run;
+    } catch (error) {
+      console.error('Error creating run:', error);
+      setCreateRunError(error instanceof Error ? error.message : 'Could not start this run.');
+      return null;
+    } finally {
+      setIsCreatingRun(false);
     }
-    finalMappings = Object.fromEntries(Object.entries(finalMappings).filter(([field]) => visibleFieldSet.has(field)));
-    const run = await createRun({
-      name: name.trim(),
-      templateId: template.id,
-      presetId: presetId ?? null,
-      staticValues: visibleStaticValues,
-      fieldMappings: finalMappings,
-      dataSource: inputMode as RunDataSource,
-      sourceData: finalSourceData,
-      mappedField: legacyField,
-      status: autoStart ? 'queued' : 'draft',
-    });
-    if (presetId) void updatePreset(presetId, { touch: true });
-    return run;
   };
 
   const handleSaveAndPrint = async () => {
@@ -1205,12 +1236,18 @@ function NewRunContent() {
                         : 'Need a run name, template, and data to proceed.'}
                   </p>
                 )}
+                {createRunError && (
+                  <p className="text-xs text-red-400 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {createRunError}
+                  </p>
+                )}
                 <button
                   onClick={handleSaveAndPrint}
-                  disabled={!canCreate}
+                  disabled={!canCreate || isCreatingRun}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Play className="w-4 h-4" /> Start Run ({labelCount} label{labelCount === 1 ? '' : 's'})
+                  <Play className="w-4 h-4" /> {isCreatingRun ? 'Starting...' : `Start Run (${labelCount} label${labelCount === 1 ? '' : 's'})`}
                 </button>
               </section>
               <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-[#0c0c0e]/95 px-4 py-3 backdrop-blur">
@@ -1225,10 +1262,10 @@ function NewRunContent() {
                   </div>
                   <button
                     onClick={handleSaveAndPrint}
-                    disabled={!canCreate}
+                    disabled={!canCreate || isCreatingRun}
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                   >
-                    <Play className="h-4 w-4" /> Start run
+                    <Play className="h-4 w-4" /> {isCreatingRun ? 'Starting...' : 'Start run'}
                   </button>
                 </div>
               </div>
