@@ -640,7 +640,8 @@ async function enrichWithManifestLabelData(
 }
 
 async function searchManifestDatabase(search: string) {
-  if (!process.env.MANIFEST_DATABASE_URL) return null;
+  const distributorLicense = process.env.METRC_LICENSE_DISTRIBUTOR;
+  if (!process.env.MANIFEST_DATABASE_URL || !distributorLicense) return null;
 
   const sql = neon(process.env.MANIFEST_DATABASE_URL);
   const pattern = `%${search}%`;
@@ -688,7 +689,8 @@ async function searchManifestDatabase(search: string) {
       ON mp.product_id = mi.metrc_item_id
       AND mp.license_number = mi.license_number
     LEFT JOIN brands b ON mi.brand_id = b.id
-    WHERE (
+    WHERE mp.license_number = ${distributorLicense}
+      AND (
         mp.label ILIKE ${pattern}
         OR (${digitSuffixPattern} <> '' AND regexp_replace(COALESCE(mp.label, ''), '[^0-9]', '', 'g') LIKE ${digitSuffixPattern})
         OR (${digitSuffix} <> '' AND mp.id::text = ${digitSuffix})
