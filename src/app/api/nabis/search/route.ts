@@ -183,6 +183,28 @@ function divideDecimalValue(numerator: unknown, denominator: unknown): string {
   return Number.isFinite(result) ? cleanDecimalValue(result) : '';
 }
 
+function multiplyDecimalValue(left: unknown, right: unknown): string {
+  if (!hasPositiveNumber(left) || !hasPositiveNumber(right)) return '';
+
+  const result = Number(cleanValue(left)) * Number(cleanValue(right));
+  return Number.isFinite(result) ? cleanDecimalValue(result) : '';
+}
+
+function servingThcMg(servingSize: unknown): string {
+  const text = cleanText(servingSize);
+  const match = text.match(/(?:\(|\b)(\d+(?:\.\d+)?)\s*mg\s*THC\b/i);
+  return match ? cleanPositiveDecimalValue(match[1]) : '';
+}
+
+function servingWeightGrams(servingSize: unknown): string {
+  const text = cleanText(servingSize);
+  const match = text.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(mg|g)\b/i);
+  if (!match) return '';
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return '';
+  return cleanDecimalValue(match[2].toLowerCase() === 'mg' ? amount / 1000 : amount);
+}
+
 function packageMgFromServing(packageMg: unknown, servingMg: unknown): string {
   const count = divideDecimalValue(packageMg, servingMg);
   if (!hasPositiveNumber(count)) return '';
@@ -202,12 +224,13 @@ function normalizePackage(pkg: ManifestPackage) {
   const itemName = cleanText(pkg.itemName) || cleanText(pkg.productName);
   const thcPercent = cleanDecimalValue(pkg.thcPercent);
   const thcMgG = cleanDecimalValue(pkg.thcMgG);
-  const thcMgPackage = cleanDecimalValue(pkg.thcMgPackage) || cleanPositiveDecimalValue(pkg.unitThcContentMg);
-  const isEdibleMgPackage = hasPositiveNumber(thcMgPackage);
+  const explicitThcMgPackage = cleanPositiveDecimalValue(pkg.thcMgPackage);
+  const declaredThcMgPackage = cleanPositiveDecimalValue(pkg.unitThcContentMg);
   const unitOfMeasure = cleanText(pkg.unitOfMeasure);
+  const servingSize = cleanValue(pkg.servingSize);
   const cbdPercent = cleanDecimalValue(pkg.cbdPercent);
   const cbdMgG = cleanDecimalValue(pkg.cbdMgG);
-  const cbdMgPackage = cleanDecimalValue(pkg.cbdMgPackage) || cleanPositiveDecimalValue(pkg.unitCbdContentMg);
+  const explicitCbdMgPackage = cleanPositiveDecimalValue(pkg.cbdMgPackage) || cleanPositiveDecimalValue(pkg.unitCbdContentMg);
   const tacPercent =
     cleanPositiveDecimalValue(pkg.tacPercent) ||
     cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsPercent) ||
@@ -225,26 +248,37 @@ function normalizePackage(pkg: ManifestPackage) {
     cleanPositiveDecimalValue(pkg.servingsPerPackage);
   const servingCount =
     explicitServingCount ||
-    packageMgFromServing(thcMgPackage, explicitThcMgServing);
+    packageMgFromServing(declaredThcMgPackage, servingThcMg(servingSize)) ||
+    packageMgFromServing(explicitThcMgPackage, explicitThcMgServing);
   const thcMgServing =
     explicitThcMgServing ||
-    divideDecimalValue(thcMgPackage, servingCount) ||
-    (isEdibleMgPackage ? thcMgPackage : '');
-  const tacMgPackage =
-    cleanPositiveDecimalValue(pkg.tacMgPackage) ||
-    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgPackage) ||
-    (isEdibleMgPackage ? tacPercent : '');
-  const tacMgServing =
-    cleanPositiveDecimalValue(pkg.tacMgServing) ||
-    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgServing) ||
-    divideDecimalValue(tacMgPackage, servingCount) ||
-    (isEdibleMgPackage ? tacMgPackage : '');
+    divideDecimalValue(explicitThcMgPackage || declaredThcMgPackage, servingCount) ||
+    declaredThcMgPackage;
+  const thcMgPackage =
+    explicitThcMgPackage ||
+    multiplyDecimalValue(thcMgServing, servingCount) ||
+    declaredThcMgPackage;
+  const isEdibleMgPackage = hasPositiveNumber(thcMgPackage);
   const cbdMgServing =
     cleanPositiveDecimalValue(pkg.cbdMgServing) ||
     cleanPositiveDecimalValue(pkg.cbdPerServing) ||
     cleanPositiveDecimalValue(pkg.unitCbdContentDoseMg) ||
-    divideDecimalValue(cbdMgPackage, servingCount) ||
-    (isEdibleMgPackage ? cbdMgPackage : '');
+    divideDecimalValue(explicitCbdMgPackage, servingCount) ||
+    (isEdibleMgPackage ? explicitCbdMgPackage : '');
+  const cbdMgPackage =
+    explicitCbdMgPackage ||
+    multiplyDecimalValue(cbdMgServing, servingCount);
+  const servingGrams = servingWeightGrams(servingSize);
+  const explicitTacMgServing =
+    cleanPositiveDecimalValue(pkg.tacMgServing) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgServing);
+  const tacMgServing =
+    explicitTacMgServing ||
+    multiplyDecimalValue(tacMgG, servingGrams);
+  const tacMgPackage =
+    cleanPositiveDecimalValue(pkg.tacMgPackage) ||
+    cleanPositiveDecimalValue(pkg.totalActiveCannabinoidsMgPackage) ||
+    multiplyDecimalValue(tacMgServing, servingCount);
   const totalCannabinoidsPercent =
     cleanPositiveDecimalValue(pkg.totalCannabinoidsPercent) ||
     cleanPositiveDecimalValue(pkg.totalCannabinoids);
@@ -305,7 +339,7 @@ function normalizePackage(pkg: ManifestPackage) {
     labFacilityName: cleanText(pkg.labFacilityName),
     testPerformedDate: cleanDate(pkg.testPerformedDate),
     coaDocumentId: cleanValue(pkg.coaDocumentId),
-    servingSize: cleanValue(pkg.servingSize) || servingSizeFallback(unitOfMeasure, isEdibleMgPackage),
+    servingSize: servingSize || servingSizeFallback(unitOfMeasure, isEdibleMgPackage),
     servingCount,
     numberOfDoses: servingCount,
     servingsPerPackage: servingCount,
@@ -630,25 +664,29 @@ async function searchManifestDatabase(search: string) {
       mp.expiration_date AS "expirationDate",
       mp.sell_by_date AS "sellByDate",
       mp.use_by_date AS "useByDate",
-      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_thc_percent END AS "thcPercent",
-      CASE WHEN mp.thc_unit = 'mg' THEN mp.total_thc_percent ELSE NULL END AS "thcMgPackage",
+      COALESCE(mp.thc_percent, CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_thc_percent END) AS "thcPercent",
+      COALESCE(mp.thc_mg_package, CASE WHEN mp.thc_unit = 'mg' THEN mp.total_thc_percent ELSE NULL END) AS "thcMgPackage",
       CASE WHEN mi.unit_thc_content_unit ILIKE 'milligram%' THEN mi.unit_thc_content ELSE NULL END AS "unitThcContentMg",
-      CASE WHEN mi.unit_thc_content_dose_unit ILIKE 'milligram%' THEN mi.unit_thc_content_dose ELSE NULL END AS "thcMgServing",
-      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_thc_percent * 10, 2) END AS "thcMgG",
-      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END AS "cbdPercent",
-      CASE WHEN mp.thc_unit = 'mg' THEN mp.total_cbd_percent ELSE NULL END AS "cbdMgPackage",
+      COALESCE(mp.thc_mg_serving, CASE WHEN mi.unit_thc_content_dose_unit ILIKE 'milligram%' THEN mi.unit_thc_content_dose ELSE NULL END) AS "thcMgServing",
+      COALESCE(mp.thc_mg_g, CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_thc_percent * 10, 2) END) AS "thcMgG",
+      COALESCE(mp.cbd_percent, CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE mp.total_cbd_percent END) AS "cbdPercent",
+      COALESCE(mp.cbd_mg_package, CASE WHEN mp.thc_unit = 'mg' THEN mp.total_cbd_percent ELSE NULL END) AS "cbdMgPackage",
+      mp.cbd_mg_serving AS "cbdMgServing",
       CASE WHEN mi.unit_cbd_content_unit ILIKE 'milligram%' THEN mi.unit_cbd_content ELSE NULL END AS "unitCbdContentMg",
-      CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_cbd_percent * 10, 2) END AS "cbdMgG",
-      mp.total_active_cannabinoids_percent AS "tacPercent",
-      CASE WHEN mp.thc_unit = 'mg' THEN mp.total_active_cannabinoids_percent ELSE NULL END AS "tacMgPackage",
-      ROUND(mp.total_active_cannabinoids_percent * 10, 2) AS "tacMgG",
+      COALESCE(mp.cbd_mg_g, CASE WHEN mp.thc_unit = 'mg' THEN NULL ELSE ROUND(mp.total_cbd_percent * 10, 2) END) AS "cbdMgG",
+      COALESCE(mp.tac_percent, mp.total_active_cannabinoids_percent) AS "tacPercent",
+      COALESCE(mp.tac_mg_package, CASE WHEN mp.thc_unit = 'mg' THEN mp.total_active_cannabinoids_percent ELSE NULL END) AS "tacMgPackage",
+      mp.tac_mg_serving AS "tacMgServing",
+      COALESCE(mp.tac_mg_g, ROUND(mp.total_active_cannabinoids_percent * 10, 2)) AS "tacMgG",
       mp.lab_facility_name AS "labFacilityName",
       mp.test_performed_date AS "testPerformedDate",
       mp.coa_document_id AS "coaDocumentId",
       mi.serving_size AS "servingSize",
       mi.number_of_doses AS "numberOfDoses"
     FROM metrc_packages mp
-    LEFT JOIN metrc_items mi ON mp.product_id = mi.metrc_item_id
+    LEFT JOIN metrc_items mi
+      ON mp.product_id = mi.metrc_item_id
+      AND mp.license_number = mi.license_number
     LEFT JOIN brands b ON mi.brand_id = b.id
     WHERE (
         mp.label ILIKE ${pattern}
