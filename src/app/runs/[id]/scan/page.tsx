@@ -8,7 +8,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { dynamicFieldsForTemplate } from '@/lib/runBuilder';
 import {
   isWebUsbSupported,
@@ -150,7 +150,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
       const values: Record<string, string> = { ...(run.staticValues || {}), [targetField]: v };
-      const zpl = generateZPL(template, format, values);
+      const zpl = await generateZPLWithImages(template, format, values);
       await sendLabel(zpl);
       setHistory((h) => [{ id: entryId, value: v, at: Date.now(), status: 'ok' as ScanStatus }, ...h].slice(0, 10));
       setFlash('ok');

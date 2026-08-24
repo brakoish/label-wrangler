@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPL, prepareZplImages } from '@/lib/zplGenerator';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -229,12 +229,13 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
     [transport, selectedDazzlePrinter, usbPrinter],
   );
 
-  const buildLabelZpl = useCallback(() => {
+  const buildLabelZpl = useCallback(async () => {
     const qty = Math.max(1, Math.min(9999, Math.floor(labelQty) || 1));
     const across = Math.max(1, format.labelsAcross || 1);
+    const imageGraphics = await prepareZplImages(template, format);
 
     if (across <= 1) {
-      return generateZPL(template, format, testData).replace(/\^XZ\s*$/, `^PQ${qty},0,0,N,N\n^XZ`);
+      return generateZPL(template, format, testData, { imageGraphics }).replace(/\^XZ\s*$/, `^PQ${qty},0,0,N,N\n^XZ`);
     }
 
     const labels: string[] = [];
@@ -242,14 +243,13 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       const lanes = Array.from({ length: across }, (_, lane) => (
         printed + lane < qty ? testData : undefined
       ));
-      labels.push(generateZPL(template, format, lanes));
+      labels.push(generateZPL(template, format, lanes, { imageGraphics }));
     }
     return labels;
   }, [format, labelQty, template, testData]);
 
   const handlePrintLabel = useCallback(() => {
-    const zpl = buildLabelZpl();
-    return doPrint(zpl, 'label');
+    return buildLabelZpl().then((zpl) => doPrint(zpl, 'label'));
   }, [buildLabelZpl, doPrint]);
 
   const handlePrintCalibration = useCallback(() => {

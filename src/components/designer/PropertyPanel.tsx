@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   AlignHorizontalJustifyCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyEnd,
   AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd,
@@ -469,6 +470,23 @@ function Divider() {
 function CompactInput({ label, value, onChange, step, labelRight }: {
   label: string; value: number; onChange: (v: number) => void; step: number; labelRight?: boolean;
 }) {
+  const [draft, setDraft] = useState(() => formatInputNumber(value));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) setDraft(formatInputNumber(value));
+  }, [isFocused, value]);
+
+  const commit = (nextDraft: string) => {
+    const next = Number(nextDraft);
+    if (Number.isFinite(next)) {
+      onChange(next);
+      setDraft(formatInputNumber(next));
+      return;
+    }
+    setDraft(formatInputNumber(value));
+  };
+
   return (
     <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
       {!labelRight && (
@@ -476,8 +494,26 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
       )}
       <input
         type="number"
-        value={typeof value === 'number' ? Math.round(value * 1000) / 1000 : value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        value={draft}
+        onFocus={() => setIsFocused(true)}
+        onChange={(e) => {
+          const nextDraft = e.target.value;
+          setDraft(nextDraft);
+          const next = Number(nextDraft);
+          if (nextDraft !== '' && nextDraft !== '-' && Number.isFinite(next)) onChange(next);
+        }}
+        onBlur={() => {
+          setIsFocused(false);
+          commit(draft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            setDraft(formatInputNumber(value));
+            e.currentTarget.blur();
+          }
+        }}
         step={step}
         className="flex-1 bg-transparent text-xs text-zinc-100 px-1.5 h-full focus:outline-none min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
@@ -486,6 +522,10 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
       )}
     </div>
   );
+}
+
+function formatInputNumber(value: number): string {
+  return Number.isFinite(value) ? String(Math.round(value * 1000) / 1000) : '';
 }
 
 function CompactTextInput({ label, value, onChange, placeholder, full }: {

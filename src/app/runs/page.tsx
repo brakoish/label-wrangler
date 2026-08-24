@@ -9,7 +9,7 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { previewLabelValues } from '@/lib/runBuilder';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import type { Run, RunPreset, RunStatus, LabelFormat, LabelTemplate } from '@/lib/types';
@@ -900,7 +900,7 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
           return;
         }
 
-        const zpl = generateZPL(template, format, values);
+        const zpl = await generateZPLWithImages(template, format, values);
         const mod = await import('zpl-renderer-js');
         const { api } = await mod.ready;
         const across = Math.max(1, format.labelsAcross || 1);

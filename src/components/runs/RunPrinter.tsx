@@ -10,7 +10,7 @@ import { useRunStore } from '@/lib/runStore';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
-import { dynamicFieldsForTemplate, generateLabelsForRun, previewLabelValues } from '@/lib/runBuilder';
+import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPL } from '@/lib/zplGenerator';
@@ -124,6 +124,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const webUsbStatusWorkingRef = useRef(false);
   const [printPacing, setPrintPacing] = useState<PrintPacing>('fast');
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
+  const [labels, setLabels] = useState<string[]>([]);
+  const [labelsReady, setLabelsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const total = run?.totalLabels ?? 0;
@@ -286,11 +288,34 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // single-across rolls one feed = one physical label. For multi-across
   // each feed produces `across` physical labels with unique data per lane.
   const across = Math.max(1, format?.labelsAcross || 1);
-  const labels = useMemo(() => {
-    if (!run || !template || !format) return [] as string[];
-    return generateLabelsForRun(run, template, format);
-  }, [run, template, format]);
+  useEffect(() => {
+    let active = true;
+    setLabels([]);
+    setLabelsReady(false);
+    if (!run || !template || !format || isSheetFormat) {
+      setLabelsReady(true);
+      return;
+    }
+
+    generateLabelsForRunWithImages(run, template, format)
+      .then((nextLabels) => {
+        if (!active) return;
+        setLabels(nextLabels);
+        setLabelsReady(true);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setLabelsReady(true);
+        setErrorMsg((err as Error)?.message || 'Could not build label ZPL.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [run, template, format, isSheetFormat]);
+
   const canStart = !!run && labels.length > 0 && (
+    labelsReady &&
     !isSheetFormat &&
     ((transport === 'dazzle' && !!dazzleSelected) ||
     (transport === 'webusb' && !!usbPrinter))
@@ -751,7 +776,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !template || !format) return;
     setExporting('zpl');
     try {
-      const allFeeds = generateLabelsForRun(run, template, format);
+      const allFeeds = await generateLabelsForRunWithImages(run, template, format);
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
       const { startFeed, stopFeed } = feedRangeForLabels(range, across);
       const slice = allFeeds.slice(startFeed, stopFeed);
@@ -783,7 +808,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setExporting('pdf');
     setExportProgress(0);
     try {
-      const allFeeds = generateLabelsForRun(run, template, format);
+      const allFeeds = await generateLabelsForRunWithImages(run, template, format);
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
       const cappedRange = normalizeLabelRange({ total, from: range.from, to: Math.min(range.to, range.from + 499) }); // hard cap: 500 labels
       const { startFeed, stopFeed } = feedRangeForLabels(cappedRange, across);

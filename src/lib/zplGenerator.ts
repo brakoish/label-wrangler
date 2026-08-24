@@ -1,4 +1,10 @@
-import { LabelFormat, LabelTemplate, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement } from './types';
+import { LabelFormat, LabelTemplate, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from './types';
+
+export type PreparedZplImages = Record<string, string>;
+
+export interface GenerateZplOptions {
+  imageGraphics?: PreparedZplImages;
+}
 
 /**
  * Generate ZPL II commands from a label template.
@@ -23,6 +29,7 @@ export function generateZPL(
   template: LabelTemplate,
   format: LabelFormat,
   fieldValues?: Record<string, string> | Array<Record<string, string> | null | undefined>,
+  options: GenerateZplOptions = {},
 ): string {
   const dpi = format.dpi || 203;
   const labelWDots = Math.round(format.width * dpi);
@@ -68,13 +75,39 @@ export function generateZPL(
     if (laneValues === undefined) continue;
     const laneOriginX = effectiveSideMDots + lane * (labelWDots + gapDots);
     for (const element of sorted) {
-      const cmd = elementToZPL(element, format, laneValues, laneOriginX);
+      const cmd = elementToZPL(element, format, laneValues, laneOriginX, options);
       if (cmd) commands.push(cmd);
     }
   }
 
   commands.push('^XZ');
   return commands.join('\n');
+}
+
+export async function generateZPLWithImages(
+  template: LabelTemplate,
+  format: LabelFormat,
+  fieldValues?: Record<string, string> | Array<Record<string, string> | null | undefined>,
+): Promise<string> {
+  const imageGraphics = await prepareZplImages(template, format);
+  return generateZPL(template, format, fieldValues, { imageGraphics });
+}
+
+export async function prepareZplImages(template: LabelTemplate, format: LabelFormat): Promise<PreparedZplImages> {
+  if (format.type !== 'thermal') return {};
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return {};
+
+  const imageElements = template.elements.filter((element): element is ImageElement => (
+    element.type === 'image' && !!element.src
+  ));
+  if (imageElements.length === 0) return {};
+
+  const entries = await Promise.all(imageElements.map(async (element) => {
+    const graphic = await imageElementToGraphicField(element, format);
+    return [element.id, graphic] as const;
+  }));
+
+  return Object.fromEntries(entries);
 }
 
 function resolveContent(element: TemplateElement, fieldValues?: Record<string, string>): string {
@@ -98,6 +131,7 @@ function elementToZPL(
   format: LabelFormat,
   fieldValues?: Record<string, string>,
   laneOriginX: number = 0,
+  options: GenerateZplOptions = {},
 ): string {
   // Round positions to nearest dot. `laneOriginX` shifts every element for
   // multi-across layouts; when across=1 it's 0 and everything behaves as before.
@@ -115,9 +149,100 @@ function elementToZPL(
       return lineToZPL(element as LineElement, x, y, format);
     case 'rectangle':
       return rectangleToZPL(element as RectangleElement, x, y, format);
+    case 'image':
+      return imageToZPL(element as ImageElement, x, y, options.imageGraphics);
     default:
       return '';
   }
+}
+
+function imageToZPL(element: ImageElement, x: number, y: number, imageGraphics?: PreparedZplImages): string {
+  const graphic = imageGraphics?.[element.id];
+  if (!graphic) return '';
+  return `^FO${x},${y}${graphic}^FS`;
+}
+
+async function imageElementToGraphicField(element: ImageElement, format: LabelFormat): Promise<string> {
+  const width = Math.max(1, Math.round(element.width));
+  const height = Math.max(1, Math.round(element.height));
+  const maxDots = Math.max(1, (format.dpi || 203) * 6);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.min(width, maxDots);
+  canvas.height = Math.min(height, maxDots);
+
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return '';
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const image = await loadImage(element.src);
+  const { sx, sy, sw, sh, dx, dy, dw, dh } = imageDrawBox(image, canvas, element.objectFit);
+  context.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const bytesPerRow = Math.ceil(canvas.width / 8);
+  const totalBytes = bytesPerRow * canvas.height;
+  const bytes = new Uint8Array(totalBytes);
+
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const idx = (y * canvas.width + x) * 4;
+      const alpha = imageData.data[idx + 3] / 255;
+      const red = imageData.data[idx];
+      const green = imageData.data[idx + 1];
+      const blue = imageData.data[idx + 2];
+      const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) * alpha + 255 * (1 - alpha);
+      if (luminance < 180) {
+        bytes[y * bytesPerRow + Math.floor(x / 8)] |= 0x80 >> (x % 8);
+      }
+    }
+  }
+
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
+  return `^GFA,${totalBytes},${totalBytes},${bytesPerRow},${hex}`;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not load logo image for ZPL output.'));
+    image.src = src;
+  });
+}
+
+function imageDrawBox(
+  image: HTMLImageElement,
+  canvas: HTMLCanvasElement,
+  objectFit: ImageElement['objectFit'],
+) {
+  const imageW = image.naturalWidth || image.width || canvas.width;
+  const imageH = image.naturalHeight || image.height || canvas.height;
+
+  if (objectFit === 'fill') {
+    return { sx: 0, sy: 0, sw: imageW, sh: imageH, dx: 0, dy: 0, dw: canvas.width, dh: canvas.height };
+  }
+
+  const sourceAspect = imageW / imageH;
+  const targetAspect = canvas.width / canvas.height;
+
+  if (objectFit === 'cover') {
+    if (sourceAspect > targetAspect) {
+      const sw = imageH * targetAspect;
+      return { sx: (imageW - sw) / 2, sy: 0, sw, sh: imageH, dx: 0, dy: 0, dw: canvas.width, dh: canvas.height };
+    }
+    const sh = imageW / targetAspect;
+    return { sx: 0, sy: (imageH - sh) / 2, sw: imageW, sh, dx: 0, dy: 0, dw: canvas.width, dh: canvas.height };
+  }
+
+  if (sourceAspect > targetAspect) {
+    const dh = canvas.width / sourceAspect;
+    return { sx: 0, sy: 0, sw: imageW, sh: imageH, dx: 0, dy: (canvas.height - dh) / 2, dw: canvas.width, dh };
+  }
+
+  const dw = canvas.height * sourceAspect;
+  return { sx: 0, sy: 0, sw: imageW, sh: imageH, dx: (canvas.width - dw) / 2, dy: 0, dw, dh: canvas.height };
 }
 
 function textToZPL(element: TextElement, x: number, y: number, format: LabelFormat, fieldValues?: Record<string, string>): string {

@@ -164,6 +164,7 @@ function NewRunContent() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [manualQty, setManualQty] = useState(1);
+  const [manualQtyDraft, setManualQtyDraft] = useState('1');
   const [createdRunId, setCreatedRunId] = useState<string | null>(null);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
   const [createRunError, setCreateRunError] = useState<string | null>(null);
@@ -174,6 +175,16 @@ function NewRunContent() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastAutoManifestNameRef = useRef('');
+
+  useEffect(() => {
+    setManualQtyDraft(String(manualQty));
+  }, [manualQty]);
+
+  const commitManualQty = useCallback((raw: string) => {
+    const next = Math.max(1, Math.min(9999, parseInt(raw, 10) || 1));
+    setManualQty(next);
+    setManualQtyDraft(String(next));
+  }, []);
 
   useEffect(() => {
     if (!deepLinkTemplateId || presetId || duplicateFrom) return;
@@ -910,8 +921,22 @@ function NewRunContent() {
                         type="number"
                         min={1}
                         max={9999}
-                        value={manualQty}
-                        onChange={(e) => setManualQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        value={manualQtyDraft}
+                        onChange={(e) => {
+                          const nextDraft = e.target.value;
+                          setManualQtyDraft(nextDraft);
+                          const next = parseInt(nextDraft, 10);
+                          if (Number.isFinite(next)) setManualQty(Math.max(1, Math.min(9999, next)));
+                        }}
+                        onBlur={() => commitManualQty(manualQtyDraft)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.currentTarget.blur();
+                          } else if (e.key === 'Escape') {
+                            setManualQtyDraft(String(manualQty));
+                            e.currentTarget.blur();
+                          }
+                        }}
                         className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40 tabular-nums"
                       />
                       <span className="text-xs text-zinc-500">labels</span>

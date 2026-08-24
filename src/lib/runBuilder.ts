@@ -1,5 +1,5 @@
 import type { LabelFormat, LabelTemplate, TemplateElement, Run, FieldMapping } from './types';
-import { generateZPL } from './zplGenerator';
+import { generateZPL, prepareZplImages, type GenerateZplOptions } from './zplGenerator';
 
 /**
  * Get the list of dynamic-field names present in a template (deduplicated,
@@ -102,6 +102,7 @@ export function generateLabelsForRun(
   run: Run,
   template: LabelTemplate,
   format: LabelFormat,
+  options: GenerateZplOptions = {},
 ): string[] {
   const feeds: string[] = [];
   const total = Math.max(run.sourceData.length, 1);
@@ -110,7 +111,7 @@ export function generateLabelsForRun(
   if (across === 1) {
     // Simple case: one feed per row.
     for (let i = 0; i < total; i++) {
-      feeds.push(generateZPL(template, format, valuesForLabel(run, i)));
+      feeds.push(generateZPL(template, format, valuesForLabel(run, i), options));
     }
     return feeds;
   }
@@ -124,9 +125,18 @@ export function generateLabelsForRun(
       const idx = i + lane;
       laneValues.push(idx < total ? valuesForLabel(run, idx) : undefined);
     }
-    feeds.push(generateZPL(template, format, laneValues));
+    feeds.push(generateZPL(template, format, laneValues, options));
   }
   return feeds;
+}
+
+export async function generateLabelsForRunWithImages(
+  run: Run,
+  template: LabelTemplate,
+  format: LabelFormat,
+): Promise<string[]> {
+  const imageGraphics = await prepareZplImages(template, format);
+  return generateLabelsForRun(run, template, format, { imageGraphics });
 }
 
 /** Total physical labels a run will produce. For single-across this equals
