@@ -823,53 +823,66 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try {
       const allFeeds = await generateLabelsForRunWithImages(run, template, format);
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
-      const cappedRange = normalizeLabelRange({ total, from: range.from, to: Math.min(range.to, range.from + 499) }); // hard cap: 500 labels
-      const { startFeed, stopFeed } = feedRangeForLabels(cappedRange, across);
-      const slice = allFeeds.slice(startFeed, stopFeed);
+      const { startFeed, stopFeed } = feedRangeForLabels(range, across);
+      const maxFeedsPerFile = Math.max(1, Math.floor(500 / across));
+      const totalFeeds = stopFeed - startFeed;
+      const chunkCount = Math.ceil(totalFeeds / maxFeedsPerFile);
+      let renderedFeeds = 0;
 
       const mod = await import('zpl-renderer-js');
       const { api } = await mod.ready;
       const { widthMm, heightMm, dpmm } = thermalRenderDimensions(format);
 
       const { PDFDocument } = await import('pdf-lib');
-      const pdfDoc = await PDFDocument.create();
       // Page size in PDF points (72 pt = 1 inch)
       const pageW = widthMm * (72 / 25.4);
       const pageH = heightMm * (72 / 25.4);
 
-      for (let i = 0; i < slice.length; i++) {
-        // Yield to the browser event loop every label so the page stays
-        // responsive during long renders. WASM + pdf-lib are synchronous
-        // under the hood and will lock the tab without this.
-        await new Promise<void>((r) => setTimeout(r, 0));
-        const b64 = await api.zplToBase64Async(slice[i], widthMm, heightMm, dpmm);
-        const binStr = atob(b64);
-        const bytes = new Uint8Array(binStr.length);
-        for (let j = 0; j < binStr.length; j++) bytes[j] = binStr.charCodeAt(j);
-        const img = await pdfDoc.embedPng(bytes);
-        const page = pdfDoc.addPage([pageW, pageH]);
-        page.drawImage(img, { x: 0, y: 0, width: pageW, height: pageH });
-        setExportProgress(Math.round(((i + 1) / slice.length) * 100));
-      }
+      for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
+        const chunkStartFeed = startFeed + chunkIndex * maxFeedsPerFile;
+        const chunkStopFeed = Math.min(stopFeed, chunkStartFeed + maxFeedsPerFile);
+        const slice = allFeeds.slice(chunkStartFeed, chunkStopFeed);
+        const chunkRange = {
+          from: Math.max(range.from, chunkStartFeed * across + 1),
+          to: Math.min(range.to, chunkStopFeed * across),
+        };
+        const pdfDoc = await PDFDocument.create();
 
-      const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${cappedRange.from}-${cappedRange.to}.pdf`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      await createPrintEvent(run.id, {
-        eventType: 'sent',
-        output: 'roll-pdf',
-        rangeFrom: cappedRange.from,
-        rangeTo: cappedRange.to,
-        labelCount: labelRangeCount(cappedRange),
-        printedCountAfter: null,
-        printerName: null,
-        message: 'Exported PDF',
-      });
+        for (const feed of slice) {
+          // Yield to the browser event loop every feed so the page stays
+          // responsive during long renders. WASM + pdf-lib are synchronous
+          // under the hood and will lock the tab without this.
+          await new Promise<void>((r) => setTimeout(r, 0));
+          const b64 = await api.zplToBase64Async(feed, widthMm, heightMm, dpmm);
+          const binStr = atob(b64);
+          const bytes = new Uint8Array(binStr.length);
+          for (let j = 0; j < binStr.length; j++) bytes[j] = binStr.charCodeAt(j);
+          const img = await pdfDoc.embedPng(bytes);
+          const page = pdfDoc.addPage([pageW, pageH]);
+          page.drawImage(img, { x: 0, y: 0, width: pageW, height: pageH });
+          renderedFeeds++;
+          setExportProgress(Math.round((renderedFeeds / totalFeeds) * 100));
+        }
+
+        const pdfBytes = await pdfDoc.save();
+        const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(run.name || 'run').replace(/[^a-z0-9_-]/gi, '_')}_${chunkRange.from}-${chunkRange.to}.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        await createPrintEvent(run.id, {
+          eventType: 'sent',
+          output: 'roll-pdf',
+          rangeFrom: chunkRange.from,
+          rangeTo: chunkRange.to,
+          labelCount: labelRangeCount(chunkRange),
+          printedCountAfter: null,
+          printerName: null,
+          message: chunkCount > 1 ? `Exported PDF ${chunkIndex + 1} of ${chunkCount}` : 'Exported PDF',
+        });
+      }
     } finally {
       setExporting(null);
       setExportProgress(0);
@@ -1380,7 +1393,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   const count = resolvedExportTo - exportFrom + 1;
                   if (isSheetFormat) return <p className="text-[10px] text-zinc-500">Sheets open in a print-ready tab. Choose Save as PDF in the browser print dialog.</p>;
                   if (exporting === 'pdf') return null;
-                  if (count > 500) return <p className="text-[10px] text-red-400/80">PDF is capped at 500 labels — set a narrower range. Use ZPL for large exports.</p>;
+                  if (count > 500) return <p className="text-[10px] text-amber-400/80">Large ranges download as consecutive PDF files of up to 500 labels each. Your browser may ask to allow multiple downloads.</p>;
                   if (count > 100) return <p className="text-[10px] text-yellow-500/80">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
                   return null;
                 })()}
