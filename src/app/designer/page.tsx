@@ -28,6 +28,8 @@ type NewTemplateElement = TemplateElement extends infer T
     : never
   : never;
 
+type ThermalEditorOrientation = 'printer' | 'upright';
+
 function DesignerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -69,6 +71,7 @@ function DesignerContent() {
   const [showGlobalSave, setShowGlobalSave] = useState(false);
   const [showGlobalPicker, setShowGlobalPicker] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [thermalEditorOrientation, setThermalEditorOrientation] = useState<ThermalEditorOrientation>('upright');
   // Convenience: single selected element for property panel
   const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
   const [testData, setTestData] = useState<Record<string, string>>({});
@@ -90,6 +93,19 @@ function DesignerContent() {
 
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
+  const showThermalOrientationPicker = currentFormat?.type === 'thermal' && currentFormat.width > currentFormat.height;
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('label-wrangler:thermal-editor-orientation');
+    if (saved === 'printer' || saved === 'upright') {
+      setThermalEditorOrientation(saved);
+    }
+  }, []);
+
+  const updateThermalEditorOrientation = useCallback((orientation: ThermalEditorOrientation) => {
+    setThermalEditorOrientation(orientation);
+    window.localStorage.setItem('label-wrangler:thermal-editor-orientation', orientation);
+  }, []);
 
   // Push undo state before making changes
   const pushUndoState = useCallback(() => {
@@ -544,6 +560,35 @@ function DesignerContent() {
 
             {/* Undo/Redo */}
             <div className="ml-auto flex items-center gap-1">
+              {showThermalOrientationPicker && (
+                <>
+                  <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50 mr-1">
+                    <button
+                      onClick={() => updateThermalEditorOrientation('printer')}
+                      title="Edit in printer orientation"
+                      className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                        thermalEditorOrientation === 'printer'
+                          ? 'bg-zinc-700 text-zinc-100'
+                          : 'text-zinc-500 hover:text-zinc-200'
+                      }`}
+                    >
+                      Printer
+                    </button>
+                    <button
+                      onClick={() => updateThermalEditorOrientation('upright')}
+                      title="Edit upright"
+                      className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                        thermalEditorOrientation === 'upright'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'text-zinc-500 hover:text-zinc-200'
+                      }`}
+                    >
+                      Upright
+                    </button>
+                  </div>
+                  <div className="w-px h-4 bg-zinc-800 mx-1" />
+                </>
+              )}
               <button
                 onClick={handleUndo}
                 disabled={!canUndo()}
@@ -567,6 +612,7 @@ function DesignerContent() {
             format={currentFormat}
             elements={currentTemplate.elements}
             selectedElementIds={selectedIds}
+            editorOrientation={thermalEditorOrientation}
             onSelectElement={(id, addToSelection) => {
               if (id === null) {
                 setSelectedIds(new Set());

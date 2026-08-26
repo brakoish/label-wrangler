@@ -11,6 +11,7 @@ interface LabelPreviewProps {
   format: LabelFormat;
   elements: TemplateElement[];
   selectedElementIds: Set<string>;
+  editorOrientation?: 'printer' | 'upright';
   onSelectElement: (id: string | null, addToSelection?: boolean) => void;
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
   onDragStart?: () => void;
@@ -18,7 +19,7 @@ interface LabelPreviewProps {
   testData?: Record<string, string>;
 }
 
-export function LabelPreview({ format, elements, selectedElementIds, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'upright', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -62,7 +63,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
   const viewBoxHeight = format.type === 'thermal' && format.dpi
     ? format.height * format.dpi
     : format.height;
-  const useUprightThermalEditor = format.type === 'thermal' && viewBoxWidth > viewBoxHeight;
+  const useUprightThermalEditor = editorOrientation === 'upright' && format.type === 'thermal' && viewBoxWidth > viewBoxHeight;
   const editorViewBoxWidth = useUprightThermalEditor ? viewBoxHeight : viewBoxWidth;
   const editorViewBoxHeight = useUprightThermalEditor ? viewBoxWidth : viewBoxHeight;
   const editorContentTransform = useUprightThermalEditor
