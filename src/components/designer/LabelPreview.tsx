@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useId } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
-import { generateZPL, generateZPLWithImages, snapZplQrSize } from '@/lib/zplGenerator';
+import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 
 interface LabelPreviewProps {
@@ -31,9 +31,6 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [textBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
-  const [thermalPreviewUrl, setThermalPreviewUrl] = useState<string>('');
-  const [thermalPreviewPending, setThermalPreviewPending] = useState(false);
-  const thermalClipId = useId().replace(/:/g, '');
 
   const handleTextMeasure = useCallback((id: string, w: number, h: number) => {
     setTextBounds((prev) => {
@@ -71,9 +68,6 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     : undefined;
 
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
-  const thermalGeometry = format.type === 'thermal' ? thermalRenderGeometry(format) : null;
-  const showThermalFidelityLayer = format.type === 'thermal' && !!thermalPreviewUrl && !!thermalGeometry;
-
   // Padding
   const padFraction = 0.1;
   const padX = editorViewBoxWidth * padFraction;
@@ -182,7 +176,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     // For text elements, use rendered textBounds (if measured) so the group
     // bbox reflects what the user actually sees.
     const isMultiResize = selectedElementIds.size > 1 && selectedElementIds.has(elementId);
-    const getEffectiveBounds = (el: TemplateElement) => elementInteractionBounds(el, format, textBounds, testData);
+    const getEffectiveBounds = (el: TemplateElement) => elementInteractionBounds(el, textBounds);
     const selectedSnapshots = isMultiResize ? new Map(
       elements
         .filter((el) => selectedElementIds.has(el.id))
@@ -408,49 +402,8 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     setGuides({ x: [], y: [] });
   }, [dragging, onDragEnd]);
 
-  useEffect(() => {
-    if (format.type !== 'thermal') {
-      setThermalPreviewUrl('');
-      setThermalPreviewPending(false);
-      return;
-    }
-
-    let active = true;
-    setThermalPreviewPending(true);
-
-    const timer = window.setTimeout(() => {
-      generateZPLWithImages(
-        {
-          id: `${format.id}-designer-thermal-preview`,
-          name: 'Designer Thermal Preview',
-          formatId: format.id,
-          elements,
-          createdAt: '',
-          updatedAt: '',
-        },
-        format,
-        testData,
-      )
-        .then((zpl) => renderZplToDataUrl(zpl, format))
-        .then((url) => {
-          if (active) setThermalPreviewUrl(url);
-        })
-        .catch(() => {
-          if (active) setThermalPreviewUrl('');
-        })
-        .finally(() => {
-          if (active) setThermalPreviewPending(false);
-        });
-    }, dragging ? 350 : 150);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [elements, format, testData, dragging]);
-
   return (
-    <div ref={containerRef} className="flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '360px', height: '50vh' }}>
+    <div ref={containerRef} className="flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
       <svg
         ref={svgRef}
         width={svgW}
@@ -490,36 +443,6 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
             onClick={() => onSelectElement(null)}
           />
 
-          {showThermalFidelityLayer && (
-            <>
-              <clipPath id={thermalClipId}>
-                <rect x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} />
-              </clipPath>
-              <image
-                x={-thermalGeometry.effectiveSideMDots}
-                y={0}
-                width={thermalGeometry.linerDots}
-                height={thermalGeometry.heightDots}
-                href={thermalPreviewUrl}
-                clipPath={`url(#${thermalClipId})`}
-                preserveAspectRatio="none"
-                style={{ imageRendering: 'pixelated' }}
-                pointerEvents="none"
-              />
-              {thermalPreviewPending && (
-                <rect
-                  x={0}
-                  y={0}
-                  width={viewBoxWidth}
-                  height={viewBoxHeight}
-                  fill="#ffffff"
-                  opacity={0.18}
-                  pointerEvents="none"
-                />
-              )}
-            </>
-          )}
-
           {/* Elements */}
           <g>
             {sortedElements.map((element) => (
@@ -528,12 +451,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 onPointerDown={(e) => handlePointerDown(e, element.id)}
                 style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
               >
-                <g opacity={showThermalFidelityLayer ? (dragging ? 0.35 : 0) : 1} pointerEvents="none">
+                <g pointerEvents="none">
                   {renderElement(element, format, elements, handleTextMeasure, testData)}
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {
-                  const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                  const bounds = elementInteractionBounds(element, textBounds);
                   return (
                     <rect
                       x={bounds.x}
@@ -548,7 +471,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                   <>
                     {/* Selection border — use measured bounds for text */}
                     {(() => {
-                      const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                      const bounds = elementInteractionBounds(element, textBounds);
                       const pad = viewBoxWidth * 0.005;
                       return (
                         <rect
@@ -567,7 +490,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                     {(() => {
                       const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
                       const half = hs / 2;
-                      const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                      const bounds = elementInteractionBounds(element, textBounds);
                       const ex = bounds.x;
                       const ey = bounds.y;
                       const ew = bounds.width;
@@ -592,7 +515,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                           fill="#ffffff"
                           stroke="#d97706"
                           strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
-                          style={{ cursor: h.cursor }}
+                          style={{ cursor: resizeCursor(h.id, useUprightThermalEditor) }}
                           onPointerDown={(e) => handleResizeDown(e, element.id, h.id)}
                         />
                       ));
@@ -601,7 +524,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 )}
                 {/* Multi-select: subtle dashed outline on each member element */}
                 {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
-                  const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                  const bounds = elementInteractionBounds(element, textBounds);
                   return (
                     <rect
                       x={bounds.x}
@@ -628,7 +551,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           for (const id of ids) {
             const el = elements.find((e) => e.id === id);
             if (!el) continue;
-            const bounds = elementInteractionBounds(el, format, textBounds, testData);
+            const bounds = elementInteractionBounds(el, textBounds);
             minX = Math.min(minX, bounds.x);
             minY = Math.min(minY, bounds.y);
             maxX = Math.max(maxX, bounds.x + bounds.width);
@@ -677,7 +600,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                   fill="#ffffff"
                   stroke="#d97706"
                   strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
-                  style={{ cursor: h.cursor }}
+                  style={{ cursor: resizeCursor(h.id, useUprightThermalEditor) }}
                   onPointerDown={(e) => handleResizeDown(e, primaryId, h.id)}
                 />
               ))}
@@ -750,98 +673,24 @@ function normalizedRightAngle(rotation: number | undefined): 0 | 90 | 180 | 270 
   return 0;
 }
 
+function resizeCursor(handle: string, uprightEditor: boolean): string {
+  const printerOrientation: Record<string, string> = {
+    nw: 'nwse-resize', n: 'ns-resize', ne: 'nesw-resize', e: 'ew-resize',
+    se: 'nwse-resize', s: 'ns-resize', sw: 'nesw-resize', w: 'ew-resize',
+  };
+  const uprightOrientation: Record<string, string> = {
+    nw: 'nesw-resize', n: 'ew-resize', ne: 'nwse-resize', e: 'ns-resize',
+    se: 'nesw-resize', s: 'ew-resize', sw: 'nwse-resize', w: 'ns-resize',
+  };
+
+  return (uprightEditor ? uprightOrientation : printerOrientation)[handle] || 'default';
+}
+
 function elementInteractionBounds(
   element: TemplateElement,
-  format: LabelFormat,
   textBounds: Record<string, { w: number; h: number }>,
-  testData?: Record<string, string>,
 ): { x: number; y: number; width: number; height: number } {
-  if (format.type !== 'thermal') {
-    return elementVisualBounds(element, textBounds);
-  }
-
-  return thermalZplBounds(element, format, testData);
-}
-
-function thermalZplBounds(
-  element: TemplateElement,
-  format: LabelFormat,
-  testData?: Record<string, string>,
-): { x: number; y: number; width: number; height: number } {
-  const rotation = normalizedRightAngle(element.rotation);
-
-  if (element.type === 'text') {
-    return thermalTextBounds(element, format);
-  }
-
-  if (element.type === 'qr') {
-    const content = resolveElementContent(element, testData) || 'QR';
-    const printedSize = snapZplQrSize(content, element.errorCorrection || 'M', element.width);
-    return centeredBoxBounds(element.x, element.y, element.width, element.height, printedSize, printedSize);
-  }
-
-  if (element.type === 'line') {
-    const dpi = format.dpi || 203;
-    const strokeWidth = Math.max(1, Math.round(element.strokeWidth * (dpi / 72)));
-    const originalWidth = Math.max(strokeWidth, Math.round(element.width));
-    const originalHeight = Math.max(strokeWidth, Math.round(element.height));
-    const width = rotation === 90 || rotation === 270 ? originalHeight : originalWidth;
-    const height = rotation === 90 || rotation === 270 ? originalWidth : originalHeight;
-    return centeredBoxBounds(element.x, element.y, originalWidth, originalHeight, width, height);
-  }
-
-  if (element.type === 'rectangle') {
-    const originalWidth = Math.round(element.width);
-    const originalHeight = Math.round(element.height);
-    const width = rotation === 90 || rotation === 270 ? originalHeight : originalWidth;
-    const height = rotation === 90 || rotation === 270 ? originalWidth : originalHeight;
-    return centeredBoxBounds(element.x, element.y, originalWidth, originalHeight, width, height);
-  }
-
-  return elementVisualBounds(element, {});
-}
-
-function thermalTextBounds(element: TextElement, format: LabelFormat): { x: number; y: number; width: number; height: number } {
-  const rotation = normalizedRightAngle(element.rotation);
-  const dpi = format.dpi || 203;
-  const fontH = Math.max(1, Math.round(element.fontSize * (dpi / 72)));
-  const lineHeight = element.lineHeight || 1.2;
-  const maxLines = Math.max(1, Math.floor(element.height / (fontH * lineHeight)));
-  const lineSpacing = Math.round(fontH * (lineHeight - 1));
-  const blockWidth = Math.max(1, Math.round(element.width));
-  const zplLineStackHeight = fontH * maxLines + lineSpacing * Math.max(0, maxLines - 1);
-  const blockHeight = Math.max(Math.round(element.height), zplLineStackHeight);
-
-  return zplTextFieldBounds(element.x, element.y, blockWidth, blockHeight, rotation);
-}
-
-function centeredBoxBounds(
-  x: number,
-  y: number,
-  originalWidth: number,
-  originalHeight: number,
-  renderedWidth: number,
-  renderedHeight: number,
-): { x: number; y: number; width: number; height: number } {
-  return {
-    x: Math.round(x + originalWidth / 2 - renderedWidth / 2),
-    y: Math.round(y + originalHeight / 2 - renderedHeight / 2),
-    width: Math.max(1, Math.round(renderedWidth)),
-    height: Math.max(1, Math.round(renderedHeight)),
-  };
-}
-
-function zplTextFieldBounds(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  rotation: 0 | 90 | 180 | 270,
-): { x: number; y: number; width: number; height: number } {
-  if (rotation === 90) return { x: Math.round(x), y: Math.round(y), width: Math.round(height), height: Math.round(width) };
-  if (rotation === 180) return { x: Math.round(x - width), y: Math.round(y - height), width: Math.round(width), height: Math.round(height) };
-  if (rotation === 270) return { x: Math.round(x), y: Math.round(y - width), width: Math.round(height), height: Math.round(width) };
-  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+  return elementVisualBounds(element, textBounds);
 }
 
 function elementVisualBounds(
@@ -961,9 +810,13 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
     if (currentLine) lines.push(currentLine);
   }
 
-  // Show all wrapped lines — let the visual overflow indicate the box needs to be bigger
-  // Don't artificially clip lines; the user can see they need to resize
-  const visibleLines = lines.length > 0 ? lines : [displayContent];
+  // Thermal ZPL uses ^FB with a fixed maximum line count. Keep the editable
+  // preview inside that same field capacity; the print preview remains the
+  // source of truth for exact Zebra glyph metrics.
+  const maxLines = isThermal
+    ? Math.max(1, Math.floor(element.height / (rawFontHDots * (element.lineHeight || 1.2))))
+    : Number.POSITIVE_INFINITY;
+  const visibleLines = (lines.length > 0 ? lines : [displayContent]).slice(0, maxLines);
 
   let textAnchor: 'start' | 'middle' | 'end' = 'start';
   if (element.textAlign === 'center') textAnchor = 'middle';

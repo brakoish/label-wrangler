@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed } from 'lucide-react';
+import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed, ChevronDown } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
@@ -20,6 +20,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showZPL, setShowZPL] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   // Zoom level as multiplier of "fit" size. 1 = fit to container, 2 = double.
   const [zoom, setZoom] = useState<number>(1);
   // Overlay label outlines so the user can see lane boundaries on multi-across rolls.
@@ -45,31 +46,42 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
     }
   }, [template, format, testData]);
 
-  // Auto-fetch on mount and when ZPL changes. Local WASM — tighter 200ms debounce
-  // is fine since there's no network or rate limit.
+  // Render only while the secondary print preview is open. Local WASM uses a
+  // tight debounce because there is no network or rate limit.
   useEffect(() => {
+    if (!expanded) return;
+
     const timer = setTimeout(() => {
       fetchPreview();
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [fetchPreview]);
+  }, [expanded, fetchPreview]);
 
   if (format.type !== 'thermal') return null;
 
-  return (
-    <div className="border-t border-zinc-800/50 px-6 py-4 flex flex-col" style={{ minHeight: '40vh' }}>
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Printer className="w-4 h-4 text-amber-400" />
-        <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">ZPL Preview</span>
-        <span className="text-xs text-zinc-500">Local render — actual thermal output</span>
+  const basePreviewWidth = Math.min(900, Math.max(520, format.width * (format.dpi || 203) * 1.25));
 
-        <div className="w-px h-4 bg-zinc-800 mx-2" />
+  return (
+    <div className="border-t border-zinc-800/50 flex flex-col">
+      <div className={`flex items-center gap-2 px-6 py-3 flex-wrap ${expanded ? 'border-b border-zinc-800/50' : ''}`}>
+        <Printer className="w-4 h-4 text-amber-400" />
+        <button
+          onClick={() => setExpanded((value) => !value)}
+          className="flex items-center gap-2 text-left"
+          aria-expanded={expanded}
+        >
+          <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Print Preview</span>
+          <span className="text-xs text-zinc-500">Actual ZPL output — open to check alignment</span>
+          <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+
+        {expanded && <div className="w-px h-4 bg-zinc-800 mx-2" />}
 
         {/* WebUSB test print controls — connect, print current template, calibration. */}
-        <PrintControls format={format} template={template} testData={testData} />
+        {expanded && <PrintControls format={format} template={template} testData={testData} />}
 
-        <div className="ml-auto flex items-center gap-1">
+        {expanded && <div className="ml-auto flex items-center gap-1">
           <button
             onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
             title="Zoom out"
@@ -115,19 +127,21 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-        </div>
+        </div>}
       </div>
 
-      {/* ZPL Code view */}
-      {showZPL && (
-        <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">
-          <pre className="text-[10px] text-green-400 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
-        </div>
-      )}
+      {expanded && (
+        <div className="px-6 py-4 flex flex-col" style={{ minHeight: '60vh', maxHeight: '720px' }}>
+          {/* ZPL Code view */}
+          {showZPL && (
+            <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">
+              <pre className="text-[10px] text-green-400 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
+            </div>
+          )}
 
-      {/* Preview image — fill available space, center, constrain by both dimensions.
-          overflow-auto so when zoomed beyond fit the user can pan horizontally/vertically. */}
-      <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
+          {/* The print image opens large enough to inspect alignment. Zoomed
+              output can scroll without shrinking the design canvas above. */}
+          <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
         {loading && !previewUrl ? (
           <div className="flex items-center justify-center text-zinc-500 text-sm">
             <RefreshCw className="w-5 h-5 animate-spin mr-2" />
@@ -138,7 +152,10 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             {error}
           </div>
         ) : previewUrl ? (
-          <div className="relative inline-block" style={{ padding: '4px' }}>
+          <div
+            className="relative shrink-0"
+            style={{ padding: '4px', width: `${basePreviewWidth * zoom}px`, maxWidth: zoom === 1 ? '100%' : 'none' }}
+          >
             {/* At zoom=1 the image fits its container (max-w/h 100%).
                 At zoom>1 it grows past container bounds and parent scrolls. */}
             <img
@@ -150,9 +167,8 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
                 // zoom handles bigger size when user wants to inspect details.
                 imageRendering: 'pixelated',
                 display: 'block',
-                maxWidth: zoom === 1 ? '100%' : 'none',
-                maxHeight: zoom === 1 ? '100%' : 'none',
-                width: zoom === 1 ? 'auto' : `${zoom * 100}%`,
+                maxWidth: '100%',
+                width: '100%',
                 height: 'auto',
               }}
             />
@@ -168,7 +184,9 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             No preview available
           </div>
         )}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
