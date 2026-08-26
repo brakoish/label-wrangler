@@ -71,7 +71,7 @@ function DesignerContent() {
   const [showGlobalSave, setShowGlobalSave] = useState(false);
   const [showGlobalPicker, setShowGlobalPicker] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [thermalEditorOrientation, setThermalEditorOrientation] = useState<ThermalEditorOrientation>('upright');
+  const [thermalEditorOrientation, setThermalEditorOrientation] = useState<ThermalEditorOrientation>('printer');
   // Convenience: single selected element for property panel
   const selectedElementId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
   const [testData, setTestData] = useState<Record<string, string>>({});
@@ -94,18 +94,29 @@ function DesignerContent() {
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
   const showThermalOrientationPicker = currentFormat?.type === 'thermal' && currentFormat.width > currentFormat.height;
+  const thermalEditorOrientationKey = currentTemplate
+    ? `label-wrangler:thermal-editor-orientation:${currentTemplate.id}`
+    : null;
 
   useEffect(() => {
-    const saved = window.localStorage.getItem('label-wrangler:thermal-editor-orientation');
+    if (!thermalEditorOrientationKey) {
+      setThermalEditorOrientation('printer');
+      return;
+    }
+    const saved = window.localStorage.getItem(thermalEditorOrientationKey);
     if (saved === 'printer' || saved === 'upright') {
       setThermalEditorOrientation(saved);
+    } else {
+      setThermalEditorOrientation('printer');
     }
-  }, []);
+  }, [thermalEditorOrientationKey]);
 
   const updateThermalEditorOrientation = useCallback((orientation: ThermalEditorOrientation) => {
     setThermalEditorOrientation(orientation);
-    window.localStorage.setItem('label-wrangler:thermal-editor-orientation', orientation);
-  }, []);
+    if (thermalEditorOrientationKey) {
+      window.localStorage.setItem(thermalEditorOrientationKey, orientation);
+    }
+  }, [thermalEditorOrientationKey]);
 
   // Push undo state before making changes
   const pushUndoState = useCallback(() => {

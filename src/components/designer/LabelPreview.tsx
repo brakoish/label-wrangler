@@ -19,7 +19,7 @@ interface LabelPreviewProps {
   testData?: Record<string, string>;
 }
 
-export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'upright', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
