@@ -400,6 +400,29 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
 
   const cmds: string[] = [];
 
+  if (rotation !== 0) {
+    // Some older Zebra firmware (including the ZP 450) advances lines from a
+    // rotated ^FB in the opposite direction from modern preview renderers.
+    // That pushes R-oriented blocks into neighboring fields and can move a
+    // block near the right edge completely outside ^PW. Keep ^FB for each
+    // line's alignment, but wrap and position the lines explicitly so every
+    // printer receives unambiguous field origins.
+    const lines = wrapZplText(content, blockWidth, fontH, maxLines);
+    const lineAdvance = fontH + lineSpacing;
+
+    return lines.map((line, index) => {
+      const offset = index * lineAdvance;
+      let lineX = x;
+      let lineY = y;
+
+      if (rotation === 90) lineX -= offset;
+      else if (rotation === 180) lineY -= offset;
+      else if (rotation === 270) lineX += offset;
+
+      return `^FO${lineX},${lineY}^A0${orientation},${fontH},${fontW}^FB${blockWidth},1,0,${align},0^FD${escapeZPL(line)}^FS`;
+    }).join('');
+  }
+
   // Field origin
   cmds.push(`^FO${x},${y}`);
 
@@ -413,6 +436,44 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   cmds.push(`^FD${escapeZPL(content)}^FS`);
 
   return cmds.join('');
+}
+
+function wrapZplText(content: string, blockWidth: number, fontH: number, maxLines: number): string[] {
+  // Zebra Font 0 is proportional. Its average advance is roughly 0.48 of the
+  // requested font height, which is also the metric used by the thermal SVG
+  // editor. The actual glyph width still comes from ^A0's fontW value.
+  const maxChars = Math.max(1, Math.floor(blockWidth / Math.max(1, fontH * 0.48)));
+  const lines: string[] = [];
+
+  for (const paragraph of content.split(/\r?\n/)) {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    let current = '';
+
+    for (const originalWord of words) {
+      let word = originalWord;
+
+      while (word.length > maxChars) {
+        if (current) {
+          lines.push(current);
+          current = '';
+        }
+        lines.push(word.slice(0, maxChars));
+        word = word.slice(maxChars);
+      }
+
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= maxChars) {
+        current = candidate;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    }
+
+    if (current) lines.push(current);
+  }
+
+  return (lines.length > 0 ? lines : [content]).slice(0, maxLines);
 }
 
 function normalizeRotation(rotation: number | undefined): 0 | 90 | 180 | 270 {
@@ -633,6 +694,10 @@ function rectangleToZPL(element: RectangleElement, x: number, y: number, format:
 function escapeZPL(text: string): string {
   // ZPL special chars that need escaping
   return text
+    // PDF extraction can preserve a font-private hyphen glyph (U+F6BA).
+    // Desktop Zebra firmware does not understand that Unicode code point.
+    .replace(/[\uF6BA‐‑‒–—−]/g, '-')
+    .replace(/\u00A0/g, ' ')
     .replace(/\\/g, '\\\\')
     .replace(/\^/g, '\\^')
     .replace(/~/g, '\\~');
