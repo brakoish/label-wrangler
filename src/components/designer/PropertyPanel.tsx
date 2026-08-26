@@ -9,6 +9,7 @@ import {
 import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { MANIFEST_FIELD_OPTIONS } from '@/lib/manifestFields';
+import { snapZplQrSize } from '@/lib/zplGenerator';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -94,7 +95,17 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         <SectionLabel icon={<Maximize2 className="w-3 h-3" />} label="Size" />
         {element.type === 'qr' ? (
           <div className="grid grid-cols-1">
-            <CompactInput label="S" value={element.width} onChange={(v) => onUpdate({ width: v, height: v })} step={step} />
+            <CompactInput
+              label="S"
+              value={element.width}
+              onChange={(v) => {
+                const qr = element as QRElement;
+                const content = qr.defaultValue || qr.content || 'QR';
+                const size = isThermal ? snapZplQrSize(content, qr.errorCorrection || 'M', v) : v;
+                onUpdate({ width: size, height: size });
+              }}
+              step={step}
+            />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1">

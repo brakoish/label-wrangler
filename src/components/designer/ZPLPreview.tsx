@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
@@ -16,6 +16,7 @@ interface ZPLPreviewProps {
 
 export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [zpl, setZpl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showZPL, setShowZPL] = useState(false);
@@ -24,8 +25,6 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   // Overlay label outlines so the user can see lane boundaries on multi-across rolls.
   // Default on when labelsAcross > 1 (where it actually helps), off otherwise.
   const [showOutlines, setShowOutlines] = useState<boolean>((format.labelsAcross || 1) > 1);
-
-  const zpl = generateZPL(template, format, testData);
 
   const fetchPreview = useCallback(async () => {
     if (format.type !== 'thermal') return;
@@ -36,13 +35,15 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
     try {
       // Render ZPL → PNG entirely in the browser via zpl-renderer-js (Zebrash WASM).
       // No network, no rate limits. 8MB WASM is lazy-loaded once and cached.
-      setPreviewUrl(await renderZplToDataUrl(zpl, format));
+      const nextZpl = await generateZPLWithImages(template, format, testData);
+      setZpl(nextZpl);
+      setPreviewUrl(await renderZplToDataUrl(nextZpl, format));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed');
     } finally {
       setLoading(false);
     }
-  }, [zpl, format]);
+  }, [template, format, testData]);
 
   // Auto-fetch on mount and when ZPL changes. Local WASM — tighter 200ms debounce
   // is fine since there's no network or rate limit.

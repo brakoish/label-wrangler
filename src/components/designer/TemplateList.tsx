@@ -7,7 +7,7 @@ import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Co
 import { BarcodeElement, ImageElement, LabelFormat, LabelTemplate, LineElement, QRElement, RectangleElement, TemplateElement, TextElement } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 
 interface TemplateListProps {
@@ -123,8 +123,8 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
     setThermalUrl(null);
     if (!format || format.type !== 'thermal') return () => { active = false; };
 
-    const zpl = generateZPL(template, format, sampleData);
-    renderZplToDataUrl(zpl, format)
+    generateZPLWithImages(template, format, sampleData)
+      .then((zpl) => renderZplToDataUrl(zpl, format))
       .then((url) => { if (active) setThermalUrl(url); })
       .catch(() => { if (active) setThermalUrl(null); });
 

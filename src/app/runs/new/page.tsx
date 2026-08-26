@@ -13,7 +13,7 @@ import { NewTemplateDialog } from '@/components/designer/TemplateList';
 import { useRunStore } from '@/lib/runStore';
 import { parseCsv, detectUrlColumn } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
@@ -541,10 +541,24 @@ function NewRunContent() {
     return previewIndex % labelsPerSheet;
   }, [format, previewIndex]);
 
-  // Preview ZPL for the current row.
-  const previewZpl = useMemo(() => {
-    if (!template || !format) return '';
-    return generateZPL(template, format, previewValues);
+  // Preview ZPL for the current row. Image elements need async preparation so
+  // the local Zebra render matches the browser canvas and actual print path.
+  const [previewZpl, setPreviewZpl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewZpl('');
+    if (!template || !format || format.type !== 'thermal') return;
+    (async () => {
+      try {
+        const nextZpl = await generateZPLWithImages(template, format, previewValues);
+        if (!cancelled) setPreviewZpl(nextZpl);
+      } catch {
+        if (!cancelled) setPreviewZpl('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [template, format, previewValues]);
 
   const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;

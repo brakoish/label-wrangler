@@ -1,9 +1,23 @@
 import { LabelFormat, LabelTemplate, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from './types';
 
-export type PreparedZplImages = Record<string, string>;
+export interface PreparedZplImage {
+  graphic: string;
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export type PreparedZplImages = Record<string, PreparedZplImage>;
 
 export interface GenerateZplOptions {
   imageGraphics?: PreparedZplImages;
+}
+
+export interface ZplQrGeometry {
+  modules: number;
+  magnification: number;
+  printedSize: number;
 }
 
 /**
@@ -157,29 +171,56 @@ function elementToZPL(
 }
 
 function imageToZPL(element: ImageElement, x: number, y: number, imageGraphics?: PreparedZplImages): string {
-  const graphic = imageGraphics?.[element.id];
-  if (!graphic) return '';
-  return `^FO${x},${y}${graphic}^FS`;
+  const prepared = imageGraphics?.[element.id];
+  if (!prepared?.graphic) return '';
+
+  const originX = x + prepared.offsetX;
+  const originY = y + prepared.offsetY;
+
+  return `^FO${originX},${originY}${prepared.graphic}^FS`;
 }
 
-async function imageElementToGraphicField(element: ImageElement, format: LabelFormat): Promise<string> {
+async function imageElementToGraphicField(element: ImageElement, format: LabelFormat): Promise<PreparedZplImage> {
   const width = Math.max(1, Math.round(element.width));
   const height = Math.max(1, Math.round(element.height));
   const maxDots = Math.max(1, (format.dpi || 203) * 6);
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.min(width, maxDots);
-  canvas.height = Math.min(height, maxDots);
+  const baseCanvas = document.createElement('canvas');
+  baseCanvas.width = Math.min(width, maxDots);
+  baseCanvas.height = Math.min(height, maxDots);
 
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return '';
+  const baseContext = baseCanvas.getContext('2d', { willReadFrequently: true });
+  if (!baseContext) return { graphic: '', width: baseCanvas.width, height: baseCanvas.height, offsetX: 0, offsetY: 0 };
 
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  baseContext.fillStyle = '#ffffff';
+  baseContext.fillRect(0, 0, baseCanvas.width, baseCanvas.height);
 
   const image = await loadImage(element.src);
-  const { sx, sy, sw, sh, dx, dy, dw, dh } = imageDrawBox(image, canvas, element.objectFit);
-  context.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+  const { sx, sy, sw, sh, dx, dy, dw, dh } = imageDrawBox(image, baseCanvas, element.objectFit);
+  baseContext.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
 
+  const rotatedCanvas = rotateCanvasForZpl(baseCanvas, element.rotation);
+  const origin = centeredRotatedOrigin(
+    Math.round(element.x),
+    Math.round(element.y),
+    width,
+    height,
+    rotatedCanvas.width,
+    rotatedCanvas.height,
+  );
+  const { canvas, x, y } = cropCanvasToLabel(rotatedCanvas, origin.x, origin.y, format);
+  const graphic = canvasToGraphicField(canvas);
+  return {
+    graphic,
+    width: canvas.width,
+    height: canvas.height,
+    offsetX: x - Math.round(element.x),
+    offsetY: y - Math.round(element.y),
+  };
+}
+
+function canvasToGraphicField(canvas: HTMLCanvasElement): string {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return '';
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const bytesPerRow = Math.ceil(canvas.width / 8);
   const totalBytes = bytesPerRow * canvas.height;
@@ -201,6 +242,90 @@ async function imageElementToGraphicField(element: ImageElement, format: LabelFo
 
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
   return `^GFA,${totalBytes},${totalBytes},${bytesPerRow},${hex}`;
+}
+
+function rotateCanvasForZpl(source: HTMLCanvasElement, rotation: number): HTMLCanvasElement {
+  const normalized = normalizeRotation(rotation);
+  if (normalized === 0) return source;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = normalized === 90 || normalized === 270 ? source.height : source.width;
+  canvas.height = normalized === 90 || normalized === 270 ? source.width : source.height;
+
+  const context = canvas.getContext('2d');
+  if (!context) return source;
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (normalized === 90) {
+    context.translate(canvas.width, 0);
+    context.rotate(Math.PI / 2);
+  } else if (normalized === 180) {
+    context.translate(canvas.width, canvas.height);
+    context.rotate(Math.PI);
+  } else if (normalized === 270) {
+    context.translate(0, canvas.height);
+    context.rotate(-Math.PI / 2);
+  }
+
+  context.drawImage(source, 0, 0);
+  return canvas;
+}
+
+function cropCanvasToLabel(
+  source: HTMLCanvasElement,
+  x: number,
+  y: number,
+  format: LabelFormat,
+): { canvas: HTMLCanvasElement; x: number; y: number } {
+  const dpi = format.dpi || 203;
+  const labelWidth = Math.round(format.width * dpi);
+  const labelHeight = Math.round(format.height * dpi);
+
+  const cropLeft = Math.max(0, -x);
+  const cropTop = Math.max(0, -y);
+  const cropRight = Math.max(0, x + source.width - labelWidth);
+  const cropBottom = Math.max(0, y + source.height - labelHeight);
+  const croppedWidth = source.width - cropLeft - cropRight;
+  const croppedHeight = source.height - cropTop - cropBottom;
+
+  if (croppedWidth <= 0 || croppedHeight <= 0) {
+    const empty = document.createElement('canvas');
+    empty.width = 1;
+    empty.height = 1;
+    return { canvas: empty, x: Math.max(0, x), y: Math.max(0, y) };
+  }
+
+  if (cropLeft === 0 && cropTop === 0 && cropRight === 0 && cropBottom === 0) {
+    return { canvas: source, x, y };
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = croppedWidth;
+  canvas.height = croppedHeight;
+  const context = canvas.getContext('2d');
+  if (!context) return { canvas: source, x, y };
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(
+    source,
+    cropLeft,
+    cropTop,
+    croppedWidth,
+    croppedHeight,
+    0,
+    0,
+    croppedWidth,
+    croppedHeight,
+  );
+
+  return {
+    canvas,
+    x: x + cropLeft,
+    y: y + cropTop,
+  };
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -261,21 +386,6 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   const widthRatio = element.charWidth ?? 0.5;
   const fontW = Math.max(1, Math.round(fontH * widthRatio));
 
-  const cmds: string[] = [];
-
-  // Field origin
-  cmds.push(`^FO${x},${y}`);
-
-  // Font: ^A0 = default scalable font
-  // Rotation: N=normal, R=90°, I=180°, B=270°
-  let rotation = 'N';
-  if (element.rotation === 90) rotation = 'R';
-  else if (element.rotation === 180) rotation = 'I';
-  else if (element.rotation === 270) rotation = 'B';
-
-  cmds.push(`^A0${rotation},${fontH},${fontW}`);
-
-  // Field block for text wrapping and alignment
   const blockWidth = Math.round(element.width);
   const maxLines = Math.max(1, Math.floor(element.height / (fontH * (element.lineHeight || 1.2))));
   const lineSpacing = Math.round(fontH * ((element.lineHeight || 1.2) - 1));
@@ -285,12 +395,89 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   if (element.textAlign === 'center') align = 'C';
   else if (element.textAlign === 'right') align = 'R';
 
+  const rotation = normalizeRotation(element.rotation);
+  const orientation = rotationToZplOrientation(rotation);
+
+  const cmds: string[] = [];
+
+  if (rotation !== 0) {
+    cmds.push(`^FO${x},${y}`);
+    cmds.push(`^A0${orientation},${fontH},${fontW}`);
+    cmds.push(`^FD${escapeZPL(content)}^FS`);
+    return cmds.join('');
+  }
+
+  // Field origin
+  cmds.push(`^FO${x},${y}`);
+
+  // Font: ^A0 = default scalable font
+  cmds.push(`^A0${orientation},${fontH},${fontW}`);
+
+  // Field block for text wrapping and alignment
   cmds.push(`^FB${blockWidth},${maxLines},${lineSpacing},${align},0`);
 
   // Field data
   cmds.push(`^FD${escapeZPL(content)}^FS`);
 
   return cmds.join('');
+}
+
+function normalizeRotation(rotation: number | undefined): 0 | 90 | 180 | 270 {
+  const normalized = (((Math.round(rotation || 0) % 360) + 360) % 360);
+  if (normalized === 90 || normalized === 180 || normalized === 270) return normalized;
+  return 0;
+}
+
+function rotationToZplOrientation(rotation: 0 | 90 | 180 | 270): 'N' | 'R' | 'I' | 'B' {
+  if (rotation === 90) return 'R';
+  if (rotation === 180) return 'I';
+  if (rotation === 270) return 'B';
+  return 'N';
+}
+
+function centeredRotatedOrigin(
+  x: number,
+  y: number,
+  originalWidth: number,
+  originalHeight: number,
+  renderedWidth: number,
+  renderedHeight: number,
+): { x: number; y: number } {
+  return {
+    x: Math.round(x + originalWidth / 2 - renderedWidth / 2),
+    y: Math.round(y + originalHeight / 2 - renderedHeight / 2),
+  };
+}
+
+function rotatedBoxOrigin(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: 0 | 90 | 180 | 270,
+): { x: number; y: number } {
+  if (rotation === 90) {
+    return {
+      x: Math.round(x + width / 2 + height / 2),
+      y: Math.round(y + height / 2 - width / 2),
+    };
+  }
+
+  if (rotation === 180) {
+    return {
+      x: Math.round(x + width),
+      y: Math.round(y + height),
+    };
+  }
+
+  if (rotation === 270) {
+    return {
+      x: Math.round(x + width / 2 - height / 2),
+      y: Math.round(y + height / 2 + width / 2),
+    };
+  }
+
+  return { x, y };
 }
 
 function qrToZPL(element: QRElement, x: number, y: number, fieldValues?: Record<string, string>): string {
@@ -307,17 +494,41 @@ function qrToZPL(element: QRElement, x: number, y: number, fieldValues?: Record<
   // needed for `content` at the chosen error-correction level, then pick the
   // largest mag where moduleCount * mag ≤ elementWidth.
   const ec = element.errorCorrection || 'M';
-  const modules = estimateQrModules(content, ec);
-  const elementW = Math.round(element.width);
-  const mag = Math.max(1, Math.min(10, Math.floor(elementW / modules)));
+  const { magnification: mag, printedSize } = zplQrGeometry(content, ec, element.width);
+  const rotation = normalizeRotation(element.rotation);
+  const orientation = rotationToZplOrientation(rotation);
+  const centered = centeredRotatedOrigin(
+    x,
+    y,
+    Math.round(element.width),
+    Math.round(element.height),
+    printedSize,
+    printedSize,
+  );
+  const { x: originX, y: originY } = rotatedBoxOrigin(centered.x, centered.y, printedSize, printedSize, rotation);
 
   const cmds: string[] = [];
-  cmds.push(`^FO${x},${y}`);
+  cmds.push(`^FO${originX},${originY}`);
   // Fifth param of ^BQ sets error correction level: H,Q,M,L.
-  cmds.push(`^BQN,2,${mag},${ec}`);
+  cmds.push(`^BQ${orientation},2,${mag},${ec}`);
   cmds.push(`^FDQA,${escapeZPL(content)}^FS`);
 
   return cmds.join('');
+}
+
+export function zplQrGeometry(content: string, ec: 'L' | 'M' | 'Q' | 'H' = 'M', requestedSize: number): ZplQrGeometry {
+  const modules = estimateQrModules(content, ec);
+  const elementW = Math.max(1, Math.round(requestedSize));
+  const magnification = Math.max(1, Math.min(10, Math.floor(elementW / modules)));
+  return {
+    modules,
+    magnification,
+    printedSize: modules * magnification,
+  };
+}
+
+export function snapZplQrSize(content: string, ec: 'L' | 'M' | 'Q' | 'H' = 'M', requestedSize: number): number {
+  return zplQrGeometry(content, ec, requestedSize).printedSize;
 }
 
 /**
@@ -353,34 +564,43 @@ function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues
 
   const height = Math.round(element.height * 0.75); // Barcode height in dots
   const showText = element.showText ? 'Y' : 'N';
+  const rotation = normalizeRotation(element.rotation);
+  const orientation = rotationToZplOrientation(rotation);
+  const { x: originX, y: originY } = rotatedBoxOrigin(
+    x,
+    y,
+    Math.round(element.width),
+    Math.round(element.height),
+    rotation,
+  );
 
   const cmds: string[] = [];
-  cmds.push(`^FO${x},${y}`);
+  cmds.push(`^FO${originX},${originY}`);
 
   // Module width (narrow bar): ~2 dots default
   const moduleWidth = 2;
 
   switch (element.barcodeFormat) {
     case 'CODE128':
-      cmds.push(`^BCN,${height},${showText},N,N`);
+      cmds.push(`^BC${orientation},${height},${showText},N,N`);
       break;
     case 'CODE39':
-      cmds.push(`^B3N,N,${height},${showText},N`);
+      cmds.push(`^B3${orientation},N,${height},${showText},N`);
       break;
     case 'UPC':
-      cmds.push(`^BUN,${height},${showText},N`);
+      cmds.push(`^BU${orientation},${height},${showText},N`);
       break;
     case 'EAN13':
-      cmds.push(`^BEN,${height},${showText},N`);
+      cmds.push(`^BE${orientation},${height},${showText},N`);
       break;
     case 'EAN8':
-      cmds.push(`^B8N,${height},${showText},N`);
+      cmds.push(`^B8${orientation},${height},${showText},N`);
       break;
     case 'ITF14':
-      cmds.push(`^BIN,${height},${showText},N`);
+      cmds.push(`^BI${orientation},${height},${showText},N`);
       break;
     default:
-      cmds.push(`^BCN,${height},${showText},N,N`);
+      cmds.push(`^BC${orientation},${height},${showText},N,N`);
   }
 
   cmds.push(`^FD${escapeZPL(content)}^FS`);
@@ -392,21 +612,29 @@ function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues
 function lineToZPL(element: LineElement, x: number, y: number, format: LabelFormat): string {
   const dpi = format.dpi || 203;
   const strokeW = Math.max(1, Math.round(element.strokeWidth * (dpi / 72)));
-  const w = Math.max(strokeW, Math.round(element.width));
-  const h = Math.max(strokeW, Math.round(element.height));
+  const rotation = normalizeRotation(element.rotation);
+  const originalW = Math.max(strokeW, Math.round(element.width));
+  const originalH = Math.max(strokeW, Math.round(element.height));
+  const w = rotation === 90 || rotation === 270 ? originalH : originalW;
+  const h = rotation === 90 || rotation === 270 ? originalW : originalH;
+  const { x: originX, y: originY } = centeredRotatedOrigin(x, y, originalW, originalH, w, h);
 
   // Use graphic box for lines
-  return `^FO${x},${y}^GB${w},${h},${strokeW}^FS`;
+  return `^FO${originX},${originY}^GB${w},${h},${strokeW}^FS`;
 }
 
 function rectangleToZPL(element: RectangleElement, x: number, y: number, format: LabelFormat): string {
   const dpi = format.dpi || 203;
   const strokeW = Math.max(1, Math.round(element.strokeWidth * (dpi / 72)));
-  const w = Math.round(element.width);
-  const h = Math.round(element.height);
+  const rotation = normalizeRotation(element.rotation);
+  const originalW = Math.round(element.width);
+  const originalH = Math.round(element.height);
+  const w = rotation === 90 || rotation === 270 ? originalH : originalW;
+  const h = rotation === 90 || rotation === 270 ? originalW : originalH;
+  const { x: originX, y: originY } = centeredRotatedOrigin(x, y, originalW, originalH, w, h);
   const r = Math.round(element.borderRadius);
 
-  return `^FO${x},${y}^GB${w},${h},${strokeW},B,${r}^FS`;
+  return `^FO${originX},${originY}^GB${w},${h},${strokeW},B,${r}^FS`;
 }
 
 function escapeZPL(text: string): string {

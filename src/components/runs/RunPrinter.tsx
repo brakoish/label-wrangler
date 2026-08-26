@@ -13,7 +13,7 @@ import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderDimensions } from '@/lib/zplRenderClient';
 import {
   isWebUsbSupported,
@@ -380,22 +380,35 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // Preview ZPL for whichever label index the user is inspecting.
   // For multi-across rolls we group rows by feed so the preview matches
   // what actually prints: lane 0 = row N, lane 1 = row N+1, etc.
-  const previewZpl = useMemo(() => {
-    if (!run || !template || !format) return '';
+  const [previewZpl, setPreviewZpl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewZpl('');
+    if (!run || !template || !format || format.type !== 'thermal') return;
     const maxIdx = Math.max(0, run.sourceData.length - 1);
     const idx = Math.min(Math.max(0, previewIndex), maxIdx);
-    if (across === 1) {
-      return generateZPL(template, format, previewLabelValues(run, idx));
-    }
-    // Multi-across: snap idx to the start of its feed group, then build
-    // per-lane values for that group.
-    const feedStart = Math.floor(idx / across) * across;
-    const laneValues: Array<Record<string, string> | undefined> = [];
-    for (let lane = 0; lane < across; lane++) {
-      const rowIdx = feedStart + lane;
-      laneValues.push(rowIdx <= maxIdx ? previewLabelValues(run, rowIdx) : undefined);
-    }
-    return generateZPL(template, format, laneValues);
+    (async () => {
+      try {
+        if (across === 1) {
+          const nextZpl = await generateZPLWithImages(template, format, previewLabelValues(run, idx));
+          if (!cancelled) setPreviewZpl(nextZpl);
+          return;
+        }
+        // Multi-across: snap idx to the start of its feed group, then build
+        // per-lane values for that group.
+        const feedStart = Math.floor(idx / across) * across;
+        const laneValues: Array<Record<string, string> | undefined> = [];
+        for (let lane = 0; lane < across; lane++) {
+          const rowIdx = feedStart + lane;
+          laneValues.push(rowIdx <= maxIdx ? previewLabelValues(run, rowIdx) : undefined);
+        }
+        const nextZpl = await generateZPLWithImages(template, format, laneValues);
+        if (!cancelled) setPreviewZpl(nextZpl);
+      } catch {
+        if (!cancelled) setPreviewZpl('');
+      }
+    })();
+    return () => { cancelled = true; };
   }, [run, template, format, previewIndex, across]);
 
   // Friendly description of where each dynamic field's value is coming from.

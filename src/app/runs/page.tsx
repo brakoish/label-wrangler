@@ -810,7 +810,7 @@ function RunCard({
       className="glass rounded-2xl p-4 border border-zinc-800 hover:border-amber-500/30 transition-all group relative flex flex-col"
     >
       {/* Thumbnail band */}
-      <div className="w-full h-28 rounded-lg bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center mb-3">
+      <div className="w-full h-28 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center mb-3 p-2">
         {template && format ? (
           <RunThumbnail run={run} template={template} format={format} />
         ) : (
@@ -921,7 +921,7 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
   }, [run, template, format]);
 
   if (format.type === 'sheet' && url) {
-    return <img src={url} alt="" className="max-w-full max-h-full" />;
+    return <img src={url} alt="" className="max-w-full max-h-full object-contain" />;
   }
 
   // Fallback for sheet formats while the real SVG thumbnail is rendering or
@@ -946,7 +946,7 @@ function RunThumbnail({ run, template, format }: { run: Run; template: LabelTemp
     <img
       src={url}
       alt=""
-      className="max-w-full max-h-full"
+      className="max-w-full max-h-full object-contain"
       style={{ imageRendering: 'pixelated' }}
     />
   );

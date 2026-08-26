@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useId } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
-import { generateZPL } from '@/lib/zplGenerator';
+import { generateZPL, generateZPLWithImages, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 
 interface LabelPreviewProps {
@@ -30,6 +30,9 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
   } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
   const [textBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
+  const [thermalPreviewUrl, setThermalPreviewUrl] = useState<string>('');
+  const [thermalPreviewPending, setThermalPreviewPending] = useState(false);
+  const thermalClipId = useId().replace(/:/g, '');
 
   const handleTextMeasure = useCallback((id: string, w: number, h: number) => {
     setTextBounds((prev) => {
@@ -59,15 +62,25 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
   const viewBoxHeight = format.type === 'thermal' && format.dpi
     ? format.height * format.dpi
     : format.height;
+  const useUprightThermalEditor = format.type === 'thermal' && viewBoxWidth > viewBoxHeight;
+  const editorViewBoxWidth = useUprightThermalEditor ? viewBoxHeight : viewBoxWidth;
+  const editorViewBoxHeight = useUprightThermalEditor ? viewBoxWidth : viewBoxHeight;
+  const editorContentTransform = useUprightThermalEditor
+    ? `translate(0 ${viewBoxWidth}) rotate(-90)`
+    : undefined;
 
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+  const thermalGeometry = format.type === 'thermal' ? thermalRenderGeometry(format) : null;
+  const showThermalFidelityLayer = format.type === 'thermal' && !!thermalPreviewUrl && !!thermalGeometry;
 
   // Padding
   const padFraction = 0.1;
-  const padX = viewBoxWidth * padFraction;
-  const padY = viewBoxHeight * padFraction;
-  const totalW = viewBoxWidth + padX * 2;
-  const totalH = viewBoxHeight + padY * 2;
+  const padX = editorViewBoxWidth * padFraction;
+  const padY = editorViewBoxHeight * padFraction;
+  const totalW = editorViewBoxWidth + padX * 2;
+  const totalH = editorViewBoxHeight + padY * 2;
+  const labelPadX = viewBoxWidth * padFraction;
+  const labelPadY = viewBoxHeight * padFraction;
 
   // SVG pixel size
   const margin = 48;
@@ -87,11 +100,18 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
 
   // Convert screen pixels to SVG viewBox units
   const screenToSvg = useCallback((screenDx: number, screenDy: number) => {
-    return {
-      dx: (screenDx / svgW) * totalW,
-      dy: (screenDy / svgH) * totalH,
-    };
-  }, [svgW, svgH, totalW, totalH]);
+    const displayDx = (screenDx / svgW) * totalW;
+    const displayDy = (screenDy / svgH) * totalH;
+
+    if (useUprightThermalEditor) {
+      return {
+        dx: -displayDy,
+        dy: displayDx,
+      };
+    }
+
+    return { dx: displayDx, dy: displayDy };
+  }, [svgW, svgH, totalW, totalH, useUprightThermalEditor]);
 
   // Drag handlers
   const handlePointerDown = useCallback((e: React.PointerEvent, elementId: string) => {
@@ -161,20 +181,15 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     // For text elements, use rendered textBounds (if measured) so the group
     // bbox reflects what the user actually sees.
     const isMultiResize = selectedElementIds.size > 1 && selectedElementIds.has(elementId);
-    const getEffectiveBounds = (el: TemplateElement) => {
-      if (el.type === 'text' && textBounds[el.id]) {
-        return { w: textBounds[el.id].w, h: textBounds[el.id].h };
-      }
-      return { w: el.width, h: el.height };
-    };
+    const getEffectiveBounds = (el: TemplateElement) => elementInteractionBounds(el, format, textBounds, testData);
     const selectedSnapshots = isMultiResize ? new Map(
       elements
         .filter((el) => selectedElementIds.has(el.id))
         .map((el) => {
-          const eff = getEffectiveBounds(el);
+          const bounds = getEffectiveBounds(el);
           return [el.id, {
             x: el.x, y: el.y, width: el.width, height: el.height,
-            effW: eff.w, effH: eff.h,
+            bounds,
             fontSize: el.type === 'text' ? el.fontSize : 0,
             type: el.type,
           }] as const;
@@ -186,10 +201,10 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     if (selectedSnapshots) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const snap of selectedSnapshots.values()) {
-        minX = Math.min(minX, snap.x);
-        minY = Math.min(minY, snap.y);
-        maxX = Math.max(maxX, snap.x + snap.effW);
-        maxY = Math.max(maxY, snap.y + snap.effH);
+        minX = Math.min(minX, snap.bounds.x);
+        minY = Math.min(minY, snap.bounds.y);
+        maxX = Math.max(maxX, snap.bounds.x + snap.bounds.width);
+        maxY = Math.max(maxY, snap.bounds.y + snap.bounds.height);
       }
       groupBBox = { minX, minY, maxX, maxY };
     }
@@ -231,7 +246,12 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
 
       // QR: keep square on corner handles
       if (isQR && handle.length === 2) {
-        const size = Math.max(nW, nH);
+        const qr = element as QRElement;
+        const requestedSize = Math.max(nW, nH);
+        const content = resolveElementContent(qr, testData) || 'QR';
+        const size = format.type === 'thermal'
+          ? snapZplQrSize(content, qr.errorCorrection || 'M', requestedSize)
+          : requestedSize;
         if (handle.includes('w')) nX = origX + origW - size;
         if (handle.includes('n')) nY = origY + origH - size;
         nW = size;
@@ -267,7 +287,11 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
             const svgFs = isThermal ? newFs * (dpi / 72) : newFs / 72;
             onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: svgFs * 1.2, fontSize: newFs });
           } else if (snap.type === 'qr') {
-            const qrSize = Math.max(newElW, newElH);
+            const qr = elements.find((el): el is QRElement => el.id === id && el.type === 'qr');
+            const requestedSize = Math.max(newElW, newElH);
+            const qrSize = format.type === 'thermal' && qr
+              ? snapZplQrSize(resolveElementContent(qr, testData) || 'QR', qr.errorCorrection || 'M', requestedSize)
+              : requestedSize;
             onUpdateElement(id, { x: newElX, y: newElY, width: qrSize, height: qrSize });
           } else {
             onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: newElH });
@@ -298,7 +322,7 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format.type, format.dpi, textBounds]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
@@ -383,6 +407,47 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
     setGuides({ x: [], y: [] });
   }, [dragging, onDragEnd]);
 
+  useEffect(() => {
+    if (format.type !== 'thermal') {
+      setThermalPreviewUrl('');
+      setThermalPreviewPending(false);
+      return;
+    }
+
+    let active = true;
+    setThermalPreviewPending(true);
+
+    const timer = window.setTimeout(() => {
+      generateZPLWithImages(
+        {
+          id: `${format.id}-designer-thermal-preview`,
+          name: 'Designer Thermal Preview',
+          formatId: format.id,
+          elements,
+          createdAt: '',
+          updatedAt: '',
+        },
+        format,
+        testData,
+      )
+        .then((zpl) => renderZplToDataUrl(zpl, format))
+        .then((url) => {
+          if (active) setThermalPreviewUrl(url);
+        })
+        .catch(() => {
+          if (active) setThermalPreviewUrl('');
+        })
+        .finally(() => {
+          if (active) setThermalPreviewPending(false);
+        });
+    }, dragging ? 350 : 150);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [elements, format, testData, dragging]);
+
   return (
     <div ref={containerRef} className="flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '360px', height: '50vh' }}>
       <svg
@@ -411,131 +476,162 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
         />
 
         {/* Label surface — click to deselect */}
-        <rect
-          x={0}
-          y={0}
-          width={viewBoxWidth}
-          height={viewBoxHeight}
-          fill={format.type === 'thermal' ? '#ffffff' : '#fafafa'}
-          stroke="#52525b"
-          strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.004}
-          rx={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
-          onClick={() => onSelectElement(null)}
-        />
+        <g transform={editorContentTransform}>
+          <rect
+            x={0}
+            y={0}
+            width={viewBoxWidth}
+            height={viewBoxHeight}
+            fill={format.type === 'thermal' ? '#ffffff' : '#fafafa'}
+            stroke="#52525b"
+            strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.004}
+            rx={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
+            onClick={() => onSelectElement(null)}
+          />
 
-        {/* Elements */}
-        <g>
-          {sortedElements.map((element) => (
-            <g
-              key={element.id}
-              onPointerDown={(e) => handlePointerDown(e, element.id)}
-              style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
-            >
-              {renderElement(element, format, elements, handleTextMeasure, testData)}
-              {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
-              <rect
-                x={element.x}
-                y={element.y}
-                width={Math.max(element.width, viewBoxWidth * 0.02)}
-                height={Math.max(element.height, viewBoxHeight * 0.02)}
-                fill="transparent"
+          {showThermalFidelityLayer && (
+            <>
+              <clipPath id={thermalClipId}>
+                <rect x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} />
+              </clipPath>
+              <image
+                x={-thermalGeometry.effectiveSideMDots}
+                y={0}
+                width={thermalGeometry.linerDots}
+                height={thermalGeometry.heightDots}
+                href={thermalPreviewUrl}
+                clipPath={`url(#${thermalClipId})`}
+                preserveAspectRatio="none"
+                style={{ imageRendering: 'pixelated' }}
+                pointerEvents="none"
               />
-              {selectedElementIds.has(element.id) && selectedElementIds.size === 1 && (
-                <>
-                  {/* Selection border — use measured bounds for text */}
-                  {(() => {
-                    const tb = element.type === 'text' ? textBounds[element.id] : null;
-                    const selX = element.x - viewBoxWidth * 0.005;
-                    const selY = (tb ? element.y - viewBoxWidth * 0.005 : element.y - viewBoxWidth * 0.005);
-                    const selW = (tb ? tb.w : element.width) + viewBoxWidth * 0.01;
-                    const selH = (tb ? tb.h : element.height) + viewBoxWidth * 0.01;
-                    return (
-                      <rect
-                        x={selX}
-                        y={selY}
-                        width={selW}
-                        height={selH}
-                        fill="none"
-                        stroke="#d97706"
-                        strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.005}
-                        pointerEvents="none"
-                      />
-                    );
-                  })()}
-                  {/* Resize handles */}
-                  {(() => {
-                    const tb = element.type === 'text' ? textBounds[element.id] : null;
-                    const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
-                    const half = hs / 2;
-                    const ex = element.x;
-                    const ey = element.y;
-                    const ew = tb ? tb.w : element.width;
-                    const eh = tb ? tb.h : element.height;
-                    const handles = [
-                      { id: 'nw', cx: ex, cy: ey, cursor: 'nwse-resize' },
-                      { id: 'n',  cx: ex + ew / 2, cy: ey, cursor: 'ns-resize' },
-                      { id: 'ne', cx: ex + ew, cy: ey, cursor: 'nesw-resize' },
-                      { id: 'e',  cx: ex + ew, cy: ey + eh / 2, cursor: 'ew-resize' },
-                      { id: 'se', cx: ex + ew, cy: ey + eh, cursor: 'nwse-resize' },
-                      { id: 's',  cx: ex + ew / 2, cy: ey + eh, cursor: 'ns-resize' },
-                      { id: 'sw', cx: ex, cy: ey + eh, cursor: 'nesw-resize' },
-                      { id: 'w',  cx: ex, cy: ey + eh / 2, cursor: 'ew-resize' },
-                    ];
-                    return handles.map((h) => (
-                      <rect
-                        key={h.id}
-                        x={h.cx - half}
-                        y={h.cy - half}
-                        width={hs}
-                        height={hs}
-                        fill="#ffffff"
-                        stroke="#d97706"
-                        strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
-                        style={{ cursor: h.cursor }}
-                        onPointerDown={(e) => handleResizeDown(e, element.id, h.id)}
-                      />
-                    ));
-                  })()}
-                </>
+              {thermalPreviewPending && (
+                <rect
+                  x={0}
+                  y={0}
+                  width={viewBoxWidth}
+                  height={viewBoxHeight}
+                  fill="#ffffff"
+                  opacity={0.18}
+                  pointerEvents="none"
+                />
               )}
-              {/* Multi-select: subtle dashed outline on each member element */}
-              {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
-                const tb = element.type === 'text' ? textBounds[element.id] : null;
-                const ew = tb ? tb.w : element.width;
-                const eh = tb ? tb.h : element.height;
-                return (
-                  <rect
-                    x={element.x}
-                    y={element.y}
-                    width={ew}
-                    height={eh}
-                    fill="none"
-                    stroke="#d97706"
-                    strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.002}
-                    strokeDasharray={`${Math.min(viewBoxWidth, viewBoxHeight) * 0.008} ${Math.min(viewBoxWidth, viewBoxHeight) * 0.006}`}
-                    opacity={0.5}
-                    pointerEvents="none"
-                  />
-                );
-              })()}
-            </g>
-          ))}
-        </g>
+            </>
+          )}
 
-        {/* Group selection bounding box + handles (shown when multi-selected) */}
-        {selectedElementIds.size > 1 && (() => {
+          {/* Elements */}
+          <g>
+            {sortedElements.map((element) => (
+              <g
+                key={element.id}
+                onPointerDown={(e) => handlePointerDown(e, element.id)}
+                style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
+              >
+                <g opacity={showThermalFidelityLayer ? (dragging ? 0.35 : 0) : 1} pointerEvents="none">
+                  {renderElement(element, format, elements, handleTextMeasure, testData)}
+                </g>
+                {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
+                {(() => {
+                  const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                  return (
+                    <rect
+                      x={bounds.x}
+                      y={bounds.y}
+                      width={Math.max(bounds.width, viewBoxWidth * 0.02)}
+                      height={Math.max(bounds.height, viewBoxHeight * 0.02)}
+                      fill="transparent"
+                    />
+                  );
+                })()}
+                {selectedElementIds.has(element.id) && selectedElementIds.size === 1 && (
+                  <>
+                    {/* Selection border — use measured bounds for text */}
+                    {(() => {
+                      const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                      const pad = viewBoxWidth * 0.005;
+                      return (
+                        <rect
+                          x={bounds.x - pad}
+                          y={bounds.y - pad}
+                          width={bounds.width + pad * 2}
+                          height={bounds.height + pad * 2}
+                          fill="none"
+                          stroke="#d97706"
+                          strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.005}
+                          pointerEvents="none"
+                        />
+                      );
+                    })()}
+                    {/* Resize handles */}
+                    {(() => {
+                      const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
+                      const half = hs / 2;
+                      const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                      const ex = bounds.x;
+                      const ey = bounds.y;
+                      const ew = bounds.width;
+                      const eh = bounds.height;
+                      const handles = [
+                        { id: 'nw', cx: ex, cy: ey, cursor: 'nwse-resize' },
+                        { id: 'n',  cx: ex + ew / 2, cy: ey, cursor: 'ns-resize' },
+                        { id: 'ne', cx: ex + ew, cy: ey, cursor: 'nesw-resize' },
+                        { id: 'e',  cx: ex + ew, cy: ey + eh / 2, cursor: 'ew-resize' },
+                        { id: 'se', cx: ex + ew, cy: ey + eh, cursor: 'nwse-resize' },
+                        { id: 's',  cx: ex + ew / 2, cy: ey + eh, cursor: 'ns-resize' },
+                        { id: 'sw', cx: ex, cy: ey + eh, cursor: 'nesw-resize' },
+                        { id: 'w',  cx: ex, cy: ey + eh / 2, cursor: 'ew-resize' },
+                      ];
+                      return handles.map((h) => (
+                        <rect
+                          key={h.id}
+                          x={h.cx - half}
+                          y={h.cy - half}
+                          width={hs}
+                          height={hs}
+                          fill="#ffffff"
+                          stroke="#d97706"
+                          strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+                          style={{ cursor: h.cursor }}
+                          onPointerDown={(e) => handleResizeDown(e, element.id, h.id)}
+                        />
+                      ));
+                    })()}
+                  </>
+                )}
+                {/* Multi-select: subtle dashed outline on each member element */}
+                {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
+                  const bounds = elementInteractionBounds(element, format, textBounds, testData);
+                  return (
+                    <rect
+                      x={bounds.x}
+                      y={bounds.y}
+                      width={bounds.width}
+                      height={bounds.height}
+                      fill="none"
+                      stroke="#d97706"
+                      strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.002}
+                      strokeDasharray={`${Math.min(viewBoxWidth, viewBoxHeight) * 0.008} ${Math.min(viewBoxWidth, viewBoxHeight) * 0.006}`}
+                      opacity={0.5}
+                      pointerEvents="none"
+                    />
+                  );
+                })()}
+              </g>
+            ))}
+          </g>
+
+          {/* Group selection bounding box + handles (shown when multi-selected) */}
+          {selectedElementIds.size > 1 && (() => {
           const ids = Array.from(selectedElementIds);
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
           for (const id of ids) {
             const el = elements.find((e) => e.id === id);
             if (!el) continue;
-            const tb = el.type === 'text' ? textBounds[el.id] : null;
-            const w = tb ? tb.w : el.width;
-            const h = tb ? tb.h : el.height;
-            minX = Math.min(minX, el.x);
-            minY = Math.min(minY, el.y);
-            maxX = Math.max(maxX, el.x + w);
-            maxY = Math.max(maxY, el.y + h);
+            const bounds = elementInteractionBounds(el, format, textBounds, testData);
+            minX = Math.min(minX, bounds.x);
+            minY = Math.min(minY, bounds.y);
+            maxX = Math.max(maxX, bounds.x + bounds.width);
+            maxY = Math.max(maxY, bounds.y + bounds.height);
           }
           if (!isFinite(minX)) return null;
           const pad = viewBoxWidth * 0.005;
@@ -586,37 +682,38 @@ export function LabelPreview({ format, elements, selectedElementIds, onSelectEle
               ))}
             </g>
           );
-        })()}
+          })()}
 
-        {/* Smart guides */}
-        {guides.x.map((gx, i) => (
-          <line
-            key={`gx-${i}`}
-            x1={gx}
-            y1={-padY}
-            x2={gx}
-            y2={viewBoxHeight + padY}
-            stroke="#f59e0b"
-            strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
-            strokeDasharray={`${viewBoxWidth * 0.01} ${viewBoxWidth * 0.006}`}
-            pointerEvents="none"
-            opacity={0.7}
-          />
-        ))}
-        {guides.y.map((gy, i) => (
-          <line
-            key={`gy-${i}`}
-            x1={-padX}
-            y1={gy}
-            x2={viewBoxWidth + padX}
-            y2={gy}
-            stroke="#f59e0b"
-            strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
-            strokeDasharray={`${viewBoxWidth * 0.01} ${viewBoxWidth * 0.006}`}
-            pointerEvents="none"
-            opacity={0.7}
-          />
-        ))}
+          {/* Smart guides */}
+          {guides.x.map((gx, i) => (
+            <line
+              key={`gx-${i}`}
+              x1={gx}
+              y1={-labelPadY}
+              x2={gx}
+              y2={viewBoxHeight + labelPadY}
+              stroke="#f59e0b"
+              strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+              strokeDasharray={`${viewBoxWidth * 0.01} ${viewBoxWidth * 0.006}`}
+              pointerEvents="none"
+              opacity={0.7}
+            />
+          ))}
+          {guides.y.map((gy, i) => (
+            <line
+              key={`gy-${i}`}
+              x1={-labelPadX}
+              y1={gy}
+              x2={viewBoxWidth + labelPadX}
+              y2={gy}
+              stroke="#f59e0b"
+              strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.003}
+              strokeDasharray={`${viewBoxWidth * 0.01} ${viewBoxWidth * 0.006}`}
+              pointerEvents="none"
+              opacity={0.7}
+            />
+          ))}
+        </g>
       </svg>
     </div>
   );
@@ -644,6 +741,137 @@ function renderElement(element: TemplateElement, format: LabelFormat, elements: 
     default:
       return null;
   }
+}
+
+function normalizedRightAngle(rotation: number | undefined): 0 | 90 | 180 | 270 {
+  const normalized = (((Math.round(rotation || 0) % 360) + 360) % 360);
+  if (normalized === 90 || normalized === 180 || normalized === 270) return normalized;
+  return 0;
+}
+
+function elementInteractionBounds(
+  element: TemplateElement,
+  format: LabelFormat,
+  textBounds: Record<string, { w: number; h: number }>,
+  testData?: Record<string, string>,
+): { x: number; y: number; width: number; height: number } {
+  if (format.type !== 'thermal') {
+    return elementVisualBounds(element, textBounds);
+  }
+
+  return thermalZplBounds(element, format, testData);
+}
+
+function thermalZplBounds(
+  element: TemplateElement,
+  format: LabelFormat,
+  testData?: Record<string, string>,
+): { x: number; y: number; width: number; height: number } {
+  const rotation = normalizedRightAngle(element.rotation);
+
+  if (element.type === 'text') {
+    return thermalTextBounds(element, format);
+  }
+
+  if (element.type === 'qr') {
+    const content = resolveElementContent(element, testData) || 'QR';
+    const printedSize = snapZplQrSize(content, element.errorCorrection || 'M', element.width);
+    return centeredBoxBounds(element.x, element.y, element.width, element.height, printedSize, printedSize);
+  }
+
+  if (element.type === 'line') {
+    const dpi = format.dpi || 203;
+    const strokeWidth = Math.max(1, Math.round(element.strokeWidth * (dpi / 72)));
+    const originalWidth = Math.max(strokeWidth, Math.round(element.width));
+    const originalHeight = Math.max(strokeWidth, Math.round(element.height));
+    const width = rotation === 90 || rotation === 270 ? originalHeight : originalWidth;
+    const height = rotation === 90 || rotation === 270 ? originalWidth : originalHeight;
+    return centeredBoxBounds(element.x, element.y, originalWidth, originalHeight, width, height);
+  }
+
+  if (element.type === 'rectangle') {
+    const originalWidth = Math.round(element.width);
+    const originalHeight = Math.round(element.height);
+    const width = rotation === 90 || rotation === 270 ? originalHeight : originalWidth;
+    const height = rotation === 90 || rotation === 270 ? originalWidth : originalHeight;
+    return centeredBoxBounds(element.x, element.y, originalWidth, originalHeight, width, height);
+  }
+
+  return elementVisualBounds(element, {});
+}
+
+function thermalTextBounds(element: TextElement, format: LabelFormat): { x: number; y: number; width: number; height: number } {
+  const rotation = normalizedRightAngle(element.rotation);
+  const dpi = format.dpi || 203;
+  const fontH = Math.max(1, Math.round(element.fontSize * (dpi / 72)));
+  const lineHeight = element.lineHeight || 1.2;
+  const maxLines = Math.max(1, Math.floor(element.height / (fontH * lineHeight)));
+  const lineSpacing = Math.round(fontH * (lineHeight - 1));
+  const blockWidth = Math.max(1, Math.round(element.width));
+  const zplLineStackHeight = fontH * maxLines + lineSpacing * Math.max(0, maxLines - 1);
+  const blockHeight = Math.max(Math.round(element.height), zplLineStackHeight);
+
+  return zplTextFieldBounds(element.x, element.y, blockWidth, blockHeight, rotation);
+}
+
+function centeredBoxBounds(
+  x: number,
+  y: number,
+  originalWidth: number,
+  originalHeight: number,
+  renderedWidth: number,
+  renderedHeight: number,
+): { x: number; y: number; width: number; height: number } {
+  return {
+    x: Math.round(x + originalWidth / 2 - renderedWidth / 2),
+    y: Math.round(y + originalHeight / 2 - renderedHeight / 2),
+    width: Math.max(1, Math.round(renderedWidth)),
+    height: Math.max(1, Math.round(renderedHeight)),
+  };
+}
+
+function zplTextFieldBounds(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: 0 | 90 | 180 | 270,
+): { x: number; y: number; width: number; height: number } {
+  if (rotation === 90) return { x: Math.round(x), y: Math.round(y), width: Math.round(height), height: Math.round(width) };
+  if (rotation === 180) return { x: Math.round(x - width), y: Math.round(y - height), width: Math.round(width), height: Math.round(height) };
+  if (rotation === 270) return { x: Math.round(x), y: Math.round(y - width), width: Math.round(height), height: Math.round(width) };
+  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+}
+
+function elementVisualBounds(
+  element: TemplateElement,
+  textBounds: Record<string, { w: number; h: number }>,
+): { x: number; y: number; width: number; height: number } {
+  const measured = element.type === 'text' ? textBounds[element.id] : null;
+  const width = measured?.w ?? element.width;
+  const height = measured?.h ?? element.height;
+  const rotation = normalizedRightAngle(element.rotation);
+
+  if (rotation === 0) {
+    return { x: element.x, y: element.y, width, height };
+  }
+
+  if (element.type === 'text') {
+    if (rotation === 90) return { x: element.x - height, y: element.y, width: height, height: width };
+    if (rotation === 180) return { x: element.x - width, y: element.y - height, width, height };
+    return { x: element.x, y: element.y - width, width: height, height: width };
+  }
+
+  if (rotation === 90 || rotation === 270) {
+    return {
+      x: element.x + width / 2 - height / 2,
+      y: element.y + height / 2 - width / 2,
+      width: height,
+      height: width,
+    };
+  }
+
+  return { x: element.x, y: element.y, width, height };
 }
 
 function resolveElementContent(element: TemplateElement, testData?: Record<string, string>): string {
