@@ -400,13 +400,6 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
 
   const cmds: string[] = [];
 
-  if (rotation !== 0) {
-    cmds.push(`^FO${x},${y}`);
-    cmds.push(`^A0${orientation},${fontH},${fontW}`);
-    cmds.push(`^FD${escapeZPL(content)}^FS`);
-    return cmds.join('');
-  }
-
   // Field origin
   cmds.push(`^FO${x},${y}`);
 

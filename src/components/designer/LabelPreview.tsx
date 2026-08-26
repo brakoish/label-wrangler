@@ -1011,13 +1011,19 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   // of the text aligns with the field origin.
   const baselineOffset = isThermal ? rawFontHDots * 0.8 : svgFontSize * 0.85;
 
+  const localBaseX = element.textAlign === 'center'
+    ? element.width / 2
+    : element.textAlign === 'right'
+      ? element.width
+      : 0;
+
   const textContent = (
     <text
       ref={textRef}
       fontSize={svgFontSize}
       fontFamily={effectiveFontFamily}
       fontWeight={element.fontWeight}
-      textAnchor={needsRotation ? 'start' : textAnchor}
+      textAnchor={textAnchor}
       fill={color}
     >
       {visibleLines.map((line, i) => {
@@ -1029,8 +1035,8 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
         return (
           <tspan
             key={i}
-            x={needsRotation ? lineOffset : baseX}
-            y={needsRotation ? baselineOffset : (element.y + baselineOffset + lineOffset)}
+            x={needsRotation ? localBaseX : baseX}
+            y={needsRotation ? (baselineOffset + lineOffset) : (element.y + baselineOffset + lineOffset)}
             textLength={forcedLen}
             lengthAdjust={forcedLen ? 'spacingAndGlyphs' : undefined}
           >
