@@ -365,6 +365,8 @@ function DesignerContent() {
           textAlign: 'left',
           color: '#000000',
           lineHeight: 1.2,
+          autoFit: true,
+          minFontSize: 4,
           // Height: enough for 2 lines of text
           height: isThermal ? defaultFontSize * 3 : (defaultFontSize / 72) * 2.5,
           // Width: at least 60% of label width for text

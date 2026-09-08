@@ -249,15 +249,16 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
       {/* Thermal-only: horizontal character width ratio. Controls ZPL fontW/fontH.
           0.5 = Zebra native (default, tight/squished), 0.6 = balanced, 0.8 = roomy. */}
       {isThermal && (
-        <div className="grid grid-cols-3 gap-1">
-          <CompactInput
-            label="CW"
-            value={element.charWidth ?? 0.5}
-            onChange={(v) => onUpdate({ charWidth: v })}
-            step={0.05}
-            labelRight
-          />
-          <div className="col-span-2 flex items-center gap-0.5">
+        <>
+          <div className="grid grid-cols-3 gap-1">
+            <CompactInput
+              label="CW"
+              value={element.charWidth ?? 0.5}
+              onChange={(v) => onUpdate({ charWidth: v })}
+              step={0.05}
+              labelRight
+            />
+            <div className="col-span-2 flex items-center gap-0.5">
             {([
               { label: 'Tight', value: 0.5 },
               { label: 'Normal', value: 0.6 },
@@ -276,8 +277,26 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
                 {p.label}
               </button>
             ))}
+            </div>
           </div>
-        </div>
+          <div className="flex items-center gap-2 rounded-lg bg-zinc-900/50 px-2 py-1.5">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!element.autoFit}
+              onClick={() => onUpdate({ autoFit: !element.autoFit })}
+              className={`relative h-4 w-7 rounded-full transition-colors ${element.autoFit ? 'bg-amber-500' : 'bg-zinc-700'}`}
+            >
+              <span className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${element.autoFit ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+            </button>
+            <span className="text-[10px] text-zinc-400">Auto-fit text</span>
+            {element.autoFit && (
+              <div className="ml-auto w-20">
+                <CompactInput label="Min" value={element.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />
+              </div>
+            )}
+          </div>
+        </>
       )}
       <CompactSelect value={element.fontFamily} options={['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
       <div className="flex gap-0.5">
@@ -324,15 +343,16 @@ function MultiTextProps({ elements, onUpdate, format }: { elements: TextElement[
         <CompactSelect value={first.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
       </div>
       {isThermal && (
-        <div className="grid grid-cols-3 gap-1">
-          <CompactInput
-            label="CW"
-            value={first.charWidth ?? 0.5}
-            onChange={(v) => onUpdate({ charWidth: v })}
-            step={0.05}
-            labelRight
-          />
-          <div className="col-span-2 flex items-center gap-0.5">
+        <>
+          <div className="grid grid-cols-3 gap-1">
+            <CompactInput
+              label="CW"
+              value={first.charWidth ?? 0.5}
+              onChange={(v) => onUpdate({ charWidth: v })}
+              step={0.05}
+              labelRight
+            />
+            <div className="col-span-2 flex items-center gap-0.5">
             {([
               { label: 'Tight', value: 0.5 },
               { label: 'Normal', value: 0.6 },
@@ -351,8 +371,16 @@ function MultiTextProps({ elements, onUpdate, format }: { elements: TextElement[
                 {p.label}
               </button>
             ))}
+            </div>
           </div>
-        </div>
+          <button
+            type="button"
+            onClick={() => onUpdate({ autoFit: !first.autoFit })}
+            className={`w-full rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors ${first.autoFit ? 'bg-amber-500/15 text-amber-300' : 'bg-zinc-900/50 text-zinc-500'}`}
+          >
+            Auto-fit text {first.autoFit ? 'on' : 'off'}
+          </button>
+        </>
       )}
       <CompactSelect value={first.fontFamily} options={['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
       <div className="flex gap-0.5">

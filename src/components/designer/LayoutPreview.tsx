@@ -7,6 +7,7 @@ import { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } 
 import { generateZPL } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
+import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
@@ -65,25 +66,24 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
         switch (el.type) {
           case 'text': {
             const te = el as TextElement;
-            const fs = isThermal ? te.fontSize * (dpi / 72) : te.fontSize / 72;
-            const lh = fs * (te.lineHeight || 1.2);
             const fullText = resolveElementContent(te, testData);
-
-            // Word wrap (same logic as LabelPreview)
-            const charW = fs * 0.5;
-            const maxCpl = Math.max(1, Math.floor(el.width / charW)) || 999;
-            const lines: string[] = [];
-            if (maxCpl >= fullText.length) {
-              lines.push(fullText);
-            } else {
-              const words = fullText.split(' ');
-              let cur = '';
-              for (const w of words) {
-                const t = cur ? `${cur} ${w}` : w;
-                if (t.length <= maxCpl) { cur = t; } else { if (cur) lines.push(cur); cur = w; }
-              }
-              if (cur) lines.push(cur);
-            }
+            const thermalLayout = isThermal
+              ? layoutThermalText({
+                  content: fullText,
+                  width: el.width,
+                  height: el.height,
+                  fontSize: te.fontSize,
+                  dpi,
+                  lineHeight: te.lineHeight,
+                  charWidth: te.charWidth,
+                  autoFit: te.autoFit,
+                  minFontSize: te.minFontSize,
+                })
+              : null;
+            const fs = thermalLayout?.fontHeight ?? te.fontSize / 72;
+            const lh = thermalLayout?.lineAdvance ?? fs * (te.lineHeight || 1.2);
+            const maxCpl = Math.max(1, Math.floor(el.width / Math.max(0.001, fs * 0.5)));
+            const lines = thermalLayout?.visibleLines ?? wrapThermalText(fullText, maxCpl);
 
             let anchor: 'start' | 'middle' | 'end' = 'start';
             let baseX = el.x;

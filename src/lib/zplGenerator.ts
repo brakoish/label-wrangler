@@ -1,4 +1,5 @@
 import { LabelFormat, LabelTemplate, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from './types';
+import { layoutThermalText } from './thermalTextLayout';
 
 export interface PreparedZplImage {
   graphic: string;
@@ -376,19 +377,19 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
 
   const dpi = format.dpi || 203;
 
-  // Convert font size from points to dots.
-  // ZPL font height in dots: fontSize (pt) * dpi / 72.
-  // Width: controllable via element.charWidth (fontW / fontH ratio).
-  // Default 0.5 matches Zebra Font 0's native look when fontW is omitted —
-  // narrow/squished and great for fitting dense text in small labels.
-  // Bump to 0.6–0.8 for roomier text.
-  const fontH = Math.round(element.fontSize * (dpi / 72));
-  const widthRatio = element.charWidth ?? 0.5;
-  const fontW = Math.max(1, Math.round(fontH * widthRatio));
-
   const blockWidth = Math.round(element.width);
-  const maxLines = Math.max(1, Math.floor(element.height / (fontH * (element.lineHeight || 1.2))));
-  const lineSpacing = Math.round(fontH * ((element.lineHeight || 1.2) - 1));
+  const layout = layoutThermalText({
+    content,
+    width: blockWidth,
+    height: element.height,
+    fontSize: element.fontSize,
+    dpi,
+    lineHeight: element.lineHeight,
+    charWidth: element.charWidth,
+    autoFit: element.autoFit,
+    minFontSize: element.minFontSize,
+  });
+  const { fontHeight: fontH, fontWidth: fontW, maxLines, lineSpacing } = layout;
 
   // Alignment: L=left, C=center, R=right, J=justified
   let align = 'L';
@@ -407,8 +408,8 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
     // block near the right edge completely outside ^PW. Keep ^FB for each
     // line's alignment, but wrap and position the lines explicitly so every
     // printer receives unambiguous field origins.
-    const lines = wrapZplText(content, blockWidth, fontH, maxLines);
-    const lineAdvance = fontH + lineSpacing;
+    const lines = layout.visibleLines;
+    const lineAdvance = layout.lineAdvance;
 
     return lines.map((line, index) => {
       const offset = index * lineAdvance;
@@ -433,47 +434,11 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   cmds.push(`^FB${blockWidth},${maxLines},${lineSpacing},${align},0`);
 
   // Field data
-  cmds.push(`^FD${escapeZPL(content)}^FS`);
+  // Emit our calculated breaks explicitly. This makes manual newlines and
+  // auto-fit wrapping identical in the editor, ZPL preview, and printer.
+  cmds.push(`^FD${layout.visibleLines.map(escapeZPL).join('\\&')}^FS`);
 
   return cmds.join('');
-}
-
-function wrapZplText(content: string, blockWidth: number, fontH: number, maxLines: number): string[] {
-  // Zebra Font 0 is proportional. Its average advance is roughly 0.48 of the
-  // requested font height, which is also the metric used by the thermal SVG
-  // editor. The actual glyph width still comes from ^A0's fontW value.
-  const maxChars = Math.max(1, Math.floor(blockWidth / Math.max(1, fontH * 0.48)));
-  const lines: string[] = [];
-
-  for (const paragraph of content.split(/\r?\n/)) {
-    const words = paragraph.trim().split(/\s+/).filter(Boolean);
-    let current = '';
-
-    for (const originalWord of words) {
-      let word = originalWord;
-
-      while (word.length > maxChars) {
-        if (current) {
-          lines.push(current);
-          current = '';
-        }
-        lines.push(word.slice(0, maxChars));
-        word = word.slice(maxChars);
-      }
-
-      const candidate = current ? `${current} ${word}` : word;
-      if (candidate.length <= maxChars) {
-        current = candidate;
-      } else {
-        if (current) lines.push(current);
-        current = word;
-      }
-    }
-
-    if (current) lines.push(current);
-  }
-
-  return (lines.length > 0 ? lines : [content]).slice(0, maxLines);
 }
 
 function normalizeRotation(rotation: number | undefined): 0 | 90 | 180 | 270 {

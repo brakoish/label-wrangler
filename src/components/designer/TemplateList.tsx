@@ -9,6 +9,7 @@ import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -203,13 +204,23 @@ function MiniText({ element, format, testData, transform }: { element: TextEleme
   if (!content) return null;
 
   const dpi = format.dpi || 203;
-  const fontSize = format.type === 'thermal' ? element.fontSize * (dpi / 72) : element.fontSize / 72;
-  const lineHeight = fontSize * (element.lineHeight || 1.2);
-  const charWidth = fontSize * (element.charWidth ?? 0.5);
-  const maxChars = Math.max(1, Math.floor(element.width / Math.max(1, charWidth)));
-  const lines = wrapText(content, maxChars);
-  const maxLines = Math.max(1, Math.floor(element.height / lineHeight));
-  const visibleLines = lines.slice(0, maxLines);
+  const thermalLayout = format.type === 'thermal'
+    ? layoutThermalText({
+        content,
+        width: element.width,
+        height: element.height,
+        fontSize: element.fontSize,
+        dpi,
+        lineHeight: element.lineHeight,
+        charWidth: element.charWidth,
+        autoFit: element.autoFit,
+        minFontSize: element.minFontSize,
+      })
+    : null;
+  const fontSize = thermalLayout?.fontHeight ?? element.fontSize / 72;
+  const lineHeight = thermalLayout?.lineAdvance ?? fontSize * (element.lineHeight || 1.2);
+  const maxChars = Math.max(1, Math.floor(element.width / Math.max(0.001, fontSize * 0.5)));
+  const visibleLines = thermalLayout?.visibleLines ?? wrapThermalText(content, maxChars);
 
   let x = 0;
   let anchor: 'start' | 'middle' | 'end' = 'start';
@@ -237,24 +248,6 @@ function MiniText({ element, format, testData, transform }: { element: TextEleme
       ))}
     </text>
   );
-}
-
-function wrapText(content: string, maxChars: number) {
-  const words = content.split(/\s+/);
-  const lines: string[] = [];
-  let current = '';
-
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= maxChars) {
-      current = next;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.length > 0 ? lines : [''];
 }
 
 function MiniQr({ element, testData, transform }: { element: QRElement; testData: Record<string, string>; transform: string }) {

@@ -125,6 +125,10 @@ export interface TextElement extends TemplateElementBase {
   textAlign: TextAlign;
   color: string;         // hex color (only used for sheet, ignored for thermal)
   lineHeight: number;    // multiplier (e.g. 1.2 = 120%)
+  /** Shrink thermal text from fontSize until all wrapped lines fit the box. */
+  autoFit?: boolean;
+  /** Smallest point size auto-fit may use. Defaults to 4pt. */
+  minFontSize?: number;
   /** Horizontal character-width multiplier (thermal/ZPL). 1.0 = Zebra default
    *  (tall narrow), 1.2 = roomier, 1.5 = very wide. Also applied as a
    *  proportional SVG letter-spacing in the designer so the preview matches. */

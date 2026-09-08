@@ -6,6 +6,7 @@ import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
+import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -754,8 +755,21 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
 
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;
+  const thermalLayout = isThermal
+    ? layoutThermalText({
+        content: displayContent,
+        width: element.width,
+        height: element.height,
+        fontSize: element.fontSize,
+        dpi,
+        lineHeight: element.lineHeight,
+        charWidth: element.charWidth,
+        autoFit: element.autoFit,
+        minFontSize: element.minFontSize,
+      })
+    : null;
   // Raw dots-per-point height (ZPL's fontH equivalent).
-  const rawFontHDots = element.fontSize * (dpi / 72);
+  const rawFontHDots = thermalLayout?.fontHeight ?? element.fontSize * (dpi / 72);
 
   // Calibration to match Zebra Font 0's visual footprint in the SVG preview.
   // IBM Plex Mono (our new thermal default) renders somewhat closer to Zebra
@@ -771,7 +785,7 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   // a multiplier on the RAW fontH (not the scaled svgFontSize) so spacing
   // between lines matches ZPL exactly.
   const lineHeight = isThermal
-    ? rawFontHDots * (element.lineHeight || 1.0)
+    ? thermalLayout!.lineAdvance
     : svgFontSize * (element.lineHeight || 1.2);
 
   // Word-wrap character width estimate.
@@ -783,39 +797,13 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   // at the boundary (e.g. 12–13 chars) produced an unwanted extra line break.
   // For user-picked fonts with textLength compression the ZPL ratio is still used.
   // For sheet labels Arial averages ~0.5 × em.
-  const textCharWidthRatio = element.charWidth ?? 0.5;
-  const isDefaultFontForWrap = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
-  const charWidthThermal = isThermal && isDefaultFontForWrap
-    ? svgFontSize * 0.6   // IBM Plex Mono: actual monospace glyph width
-    : rawFontHDots * textCharWidthRatio;  // user font + ZPL textLength compression
-  const charWidth = isThermal ? charWidthThermal : svgFontSize * 0.5;
-  const maxCharsPerLine = Math.max(1, Math.floor(element.width / charWidth)) || 999;
-
-  const lines: string[] = [];
-  if (maxCharsPerLine >= displayContent.length) {
-    // Entire text fits on one line
-    lines.push(displayContent);
-  } else {
-    const words = displayContent.split(' ');
-    let currentLine = '';
-    for (const word of words) {
-      const test = currentLine ? `${currentLine} ${word}` : word;
-      if (test.length <= maxCharsPerLine) {
-        currentLine = test;
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = word;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-  }
+  const sheetMaxChars = Math.max(1, Math.floor(element.width / Math.max(svgFontSize * 0.5, 0.001)));
+  const lines = thermalLayout?.lines ?? wrapThermalText(displayContent, sheetMaxChars);
 
   // Thermal ZPL uses ^FB with a fixed maximum line count. Keep the editable
   // preview inside that same field capacity; the print preview remains the
   // source of truth for exact Zebra glyph metrics.
-  const maxLines = isThermal
-    ? Math.max(1, Math.floor(element.height / (rawFontHDots * (element.lineHeight || 1.2))))
-    : Number.POSITIVE_INFINITY;
+  const maxLines = thermalLayout?.maxLines ?? Number.POSITIVE_INFINITY;
   const visibleLines = (lines.length > 0 ? lines : [displayContent]).slice(0, maxLines);
 
   let textAnchor: 'start' | 'middle' | 'end' = 'start';
@@ -836,7 +824,7 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
         }
       } catch {}
     }
-  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.id, onMeasure]);
+  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.autoFit, element.minFontSize, element.id, onMeasure]);
 
   // Thermal text uses IBM Plex Mono to approximate Zebra Font 0's clean blocky
   // monospace look — a much closer visual match than Arial/Helvetica and doesn't
