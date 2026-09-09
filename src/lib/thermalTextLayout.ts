@@ -48,9 +48,13 @@ export function layoutThermalText(options: ThermalTextLayoutOptions): ThermalTex
   return chosen;
 
   function buildLayout(fontHeight: number): ThermalTextLayout {
-    // Zebra Font 0 is proportional. At the established 0.5 width setting its
-    // average advance is about 0.48 of font height, hence the 0.96 factor.
-    const averageCharAdvance = Math.max(1, fontHeight * widthRatio * 0.96);
+    // Zebra Font 0 is proportional. Its established wrapping metric is an
+    // average advance of about 0.48 of font height. Keep that independent of
+    // the requested ^A0 glyph width: legacy templates often use charWidth 0.8,
+    // but Zebra still fit their proportional text using this average. Treating
+    // charWidth as the advance regressed those one-line fields by wrapping far
+    // too early (for example, a full product name became only "The Drop -").
+    const averageCharAdvance = Math.max(1, fontHeight * 0.48);
     const maxChars = Math.max(1, Math.floor(options.width / averageCharAdvance));
     const lines = wrapThermalText(options.content, maxChars);
     const lineAdvance = Math.max(1, Math.round(fontHeight * lineHeight));
