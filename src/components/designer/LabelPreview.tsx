@@ -976,6 +976,7 @@ function QRElementRenderer({ element, format, transform, testData }: { element: 
           href={dataUrl}
           clipPath={`url(#${clipId})`}
           preserveAspectRatio="none"
+          style={{ mixBlendMode: 'multiply' }}
         />
       </>
     );

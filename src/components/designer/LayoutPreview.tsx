@@ -177,6 +177,7 @@ function MiniQr({ element, format, testData, vbW }: { element: QRElement; format
           href={dataUrl}
           clipPath={`url(#${clipId})`}
           preserveAspectRatio="none"
+          style={{ mixBlendMode: 'multiply' }}
         />
       </>
     );
