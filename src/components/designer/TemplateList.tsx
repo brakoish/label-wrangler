@@ -204,7 +204,7 @@ function MiniText({ element, format, testData, transform }: { element: TextEleme
   if (!content) return null;
 
   const dpi = format.dpi || 203;
-  const thermalLayout = format.type === 'thermal'
+  const thermalLayout = format.type === 'thermal' && element.autoFit === true
     ? layoutThermalText({
         content,
         width: element.width,
@@ -217,10 +217,10 @@ function MiniText({ element, format, testData, transform }: { element: TextEleme
         minFontSize: element.minFontSize,
       })
     : null;
-  const fontSize = thermalLayout?.fontHeight ?? element.fontSize / 72;
+  const fontSize = thermalLayout?.fontHeight ?? (format.type === 'thermal' ? element.fontSize * (dpi / 72) : element.fontSize / 72);
   const lineHeight = thermalLayout?.lineAdvance ?? fontSize * (element.lineHeight || 1.2);
-  const maxChars = Math.max(1, Math.floor(element.width / Math.max(0.001, fontSize * 0.5)));
-  const visibleLines = thermalLayout?.visibleLines ?? wrapThermalText(content, maxChars);
+  const maxChars = Math.max(1, Math.floor(element.width / Math.max(1, fontSize * (element.charWidth ?? 0.5))));
+  const visibleLines = thermalLayout?.visibleLines ?? wrapThermalText(content, maxChars).slice(0, Math.max(1, Math.floor(element.height / lineHeight)));
 
   let x = 0;
   let anchor: 'start' | 'middle' | 'end' = 'start';

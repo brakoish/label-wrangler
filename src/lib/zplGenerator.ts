@@ -378,18 +378,24 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   const dpi = format.dpi || 203;
 
   const blockWidth = Math.round(element.width);
-  const layout = layoutThermalText({
-    content,
-    width: blockWidth,
-    height: element.height,
-    fontSize: element.fontSize,
-    dpi,
-    lineHeight: element.lineHeight,
-    charWidth: element.charWidth,
-    autoFit: element.autoFit,
-    minFontSize: element.minFontSize,
-  });
-  const { fontHeight: fontH, fontWidth: fontW, maxLines, lineSpacing } = layout;
+  const enhancedLayout = element.autoFit === true;
+  const layout = enhancedLayout
+    ? layoutThermalText({
+        content,
+        width: blockWidth,
+        height: element.height,
+        fontSize: element.fontSize,
+        dpi,
+        lineHeight: element.lineHeight,
+        charWidth: element.charWidth,
+        autoFit: true,
+        minFontSize: element.minFontSize,
+      })
+    : null;
+  const fontH = layout?.fontHeight ?? Math.round(element.fontSize * (dpi / 72));
+  const fontW = layout?.fontWidth ?? Math.max(1, Math.round(fontH * (element.charWidth ?? 0.5)));
+  const maxLines = layout?.maxLines ?? Math.max(1, Math.floor(element.height / (fontH * (element.lineHeight || 1.2))));
+  const lineSpacing = layout?.lineSpacing ?? Math.round(fontH * ((element.lineHeight || 1.2) - 1));
 
   // Alignment: L=left, C=center, R=right, J=justified
   let align = 'L';
@@ -408,8 +414,8 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
     // block near the right edge completely outside ^PW. Keep ^FB for each
     // line's alignment, but wrap and position the lines explicitly so every
     // printer receives unambiguous field origins.
-    const lines = layout.visibleLines;
-    const lineAdvance = layout.lineAdvance;
+    const lines = layout?.visibleLines ?? wrapZplText(content, blockWidth, fontH, maxLines);
+    const lineAdvance = layout?.lineAdvance ?? fontH + lineSpacing;
 
     return lines.map((line, index) => {
       const offset = index * lineAdvance;
@@ -434,11 +440,47 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   cmds.push(`^FB${blockWidth},${maxLines},${lineSpacing},${align},0`);
 
   // Field data
-  // Emit our calculated breaks explicitly. This makes manual newlines and
-  // auto-fit wrapping identical in the editor, ZPL preview, and printer.
-  cmds.push(`^FD${layout.visibleLines.map(escapeZPL).join('\\&')}^FS`);
+  // Legacy templates omit autoFit and must retain their original Zebra field
+  // behavior. Only opted-in fields receive explicit shared line breaks.
+  const fieldData = layout
+    ? layout.visibleLines.map(escapeZPL).join('\\&')
+    : escapeZPL(content);
+  cmds.push(`^FD${fieldData}^FS`);
 
   return cmds.join('');
+}
+
+function wrapZplText(content: string, blockWidth: number, fontH: number, maxLines: number): string[] {
+  const maxChars = Math.max(1, Math.floor(blockWidth / Math.max(1, fontH * 0.48)));
+  const lines: string[] = [];
+
+  for (const paragraph of content.split(/\r?\n/)) {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    let current = '';
+
+    for (const originalWord of words) {
+      let word = originalWord;
+      while (word.length > maxChars) {
+        if (current) {
+          lines.push(current);
+          current = '';
+        }
+        lines.push(word.slice(0, maxChars));
+        word = word.slice(maxChars);
+      }
+
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= maxChars) current = candidate;
+      else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    }
+
+    if (current) lines.push(current);
+  }
+
+  return (lines.length > 0 ? lines : [content]).slice(0, maxLines);
 }
 
 function normalizeRotation(rotation: number | undefined): 0 | 90 | 180 | 270 {

@@ -67,7 +67,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
           case 'text': {
             const te = el as TextElement;
             const fullText = resolveElementContent(te, testData);
-            const thermalLayout = isThermal
+            const thermalLayout = isThermal && te.autoFit === true
               ? layoutThermalText({
                   content: fullText,
                   width: el.width,
@@ -80,7 +80,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
                   minFontSize: te.minFontSize,
                 })
               : null;
-            const fs = thermalLayout?.fontHeight ?? te.fontSize / 72;
+            const fs = thermalLayout?.fontHeight ?? (isThermal ? te.fontSize * (dpi / 72) : te.fontSize / 72);
             const lh = thermalLayout?.lineAdvance ?? fs * (te.lineHeight || 1.2);
             const maxCpl = Math.max(1, Math.floor(el.width / Math.max(0.001, fs * 0.5)));
             const lines = thermalLayout?.visibleLines ?? wrapThermalText(fullText, maxCpl);
