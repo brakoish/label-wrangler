@@ -99,7 +99,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
             );
           }
           case 'qr':
-            return <MiniQr key={el.id} element={el as QRElement} elements={elements} format={format} testData={testData} vbW={vbW} />;
+            return <MiniQr key={el.id} element={el as QRElement} format={format} testData={testData} vbW={vbW} />;
           case 'barcode':
             return <MiniBarcode key={el.id} element={el as BarcodeElement} testData={testData} vbW={vbW} />;
           case 'rectangle':
@@ -114,7 +114,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
   );
 }
 
-function MiniQr({ element, elements, format, testData, vbW }: { element: QRElement; elements: TemplateElement[]; format: LabelFormat; testData?: Record<string, string>; vbW: number }) {
+function MiniQr({ element, format, testData, vbW }: { element: QRElement; format: LabelFormat; testData?: Record<string, string>; vbW: number }) {
   const [dataUrl, setDataUrl] = useState('');
   const clipId = useId().replace(/:/g, '');
   const content = resolveElementContent(element, testData) || 'QR';
@@ -142,7 +142,7 @@ function MiniQr({ element, elements, format, testData, vbW }: { element: QREleme
         id: `${element.id}-mini-thermal-preview`,
         name: 'Mini Thermal Preview',
         formatId: format.id,
-        elements,
+        elements: [element],
         createdAt: '',
         updatedAt: '',
       },
@@ -157,7 +157,7 @@ function MiniQr({ element, elements, format, testData, vbW }: { element: QREleme
       });
 
     return () => { active = false; };
-  }, [content, element.errorCorrection, element.id, elements, format, testData]);
+  }, [content, element, format, testData]);
 
   if (!dataUrl) {
     return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#9ca3af" rx={vbW * 0.003} />;

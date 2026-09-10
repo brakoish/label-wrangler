@@ -654,7 +654,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, elements: 
       // Text handles its own rotation to match ZPL's field-origin rotation.
       return <TextElementRenderer key={element.id} element={element as TextElement} format={format} onMeasure={onTextMeasure} testData={testData} />;
     case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} elements={elements} format={format} transform={transform} testData={testData} />;
+      return <QRElementRenderer key={element.id} element={element as QRElement} format={format} transform={transform} testData={testData} />;
     case 'barcode':
       return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} testData={testData} />;
     case 'line':
@@ -911,7 +911,7 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   );
 }
 
-function QRElementRenderer({ element, elements, format, transform, testData }: { element: QRElement; elements: TemplateElement[]; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
+function QRElementRenderer({ element, format, transform, testData }: { element: QRElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
   const [dataUrl, setDataUrl] = useState<string>('');
   const clipId = useId().replace(/:/g, '');
   const content = resolveElementContent(element, testData) || 'QR';
@@ -940,7 +940,7 @@ function QRElementRenderer({ element, elements, format, transform, testData }: {
         id: `${element.id}-thermal-preview`,
         name: 'Thermal Preview',
         formatId: format.id,
-        elements,
+        elements: [element],
         createdAt: '',
         updatedAt: '',
       },
@@ -955,7 +955,7 @@ function QRElementRenderer({ element, elements, format, transform, testData }: {
       });
 
     return () => { active = false; };
-  }, [content, element.errorCorrection, element.id, elements, format, testData]);
+  }, [content, element, format, testData]);
 
   if (dataUrl && thermalGeometry) {
     return (
