@@ -92,3 +92,11 @@ npm run build
 ```
 
 The database suite uses isolated `office_verify_*` schemas and synthetic fixtures, not production jobs or printer calls. HTTP/UI checks require initial credential files and dispatch disabled. The HTTP poll identifies itself as `website-contract-check-not-pi` with no printers; it verifies the API contract, **not physical station pairing**. Do not treat that contact as activation evidence. The UI check uses an isolated headless Chrome profile, inspects controls without printing, and logs no credentials. Test sessions and temporary authorization fixtures are cleaned up.
+
+## Physical pause / resume
+
+Office Pi now includes physical **Pause printer / Resume printer** controls. They affect all work on the configured black Zebra after its current label, not just the website queue. No cancel-buffer command is exposed. Hardware control delivery is polled, not instantaneous.
+
+The additive `controls.sql` migration is included by `admin.mjs migrate`. `office_users.can_control` is an explicit, default-false permission in addition to printer ACL. The Manifest operator has this grant. Control requests themselves are immutable audit records with requester, action, timestamps, and durable result, separate from print events. Browser creation uses persistent idempotency keys; station control poll/events use the station credential and fixed printer binding.
+
+Only fresh control polls determine physical status. Null means unknown; stale is shown separately. Pending controls or paused/unknown/stale observations hold label dispatch; control polling continues independently. Resume requires a fresh unpaused observation after result receipt and retains existing print-review gates. Expired unclaimed controls terminate without dispatch; claimed controls keep their IDs for worker journal recovery. No desired-state enforcement or automatic replacement control exists. Duplicate result events never overwrite newer observations.

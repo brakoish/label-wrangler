@@ -78,6 +78,10 @@ BEGIN
  SELECT dispatch_enabled INTO enabled FROM office_stations WHERE id=sid FOR UPDATE;
  UPDATE office_stations SET last_seen=now(), agent_version=version, advertised_printers=advertised WHERE id=sid;
  PERFORM office_expire_jobs(sid);
+ IF EXISTS(SELECT 1 FROM office_control_status WHERE station_id=sid) AND (
+ EXISTS(SELECT 1 FROM office_controls WHERE station_id=sid AND result IS NULL) OR
+ NOT EXISTS(SELECT 1 FROM office_control_status o WHERE o.station_id=sid AND o.paused=false AND o.received_at>now()-interval '30 seconds' AND o.received_at>coalesce((SELECT max(resolved_at) FROM office_controls WHERE station_id=sid),'epoch'::timestamptz))
+ ) THEN RETURN jsonb_build_object('protocol',1,'job',NULL); END IF;
  IF NOT accept_job OR NOT enabled THEN RETURN jsonb_build_object('protocol',1,'job',NULL); END IF;
  IF EXISTS(SELECT 1 FROM office_jobs WHERE station_id=sid AND review_required) THEN
   RETURN jsonb_build_object('protocol',1,'job',NULL);

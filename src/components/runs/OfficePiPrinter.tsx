@@ -1,4 +1,5 @@
 'use client';
+import { OfficePrinterControls } from './OfficePrinterControls';
 import { createPortal } from 'react-dom';
 import { Printer as PrinterIcon, Hash } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -84,6 +85,7 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
       {!printer.dispatch_enabled && <p className="text-amber-400">Awaiting verified pairing and activation. Job creation is disabled.</p>}
       {printer.needs_review && <p className="text-red-400">Check printer before retrying. Dispatch is blocked until reviewed.</p>}
     </div>}
+    <OfficePrinterControls />
   </div>;
   return <div className="space-y-4">
     {connectionTarget && createPortal(connection,connectionTarget)}

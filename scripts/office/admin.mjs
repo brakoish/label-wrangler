@@ -17,7 +17,7 @@ async function secretFile(name,value){
 }
 try{
  if(command==='migrate'){
-  const source=await readFile(new URL('./schema.sql',import.meta.url),'utf8');
+  const source=await readFile(new URL('./schema.sql',import.meta.url),'utf8')+'\n'+await readFile(new URL('./controls.sql',import.meta.url),'utf8');
   await sql.transaction(statements(source).map(statement=>sql.query(statement)));
   console.log('Office schema applied (additive).');
  }else if(command==='provision-station'){

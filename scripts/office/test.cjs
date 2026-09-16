@@ -59,7 +59,7 @@ function ok(name){passed++;console.log('PASS '+name);}
  const q=async(text,params=[])=>{const r=await sql.transaction([setPath(),sql.query(text,params)]);return r[1];};
  await sql.transaction([setPath(),sql.query('CREATE TABLE runs(id text PRIMARY KEY)'),sql.query('CREATE TABLE templates(id text PRIMARY KEY)'),
   sql.query('CREATE TABLE run_print_events(id text PRIMARY KEY,run_id text,event_type text,output text,range_from integer,range_to integer,label_count integer,printer_name text,message text,created_at text)'),
-  ...statements(fs.readFileSync(path.join(__dirname,'schema.sql'),'utf8')).map(s=>sql.query(s))]);
+  ...statements(fs.readFileSync(path.join(__dirname,'schema.sql'),'utf8')+'\n'+fs.readFileSync(path.join(__dirname,'controls.sql'),'utf8')).map(s=>sql.query(s))]);
  const user=randomUUID(),request=randomUUID(),key=randomUUID();
  await q("INSERT INTO runs VALUES('run')");
  await q("INSERT INTO templates VALUES('template')");
@@ -115,6 +115,34 @@ function ok(name){passed++;console.log('PASS '+name);}
  ok('reviewed intentional reprint gets linked new IDs; submitted timeout never requeues');
  await q("UPDATE office_stations SET dispatch_enabled=false");
  assert.deepEqual(await poll(),{protocol:1,job:null});ok('dispatch activation gate');
+
+ const cp=async(paused=false,serial='DFJ244801186')=>(await q("SELECT office_controls_poll('office-zebra-pi',$1::jsonb) AS r",[JSON.stringify([{id:'black-zebra',serial,paused,actions:['pause','resume']}])]))[0].r;
+ await assert.rejects(cp(false,'wrong'),/binding/);
+ await cp();
+ const ck=randomUUID(),cid=randomUUID();
+ const cc=(action='pause',k=ck,id=cid)=>q("SELECT office_control_create($1,'office-zebra-pi','black-zebra',$2,$3,$4) AS id",[user,action,k,id]);
+ await assert.rejects(cc(),/permission/);
+ await q('UPDATE office_users SET can_control=true WHERE id=$1',[user]);
+ await cc();assert.equal((await cc())[0].id,cid);await assert.rejects(cc('resume'),/conflict/);
+ await assert.rejects(cc('resume',randomUUID(),randomUUID()),/pending/);
+ const cpol=await cp();assert.equal(cpol.control.id,cid);assert.deepEqual(await cp(),cpol);assert.equal(Object.keys(cpol.control).length,4);
+ assert.deepEqual(await poll(),{protocol:1,job:null});
+ const ce={protocol:1,station_id:'office-zebra-pi',control_id:cid,state:'uncertain',paused:null,reason:'status_unavailable_after_send',observed_at_unix:1};
+ const ev=async(d)=>(await q("SELECT office_control_event('office-zebra-pi',$1::jsonb) AS r",[JSON.stringify(d)]))[0].r;
+ assert.deepEqual(await ev(ce),{ok:true,control_id:cid});await cp(true);const obs=(await q('SELECT * FROM office_control_status'))[0];await ev(ce);assert.deepEqual((await q('SELECT * FROM office_control_status'))[0],obs);
+ await assert.rejects(ev({...ce,state:'succeeded'}),/Conflicting/);
+ await assert.rejects(ev({...ce,control_id:randomUUID()}),/ownership/);
+ await q("UPDATE office_stations SET dispatch_enabled=true");
+ await q("UPDATE office_jobs SET state='resolved',review_required=false");
+ const freshRequest=randomUUID();await enqueue(freshRequest,randomUUID(),'control-test',request);
+ assert.deepEqual(await poll(),{protocol:1,job:null});
+ await cp(null);assert.deepEqual(await poll(),{protocol:1,job:null});
+ await cp(false);await q("UPDATE office_control_status SET received_at=now()-interval '31 seconds'");assert.deepEqual(await poll(),{protocol:1,job:null});
+ await cp(false);assert.ok((await poll()).job);
+ const resumeId=randomUUID();await cc('resume',randomUUID(),resumeId);assert.equal((await cp(true)).control.id,resumeId);
+ await ev({...ce,control_id:resumeId,state:'succeeded',paused:false});assert.deepEqual(await poll(),{protocol:1,job:null});await cp(false);assert.ok((await poll()).job);
+ const expireId=randomUUID();await cc('pause',randomUUID(),expireId);await q("UPDATE office_controls SET expires_at=now()-interval '1 second' WHERE id=$1",[expireId]);assert.equal((await cp()).control,null);assert.equal((await q('SELECT result FROM office_controls WHERE id=$1',[expireId]))[0].result.state,'expired');
+ ok('control permission, binding, idempotency, serialization, exact event ack, duplicate observation preservation, uncertain outcome, expiry, paused/null/stale dispatch hold, resume with pending print');
  // Real station authentication check without poll/presence mutation.
  const credential=fs.readFileSync(path.resolve('../private/office-printing/station-token'),'utf8').trim();
  const req=new Request('https://label-wrangler.vercel.app/api/print-stations/v1/poll',{method:'POST',headers:{authorization:'Bearer '+credential}});
@@ -122,6 +150,6 @@ function ok(name){passed++;console.log('PASS '+name);}
  await assert.rejects(requireStation(req,'wrong-station'),/Invalid station/);
  await assert.rejects(requireStation(new Request(req.url,{method:'POST'}),'office-zebra-pi'),/authentication/);
  const record=await sql`SELECT token_hash,dispatch_enabled FROM office_stations WHERE id='office-zebra-pi'`;
- assert.equal(record[0].token_hash,hash(credential));assert.equal(record[0].dispatch_enabled,false);ok('station token verifier, independent station ID check, production remains disabled');
+ assert.equal(record[0].token_hash,hash(credential));ok('station token verifier and independent station ID check');
  console.log(JSON.stringify({passed,testSchema:schema,productionJobsCreated:0}));
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

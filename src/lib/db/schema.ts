@@ -122,6 +122,7 @@ export const runPrintEvents = pgTable("run_print_events", {
 export const officeUsers = pgTable('office_users', {
   id: uuid('id').primaryKey(), username: text('username').notNull().unique(), passwordHash: text('password_hash').notNull(),
   canPrint: boolean('can_print').notNull().default(false), canEdit: boolean('can_edit').notNull().default(false),
+  canControl: boolean('can_control').notNull().default(false),
   isAdmin: boolean('is_admin').notNull().default(false), disabled: boolean('disabled').notNull().default(false),
   createdAt: timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
 });
@@ -168,3 +169,14 @@ export const officeReviews = pgTable('office_reviews', {
   id: bigint('id',{mode:'number'}).primaryKey().generatedAlwaysAsIdentity(), jobId: uuid('job_id').notNull().references(()=>officeJobs.id),
   operatorId: uuid('operator_id').references(()=>officeUsers.id), reason: text('reason').notNull(), detail: jsonb('detail'), createdAt: timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),
 });
+
+export const officeControlStatus = pgTable('office_control_status', {
+  stationId: text('station_id').notNull(), printerId: text('printer_id').notNull(), paused: boolean('paused'),
+  receivedAt: timestamp('received_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.stationId,t.printerId]}),foreignKey({columns:[t.stationId,t.printerId],foreignColumns:[officePrinters.stationId,officePrinters.id]})]);
+export const officeControls = pgTable('office_controls', {
+  id: uuid('id').primaryKey(), stationId: text('station_id').notNull(), printerId: text('printer_id').notNull(),
+  requester: uuid('requester').notNull().references(()=>officeUsers.id), idempotencyKey: uuid('idempotency_key').notNull(), action: text('action').notNull(),
+  createdAt: timestamp('created_at',{withTimezone:true}).notNull().defaultNow(), expiresAt: timestamp('expires_at',{withTimezone:true}).notNull().default(sql`now()+interval '60 seconds'`),
+  claimedAt: timestamp('claimed_at',{withTimezone:true}), resolvedAt: timestamp('resolved_at',{withTimezone:true}), result: jsonb('result'),
+},t=>[unique('office_controls_requester_key').on(t.requester,t.idempotencyKey),foreignKey({columns:[t.stationId,t.printerId],foreignColumns:[officePrinters.stationId,officePrinters.id]}),check('office_controls_action_check',sql`${t.action} IN ('pause','resume')`)]);
