@@ -19,7 +19,7 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
   const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);
   const [pending,setPending]=useState<{from:number;to:number}|null>(null);
   const [showReprint,setShowReprint]=useState(false);
-  const [reprintOf,setReprintOf]=useState('');const [reason,setReason]=useState('');
+  const [reprintOf,setReprintOf]=useState('');
   const [review,setReview]=useState<Job|null>(null);const [reviewReason,setReviewReason]=useState('');const [checked,setChecked]=useState(false);
   const inFlight=useRef(false);
   const rangeEdited=useRef(false);
@@ -28,7 +28,7 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
   const storageKey=`lw:office-pending:${runId}`;
   useEffect(()=>{
     const saved=localStorage.getItem(storageKey);
-    if(saved){try{const data=JSON.parse(saved);setPending({from:data.from,to:data.to});setFrom(String(data.from));setTo(String(data.to));setReprintOf(data.reprintOf || '');setReason(data.reason || '');}catch{setError('The pending request record could not be read. Check the queue before clearing it.');}}
+    if(saved){try{const data=JSON.parse(saved);setPending({from:data.from,to:data.to});setFrom(String(data.from));setTo(String(data.to));setReprintOf(data.reprintOf || '');}catch{setError('The pending request record could not be read. Check the queue before clearing it.');}}
   },[storageKey]);
   const refresh=useCallback(async()=>{
     const [stationData,jobData]=await Promise.all([api('/api/office/stations'),api('/api/office/jobs?runId='+encodeURIComponent(runId))]);
@@ -55,12 +55,12 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
       const saved=localStorage.getItem(storageKey);
       if(saved)payload=JSON.parse(saved);
       else{
-        payload={runId,stationId:printer.station_id,printerId:printer.id,from:Number(from),to:Number(to),idempotencyKey:crypto.randomUUID(),...(reprintOf?{reprintOf,reason}: {})};
+        payload={runId,stationId:printer.station_id,printerId:printer.id,from:Number(from),to:Number(to),idempotencyKey:crypto.randomUUID(),...(reprintOf?{reprintOf}: {})};
         localStorage.setItem(storageKey,JSON.stringify(payload));setPending({from:payload.from,to:payload.to});
       }
       const result=await api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)});
       localStorage.removeItem(storageKey);setPending(null);setNotice(`Queued labels ${payload.from}–${payload.to}. Request ${result.requestId.slice(0,8)}. You can close this page.`);
-      setReprintOf('');setReason('');rangeEdited.current=false;await refresh();
+      setReprintOf('');rangeEdited.current=false;await refresh();
     }catch(err){setError(err instanceof Error?err.message:'Unable to queue labels');}
     finally{inFlight.current=false;setBusy(false);}
   };
@@ -101,12 +101,12 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
     </div>
     <label className="block text-xs text-zinc-400">Print count<input aria-label="Office print label count" type="number" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending} className={inputClass+' mt-1'} value={Math.max(0,Number(to)-Number(from)+1)} onChange={e=>{rangeEdited.current=true;setTo(String(Math.min(total,Number(from)+Math.max(1,Number(e.target.value))-1)));}} /></label>
     {pending && <p className="text-xs text-amber-400">Pending submission for labels {pending.from}–{pending.to}. Retry checks the same request; it does not create another batch.</p>}
-    {reprintOf && <div className="space-y-2 rounded border border-amber-700 p-2 text-xs"><p>Intentional reprint of request {reprintOf.slice(0,8)}. New job IDs will be created.</p><input className={inputClass} placeholder="Reason for reprint" value={reason} onChange={e=>setReason(e.target.value)} /><button onClick={()=>{setReprintOf('');setReason('');}}>Exit reprint mode</button></div>}
-    <button disabled={(!reprintOf && !pending && delivered >= total) || busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review || (!!reprintOf && reason.trim().length<3)} onClick={()=>void submit()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40"><PrinterIcon className="w-4 h-4" />{busy?'Working…':pending?'Retry same request':reprintOf?'Start Reprint':delivered>=total?'Completed':delivered>0?'Resume Printing':'Start Printing'}</button>
+    {reprintOf && <div className="space-y-2 rounded border border-amber-700 p-2 text-xs"><p>Reprint linked to the original print. This will be recorded in history.</p><button onClick={()=>{setReprintOf('');}}>Exit reprint mode</button></div>}
+    <button disabled={(!reprintOf && !pending && delivered >= total) || busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review} onClick={()=>void submit()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40"><PrinterIcon className="w-4 h-4" />{busy?'Working…':pending?'Retry same request':reprintOf?'Start Reprint':delivered>=total?'Completed':delivered>0?'Resume Printing':'Start Printing'}</button>
     <div className="pt-3 border-t border-zinc-800/60 space-y-2">
       <button disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><Hash className="w-3 h-3" />Reprint from label…</button>
       {showReprint && <label className="block text-xs text-zinc-400">Previous print range
-        <select aria-label="Previous print range" className={inputClass+' mt-1'} value={reprintOf} onChange={e=>{const request=requests.find(r=>r.id===e.target.value);rangeEdited.current=true;setReprintOf(e.target.value);setReason('');if(request){setFrom(String(request.range_from));setTo(String(request.range_to));}}}>
+        <select aria-label="Previous print range" className={inputClass+' mt-1'} value={reprintOf} onChange={e=>{const request=requests.find(r=>r.id===e.target.value);rangeEdited.current=true;setReprintOf(e.target.value);if(request){setFrom(String(request.range_from));setTo(String(request.range_to));}}}>
           <option value="">Select a completed or reviewed request</option>
           {reprintRequests.map(r=><option key={r.id} value={r.id}>Labels {r.range_from}–{r.range_to} · {r.id.slice(0,8)}</option>)}
         </select>
@@ -127,7 +127,7 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
           </div>)}
         </details>
         {canPrint && r.jobs.some(j=>j.state==='queued') && <button disabled={busy} className="text-amber-400 underline" onClick={()=>void act(async()=>{const result=await api('/api/office/jobs/'+r.id,{method:'DELETE'});setNotice(`Cancelled ${result.cancelled} unclaimed batches. ${result.requires_review} assigned batches require review; no CUPS cancellation was sent.`);})}>Cancel unclaimed batches</button>}
-        {canPrint && r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review'].includes(j.state)) && <button className="ml-2 text-amber-400 underline" onClick={()=>{rangeEdited.current=true;setReprintOf(r.id);setFrom(String(r.range_from));setTo(String(r.range_to));}}>Reprint with reason</button>}
+        {canPrint && r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review'].includes(j.state)) && <button className="ml-2 text-amber-400 underline" onClick={()=>{rangeEdited.current=true;setReprintOf(r.id);setFrom(String(r.range_from));setTo(String(r.range_to));}}>Reprint</button>}
       </div>)}
     </div>
     </details>

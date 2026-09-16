@@ -30,12 +30,12 @@ export async function createJobs(user: OfficeUser, data: Record<string,unknown>)
   const batches=await buildBatches(snapshot.run as Run,snapshot.template as LabelTemplate,snapshot.format as LabelFormat,Number(data.from),Number(data.to),printer.dpi,printer.max_width_dots);
   try {
     const result=await sql`SELECT office_enqueue(${user.id}::uuid,${randomUUID()}::uuid,${data.idempotencyKey}::uuid,${fp},${data.runId},${snapshot.template.id},
-      ${data.stationId},${data.printerId},${Number(data.from)},${Number(data.to)},${data.reprintOf || null}::uuid,${data.reason || null},${JSON.stringify(batches)}::jsonb) AS id`;
+      ${data.stationId},${data.printerId},${Number(data.from)},${Number(data.to)},${data.reprintOf || null}::uuid,${data.reason || (data.reprintOf ? 'Operator requested reprint' : null)},${JSON.stringify(batches)}::jsonb) AS id`;
     return {requestId:result[0].id};
   } catch(error) {
     const message=error instanceof Error?error.message:'';
     for(const known of ['Station pairing not activated','Print access denied','Check printer before retrying','This range has already been queued. Use an intentional reprint with a reason.','Invalid reprint reference or reason','Resolve pending original jobs before reprinting','Idempotency key already used for another request']) {
-      if(message.includes(known))throw new OfficeError(known,409);
+      if(message.includes(known))throw new OfficeError(known.replace('Use an intentional reprint with a reason.','Use Reprint to print this range again.').replace('Invalid reprint reference or reason','Invalid reprint reference'),409);
     }
     throw error;
   }
