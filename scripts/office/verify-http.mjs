@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {randomUUID,randomBytes,scryptSync,createHash} from 'node:crypto';
+import nextEnv from '@next/env';
+import {neon} from '@neondatabase/serverless';
+nextEnv.loadEnvConfig(process.cwd(),false);
+const sql=neon(process.env.DATABASE_URL);
+const base=process.argv[2] || 'http://127.0.0.1:3120';
+const origin=new URL(base).origin;
+const account=await fs.readFile(path.resolve('../private/office-printing/account-chilly.txt'),'utf8');
+const username=account.match(/^Username: (.+)$/m)[1];const password=account.match(/^Password: (.+)$/m)[1];
+const credential=(await fs.readFile(path.resolve('../private/office-printing/station-token'),'utf8')).trim();
+const request=(url,options={})=>fetch(base+url,{...options,redirect:'manual',headers:{'Content-Type':'application/json',Origin:origin,...options.headers}});
+let passed=0;const ok=name=>{passed++;console.log('PASS '+name);};
+let cookie;let userId;let fakeStation;
+try{
+ let r=await request('/api/runs');assert.equal(r.status,401);
+ r=await request('/runs');assert.equal(r.status,307);assert.ok(r.headers.get('location').includes('/login'));ok('anonymous data denied and page redirects to login');
+ r=await request('/api/office/session',{method:'POST',body:JSON.stringify({username,password})});assert.equal(r.status,200);
+ const setCookie=r.headers.get('set-cookie');assert.ok(/HttpOnly/i.test(setCookie));assert.ok(/SameSite=strict/i.test(setCookie));
+ cookie=setCookie.split(';')[0];const userRequest=(url,options={})=>request(url,{...options,headers:{Cookie:cookie,...options.headers}});
+ r=await userRequest('/api/runs');assert.equal(r.status,200);const runs=await r.json();
+ r=await userRequest('/api/templates');assert.equal(r.status,200);
+ r=await userRequest('/api/office/stations');assert.equal(r.status,200);const stations=await r.json();
+ assert.equal(stations.printers.length,1);assert.equal(stations.printers[0].id,'black-zebra');assert.equal(stations.printers[0].dispatch_enabled,false);
+ assert.ok(!JSON.stringify(stations).includes(credential));ok('login, protected library reads, black-only authorized printer, credential absent from browser API');
+ r=await userRequest('/api/office/jobs',{method:'POST',body:JSON.stringify({runId:runs[0].id,stationId:'office-zebra-pi',printerId:'black-zebra',from:1,to:1,idempotencyKey:randomUUID()})});assert.equal(r.status,409);assert.match((await r.json()).error,/pairing/);
+ r=await userRequest('/api/office/jobs',{method:'POST',headers:{Origin:'https://untrusted.invalid'},body:'{}'});assert.equal(r.status,403);ok('pairing gate and CSRF protection; no production job created');
+ r=await request('/api/print-stations/v1/poll',{method:'POST',body:JSON.stringify({protocol:1,station_id:'office-zebra-pi',agent_version:'contract-check',accept_job:false,printers:[]})});assert.equal(r.status,401);
+ r=await request('/api/print-stations/v1/poll',{method:'POST',headers:{Authorization:'Bearer '+credential},body:JSON.stringify({protocol:1,station_id:'wrong-station',agent_version:'contract-check',accept_job:false,printers:[]})});assert.equal(r.status,401);
+ r=await request('/api/print-stations/v1/poll',{method:'POST',headers:{Authorization:'Bearer '+credential},body:JSON.stringify({protocol:1,station_id:'office-zebra-pi',agent_version:'website-contract-check-not-pi',accept_job:false,printers:[]})});
+ assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');assert.deepEqual(await r.json(),{protocol:1,job:null});ok('direct empty poll, exact protocol shape, no-store, token/station binding');
+ r=await request('/api/print-stations/v1/events',{method:'POST',headers:{Authorization:'Bearer '+credential},body:JSON.stringify({protocol:1,station_id:'office-zebra-pi',event_id:randomUUID(),job_id:randomUUID(),state:'submitted',cups_job_id:1,reason:null,observed_at_unix:Date.now()/1000})});assert.equal(r.status,403);ok('events reject unowned/unknown job IDs');
+ userId=randomUUID();const uname='verify-'+randomUUID();const pass=randomBytes(32).toString('hex');const salt=randomBytes(16).toString('hex');
+ await sql`INSERT INTO office_users(id,username,password_hash) VALUES(${userId},${uname},${salt+':'+scryptSync(pass,salt,64).toString('hex')})`;
+ r=await request('/api/office/session',{method:'POST',body:JSON.stringify({username:uname,password:pass})});assert.equal(r.status,200);const restricted=r.headers.get('set-cookie').split(';')[0];
+ r=await request('/api/office/jobs',{method:'POST',headers:{Cookie:restricted},body:'{}'});assert.equal(r.status,403);
+ r=await request('/api/templates',{method:'POST',headers:{Cookie:restricted},body:'{}'});assert.equal(r.status,403);
+ await sql`UPDATE office_users SET can_print=true WHERE id=${userId}`;
+ r=await request('/api/office/jobs',{method:'POST',headers:{Cookie:restricted},body:JSON.stringify({runId:runs[0].id,stationId:'office-zebra-pi',printerId:'black-zebra',from:1,to:1,idempotencyKey:randomUUID()})});assert.equal(r.status,403);
+ await sql`UPDATE office_users SET disabled=true WHERE id=${userId}`;
+ r=await request('/api/runs',{headers:{Cookie:restricted}});assert.equal(r.status,401);ok('explicit print/edit grants, printer ACL, account revocation');
+ fakeStation='verify-'+randomUUID();const fakeToken=randomBytes(32).toString('base64url');
+ await sql`INSERT INTO office_stations(id,token_hash,revoked_at) VALUES(${fakeStation},${createHash('sha256').update(fakeToken).digest('hex')},now())`;
+ r=await request('/api/print-stations/v1/poll',{method:'POST',headers:{Authorization:'Bearer '+fakeToken},body:JSON.stringify({protocol:1,station_id:fakeStation,agent_version:'test',accept_job:false,printers:[]})});assert.equal(r.status,401);ok('revoked station token denied');
+ r=await userRequest('/api/office/session',{method:'DELETE'});assert.equal(r.status,200);
+ r=await userRequest('/api/runs');assert.equal(r.status,401);ok('logout revokes server session');
+ assert.equal(Number((await sql`SELECT count(*) AS n FROM office_jobs WHERE station_id='office-zebra-pi'`)[0].n),0);
+ console.log(JSON.stringify({passed,base,productionJobsCreated:0,physicalPrints:0}));
+}finally{
+ if(userId)await sql.transaction([sql`DELETE FROM office_sessions WHERE user_id=${userId}`,sql`DELETE FROM office_users WHERE id=${userId}`]);
+ if(fakeStation)await sql`DELETE FROM office_stations WHERE id=${fakeStation}`;
+ if(cookie){const token=cookie.slice(cookie.indexOf('=')+1);await sql`DELETE FROM office_sessions WHERE token_hash=${createHash('sha256').update(token).digest('hex')}`;}
+}

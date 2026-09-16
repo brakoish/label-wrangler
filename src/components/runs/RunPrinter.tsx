@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode, Download, FileText, FileCode2, Search } from 'lucide-react';
 import Link from 'next/link';
+import { OfficePiPrinter } from './OfficePiPrinter';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { LabelTemplate, LabelFormat, Run, RunPrintEvent, RunStatus } from '@/lib/types';
@@ -31,7 +32,7 @@ import {
   type DazzlePrinter,
 } from '@/lib/dazzlePrinter';
 
-type Transport = 'dazzle' | 'webusb';
+type Transport = 'dazzle' | 'webusb' | 'office';
 type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 type PrintPacing = 'fast' | 'safe';
 type EditSourceField = { field: string; source: string; column: string | null; legacyPaste: boolean };
@@ -244,7 +245,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       setDazzleAvailable(dz);
       // Prefer Dazzle; fall back to WebUSB.
       if (dz) {
-        setTransport('dazzle');
+        setTransport(current => current || 'dazzle');
         try {
           const ps = await listDazzlePrinters();
           setDazzlePrinters(ps);
@@ -255,7 +256,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           setTransportError((err as Error).message || 'Failed to load Dazzle printers');
         }
       } else if (webUsbSupported) {
-        setTransport('webusb');
+        setTransport(current => current || 'webusb');
         try {
           const authorized = await getAuthorizedPrinters();
           if (authorized.length > 0) {
@@ -266,7 +267,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           /* soft fail — user can reconnect */
         }
       } else {
-        setTransportError('No printer transport available. Install Dazzle or use Chrome/Edge.');
+        setTransport(current => current || 'office');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1069,22 +1070,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </div>
           ) : (
             <>
-              {dazzleAvailable && webUsbSupported && (
+              {(
                 <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 w-fit">
                   <button
+                    disabled={!dazzleAvailable || status === 'running'}
                     onClick={() => setTransport('dazzle')}
                     className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'dazzle' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
                   >
                     Dazzle
                   </button>
                   <button
+                    disabled={!webUsbSupported || status === 'running'}
                     onClick={() => setTransport('webusb')}
                     className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'webusb' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
                   >
                     WebUSB
                   </button>
+                  <button disabled={status === 'running'} onClick={() => setTransport('office')} className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'office' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}>Office Pi</button>
                 </div>
               )}
+              {transport === 'office' && <OfficePiPrinter runId={runId} total={total} />}
               {transport === 'dazzle' && (
                 dazzlePrinters.length > 0 ? (
                   <div className="space-y-2">
@@ -1161,11 +1166,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               )}
             </>
           )}
-          {transportError && !isSheetFormat && <p className="text-xs text-red-400">{transportError}</p>}
+          {transportError && !isSheetFormat && transport !== 'office' && <p className="text-xs text-red-400">{transportError}</p>}
         </section>
 
         {/* Progress */}
         <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+          {transport !== 'office' && <>
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
@@ -1363,7 +1369,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </div>
           )}
 
-          {/* Export section */}
+          </>}
+          {/* Export section — preserved for every transport */}
           <div className="pt-3 border-t border-zinc-800/60">
             {!showExport ? (
               <button

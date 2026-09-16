@@ -1,9 +1,10 @@
+import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { formats } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function GET(
+async function handleGET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -22,7 +23,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function handlePUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -49,7 +50,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -62,3 +63,9 @@ export async function DELETE(
     return NextResponse.json({ error: "Failed to delete format" }, { status: 500 });
   }
 }
+
+export const GET = withOfficeAuth(handleGET);
+
+export const PUT = withOfficeAuth(handlePUT);
+
+export const DELETE = withOfficeAuth(handleDELETE);

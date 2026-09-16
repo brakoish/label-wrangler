@@ -87,6 +87,10 @@ export function AppShell({ children, headerAction }: AppShellProps) {
               </Link>
             </nav>
 
+            <button className="shrink-0 text-xs text-zinc-500 hover:text-zinc-200" onClick={async()=>{
+              const result=await fetch('/api/office/session',{method:'DELETE'});
+              if(result.ok)window.location.assign('/login');
+            }}>Sign out</button>
             {/* Page-specific action button */}
             {headerAction && <div className="shrink-0">{headerAction}</div>}
           </div>

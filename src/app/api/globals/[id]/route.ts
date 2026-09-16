@@ -1,9 +1,10 @@
+import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { globalElements } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function GET(
+async function handleGET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -18,7 +19,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function handlePUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -43,7 +44,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -56,3 +57,9 @@ export async function DELETE(
     return NextResponse.json({ error: "Failed to delete global element" }, { status: 500 });
   }
 }
+
+export const GET = withOfficeAuth(handleGET);
+
+export const PUT = withOfficeAuth(handlePUT);
+
+export const DELETE = withOfficeAuth(handleDELETE);

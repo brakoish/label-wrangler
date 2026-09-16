@@ -1,9 +1,10 @@
+import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { templates } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
 
-export async function GET() {
+async function handleGET() {
   try {
     const allTemplates = await db.select().from(templates).orderBy(desc(templates.createdAt));
     return NextResponse.json(allTemplates);
@@ -13,7 +14,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const body = await request.json();
     const now = new Date().toISOString();
@@ -34,3 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create template" }, { status: 500 });
   }
 }
+
+export const GET = withOfficeAuth(handleGET);
+
+export const POST = withOfficeAuth(handlePOST);

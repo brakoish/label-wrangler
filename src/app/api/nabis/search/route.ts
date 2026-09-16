@@ -1,3 +1,4 @@
+import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 
@@ -769,7 +770,7 @@ async function searchMetrcByExactTag(search: string) {
   return pkg.tag && pkg.itemName ? [pkg] : [];
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const search = request.nextUrl.searchParams.get('q')?.trim() ?? '';
   if (search.length < 2) {
     return NextResponse.json({ packages: [] });
@@ -837,3 +838,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET = withOfficeAuth(handleGET);

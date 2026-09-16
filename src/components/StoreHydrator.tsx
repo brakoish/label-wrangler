@@ -19,6 +19,7 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
   const fetchGlobals = useGlobalElementStore((s) => s.fetchGlobals);
 
   useEffect(() => {
+    if (window.location.pathname === "/login") return;
     fetchFormats();
     fetchTemplates();
     loadRuns();

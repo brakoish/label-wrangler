@@ -1,9 +1,10 @@
+import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { globalElements } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
 
-export async function GET() {
+async function handleGET() {
   try {
     const all = await db.select().from(globalElements).orderBy(desc(globalElements.createdAt));
     return NextResponse.json(all);
@@ -13,7 +14,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const body = await request.json();
     const now = new Date().toISOString();
@@ -33,3 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to create global element" }, { status: 500 });
   }
 }
+
+export const GET = withOfficeAuth(handleGET);
+
+export const POST = withOfficeAuth(handlePOST);

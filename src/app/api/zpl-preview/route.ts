@@ -1,6 +1,7 @@
+import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const { zpl, width, height, dpi } = await request.json();
 
@@ -50,3 +51,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withOfficeAuth(handlePOST);
