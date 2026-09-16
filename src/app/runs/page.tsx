@@ -72,12 +72,13 @@ export default function RunsPage() {
     let totalLabelsPrinted = 0;
     for (const r of runs) {
       totalLabelsPrinted += r.printedCount || 0;
-      if (r.status === 'completed' && r.completedAt) {
+      if (r.status === 'completed' && (r.printedCount || 0) >= r.totalLabels && r.completedAt) {
         try {
           if (new Date(r.completedAt) >= monthStart) completedThisMonth++;
         } catch { /* ignore */ }
       }
       if (r.pinnedAt) pinned.push(r);
+      else if (r.status === 'completed' && (r.printedCount || 0) < r.totalLabels) active.push({...r,status:'paused'});
       else if (ACTIVE_STATUSES.includes(r.status)) active.push(r);
       else history.push(r);
     }

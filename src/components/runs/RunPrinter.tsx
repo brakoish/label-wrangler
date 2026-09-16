@@ -34,7 +34,6 @@ import {
 
 type Transport = 'dazzle' | 'webusb' | 'office';
 type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
-type PrintPacing = 'fast' | 'safe';
 type EditSourceField = { field: string; source: string; column: string | null; legacyPaste: boolean };
 type SheetPrintConfirmedMessage = {
   type: 'sheet-range-confirmed';
@@ -124,7 +123,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const statusRef = useRef<PrinterUiStatus>('idle');
   const webUsbStatusUnavailableRef = useRef(false);
   const webUsbStatusWorkingRef = useRef(false);
-  const [printPacing, setPrintPacing] = useState<PrintPacing>('fast');
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [labels, setLabels] = useState<string[]>([]);
   const [labelsReady, setLabelsReady] = useState(false);
@@ -168,16 +166,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     }
   }, [fetchRun, run, runId]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = localStorage.getItem('lw:print-pacing');
-    if (saved === 'fast' || saved === 'safe') setPrintPacing(saved);
-  }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('lw:print-pacing', printPacing);
-  }, [printPacing]);
 
   useEffect(() => {
     statusRef.current = status;
@@ -186,7 +175,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   useEffect(() => {
     if (!run || statusRef.current === 'running') return;
     setPrintedCount(run.printedCount ?? 0);
-    setStatus(uiStatusForRunStatus(run.status));
+    setStatus(run.status === 'completed' && (run.printedCount ?? 0) < run.totalLabels ? 'paused' : uiStatusForRunStatus(run.status));
   }, [run?.id, run?.printedCount, run?.status, run]);
 
   const eventsForRun = useMemo(
@@ -518,12 +507,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const labelsToSend = stopFeed < labels.length ? labels.slice(0, stopFeed) : labels;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
-      // Fast mode matches the original production-friendly throughput.
-      // Safe mode is available for high-risk runs or troubleshooting because
-      // browser/Dazzle success means "accepted by the connection", not
-      // guaranteed physically printed.
-      batchSize: printPacing === 'safe' ? 1 : 25,
-      delayBetweenBatchesMs: printPacing === 'safe' ? 150 : 0,
+      batchSize: 25,
+      delayBetweenBatchesMs: 0,
       startIndex: startFeed,
       onProgress: async (feedsDone) => {
         // Each feed produced up to `across` physical labels. Clamp to total
@@ -533,8 +518,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         // Fire-and-forget DB update — don't block printing on persistence.
         void persistProgress(physical);
         if (feedsDone >= labelsToSend.length) {
-          setStatus('completed');
-          await setRunStatus(run.id, 'completed', physical);
+          const nextStatus = physical >= total ? 'completed' : 'paused';
+          setStatus(nextStatus);
+          setStopAt(0);
+          await setRunStatus(run.id, nextStatus, physical);
           await createPrintEvent(run.id, {
             eventType: 'confirmed',
             output: 'roll-zpl',
@@ -1182,40 +1169,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="h-3 rounded-full bg-zinc-900 overflow-hidden">
             <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{ width: `${pct}%` }} />
           </div>
-          {!isSheetFormat && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-medium text-zinc-500">Pacing</span>
-                <div className="flex items-center gap-0.5 rounded-md border border-zinc-800 bg-zinc-900 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setPrintPacing('fast')}
-                    disabled={status === 'running'}
-                    className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                      printPacing === 'fast' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    Fast
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrintPacing('safe')}
-                    disabled={status === 'running'}
-                    className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                      printPacing === 'safe' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    Safe
-                  </button>
-                </div>
-              </div>
-              <p className="text-[11px] leading-relaxed text-zinc-500">
-                {printPacing === 'fast'
-                  ? 'Fast sends up to 25 labels per transfer for normal production speed. If the printer stops, reprint from the first bad label.'
-                  : 'Safe sends one label at a time for tighter recovery when troubleshooting media/ribbon stops.'}
-              </p>
-            </div>
-          )}
           {isSheetFormat && pendingSheetRange && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
               <p className="text-xs text-amber-100">
@@ -1246,7 +1199,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           {/* Stop-at control: only show when idle/paused (not while running) */}
           {(status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-            <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+              <label className="whitespace-nowrap">Print count <input aria-label="Print label count" type="number" min={1} max={total-printedCount} value={stopAt > printedCount ? stopAt-printedCount : ''} placeholder={String(total-printedCount)} onChange={e=>setStopAt(e.target.value ? Math.min(total,printedCount+Math.max(1,Number(e.target.value))) : 0)} className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs" /></label>
               <span className="whitespace-nowrap">Stop after label</span>
               <input
                 type="number"
