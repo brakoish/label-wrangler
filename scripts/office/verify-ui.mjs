@@ -53,7 +53,7 @@ try{
    await send('Page.addScriptToEvaluateOnNewDocument',{source:"delete Navigator.prototype.usb; delete navigator.usb;"});
    await send('Page.navigate',{url:base+'/runs/'+encodeURIComponent(sheet.id)});
    let sheetReady=false;
-   for(let i=0;i<80;i++){sheetReady=await evaluate("document.body.innerText.includes('Sheet Output') && document.body.innerText.includes('Printed:')");if(sheetReady)break;await pause(200);}
+   for(let i=0;i<80;i++){sheetReady=await evaluate("!!document.body && document.body.textContent.includes('Sheet Output') && document.body.textContent.includes('Printed:')");if(sheetReady)break;await pause(200);}
    assert.equal(await evaluate("'usb' in navigator"),false);
    assert.ok(sheetReady,'Sheet progress controls hidden on a browser without WebUSB');
    console.log('PASS sheet printing controls preserved without WebUSB');
