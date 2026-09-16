@@ -1199,22 +1199,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           {/* Stop-at control: only show when idle/paused (not while running) */}
           {(status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
-              <label className="whitespace-nowrap">Print count <input aria-label="Print label count" type="number" min={1} max={total-printedCount} value={stopAt > printedCount ? stopAt-printedCount : ''} placeholder={String(total-printedCount)} onChange={e=>setStopAt(e.target.value ? Math.min(total,printedCount+Math.max(1,Number(e.target.value))) : 0)} className="w-20 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs" /></label>
-              <span className="whitespace-nowrap">Stop after label</span>
-              <input
-                type="number"
-                min={printedCount + 1}
-                max={total}
-                placeholder={`all (${total - printedCount})`}
-                value={stopAt > 0 ? stopAt : ''}
-                onChange={(e) => setStopAt(parseInt(e.target.value, 10) || 0)}
-                className="w-28 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-200 tabular-nums focus:outline-none focus:border-amber-500/40 placeholder-zinc-600"
-              />
-              <span className="text-zinc-600">/ {total}</span>
-              {stopAt > 0 && (
-                <button onClick={() => setStopAt(0)} className="text-zinc-500 hover:text-zinc-300 text-[10px]">clear</button>
-              )}
+            <div className="space-y-3 text-xs text-zinc-400">
+              <div className="grid grid-cols-2 gap-2">
+                <label>From label
+                  <input aria-label="Local from label" type="number" readOnly value={printedCount + 1} title="Next label to print. Use Reprint from label to start earlier." className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-400" />
+                </label>
+                <label>Stop after label
+                  <input aria-label="Local through label" type="number" min={printedCount + 1} max={total} value={stopAt || total} onChange={e=>setStopAt(e.target.value ? Math.min(total,Math.max(printedCount+1,Number(e.target.value))) : 0)} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                </label>
+              </div>
+              <label className="block">Print count
+                <input aria-label="Print label count" type="number" min={1} max={total-printedCount} value={(stopAt || total)-printedCount} onChange={e=>setStopAt(e.target.value ? Math.min(total,printedCount+Math.max(1,Number(e.target.value))) : 0)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+              </label>
             </div>
           )}
 
