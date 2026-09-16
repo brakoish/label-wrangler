@@ -1,7 +1,7 @@
 'use client';
 import { OfficePrinterControls } from './OfficePrinterControls';
 import { createPortal } from 'react-dom';
-import { Printer as PrinterIcon, Hash } from 'lucide-react';
+import { Printer as PrinterIcon, Hash, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean }
 interface Job { id:string; from:number; to:number; count:number; state:string; review:boolean; reason:string|null; cupsJobId:number|null }
@@ -106,6 +106,7 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
     <button disabled={(!reprintOf && !pending && delivered >= total) || busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review} onClick={()=>void submit()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40"><PrinterIcon className="w-4 h-4" />{busy?'Working…':pending?'Retry same request':reprintOf?'Start Reprint':delivered>=total?'Completed':delivered>0?'Resume Printing':'Start Printing'}</button>
     <div className="pt-3 border-t border-zinc-800/60 space-y-2">
       <button disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><Hash className="w-3 h-3" />Reprint from label…</button>
+      <button disabled={busy || !!pending || !reprintRequests.length || allJobs.some(j=>j.review || ['queued','claimed','submitted','needs_review'].includes(j.state))} onClick={()=>{rangeEdited.current=true;setReprintOf(reprintRequests[0].id);setFrom('1');setTo(String(total));setShowReprint(false);}} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><RotateCcw className="w-3 h-3" />Reprint all</button>
       {showReprint && <label className="block text-xs text-zinc-400">Previous print range
         <select aria-label="Previous print range" className={inputClass+' mt-1'} value={reprintOf} onChange={e=>{const request=requests.find(r=>r.id===e.target.value);rangeEdited.current=true;setReprintOf(e.target.value);if(request){setFrom(String(request.range_from));setTo(String(request.range_to));}}}>
           <option value="">Select a completed or reviewed request</option>

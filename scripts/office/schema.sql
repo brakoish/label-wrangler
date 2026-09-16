@@ -166,8 +166,8 @@ BEGIN
  WHERE r.run_id=runid AND j.range_from<=hi AND j.range_to>=lo AND j.state <> 'cancelled') THEN
  RAISE EXCEPTION 'This range has already been queued. Use an intentional reprint with a reason.'; END IF;
  IF original IS NOT NULL THEN
-  IF why IS NULL OR length(trim(why))<3 OR NOT EXISTS(SELECT 1 FROM office_requests WHERE id=original AND run_id=runid AND range_from<=lo AND range_to>=hi) THEN RAISE EXCEPTION 'Invalid reprint reference or reason'; END IF;
-  IF EXISTS(SELECT 1 FROM office_jobs WHERE request_id=original AND (state IN ('queued','claimed','submitted','needs_review') OR review_required)) THEN RAISE EXCEPTION 'Resolve pending original jobs before reprinting'; END IF;
+  IF why IS NULL OR length(trim(why))<3 OR NOT EXISTS(SELECT 1 FROM office_requests WHERE id=original AND run_id=runid) THEN RAISE EXCEPTION 'Invalid reprint reference or reason'; END IF;
+  IF EXISTS(SELECT 1 FROM office_jobs j JOIN office_requests r ON r.id=j.request_id WHERE r.run_id=runid AND j.range_from<=hi AND j.range_to>=lo AND (j.state IN ('queued','claimed','submitted','needs_review') OR j.review_required)) THEN RAISE EXCEPTION 'Resolve pending original jobs before reprinting'; END IF;
  END IF;
  INSERT INTO office_requests(id,requester,idempotency_key,fingerprint,run_id,template_id,station_id,printer_id,range_from,range_to,reprint_of,reason)
  VALUES(rid,uid,ikey,fp,runid,templateid,sid,pid,lo,hi,original,why);

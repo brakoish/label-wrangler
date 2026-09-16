@@ -105,8 +105,11 @@ function ok(name){passed++;console.log('PASS '+name);}
  assert.equal((await q('SELECT review_required FROM office_jobs WHERE id=$1',[first.id]))[0].review_required,true);ok('job ownership and reused event-ID conflict');
  await q('SELECT office_resolve($1,$2,$3)',[user,first.id,'Confirmed original local work is resolved']);
  await q('SELECT office_resolve($1,$2,$3)',[user,second.id,'Checked late event against local CUPS queue']);
+ // A full-run reprint may extend beyond one earlier partial request.
+ await q('UPDATE office_requests SET range_to=25 WHERE id=$1',[request]);
  const reprintId=randomUUID();await enqueue(reprintId,randomUUID(),'intentional reprint',request);
  assert.equal((await q('SELECT reprint_of FROM office_requests WHERE id=$1',[reprintId]))[0].reprint_of,request);
+ await assert.rejects(enqueue(randomUUID(),randomUUID(),'duplicate full reprint',request),/Resolve pending original jobs/);
  const newJob=(await poll()).job;assert.notEqual(newJob.id,first.id);assert.notEqual(newJob.id,second.id);
  await event(eventData(newJob,'submitted'));await q("UPDATE office_jobs SET submitted_at=now()-interval '31 minutes' WHERE id=$1",[newJob.id]);
  assert.deepEqual(await poll(),{protocol:1,job:null});
