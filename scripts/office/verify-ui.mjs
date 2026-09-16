@@ -48,6 +48,16 @@ try{
  for(let i=0;i<50;i++){if(await evaluate("!!document.querySelector('input[autocomplete=\"current-password\"]')"))break;await pause(100);}
  assert.ok(await evaluate("!!document.querySelector('input[autocomplete=\"current-password\"]')"));
  console.log('PASS login form renders');
+ const sheet=runs.find(r=>formats.find(f=>f.id===templates.find(t=>t.id===r.templateId)?.formatId)?.type==='sheet');
+ if(sheet){
+   await send('Page.addScriptToEvaluateOnNewDocument',{source:"delete Navigator.prototype.usb; delete navigator.usb;"});
+   await send('Page.navigate',{url:base+'/runs/'+encodeURIComponent(sheet.id)});
+   let sheetReady=false;
+   for(let i=0;i<80;i++){sheetReady=await evaluate("document.body.innerText.includes('Sheet Output') && document.body.innerText.includes('Printed:')");if(sheetReady)break;await pause(200);}
+   assert.equal(await evaluate("'usb' in navigator"),false);
+   assert.ok(sheetReady,'Sheet progress controls hidden on a browser without WebUSB');
+   console.log('PASS sheet printing controls preserved without WebUSB');
+ }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');
  await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});

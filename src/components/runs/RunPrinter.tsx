@@ -1171,7 +1171,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
         {/* Progress */}
         <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
-          {transport !== 'office' && <>
+          {(isSheetFormat || transport !== 'office') && <>
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
