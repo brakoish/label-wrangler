@@ -11,7 +11,7 @@ async function api(path:string,init?:RequestInit){
   const result=await response.json();if(!response.ok)throw new Error(result.error || 'Request failed');return result;
 }
 const labels:Record<string,string>={queued:'Waiting for office',claimed:'Assigned to office',submitted:'Queued at office',sent_to_printer:'Sent to printer',rejected:'Rejected — check reason',needs_review:'Check printer before retrying',cancelled:'Cancelled before dispatch',resolved:'Reviewed by operator'};
-const inputClass='w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm';
+const inputClass='w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50';
 export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;total:number;connectionTarget:HTMLDivElement|null}){
   const [printers,setPrinters]=useState<Printer[]>([]);const [selected,setSelected]=useState('');
   const [requests,setRequests]=useState<PrintRequest[]>([]);const [canPrint,setCanPrint]=useState(false);
@@ -75,17 +75,18 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
   const pct=total?Math.min(100,Math.round(delivered/total*100)):0;
   const reprintRequests=requests.filter(r=>r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review'].includes(j.state)));
   const connection=<div className="space-y-3">
-    <label className="block text-xs text-zinc-400">Office station / printer<select className={inputClass+' mt-1'} value={selected} onChange={e=>setSelected(e.target.value)}>
+    <label className="block text-xs text-zinc-400">Printer<select className={inputClass+' mt-1'} value={selected} onChange={e=>setSelected(e.target.value)}>
       {!printers.length && <option value="">No authorized office printer</option>}
       {printers.map(p=><option key={p.id} value={`${p.station_id}/${p.id}`}>{p.name}</option>)}
     </select></label>
     {printer && <div className="text-xs space-y-1 text-zinc-400">
-      <p className={printer.online?'text-emerald-400':'text-amber-400'}>{printer.online?(printer.available?'Office online · printer available':'Office online · printer unavailable'):'Office offline · queued work waits for reconnect'}</p>
-      <p>Last contact: {printer.last_seen?new Date(printer.last_seen).toLocaleString():'not paired yet'} · {printer.dpi} DPI</p>
+      <p className={printer.online?'text-emerald-400':'text-amber-400'}>{printer.online?(printer.available?'Connected':'Connected · printer unavailable'):'Office offline · queued work waits for reconnect'}</p>
+      
       {!printer.dispatch_enabled && <p className="text-amber-400">Awaiting verified pairing and activation. Job creation is disabled.</p>}
       {printer.needs_review && <p className="text-red-400">Check printer before retrying. Dispatch is blocked until reviewed.</p>}
     </div>}
     <OfficePrinterControls />
+    {printer && <details className="text-[11px] text-zinc-500"><summary className="cursor-pointer hover:text-zinc-300">Connection details</summary><p className="mt-2">Last contact: {printer.last_seen?new Date(printer.last_seen).toLocaleString():'not paired yet'} · {printer.dpi} DPI</p></details>}
   </div>;
   return <div className="space-y-4">
     {connectionTarget && createPortal(connection,connectionTarget)}
@@ -96,8 +97,8 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
     <div className="h-3 rounded-full bg-zinc-900 overflow-hidden"><div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{width:`${pct}%`}} /></div>
     <p className="text-[11px] text-zinc-500">{queued} labels waiting for delivery. Delivery does not confirm physical printing.</p>
     <div className="grid grid-cols-2 gap-2">
-      <label className="text-xs">From label<input aria-label="Office from label" className={inputClass} inputMode="numeric" disabled={!!pending} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>
-      <label className="text-xs">Stop after label<input aria-label="Office through label" className={inputClass} inputMode="numeric" disabled={!!pending} value={to} onChange={e=>{rangeEdited.current=true;setTo(e.target.value);}} /></label>
+      <label className="text-xs text-zinc-400">From label<input aria-label="Office from label" className={inputClass} inputMode="numeric" disabled={!!pending} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>
+      <label className="text-xs text-zinc-400">Stop after label<input aria-label="Office through label" className={inputClass} inputMode="numeric" disabled={!!pending} value={to} onChange={e=>{rangeEdited.current=true;setTo(e.target.value);}} /></label>
     </div>
     <label className="block text-xs text-zinc-400">Print count<input aria-label="Office print label count" type="number" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending} className={inputClass+' mt-1'} value={Math.max(0,Number(to)-Number(from)+1)} onChange={e=>{rangeEdited.current=true;setTo(String(Math.min(total,Number(from)+Math.max(1,Number(e.target.value))-1)));}} /></label>
     {pending && <p className="text-xs text-amber-400">Pending submission for labels {pending.from}–{pending.to}. Retry checks the same request; it does not create another batch.</p>}
@@ -116,7 +117,7 @@ export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;tot
     {error && <div role="alert" className="text-xs text-red-400 space-y-2"><p>{error}</p><p>Retry keeps the same request ID. If this was a validation error, check the queue below before changing the request.</p><button onClick={()=>{localStorage.removeItem(storageKey);setPending(null);setError('');}} className="underline">Clear pending request form (does not cancel queued jobs)</button></div>}
     {notice && <p role="status" className="text-xs text-emerald-400">{notice}</p>}
     <details className="border-t border-zinc-800/60 pt-3">
-      <summary className="cursor-pointer text-xs text-zinc-400">Queue details · {queued} waiting · {sent} sent including reprints</summary>
+      <summary className="cursor-pointer text-xs text-zinc-400">Queue details <span className="text-zinc-600">· {queued} waiting · {sent} sent</span></summary>
     <div className="max-h-96 overflow-y-auto space-y-3 mt-3">
       {requests.map(r=><div key={r.id} className="rounded border border-zinc-800 p-2 space-y-2 text-xs">
         <p className="font-medium">Labels {r.range_from}–{r.range_to} · {r.username}{r.reprint_of?' · reprint':''}</p>
