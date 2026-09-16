@@ -1244,7 +1244,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 {status === 'paused' ? 'Resume' : status === 'error' ? 'Retry' : 'Start Printing'}
               </button>
             )}
-            {status === 'running' && (
+            {status === 'running' && transport === 'dazzle' && (
+              <div role="status" className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm text-zinc-400"><Loader2 className="w-4 h-4 animate-spin" />Sending labels…</div>
+            )}
+            {status === 'running' && transport !== 'dazzle' && (
               <button
                 onClick={handlePause}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors"
