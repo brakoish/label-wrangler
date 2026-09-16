@@ -36,14 +36,18 @@ try{
  assert.ok(await evaluate("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Dazzle') && Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='WebUSB')"));
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Office Pi').click()");
  let ready=false;
- for(let i=0;i<80;i++){ready=await evaluate("document.body.innerText.includes('Awaiting verified pairing and activation')");if(ready)break;await pause(200);}
+ for(let i=0;i<80;i++){ready=await evaluate("document.body.textContent.includes('Black Zebra - ZD411 (Pi)')");if(ready)break;await pause(200);}
  assert.ok(ready,'Station state did not load');
- assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Queue at office')?.disabled"),true);
+ assert.ok(await evaluate("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Start Printing')"));
+ assert.ok(await evaluate("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Reprint from label…')"));
+ assert.ok(await evaluate("Array.from(document.querySelectorAll('details')).some(d=>d.querySelector('summary')?.textContent.includes('Queue details') && !d.open)"));
+ assert.ok(await evaluate("Array.from(document.querySelectorAll('section')).some(s=>s.textContent.includes('Progress') && s.textContent.includes('Start Printing') && s.textContent.includes('Export labels'))"));
+ assert.ok(await evaluate("!Array.from(document.querySelectorAll('section')).find(s=>s.querySelector('select option')?.textContent.includes('Black Zebra'))?.textContent.includes('Start Printing')"));
  assert.ok(await evaluate("document.body.innerText.includes('Black Zebra - ZD411 (Pi)') && !document.body.innerText.includes('White Zebra')"));
  assert.ok(await evaluate("document.body.innerText.includes('Export labels')"));
  const screenshot=path.join(profile,'office-pi.png');
  const capture=await send('Page.captureScreenshot',{format:'png'});await fs.writeFile(screenshot,Buffer.from(capture.data,'base64'),{mode:0o600});
- console.log(JSON.stringify({passed:['Office Pi transport','Dazzle/WebUSB preserved','black-only station selector','pairing disables queue button','export preserved'],screenshot}));
+ console.log(JSON.stringify({passed:['Office Pi transport','Dazzle/WebUSB preserved','black-only station selector','familiar progress and controls','collapsed queue details','export preserved'],screenshot}));
  await send('Page.navigate',{url:base+'/login'});
  for(let i=0;i<50;i++){if(await evaluate("!!document.querySelector('input[autocomplete=\"current-password\"]')"))break;await pause(100);}
  assert.ok(await evaluate("!!document.querySelector('input[autocomplete=\"current-password\"]')"));

@@ -1,4 +1,6 @@
 'use client';
+import { createPortal } from 'react-dom';
+import { Printer as PrinterIcon, Hash } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean }
 interface Job { id:string; from:number; to:number; count:number; state:string; review:boolean; reason:string|null; cupsJobId:number|null }
@@ -9,12 +11,13 @@ async function api(path:string,init?:RequestInit){
 }
 const labels:Record<string,string>={queued:'Waiting for office',claimed:'Assigned to office',submitted:'Queued at office',sent_to_printer:'Sent to printer',rejected:'Rejected — check reason',needs_review:'Check printer before retrying',cancelled:'Cancelled before dispatch',resolved:'Reviewed by operator'};
 const inputClass='w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm';
-export function OfficePiPrinter({runId,total}:{runId:string;total:number}){
+export function OfficePiPrinter({runId,total,connectionTarget}:{runId:string;total:number;connectionTarget:HTMLDivElement|null}){
   const [printers,setPrinters]=useState<Printer[]>([]);const [selected,setSelected]=useState('');
   const [requests,setRequests]=useState<PrintRequest[]>([]);const [canPrint,setCanPrint]=useState(false);
   const [from,setFrom]=useState('1');const [to,setTo]=useState(String(total));
   const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);
   const [pending,setPending]=useState<{from:number;to:number}|null>(null);
+  const [showReprint,setShowReprint]=useState(false);
   const [reprintOf,setReprintOf]=useState('');const [reason,setReason]=useState('');
   const [review,setReview]=useState<Job|null>(null);const [reviewReason,setReviewReason]=useState('');const [checked,setChecked]=useState(false);
   const inFlight=useRef(false);
@@ -57,7 +60,13 @@ export function OfficePiPrinter({runId,total}:{runId:string;total:number}){
   const allJobs=requests.flatMap(r=>r.jobs);
   const sent=allJobs.filter(j=>j.state==='sent_to_printer').reduce((sum,j)=>sum+j.count,0);
   const queued=allJobs.filter(j=>['queued','claimed','submitted'].includes(j.state)).reduce((sum,j)=>sum+j.count,0);
-  return <div className="space-y-3">
+  // Count delivered ranges once, even when a range has been reprinted.
+  const ranges=allJobs.filter(j=>j.state==='sent_to_printer').sort((a,b)=>a.from-b.from);
+  let delivered=0;let end=0;
+  for(const job of ranges){delivered+=Math.max(0,job.to-Math.max(end,job.from-1));end=Math.max(end,job.to);}
+  const pct=total?Math.min(100,Math.round(delivered/total*100)):0;
+  const reprintRequests=requests.filter(r=>r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review'].includes(j.state)));
+  const connection=<div className="space-y-3">
     <label className="block text-xs text-zinc-400">Office station / printer<select className={inputClass+' mt-1'} value={selected} onChange={e=>setSelected(e.target.value)}>
       {!printers.length && <option value="">No authorized office printer</option>}
       {printers.map(p=><option key={p.id} value={`${p.station_id}/${p.id}`}>{p.name}</option>)}
@@ -68,17 +77,37 @@ export function OfficePiPrinter({runId,total}:{runId:string;total:number}){
       {!printer.dispatch_enabled && <p className="text-amber-400">Awaiting verified pairing and activation. Job creation is disabled.</p>}
       {printer.needs_review && <p className="text-red-400">Check printer before retrying. Dispatch is blocked until reviewed.</p>}
     </div>}
+  </div>;
+  return <div className="space-y-4">
+    {connectionTarget && createPortal(connection,connectionTarget)}
+    <div className="flex items-center justify-between">
+      <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
+      <span className="text-sm font-semibold text-zinc-100 tabular-nums">Sent to printer: {delivered} / {total} · {pct}%</span>
+    </div>
+    <div className="h-3 rounded-full bg-zinc-900 overflow-hidden"><div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{width:`${pct}%`}} /></div>
+    <p className="text-[11px] text-zinc-500">{queued} labels waiting for delivery. Delivery does not confirm physical printing.</p>
     <div className="grid grid-cols-2 gap-2">
       <label className="text-xs">From label<input aria-label="Office from label" className={inputClass} inputMode="numeric" disabled={!!pending} value={from} onChange={e=>setFrom(e.target.value)} /></label>
       <label className="text-xs">Through label<input aria-label="Office through label" className={inputClass} inputMode="numeric" disabled={!!pending} value={to} onChange={e=>setTo(e.target.value)} /></label>
     </div>
     {pending && <p className="text-xs text-amber-400">Pending submission for labels {pending.from}–{pending.to}. Retry checks the same request; it does not create another batch.</p>}
     {reprintOf && <div className="space-y-2 rounded border border-amber-700 p-2 text-xs"><p>Intentional reprint of request {reprintOf.slice(0,8)}. New job IDs will be created.</p><input className={inputClass} placeholder="Reason for reprint" value={reason} onChange={e=>setReason(e.target.value)} /><button onClick={()=>{setReprintOf('');setReason('');}}>Exit reprint mode</button></div>}
-    <button disabled={busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review || (!!reprintOf && reason.trim().length<3)} onClick={()=>void submit()} className="w-full rounded bg-amber-500 p-2 text-sm font-semibold text-black disabled:opacity-40">{busy?'Working…':pending?'Retry same request':reprintOf?'Queue intentional reprint':'Queue at office'}</button>
-    <p className="text-[11px] text-zinc-500">Queued: {queued} · Sent to printer: {sent} labels (includes reprints). Delivery does not confirm physical printing. No Dazzle or local driver required.</p>
+    <button disabled={busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review || (!!reprintOf && reason.trim().length<3)} onClick={()=>void submit()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40"><PrinterIcon className="w-4 h-4" />{busy?'Working…':pending?'Retry same request':reprintOf?'Start Reprint':'Start Printing'}</button>
+    <div className="pt-3 border-t border-zinc-800/60 space-y-2">
+      <button disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><Hash className="w-3 h-3" />Reprint from label…</button>
+      {showReprint && <label className="block text-xs text-zinc-400">Previous print range
+        <select aria-label="Previous print range" className={inputClass+' mt-1'} value={reprintOf} onChange={e=>{const request=requests.find(r=>r.id===e.target.value);setReprintOf(e.target.value);setReason('');if(request){setFrom(String(request.range_from));setTo(String(request.range_to));}}}>
+          <option value="">Select a completed or reviewed request</option>
+          {reprintRequests.map(r=><option key={r.id} value={r.id}>Labels {r.range_from}–{r.range_to} · {r.id.slice(0,8)}</option>)}
+        </select>
+        {!reprintRequests.length && <p className="mt-1">No completed or reviewed requests yet. Check queue details for pending work.</p>}
+      </label>}
+    </div>
     {error && <div role="alert" className="text-xs text-red-400 space-y-2"><p>{error}</p><p>Retry keeps the same request ID. If this was a validation error, check the queue below before changing the request.</p><button onClick={()=>{localStorage.removeItem(storageKey);setPending(null);setError('');}} className="underline">Clear pending request form (does not cancel queued jobs)</button></div>}
     {notice && <p role="status" className="text-xs text-emerald-400">{notice}</p>}
-    <div className="max-h-96 overflow-y-auto space-y-3">
+    <details className="border-t border-zinc-800/60 pt-3">
+      <summary className="cursor-pointer text-xs text-zinc-400">Queue details · {queued} waiting · {sent} sent including reprints</summary>
+    <div className="max-h-96 overflow-y-auto space-y-3 mt-3">
       {requests.map(r=><div key={r.id} className="rounded border border-zinc-800 p-2 space-y-2 text-xs">
         <p className="font-medium">Labels {r.range_from}–{r.range_to} · {r.username}{r.reprint_of?' · reprint':''}</p>
         <p className="text-zinc-500">Request {r.id.slice(0,8)}</p>
@@ -91,6 +120,7 @@ export function OfficePiPrinter({runId,total}:{runId:string;total:number}){
         {canPrint && r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review'].includes(j.state)) && <button className="ml-2 text-amber-400 underline" onClick={()=>{setReprintOf(r.id);setFrom(String(r.range_from));setTo(String(r.range_to));}}>Reprint with reason</button>}
       </div>)}
     </div>
+    </details>
     {review && <div role="dialog" aria-label="Review office print outcome" className="rounded border border-amber-600 bg-zinc-950 p-3 space-y-3 text-xs">
       <p className="font-semibold">Review labels {review.from}–{review.to}</p>
       <p>Check the physical printer and office CUPS queue. Finish or cancel pending local work before resolving. This button cannot stop the printer.</p>

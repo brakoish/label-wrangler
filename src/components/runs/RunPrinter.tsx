@@ -111,6 +111,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // Transport detection
   const [dazzleAvailable, setDazzleAvailable] = useState(false);
   const [transport, setTransport] = useState<Transport | null>(null);
+  const [officeConnectionTarget, setOfficeConnectionTarget] = useState<HTMLDivElement | null>(null);
   const [usbPrinter, setUsbPrinter] = useState<ConnectedPrinter | null>(null);
   const [dazzlePrinters, setDazzlePrinters] = useState<DazzlePrinter[]>([]);
   const [dazzleSelected, setDazzleSelected] = useState<string | null>(null);
@@ -1089,7 +1090,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <button disabled={status === 'running'} onClick={() => setTransport('office')} className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'office' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}>Office Pi</button>
                 </div>
               )}
-              {transport === 'office' && <OfficePiPrinter runId={runId} total={total} />}
+              {transport === 'office' && <div ref={setOfficeConnectionTarget} />}
               {transport === 'dazzle' && (
                 dazzlePrinters.length > 0 ? (
                   <div className="space-y-2">
@@ -1370,6 +1371,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           )}
 
           </>}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter runId={runId} total={total} connectionTarget={officeConnectionTarget} />}
           {/* Export section — preserved for every transport */}
           <div className="pt-3 border-t border-zinc-800/60">
             {!showExport ? (
