@@ -17,6 +17,12 @@ const { prepareServerImages, validateLayout } = require('../../../src/lib/office
   const qr = { id: 'qr', type: 'qr', x: 10, y: 10, width: 60, height: 60, rotation: 0, zIndex: 1, isStatic: false, fieldName: 'qr', errorCorrection: 'M', content: '' };
   const template = { elements: [logo, qr] };
   const results = [];
+  const exportDir = process.argv[2] && path.resolve(process.argv[2]);
+  if (exportDir) { assert.ok(!fs.existsSync(exportDir), 'export directory must be new'); fs.mkdirSync(exportDir, { recursive: true }); }
+  const write = (name, bytes) => { if (!exportDir) return; const target = path.join(exportDir, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, bytes); };
+  const json = (name, value) => write(name, JSON.stringify(value, null, 2));
+  const index = [];
+
   for (const across of [1, 2, 3, 4]) {
     const format = { type: 'thermal', width: 0.5, height: 1, dpi: 203, labelsAcross: across };
     validateLayout(template, format, 203, 448);
@@ -55,6 +61,26 @@ const { prepareServerImages, validateLayout } = require('../../../src/lib/office
     const response = JSON.parse(sealed.response); response.manifest_bytes++; assert.throws(() => decodeManifest(Buffer.from(JSON.stringify(response))));
     await assert.rejects(prepare(metadata, [{ bytes: Buffer.alloc(limits.chunk + 1), lanes: [1] }], () => {}));
     await assert.rejects(prepare({ ...metadata, range_to: from + 5000 }, [], () => {}));
+    if (exportDir) {
+      const dir = `valid/${across}-across`;
+      write(`${dir}/manifest.json`, sealed.bytes);
+      write(`${dir}/manifest-response.json`, sealed.response);
+      json(`${dir}/poll-descriptor.json`, { print_run_id: sealed.manifest.print_run_id, manifest_sha256: sealed.sha256, manifest_bytes: sealed.bytes.length });
+      for (const chunk of sealed.manifest.chunks) {
+        write(`${dir}/chunks/${chunk.chunk_id}.bin`, stored.get(chunk.chunk_id));
+        write(`${dir}/responses/${chunk.chunk_id}.json`, verifyChunk(chunk, stored.get(chunk.chunk_id)));
+      }
+      const allFeeds = sealed.manifest.chunks.flatMap(chunk => chunk.feeds);
+      const intervalFrom = sealed.manifest.chunks[0].feed_count - 1;
+      const intervalTo = intervalFrom + 2;
+      const intervalBytes = Buffer.concat(sealed.manifest.chunks.flatMap(chunk => chunk.feeds.filter(f => f.feed_ordinal >= intervalFrom && f.feed_ordinal < intervalTo).map(f => stored.get(chunk.chunk_id).subarray(f.byte_offset, f.byte_offset + f.byte_count))));
+      write(`${dir}/cross-boundary-interval.bin`, intervalBytes);
+      index.push({ directory: dir, range_from: from, range_to: to, labels_across: across, feed_count: sealed.manifest.feed_count, chunk_count: sealed.manifest.chunks.length, total_bytes: sealed.manifest.total_bytes, manifest_bytes: sealed.bytes.length, manifest_sha256: sealed.sha256, first_feed: allFeeds[0], last_feed: allFeeds.at(-1), interval: { feed_from: intervalFrom, feed_to_exclusive: intervalTo, byte_count: intervalBytes.length, sha256: hash(intervalBytes) } });
+      const wrongSpan = structuredClone(sealed.manifest); wrongSpan.chunks[0].feeds[0].byte_offset++;
+      json(`invalid/${across}-span-gap.json`, wrongSpan);
+      write(`invalid/${across}-corrupt-chunk.bin`, corrupt);
+      json(`invalid/${across}-wrong-length-response.json`, response);
+    }
     results.push({ across, labels: seen.length, feeds: sealed.manifest.feed_count, chunks: sealed.manifest.chunks.length, payloadBytes: sealed.manifest.total_bytes, manifestBytes: sealed.bytes.length });
   }
   // Descriptor ceiling: 5,000 one-feed chunks; 25 lane slots, 24 blank.
@@ -63,5 +89,18 @@ const { prepareServerImages, validateLayout } = require('../../../src/lib/office
   assert.ok(descriptorBytes < limits.manifest); // conservative descriptor size, not a valid range mapping
   const maxChunk = Buffer.alloc(limits.chunk);
   verifyChunk({ chunk_id: randomUUID(), byte_count: maxChunk.length, sha256: hash(maxChunk) }, maxChunk);
+  if (exportDir) {
+    json('expected-results.json', index);
+    json('sizing-only/artificial-descriptors.json', chunks);
+    json('invalid/expected-rejections.json', [1,2,3,4].flatMap(across => [
+      { file: `${across}-span-gap.json`, expected: 'reject non-partitioning feed span' },
+      { file: `${across}-corrupt-chunk.bin`, reference: `../valid/${across}-across/manifest.json first chunk`, expected: 'reject SHA-256 mismatch' },
+      { file: `${across}-wrong-length-response.json`, expected: 'reject decoded length mismatch' }
+    ]));
+    // Export only loaded local source modules and explicit package/fixture files. No env/config/data.
+    const files = [...Object.keys(require.cache).filter(file => file.startsWith(path.resolve('src') + path.sep)), ...['package.json', 'package-lock.json', 'scripts/office/v2/test.cjs', 'scripts/office/v2/manifest.mjs', 'scripts/office/v2/README.md'].map(file => path.resolve(file))];
+    for (const file of files) write('source/' + path.relative(process.cwd(), file), fs.readFileSync(file));
+    json('runtime.json', { node: process.version, platform: process.platform, arch: process.arch, dependency_install: 'npm ci', command: 'node scripts/office/v2/test.cjs /absolute/path/to/new-export-directory', note: 'Run from source/. UUIDs vary per run; exported manifest bytes and hashes are authoritative. Generator and compiler unchanged from bc05f6b0f12e040d7e015b2fe18df857360152c3; this change only adds export.' });
+  }
   console.log(JSON.stringify({ status: 'passed', scope: 'offline synthetic preparation fixtures only', results, descriptorCeilingBytes: descriptorBytes, durableWorkerTested: false, physicalPrintingTested: false }, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; });
