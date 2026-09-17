@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "schema": "v2_prepare_test_1789674288897",
+  "checks": [
+    "concurrent idempotent snapshot submission and conflict rejection",
+    "single global preparation owner and revision pin",
+    "lost append acknowledgement preserves exact identity/bytes",
+    "expired owner fenced from append/renew/seal",
+    "hash/quota failures leave chunk and checkpoint unchanged",
+    "storage fault after chunk insertion rolls back chunk/checkpoint atomically",
+    "restart skips committed feed; exact seal survives lost acknowledgement",
+    "incomplete seal rejected and canceled preparation cannot append",
+    "fresh worker process prepares 5000 unique QR/logo records into durable multi-chunk output"
+  ],
+  "scope": "isolated Postgres preparation transactions; no production dispatch",
+  "physicalPrinting": false,
+  "realDiskFull": false
+}
