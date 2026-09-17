@@ -1,0 +1,41 @@
+{
+  "status": "passed",
+  "scope": "offline synthetic preparation fixtures only",
+  "results": [
+    {
+      "across": 1,
+      "labels": 5000,
+      "feeds": 5000,
+      "chunks": 186,
+      "payloadBytes": 745000,
+      "manifestBytes": 399073
+    },
+    {
+      "across": 2,
+      "labels": 5000,
+      "feeds": 2501,
+      "chunks": 157,
+      "payloadBytes": 632548,
+      "manifestBytes": 223997
+    },
+    {
+      "across": 3,
+      "labels": 5000,
+      "feeds": 1667,
+      "chunks": 152,
+      "payloadBytes": 595018,
+      "manifestBytes": 166448
+    },
+    {
+      "across": 4,
+      "labels": 5000,
+      "feeds": 1251,
+      "chunks": 157,
+      "payloadBytes": 576298,
+      "manifestBytes": 139009
+    }
+  ],
+  "descriptorCeilingBytes": 1932781,
+  "durableWorkerTested": false,
+  "physicalPrintingTested": false
+}
