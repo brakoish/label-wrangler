@@ -85,10 +85,12 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
       method: 'DELETE',
     });
 
-    if (!res.ok) throw new Error('Failed to delete template');
+    if (!res.ok) throw new Error('Failed to archive template. Please try again.');
+
+    const archived = await res.json();
 
     set((state) => ({
-      templates: state.templates.filter((t) => t.id !== id),
+      templates: state.templates.map((t) => t.id === id ? archived : t),
       selectedTemplateId: state.selectedTemplateId === id ? null : state.selectedTemplateId,
     }));
   },

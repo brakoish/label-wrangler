@@ -35,6 +35,7 @@ export const templates = pgTable("templates", {
     .notNull()
     .references(() => formats.id),
   elements: jsonb("elements").notNull().default([]),
+  archivedAt: text("archived_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

@@ -244,6 +244,7 @@ function DesignerContent() {
               router.push(`/designer?id=${id}`);
             }}
             onDeleteTemplate={deleteTemplate}
+            onRestoreTemplate={(id) => updateTemplate(id, { archivedAt: null })}
             onDuplicateTemplate={(t) => setDuplicateSource(t)}
             onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}

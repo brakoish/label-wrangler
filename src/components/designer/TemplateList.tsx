@@ -3,7 +3,7 @@
 import { useState, useEffect, useId, useMemo } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
-import { Plus, FileText, Trash2, Type, QrCode, Barcode, Square, Image, Minus, Copy, Pencil } from 'lucide-react';
+import { Plus, FileText, Archive, RotateCcw, Type, QrCode, Barcode, Square, Image, Minus, Copy, Pencil } from 'lucide-react';
 import { BarcodeElement, ImageElement, LabelFormat, LabelTemplate, LineElement, QRElement, RectangleElement, TemplateElement, TextElement } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -14,7 +14,8 @@ import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 interface TemplateListProps {
   templates: LabelTemplate[];
   onSelectTemplate: (id: string) => void;
-  onDeleteTemplate: (id: string) => void;
+  onDeleteTemplate: (id: string) => Promise<void>;
+  onRestoreTemplate: (id: string) => Promise<void>;
   onDuplicateTemplate?: (template: LabelTemplate) => void;
   onRenameTemplate?: (template: LabelTemplate) => void;
   onNewTemplate: () => void;
@@ -24,23 +25,44 @@ export function TemplateList({
   templates,
   onSelectTemplate,
   onDeleteTemplate,
+  onRestoreTemplate,
   onDuplicateTemplate,
   onRenameTemplate,
   onNewTemplate,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
+  const [showArchived, setShowArchived] = useState(false);
+  const [error, setError] = useState('');
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const visibleTemplates = templates.filter((t) => Boolean(t.archivedAt) === showArchived);
+  const changeArchive = async (template: LabelTemplate) => {
+    setError('');
+    setPendingId(template.id);
+    try {
+      await (template.archivedAt ? onRestoreTemplate(template.id) : onDeleteTemplate(template.id));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to update template. Please try again.');
+    } finally {
+      setPendingId(null);
+    }
+  };
 
   return (
     <div className="max-w-[1600px] mx-auto w-full p-8">
-      {templates.length === 0 ? (
+      <div className="flex gap-3 mb-6">
+        <button onClick={() => setShowArchived(false)} aria-pressed={!showArchived} className={!showArchived ? 'text-amber-400' : 'text-zinc-400'}>Active ({templates.filter((t) => !t.archivedAt).length})</button>
+        <button onClick={() => setShowArchived(true)} aria-pressed={showArchived} className={showArchived ? 'text-amber-400' : 'text-zinc-400'}>Archived ({templates.filter((t) => t.archivedAt).length})</button>
+      </div>
+      {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
+      {visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
           <div className="text-center max-w-sm">
             <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
               <FileText className="w-10 h-10 text-zinc-600" />
             </div>
-            <h3 className="text-zinc-300 font-semibold text-lg">No templates yet</h3>
+            <h3 className="text-zinc-300 font-semibold text-lg">{showArchived ? 'No archived templates' : 'No active templates'}</h3>
             <p className="text-zinc-500 text-sm mt-2">
-              Create your first label template to start designing
+              {showArchived ? 'Archived templates will appear here. Saved runs keep working.' : 'Create a template or restore one from Archived.'}
             </p>
             <button
               onClick={onNewTemplate}
@@ -63,7 +85,7 @@ export function TemplateList({
             <span className="text-sm font-medium">New Template</span>
           </button>
 
-          {templates.map((template) => {
+          {visibleTemplates.map((template) => {
             const format = formats.find((f) => f.id === template.formatId);
             return (
               <TemplateCard
@@ -71,7 +93,8 @@ export function TemplateList({
                 template={template}
                 format={format}
                 onSelect={() => onSelectTemplate(template.id)}
-                onDelete={() => onDeleteTemplate(template.id)}
+                onDelete={() => void changeArchive(template)}
+                pending={pendingId !== null}
                 onDuplicate={onDuplicateTemplate ? () => onDuplicateTemplate(template) : undefined}
                 onRename={onRenameTemplate ? () => onRenameTemplate(template) : undefined}
               />
@@ -383,6 +406,7 @@ function TemplateCard({
   format,
   onSelect,
   onDelete,
+  pending,
   onDuplicate,
   onRename,
 }: {
@@ -390,6 +414,7 @@ function TemplateCard({
   format?: LabelFormat;
   onSelect: () => void;
   onDelete: () => void;
+  pending: boolean;
   onDuplicate?: () => void;
   onRename?: () => void;
 }) {
@@ -462,14 +487,16 @@ function TemplateCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Delete template "${template.name}"?`)) {
+                if (template.archivedAt || confirm(`Archive template "${template.name}"? It will leave the active list. Existing runs are preserved, and you can restore it later.`)) {
                   onDelete();
                 }
               }}
               className="p-1 rounded-lg hover:bg-red-600/20 text-zinc-600 hover:text-red-400 transition-colors"
-              title="Delete template"
+              disabled={pending}
+              title={template.archivedAt ? "Restore template" : "Archive template"}
+              aria-label={`${template.archivedAt ? "Restore" : "Archive"} ${template.name}`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              {template.archivedAt ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>

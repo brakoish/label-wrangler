@@ -181,6 +181,7 @@ export type TemplateElement = TextElement | QRElement | BarcodeElement | LineEle
 
 // Label template — ties a format to a set of elements
 export interface LabelTemplate {
+  archivedAt?: string | null;
   id: string;
   name: string;
   description?: string;

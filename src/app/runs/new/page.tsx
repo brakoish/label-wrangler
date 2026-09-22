@@ -779,7 +779,7 @@ function NewRunContent() {
                     value={templateId}
                     onChange={setTemplateId}
                     placeholder="Select template..."
-                    options={templates.map((t) => {
+                    options={templates.filter((t) => !t.archivedAt || t.id === templateId).map((t) => {
                       const f = formats.find((x) => x.id === t.formatId);
                       return {
                         value: t.id,

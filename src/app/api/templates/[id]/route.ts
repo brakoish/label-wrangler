@@ -56,11 +56,15 @@ async function handleDELETE(
 ) {
   try {
     const { id } = await params;
-    await db.delete(templates).where(eq(templates.id, id));
-    return NextResponse.json({ success: true });
+    // Preserve references from saved runs and presets; DELETE archives only.
+    const [archived] = await db.update(templates)
+      .set({ archivedAt: new Date().toISOString() })
+      .where(eq(templates.id, id)).returning();
+    if (!archived) return NextResponse.json({ error: "Template not found" }, { status: 404 });
+    return NextResponse.json(archived);
   } catch (error) {
-    console.error("Error deleting template:", error);
-    return NextResponse.json({ error: "Failed to delete template" }, { status: 500 });
+    console.error("Error archiving template:", error);
+    return NextResponse.json({ error: "Failed to archive template" }, { status: 500 });
   }
 }
 
