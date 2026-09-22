@@ -6,6 +6,7 @@ import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
+import { OfficePreviewPrint } from './OfficePreviewPrint';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 
 interface ZPLPreviewProps {
@@ -79,6 +80,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
         {expanded && <div className="w-px h-4 bg-zinc-800 mx-2" />}
 
         {/* WebUSB test print controls — connect, print current template, calibration. */}
+        {expanded && <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />}
         {expanded && <PrintControls format={format} template={template} testData={testData} />}
 
         {expanded && <div className="ml-auto flex items-center gap-1">

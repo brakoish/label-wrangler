@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import Link from 'next/link';
 import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL, prepareZplImages } from '@/lib/zplGenerator';
@@ -316,7 +315,6 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       <div className="flex items-center gap-1.5 text-xs text-zinc-500" title="Need Chromium browser or Dazzle desktop app">
         <AlertCircle className="w-3.5 h-3.5" />
         <span>Local printing needs Chrome/Edge or Dazzle.</span>
-        <Link href={`/runs/new?templateId=${encodeURIComponent(template.id)}`} className="text-amber-400 hover:underline">Print saved design through Office Pi</Link>
         <a href={DAZZLE_DOWNLOAD_URL} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline inline-flex items-center gap-1">
           <Download className="w-3 h-3" /> Dazzle
         </a>
@@ -326,7 +324,6 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <Link href={`/runs/new?templateId=${encodeURIComponent(template.id)}`} title="Save your design first. Office Pi prints saved runs." className="px-2 py-1 rounded border border-zinc-700 text-xs text-amber-400">Office Pi run</Link>
       {/* Transport toggle — only show if both are available */}
       {webUsbSupported && dazzleAvailable && (
         <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
