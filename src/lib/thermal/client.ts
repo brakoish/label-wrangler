@@ -1,6 +1,6 @@
 import type { LabelFormat, LabelTemplate } from '../types';
 import type { FeedValues } from './bitmap';
-export type BitmapResult = { version: string; width: number; height: number; inputDigest: string; pixelDigest: string; packed: string; proof: string; zpl: string; qrBounds?: Record<string, { x: number; y: number; width: number; height: number }>; warnings?: Array<{ elementId: string; message: string }> };
+export type BitmapResult = { version: string; width: number; height: number; inputDigest: string; pixelDigest: string; packed: string; proof: string; zpl: string; qrInkBounds?: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds?: Record<string, { x: number; y: number; width: number; height: number }>; warnings?: Array<{ elementId: string; message: string }> };
 // Coalesce identical editor/print requests; bound retained results, including keys.
 const cache = new Map<string, Promise<BitmapResult>>();
 let cacheBytes = 0;

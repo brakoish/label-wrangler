@@ -126,6 +126,7 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
   const mark={id:'mark',type:'rectangle',x:260,y:65,width:10,height:10,rotation:0,zIndex:-1,isStatic:true,fillColor:'#000000',strokeColor:'#000000',strokeWidth:0,borderRadius:0};
   const result=await renderThermalBitmap({...template,elements:[mark,padded]},format);
   check(await decode(pngOf(result))==='PADDING','padded QR remains decodable at '+rotation);
+  const ink=result.qrInkBounds.padded;check(ink.width<result.qrBounds.padded.width,'QR ink bounds exclude quiet zone');
   const b=result.qrBounds.padded;check(b.x>=0 && b.y>=0 && b.x+b.width<=406 && b.y+b.height<=203,'reported QR quiet bounds match actual label');
   const markPixels=await sharp(pngOf(result)).extract({left:260,top:65,width:10,height:10}).removeAlpha().raw().toBuffer();
   check(markPixels.every(v=>v===0),'unused QR padding cannot cover neighboring artwork');

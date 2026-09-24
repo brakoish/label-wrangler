@@ -28,7 +28,7 @@ interface LabelPreviewProps {
 
 export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel }: LabelPreviewProps) {
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
-  const [bitmapProof, setBitmapProof] = useState<{ key: string; url: string; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
+  const [bitmapProof, setBitmapProof] = useState<{ key: string; url: string; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
   const [bitmapError, setBitmapError] = useState('');
   const bitmapKey = JSON.stringify([elements, format, testData]);
   const [editing, setEditing] = useState<{ id: string; value: string; bound: boolean; field: string; left: number; top: number; width: number; height: number } | null>(null);
@@ -39,7 +39,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     let active = true; setBitmapError('');
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
-        .then(result => { if (active) setBitmapProof({ key: bitmapKey, url: result.proof, warnings: result.warnings || [], qrBounds: result.qrBounds || {} }); })
+        .then(result => { if (active) setBitmapProof({ key: bitmapKey, url: result.proof, warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
         .catch(error => { if (active) setBitmapError(error.message); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
@@ -295,7 +295,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
       if (isThermal && !isMultiResize) {
-        onUpdateElement(elementId, resizeArtwork(element, handle, svgDx, svgDy, ev.shiftKey));
+        const ink = bitmap && element.type === 'qr' ? bitmapProof?.qrInkBounds[element.id] : undefined;
+        if (ink) {
+          const resized = resizeArtwork({ ...element, ...ink, rotation: 0 }, handle, svgDx, svgDy, false);
+          const scale = (resized.width ?? ink.width) / ink.width;
+          onUpdateElement(elementId, { x: (resized.x ?? ink.x) + (element.x - ink.x) * scale, y: (resized.y ?? ink.y) + (element.y - ink.y) * scale, width: element.width * scale, height: element.height * scale });
+        } else onUpdateElement(elementId, resizeArtwork(element, handle, svgDx, svgDy, ev.shiftKey));
         return;
       }
 
@@ -390,7 +395,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData, bitmap, onGestureCancel]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData, bitmap, bitmapProof, onGestureCancel]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = format.type === 'thermal' ? 6 * totalW / svgW : Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
@@ -539,7 +544,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {
-                  const bounds = bitmapProof?.qrBounds[element.id] ?? elementInteractionBounds(element, textBounds);
+                  const bounds = bitmapProof?.qrInkBounds[element.id] ?? elementInteractionBounds(element, textBounds);
                   return (
                     <rect
                       x={bounds.x}
@@ -557,7 +562,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                   <>
                     {/* Selection border — use measured bounds for text */}
                     {(() => {
-                      const bounds = elementInteractionBounds(element, textBounds);
+                      const bounds = (bitmap ? bitmapProof?.qrInkBounds[element.id] : undefined) ?? elementInteractionBounds(element, textBounds);
                       const pad = viewBoxWidth * 0.005;
                       return (
                         <rect
@@ -576,7 +581,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                     {(() => {
                       const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
                       const half = hs / 2;
-                      const bounds = elementInteractionBounds(element, textBounds);
+                      const bounds = (bitmap ? bitmapProof?.qrInkBounds[element.id] : undefined) ?? elementInteractionBounds(element, textBounds);
                       const ex = bounds.x;
                       const ey = bounds.y;
                       const ew = bounds.width;
@@ -611,7 +616,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 )}
                 {/* Multi-select: subtle dashed outline on each member element */}
                 {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
-                  const bounds = elementInteractionBounds(element, textBounds);
+                  const bounds = (bitmap ? bitmapProof?.qrInkBounds[element.id] : undefined) ?? elementInteractionBounds(element, textBounds);
                   return (
                     <rect
                       x={bounds.x}

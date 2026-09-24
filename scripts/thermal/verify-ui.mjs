@@ -30,7 +30,7 @@ try{
  socket.onmessage=e=>{const data=JSON.parse(e.data);if(data.id){const promise=pending.get(data.id);pending.delete(data.id);if(data.error)promise?.reject(new Error(data.error.message));else promise?.resolve(data.result);}};
  const send=(method,params={})=>new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});socket.send(JSON.stringify({id:next,method,params}));});
  const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error('Browser evaluation failed: '+(r.exceptionDetails.exception?.description||expression));return r.result.value;};
- const waitFor=async expression=>{for(let i=0;i<120;i++){if(await evaluate(expression))return;await pause(100);}throw new Error('UI timed out: '+expression+'\n'+(await evaluate('document.body.innerText')).slice(-2000));};
+ const waitFor=async expression=>{for(let i=0;i<120;i++){if(await evaluate(expression))return;await pause(100);}throw new Error('UI timed out: '+expression+'\n'+(await evaluate(`document.body?.innerText`)).slice(-2000));};
  await send('Page.enable');await send('Runtime.enable');
  await send('Network.setCookie',{name:'lw-office-session',value:cookie.slice(cookie.indexOf('=')+1),url:base,httpOnly:true,secure:base.startsWith('https:'),sameSite:'Strict'});
  await send('Page.addScriptToEvaluateOnNewDocument',{source:`
@@ -60,7 +60,7 @@ try{
   };
  `});
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
- await waitFor("document.querySelector('[data-element-id=\"text\"]') && document.body.innerText.includes('Exact bitmap')");
+ await waitFor("document.querySelector('[data-element-id=\"text\"]') && document.body?.innerText.includes('Exact bitmap')");
  const center=selector=>evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
  const mouse=async(type,p,extra={})=>send('Input.dispatchMouseEvent',{type,...p,button:'left',clickCount:1,...extra});
  const click=async selector=>{const p=await center(selector);await mouse('mousePressed',p);await mouse('mouseReleased',p);};
@@ -90,18 +90,18 @@ try{
  assert.equal(await evaluate('window.fixture.elements.find(e=>e.id==="second").y'),y0+3);
  await key('z',2,'KeyZ');await waitFor('window.saves.length===11');
  // Reload uses saved structured objects, mode and defaults (not flattened image).
- await send('Page.reload');await waitFor('document.body.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
+ await send('Page.reload');await waitFor('document.body?.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Office printer')");await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Office printer').click()");
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Print preview to Office'&&!b.disabled)");
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Print preview to Office').click()");await waitFor("document.body.innerText.includes('Simulated lost response')");
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Retry same preview').click()");await waitFor("document.body.innerText.includes('Preview queued.')");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Print preview to Office').click()");await waitFor("document.body?.innerText.includes('Simulated lost response')");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Retry same preview').click()");await waitFor("document.body?.innerText.includes('Preview queued.')");
  const requests=await evaluate('window.previewRequests');assert.deepEqual(requests[0],requests[1]);assert.equal(requests[0].expectedPixelDigests.length,1);assert.ok(await evaluate(`window.proofs.some(p=>p.pixelDigest===${JSON.stringify(requests[0].expectedPixelDigests[0])})`));
  // A failed final proof must not erase editable text or become printable artwork.
  await evaluate('window.forceRenderFailure=true');
  await click('[data-element-id="text"] > rect');await key('Enter');await waitFor(`!!document.querySelector('textarea[aria-label="Inline label text"]')`);
  await setText('VISIBLE EVEN IF PROOF FAILS');await key('Enter',2);
- await waitFor("document.body.innerText.includes('Editing approximation — printing blocked')");
+ await waitFor("document.body?.innerText.includes('Editing approximation — printing blocked')");
  assert.ok(await evaluate(`!!document.querySelector('[data-element-id="text"] text')`));
  await evaluate('window.forceRenderFailure=false');await key('z',2,'KeyZ');
  // Real saved-run PDF export and Office range proof, with all job writes intercepted.
@@ -131,7 +131,7 @@ try{
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Duplicate and convert')");
  await evaluate("window.forceRenderFailure=true; Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
- await waitFor("document.body.innerText.includes('Synthetic text overflow')");
+ await waitFor("document.body?.innerText.includes('Synthetic text overflow')");
  assert.ok(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').disabled"));
  await evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent==='Cancel').click(); window.forceRenderFailure=false");
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
@@ -140,18 +140,28 @@ try{
  // Off-label QR is an editing warning, not a whole-label render failure.
  await evaluate(`localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},elements:${JSON.stringify(fixture.elements)}.map(e=>e.id==='qr'?{...e,x:390}:e)}))`);
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
- await waitFor("document.body.innerText.includes('Fix highlighted objects before printing')");
+ await waitFor("document.body?.innerText.includes('Fix highlighted objects before printing')");
  assert.ok(await evaluate(`!!document.querySelector('[data-element-id="qr"] rect[stroke="#ef4444"]')`));
  assert.ok(await evaluate(`!!document.querySelector('svg image')`));
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor(`!!document.querySelector('img[alt="Editing preview with warnings"]')`);
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Fit QR inside label').click()");
- await waitFor("document.body.innerText.includes('Exact bitmap artwork') && !document.body.innerText.includes('Fix highlighted objects before printing')");
+ await waitFor("document.body?.innerText.includes('Exact bitmap artwork') && !document.body?.innerText.includes('Fix highlighted objects before printing')");
  assert.ok(await evaluate("window.fixture.elements.find(e=>e.id==='qr').x<390"));
  await evaluate(`localStorage.setItem('fixture',${JSON.stringify(JSON.stringify(fixture))})`);
  await send('Page.reload');
- await waitFor("document.body.innerText.includes('Exact bitmap artwork')");
- assert.equal(await evaluate("document.body.innerText.includes('Fix highlighted objects before printing')"),false);
+ await waitFor("document.body?.innerText.includes('Exact bitmap artwork')");
+ assert.equal(await evaluate("document.body?.innerText.includes('Fix highlighted objects before printing')"),false);
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Printer').click()");
+ // QR selection and resize handles hug the visible code, not its allocation.
+ await click('[data-element-id="qr"] > rect');
+ const qrSelection=await evaluate(`(()=>{const g=document.querySelector('[data-element-id="qr"]');const r=g.querySelector('rect[stroke="#d97706"][fill="none"]');const proof=window.proofs.at(-1);return {w:Number(r.getAttribute('width')),allocation:window.fixture.elements.find(e=>e.id==='qr').width,ink:proof.qrInkBounds.qr.width};})()`);
+ assert.ok(qrSelection.w<qrSelection.allocation);assert.ok(Math.abs(qrSelection.w-qrSelection.ink)<5);
+ await drag('[data-element-id="qr"] [data-resize-handle="se"]',-15,-15);
+ await waitFor(`window.fixture.elements.find(e=>e.id==='qr').width<${qrSelection.allocation}`);
+ assert.ok(await evaluate(`window.fixture.elements.find(e=>e.id==='qr').width>${qrSelection.allocation*.75}`));
+ await key('z',2,'KeyZ');
+ await waitFor(`Math.abs(window.fixture.elements.find(e=>e.id==='qr').width-${qrSelection.allocation})<.001`);
  // Newly bound fields inherit the selected product; manual test edits survive.
  await evaluate(`(()=>{const e=document.querySelector('input[placeholder="Search Manifest package"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'test');e.dispatchEvent(new Event('input',{bubbles:true}));e.focus();})()`);
  await key('Enter');

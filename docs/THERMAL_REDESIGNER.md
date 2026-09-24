@@ -65,3 +65,4 @@ Editing requests use a separate non-printable draft response: unaffected objects
 
 QR allocation padding outside the four-module quiet zone is transparent/non-printing. Edge validation checks the actual QR plus quiet zone, not the outer resize box; the symbol keeps its existing center and module size.
 The editor uses server-reported QR quiet-zone bounds for error outlines. “Fit QR inside label” minimally translates an affected QR when its required area fits the label, using the normal edit/undo transaction; it never changes the encoded data or module size.
+QR selection/resize handles and warning highlights follow the black module grid, reported separately as qrInkBounds. The surrounding clear margin is not an oversized selection rectangle. Single QR resizing maps the ink-bound gesture proportionally to the saved allocation; required quiet-zone validation remains unchanged.

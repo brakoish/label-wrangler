@@ -91,7 +91,7 @@ export function validateBitmapDesign(template: LabelTemplate, format: LabelForma
   return geo;
 }
 
-type Artwork = { png: Buffer; width: number; height: number; padding?: [number, number, number, number] };
+type Artwork = { png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
 async function textArtwork(e: TextElement, content: string, dpi: number): Promise<Artwork> {
   const family = fontFamilies[e.fontFamily];
   if (!family) throw new Error(`Font "${e.fontFamily}" is not bundled. Choose Liberation Sans, Serif or Mono.`);
@@ -128,6 +128,7 @@ async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode
   const width = Math.round(e.width), height = Math.round(e.height);
   let shapes = '';
   let padding: Artwork['padding'];
+  let quiet: number | undefined;
   if (e.type === 'qr') {
     if (!['L', 'M', 'Q', 'H'].includes(e.errorCorrection)) throw new Error('Invalid QR correction');
     const qr = QRCode.create(value, { errorCorrectionLevel: e.errorCorrection });
@@ -136,6 +137,7 @@ async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode
     const x0 = Math.floor((width - (modules + 8) * scale) / 2) + 4 * scale;
     const y0 = Math.floor((height - (modules + 8) * scale) / 2) + 4 * scale;
     const used = (modules + 8) * scale;
+    quiet = 4 * scale;
     padding = [x0 - 4 * scale, y0 - 4 * scale, width - (x0 - 4 * scale) - used, height - (y0 - 4 * scale) - used];
     for (let y = 0; y < modules; y++) for (let x = 0; x < modules; x++) if (qr.modules.get(y, x)) shapes += `<rect x="${x0 + x * scale}" y="${y0 + y * scale}" width="${scale}" height="${scale}"/>`;
   } else {
@@ -154,7 +156,7 @@ async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode
     const label = await textArtwork({ ...e, type: 'text', fontFamily: 'Liberation Sans', fontSize: 8, minFontSize: 4, autoFit: true, fontWeight: 'normal', textAlign: 'center', color: '#000000', lineHeight: 1, height: Math.round(10 * dpi / 72) }, value, dpi);
     return { png: await sharp(base).composite([{ input: label.png, left: Math.floor((width - label.width) / 2), top: height - label.height }]).png().toBuffer(), width, height };
   }
-  return { png: base, width, height, padding };
+  return { png: base, width, height, padding, quiet };
 }
 
 async function elementArtwork(e: TemplateElement, values: Record<string, string>, dpi: number): Promise<Artwork | null> {
@@ -194,6 +196,7 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const feedLayers: sharp.OverlayOptions[] = [];
   // Same static artwork/values are prepared once per feed, with a bounded cache.
   const artwork = new Map<string, Artwork | null>();
+  const qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const qrBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const warnings: Array<{ elementId: string; message: string }> = [];
   for (let laneIndex = 0; laneIndex < across; laneIndex++) {
@@ -228,7 +231,11 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
           width -= l + r; height -= t + b; left += l; top += t;
           png = await sharp(png).extract({ left: l, top: t, width, height }).png().toBuffer();
         }
-        if (e.type === 'qr' && laneIndex === 0) qrBounds[e.id] = { x: left, y: top, width, height };
+        if (e.type === 'qr' && laneIndex === 0) {
+          qrBounds[e.id] = { x: left, y: top, width, height };
+          const q = art.quiet || 0;
+          qrInkBounds[e.id] = { x: left + q, y: top + q, width: width - 2 * q, height: height - 2 * q };
+        }
         // Crop to this label only; graphics cannot bleed into the next lane.
         const cropX = Math.max(0, -left), cropY = Math.max(0, -top);
         const cropW = Math.min(width - cropX, geo.labelWDots - Math.max(0, left));
@@ -255,5 +262,5 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const packed = packMonochrome(rgba, geo.linerDots, geo.heightDots), pixelDigest = hash(packed);
   const pixels = unpackMonochrome(packed, geo.linerDots, geo.heightDots);
   const png = await sharp(Buffer.from(pixels), { raw: { width: geo.linerDots, height: geo.heightDots, channels: 4 } }).png().toBuffer();
-  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, qrBounds, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
+  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, qrBounds, qrInkBounds, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
 }
