@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react'
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
-import { getBitmapProof } from '@/lib/thermal/client';
+import { getBitmapProof, type EditorLayer } from '@/lib/thermal/client';
 import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorGeometry';
 import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
@@ -28,7 +28,14 @@ interface LabelPreviewProps {
 
 export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel }: LabelPreviewProps) {
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
-  const [bitmapProof, setBitmapProof] = useState<{ key: string; url: string; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
+  const [bitmapProof, setBitmapProof] = useState<{ key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
+  // Keep editor artwork attached to the current gesture, not a delayed HTTP result.
+  const liveBounds = useCallback((id: string, bounds: { x: number; y: number; width: number; height: number } | undefined) => {
+    const old = bitmapProof?.elements.find(e => e.id === id), current = elements.find(e => e.id === id);
+    if (!bounds || !old || !current) return bounds;
+    const sx = current.width / old.width, sy = current.height / old.height;
+    return { x: current.x + (bounds.x - old.x) * sx, y: current.y + (bounds.y - old.y) * sy, width: bounds.width * sx, height: bounds.height * sy };
+  }, [bitmapProof, elements]);
   const [bitmapError, setBitmapError] = useState('');
   const bitmapKey = JSON.stringify([elements, format, testData]);
   const [editing, setEditing] = useState<{ id: string; value: string; bound: boolean; field: string; left: number; top: number; width: number; height: number } | null>(null);
@@ -39,7 +46,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     let active = true; setBitmapError('');
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
-        .then(result => { if (active) setBitmapProof({ key: bitmapKey, url: result.proof, warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
+        .then(result => { if (active) setBitmapProof({ key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
         .catch(error => { if (active) setBitmapError(error.message); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
@@ -295,7 +302,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
       if (isThermal && !isMultiResize) {
-        const ink = bitmap && element.type === 'qr' ? bitmapProof?.qrInkBounds[element.id] : undefined;
+        const ink = bitmap && element.type === 'qr' ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined;
         if (ink) {
           const resized = resizeArtwork({ ...element, ...ink, rotation: 0 }, handle, svgDx, svgDy, false);
           const scale = (resized.width ?? ink.width) / ink.width;
@@ -395,7 +402,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData, bitmap, bitmapProof, onGestureCancel]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData, bitmap, bitmapProof, liveBounds, onGestureCancel]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = format.type === 'thermal' ? 6 * totalW / svgW : Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
@@ -466,7 +473,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
     <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Editing approximation — printing blocked: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : 'Exact bitmap artwork · double-click text to edit' : 'Updating bitmap proof… printing waits for the current result')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Editing approximation — printing blocked: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
       {badQr && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });
@@ -526,8 +533,14 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onSelectElement(null); }}
           />
 
-          {bitmap && bitmapProof && !bitmapError && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" opacity={bitmapProof.key === bitmapKey && !bitmapError ? 1 : .3}>
-            <image href={bitmapProof.url} width={thermalRenderGeometry(format).linerDots} height={thermalRenderGeometry(format).heightDots} style={{ imageRendering: 'pixelated' }} />
+          {bitmap && bitmapProof && !bitmapError && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" >
+            {bitmapProof.key !== bitmapKey && bitmapProof.layers.length > 0 ? <g transform={`translate(${thermalRenderGeometry(format).effectiveSideMDots} 0)`}>
+              {bitmapProof.layers.map(layer => {
+                if (!elements.some(e => e.id === layer.elementId)) return null;
+                const b = liveBounds(layer.elementId, layer)!;
+                return <image data-live-layer={layer.elementId} key={layer.elementId} href={layer.url} x={b.x} y={b.y} width={b.width} height={b.height} preserveAspectRatio="none" style={{ imageRendering: 'pixelated' }} />;
+              })}
+            </g> : <image href={bitmapProof.url} width={thermalRenderGeometry(format).linerDots} height={thermalRenderGeometry(format).heightDots} style={{ imageRendering: 'pixelated' }} />}
           </svg>}
           {/* Elements */}
           <g>
@@ -544,7 +557,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {
-                  const bounds = bitmapProof?.qrInkBounds[element.id] ?? elementInteractionBounds(element, textBounds);
+                  const bounds = liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) ?? elementInteractionBounds(element, textBounds);
                   return (
                     <rect
                       x={bounds.x}
@@ -562,7 +575,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                   <>
                     {/* Selection border — use measured bounds for text */}
                     {(() => {
-                      const bounds = (bitmap ? bitmapProof?.qrInkBounds[element.id] : undefined) ?? elementInteractionBounds(element, textBounds);
+                      const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? elementInteractionBounds(element, textBounds);
                       const pad = viewBoxWidth * 0.005;
                       return (
                         <rect
@@ -581,7 +594,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                     {(() => {
                       const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
                       const half = hs / 2;
-                      const bounds = (bitmap ? bitmapProof?.qrInkBounds[element.id] : undefined) ?? elementInteractionBounds(element, textBounds);
+                      const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? elementInteractionBounds(element, textBounds);
                       const ex = bounds.x;
                       const ey = bounds.y;
                       const ew = bounds.width;
@@ -616,7 +629,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 )}
                 {/* Multi-select: subtle dashed outline on each member element */}
                 {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
-                  const bounds = (bitmap ? bitmapProof?.qrInkBounds[element.id] : undefined) ?? elementInteractionBounds(element, textBounds);
+                  const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? elementInteractionBounds(element, textBounds);
                   return (
                     <rect
                       x={bounds.x}

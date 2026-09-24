@@ -1,6 +1,7 @@
 import type { LabelFormat, LabelTemplate } from '../types';
 import type { FeedValues } from './bitmap';
-export type BitmapResult = { version: string; width: number; height: number; inputDigest: string; pixelDigest: string; packed: string; proof: string; zpl: string; qrInkBounds?: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds?: Record<string, { x: number; y: number; width: number; height: number }>; warnings?: Array<{ elementId: string; message: string }> };
+export type EditorLayer = { elementId: string; x: number; y: number; width: number; height: number; url: string };
+export type BitmapResult = { editorLayers?: EditorLayer[]; version: string; width: number; height: number; inputDigest: string; pixelDigest: string; packed: string; proof: string; zpl: string; qrInkBounds?: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds?: Record<string, { x: number; y: number; width: number; height: number }>; warnings?: Array<{ elementId: string; message: string }> };
 // Coalesce identical editor/print requests; bound retained results, including keys.
 const cache = new Map<string, Promise<BitmapResult>>();
 let cacheBytes = 0;
@@ -12,7 +13,7 @@ export async function getBitmapProof(template: LabelTemplate, format: LabelForma
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Bitmap proof failed');
       const result: BitmapResult = data.results[0];
-      cacheBytes += key.length + result.zpl.length + result.proof.length + result.packed.length;
+      cacheBytes += key.length + result.zpl.length + result.proof.length + result.packed.length + JSON.stringify(result.editorLayers || []).length;
       if (cacheBytes > 8_000_000 || cache.size > 24) { cache.clear(); cacheBytes = 0; }
       return result;
     }).catch(error => { cache.delete(key); throw error; });

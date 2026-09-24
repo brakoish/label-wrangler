@@ -132,6 +132,17 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
   check(markPixels.every(v=>v===0),'unused QR padding cannot cover neighboring artwork');
   await assert.rejects(renderThermalBitmap({...template,elements:[{...padded,x:350}]},format),/clipped|outside/);
  }
+ // Draft layers retain complete artwork for immediate motion, including off-label pixels.
+ const liveQr={...qr,id:'live',isStatic:true,content:'LIVE',x:260,y:20,width:135,height:135};
+ const liveTemplate={...template,elements:[liveQr]};
+ const initial=await renderThermalBitmap(liveTemplate,format,{},true);
+ check(initial.editorLayers.length===1 && initial.editorLayers[0].elementId==='live','draft contains movable artwork');
+ const edgeX=liveQr.x+406-initial.qrBounds.live.x-initial.qrBounds.live.width+1;
+ const edgeTemplate={...liveTemplate,elements:[{...liveQr,x:edgeX}]};
+ const edge=await renderThermalBitmap(edgeTemplate,format,{},true);
+ check(edge.warnings.some(w=>w.message.includes('black QR fits')),'margin warning distinguishes intact code');
+ check(edge.editorLayers[0].width===initial.editorLayers[0].width,'draft layer keeps complete code beyond edge');
+ await assert.rejects(renderThermalBitmap(edgeTemplate,format),/black QR fits/);
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {

@@ -54,6 +54,7 @@ try{
    }
    if(String(url)==='/api/office/preview'){window.previewRequests.push(JSON.parse(options.body));return new Response(JSON.stringify(window.previewRequests.length===1?{error:'Simulated lost response'}:{runId:'mock-run'}),{status:window.previewRequests.length===1?503:200,headers:{'Content-Type':'application/json'}});}
    if(String(url)==='/api/thermal/render'&&window.forceRenderFailure)return new Response(JSON.stringify({error:'Synthetic text overflow'}),{status:400,headers:{'Content-Type':'application/json'}});
+   if(String(url)==='/api/thermal/render' && window.holdProof)await new Promise(resolve=>{window.releaseProof=resolve;});
    const response=await original(url,options);
    if(String(url)==='/api/thermal/render'&&response.ok){const data=await response.clone().json();window.proofs.push(...data.results);}
    return response;
@@ -157,6 +158,18 @@ try{
  await click('[data-element-id="qr"] > rect');
  const qrSelection=await evaluate(`(()=>{const g=document.querySelector('[data-element-id="qr"]');const r=g.querySelector('rect[stroke="#d97706"][fill="none"]');const proof=window.proofs.at(-1);return {w:Number(r.getAttribute('width')),allocation:window.fixture.elements.find(e=>e.id==='qr').width,ink:proof.qrInkBounds.qr.width};})()`);
  assert.ok(qrSelection.w<qrSelection.allocation);assert.ok(Math.abs(qrSelection.w-qrSelection.ink)<5);
+ // During an outstanding render, artwork must move now, at full opacity.
+ await evaluate('window.holdProof=true');
+ const point=await evaluate(`(()=>{const r=document.querySelector('[data-element-id="qr"] > rect').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+ await send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1});
+ await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x-25,y:point.y+10,button:'left',buttons:1});
+ await waitFor(`!!document.querySelector('[data-live-layer="qr"]')`);
+ const moving=await evaluate(`(()=>{const e=document.querySelector('[data-live-layer="qr"]');return {x:Number(e.getAttribute('x')),original:window.proofs.at(-1).editorLayers.find(l=>l.elementId==='qr').x,opacity:getComputedStyle(e.ownerSVGElement).opacity};})()`);
+ assert.ok(moving.x<moving.original,'QR artwork follows pointer before mouseup or server result');assert.equal(moving.opacity,'1');
+ await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x-25,y:point.y+10,button:'left',clickCount:1});
+ await evaluate('window.holdProof=false;window.releaseProof?.()');
+ await key('z',2,'KeyZ');
+ await waitFor("document.body?.innerText.includes('Exact bitmap artwork')");
  await drag('[data-element-id="qr"] [data-resize-handle="se"]',-15,-15);
  await waitFor(`window.fixture.elements.find(e=>e.id==='qr').width<${qrSelection.allocation}`);
  assert.ok(await evaluate(`window.fixture.elements.find(e=>e.id==='qr').width>${qrSelection.allocation*.75}`));
