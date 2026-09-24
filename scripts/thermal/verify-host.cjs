@@ -58,6 +58,11 @@ const request=process.env.VERCEL_TEST ? async (url,init={})=>{
    if(process.env.TEMPLATE_CAPTURE)fs.writeFileSync(process.env.TEMPLATE_CAPTURE,Buffer.from(result.proof.split(',')[1],'base64'));
    console.log('PASS private saved-template fixture renders; hosted PNG equals ZPL; no saved data changed');
   }
+  const offEdge={...design,template:{...design.template,elements:design.template.elements.map(e=>e.type==='qr'?{...e,x:design.format.width*(design.format.dpi||203)-5}:e)},feeds:[{}]};
+  const editingResponse=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({...offEdge,editing:true})});
+  assert.equal(editingResponse.status,200);const draft=(await editingResponse.json()).results[0];
+  assert.ok(draft.proof && draft.warnings.length);assert.equal(draft.zpl,'');assert.equal(draft.packed,'');
+  const strictResponse=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify(offEdge)});assert.equal(strictResponse.status,400);
   const bad=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({...design,template:{...design.template,thermalRenderMode:'native-v1'},feeds:[{}]})});assert.equal(bad.status,400);
   const wrong=await request(base+'/api/thermal/render',{method:'POST',headers:{...headers,Origin:'https://example.invalid'},body:JSON.stringify({...design,feeds:[{}]})});assert.equal(wrong.status,403);
   console.log(JSON.stringify({host:base,authenticatedRaster:true,hostedPixelDigest:hosted.pixelDigest,localPixelDigest:local.pixelDigest,localHostPixelsIdentical:hosted.pixelDigest===local.pixelDigest,proofEqualsZpl:true,repeatStable:true,qrDecoded:true,renderAndHTTPMs:Date.now()-start,unauthorizedRejected:true,wrongOriginRejected:true,nativeModeRejected:true,physicalJobs:0}));
