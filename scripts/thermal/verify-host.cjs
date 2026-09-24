@@ -55,7 +55,8 @@ const request=process.env.VERCEL_TEST ? async (url,init={})=>{
    const result=proof.results[0],bitmap=decodeBitmapZpl(result.zpl);
    assert.deepEqual(Buffer.from(bitmap.packed),Buffer.from(result.packed,'base64'));
    assert.deepEqual(Buffer.from(unpackMonochrome(bitmap.packed,bitmap.width,bitmap.height)),await sharp(Buffer.from(result.proof.split(',')[1],'base64')).ensureAlpha().raw().toBuffer());
-   console.log('PASS persisted Gotti bitmap renders; hosted PNG equals ZPL; no saved data changed');
+   if(process.env.TEMPLATE_CAPTURE)fs.writeFileSync(process.env.TEMPLATE_CAPTURE,Buffer.from(result.proof.split(',')[1],'base64'));
+   console.log('PASS private saved-template fixture renders; hosted PNG equals ZPL; no saved data changed');
   }
   const bad=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({...design,template:{...design.template,thermalRenderMode:'native-v1'},feeds:[{}]})});assert.equal(bad.status,400);
   const wrong=await request(base+'/api/thermal/render',{method:'POST',headers:{...headers,Origin:'https://example.invalid'},body:JSON.stringify({...design,feeds:[{}]})});assert.equal(wrong.status,403);

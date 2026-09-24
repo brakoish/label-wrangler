@@ -117,7 +117,7 @@ async function textArtwork(e: TextElement, content: string, dpi: number): Promis
     } }).png().toBuffer({ resolveWithObject: true });
     const width = Math.max(1, Math.round(info.width * scaleX));
     if (width <= Math.round(e.width) && info.height <= Math.round(e.height)) {
-      return { png: scaleX === 1 ? data : await sharp(data).resize(width, info.height).png().toBuffer(), width, height: info.height };
+      return { png: scaleX === 1 ? data : await sharp(data).resize(width, info.height, { fit: 'fill' }).png().toBuffer(), width, height: info.height };
     }
     if (size <= min) throw new Error('Text overflows its box. Enlarge the box, reduce type size, or enable Auto-fit.');
     size = Math.max(min, Math.round((size - .25) * 100) / 100);

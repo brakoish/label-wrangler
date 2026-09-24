@@ -125,5 +125,16 @@ try{
  await waitFor('window.downloads.length===1');
  const multiPdf=await PDFDocument.load(Uint8Array.from(await evaluate('window.downloads[0].arrayBuffer().then(b=>Array.from(new Uint8Array(b)))')));
  assert.equal(multiPdf.getPageCount(),2);assert.ok(Math.abs(multiPdf.getPage(0).getWidth()-832*72/203)<1e-8);assert.equal(multiPdf.getPage(0).getHeight(),72);
+ // Conversion cannot create an invalid copy; a valid reviewed proof enables it.
+ await evaluate(`localStorage.removeItem('testAcross'); localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},thermalRenderMode:'native-v1'}))`);
+ await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
+ await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Duplicate and convert')");
+ await evaluate("window.forceRenderFailure=true; Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
+ await waitFor("document.body.innerText.includes('Synthetic text overflow')");
+ assert.ok(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').disabled"));
+ await evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent==='Cancel').click(); window.forceRenderFailure=false");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
+ await waitFor(`!!document.querySelector('img[alt="New bitmap proof"]')`);
+ assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').disabled"),false);
  console.log('PASS bitmap bound inline edits/cancel, box vs Shift type resize, repeated undo/redo, Alt-drag binding copy, one save per gesture, reload, exact Office proof digest and lost-response retry, upright held nudge, PDF page geometry, saved-run range proof. All print/edit writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}

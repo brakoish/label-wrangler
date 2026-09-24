@@ -92,6 +92,19 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  for(const e of [conversionText,oversizedBox,footer]) {const snapshot=JSON.stringify(e);await parity(await renderThermalBitmap({...template,elements:[e]},format));assert.equal(JSON.stringify(e),snapshot);}
  await assert.rejects(renderThermalBitmap({...template,elements:[{...conversionText,autoFit:false}]},format),/overflows/);
  await assert.rejects(renderThermalBitmap({...template,elements:[{...text,x:400,content:'OUTSIDE'}]},format),/outside/);
+ // Horizontal width must preserve every glyph, not cover-crop the ends.
+ for(const charWidth of [.6,1,1.4]) {
+  const r=await renderThermalBitmap({...template,elements:[{...text,x:0,y:0,width:400,height:70,content:'H H H H H H',fontStyle:'normal',fontSize:12,charWidth}]},format);
+  const raw=await sharp(pngOf(r)).removeAlpha().greyscale().raw().toBuffer();let groups=0,previous=false;
+  for(let x=0;x<r.width;x++){let ink=false;for(let y=0;y<r.height;y++)if(raw[y*r.width+x]<160)ink=true;if(ink&&!previous)groups++;previous=ink;}
+  check(groups===6,'character width preserves all six glyphs at '+charWidth);
+ }
+ const nativeLayout={...template,elements:[{...text,id:'a',fontFamily:'sans-serif',x:15,y:49,width:200,height:33,charWidth:.8},{...text,id:'b',x:155,y:49,width:169,height:33,charWidth:.8},{...qr,id:'q',x:285,y:34,width:116,height:116},{...footer,id:'footer',y:184.3,height:41}]};
+ const savedLayout=JSON.stringify(nativeLayout), fitted=bitmapCopy(nativeLayout,format);
+ check(fitted.elements[0].charWidth===.8 && fitted.elements[0].fontFamily==='Liberation Sans','conversion preserves condensation and sans family');
+ check(fitted.elements[0].x+fitted.elements[0].width<=151 && fitted.elements[1].x+fitted.elements[1].width<=281,'conversion separates neighboring fields');
+ check(fitted.elements[3].y+fitted.elements[3].height<=203,'converted footer stays on label');
+ check(JSON.stringify(nativeLayout)===savedLayout,'conversion leaves source unchanged');
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {

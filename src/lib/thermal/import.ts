@@ -1,12 +1,27 @@
 import type { LabelFormat, LabelTemplate, TemplateElement } from '../types';
 
 export const BITMAP_FONTS = ['Liberation Sans', 'Liberation Serif', 'Liberation Mono'];
-export function bitmapCopy(template: LabelTemplate) {
-  return { ...template, thermalRenderMode: 'bitmap-v1' as const, elements: template.elements.map(e => e.type === 'text' ? {
-    ...e, fontFamily: BITMAP_FONTS.includes(e.fontFamily) ? e.fontFamily : /Courier|Mono/i.test(e.fontFamily) ? 'Liberation Mono' : /Times|Georgia|Serif/i.test(e.fontFamily) ? 'Liberation Serif' : 'Liberation Sans',
-    // Native charWidth is an approximate Zebra glyph metric, not font tracking.
-    charWidth: 1,
-  } : { ...e }) };
+export function bitmapCopy(template: LabelTemplate, format?: LabelFormat) {
+  const dpi = format?.dpi || 203;
+  return { ...template, thermalRenderMode: 'bitmap-v1' as const, elements: template.elements.map(e => {
+    if (e.type !== 'text') return { ...e };
+    let width = e.width, height = e.height;
+    // Native field blocks often overlap even though their condensed ink does not.
+    // Bound the converted boxes to the next field origin, not its substitute glyphs.
+    // Do not guess rotated geometry: those layouts retain their boxes for review.
+    if (format && !e.rotation) {
+      width = Math.min(width, format.width * dpi - e.x);
+      height = Math.min(height, format.height * dpi - e.y);
+      for (const other of template.elements) {
+        if (other.id === e.id || other.rotation || !['text', 'qr', 'barcode', 'image'].includes(other.type)) continue;
+        if (other.x > e.x && other.y <= e.y + 2 && other.y + other.height > e.y + 2) width = Math.min(width, other.x - e.x - 4);
+      }
+    }
+    return { ...e, width: Math.max(1, width), height: Math.max(1, height),
+      fontFamily: BITMAP_FONTS.includes(e.fontFamily) ? e.fontFamily : /Courier|Mono/i.test(e.fontFamily) ? 'Liberation Mono' : /sans/i.test(e.fontFamily) ? 'Liberation Sans' : /Times|Georgia|Serif/i.test(e.fontFamily) ? 'Liberation Serif' : 'Liberation Sans',
+      charWidth: e.charWidth ?? .5, autoFit: true,
+    };
+  }) };
 }
 
 // Explicit importer for Natural v1 JSON only. Not arbitrary ZPL/ZebraDesigner.
