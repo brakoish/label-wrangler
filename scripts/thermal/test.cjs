@@ -120,6 +120,7 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
   const draft=await renderThermalBitmap(t,format,{},true), reference=await renderThermalBitmap({...template,elements:[good]},format);
   check(draft.warnings.length>0 && draft.warnings.every(w=>w.elementId==='bad'),'draft marks only invalid object');
   check(!draft.zpl && !draft.packed,'draft cannot supply print bytes');
+  if(bad.type==='text' && bad.width===2) check(draft.editorLayers.some(l=>l.elementId==='bad'),'overflowing text retains visible draft layer');
   const region={left:0,top:0,width:140,height:60};
   assert.deepEqual(await sharp(pngOf(draft)).extract(region).raw().toBuffer(),await sharp(pngOf(reference)).extract(region).raw().toBuffer());
   check(true,'valid artwork pixels survive invalid neighbor');

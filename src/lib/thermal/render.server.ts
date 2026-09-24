@@ -91,8 +91,8 @@ export function validateBitmapDesign(template: LabelTemplate, format: LabelForma
   return geo;
 }
 
-type Artwork = { png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
-async function textArtwork(e: TextElement, content: string, dpi: number): Promise<Artwork> {
+type Artwork = { overflow?: boolean; png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
+async function textArtwork(e: TextElement, content: string, dpi: number, editing = false): Promise<Artwork> {
   const family = fontFamilies[e.fontFamily];
   if (!family) throw new Error(`Font "${e.fontFamily}" is not bundled. Choose Liberation Sans, Serif or Mono.`);
   if (!['normal', 'bold'].includes(e.fontWeight) || !['normal', 'italic'].includes(e.fontStyle ?? 'normal')) throw new Error('Invalid font style');
@@ -116,8 +116,9 @@ async function textArtwork(e: TextElement, content: string, dpi: number): Promis
       fontfile, dpi, width: Math.max(1, Math.floor(e.width / scaleX)), wrap: 'word-char', align: e.textAlign, rgba: true,
     } }).png().toBuffer({ resolveWithObject: true });
     const width = Math.max(1, Math.round(info.width * scaleX));
-    if (width <= Math.round(e.width) && info.height <= Math.round(e.height)) {
-      return { png: scaleX === 1 ? data : await sharp(data).resize(width, info.height, { fit: 'fill' }).png().toBuffer(), width, height: info.height };
+    const fits = width <= Math.round(e.width) && info.height <= Math.round(e.height);
+    if (fits || (editing && size <= min)) {
+      return { overflow: !fits, png: scaleX === 1 ? data : await sharp(data).resize(width, info.height, { fit: 'fill' }).png().toBuffer(), width, height: info.height };
     }
     if (size <= min) throw new Error('Text overflows its box. Enlarge the box, reduce type size, or enable Auto-fit.');
     size = Math.max(min, Math.round((size - .25) * 100) / 100);
@@ -159,14 +160,18 @@ async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode
   return { png: base, width, height, padding, quiet };
 }
 
-async function elementArtwork(e: TemplateElement, values: Record<string, string>, dpi: number): Promise<Artwork | null> {
+async function elementArtwork(e: TemplateElement, values: Record<string, string>, dpi: number, editing = false): Promise<Artwork | null> {
   const width = Math.round(e.width), height = Math.round(e.height);
   if (e.type === 'text' || e.type === 'qr' || e.type === 'barcode') {
     const value = resolveThermalContent(e, values);
     if (!value.trim()) { if (e.type !== 'text') throw new Error('Missing QR/barcode value'); return null; }
     if (value.length > 8192 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) throw new Error('Unsupported control character or oversized content');
     if (e.type === 'text') {
-      const text = await textArtwork(e, value, dpi);
+      const text = await textArtwork(e, value, dpi, editing);
+      if (text.overflow) {
+        const w = Math.min(width, text.width), h = Math.min(height, text.height);
+        return { overflow: true, png: await sharp(text.png).extract({ left: 0, top: 0, width: w, height: h }).png().toBuffer(), width: w, height: h };
+      }
       const left = e.textAlign === 'center' ? Math.floor((width - text.width) / 2) : e.textAlign === 'right' ? width - text.width : 0;
       const top = e.verticalAlign === 'middle' ? Math.floor((height - text.height) / 2) : e.verticalAlign === 'bottom' ? height - text.height : 0;
       return { png: await sharp({ create: { width, height, channels: 4, background: '#00000000' } }).composite([{ input: text.png, left, top }]).png().toBuffer(), width, height };
@@ -210,8 +215,9 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
       try {
         const key = JSON.stringify([e, resolveThermalContent(e, values)]);
         let art = artwork.get(key);
-        if (art === undefined) { art = await elementArtwork(e, values, dpi); artwork.set(key, art); }
+        if (art === undefined) { art = await elementArtwork(e, values, dpi, editing); artwork.set(key, art); }
         if (!art) continue;
+        if (art.overflow) warn('Text overflows its box. Draft shows the portion that fits; enlarge the box or reduce type size.');
         let { png, width, height } = art;
         let left = Math.round(e.x), top = Math.round(e.y);
         if (e.rotation) {
