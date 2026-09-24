@@ -15,7 +15,7 @@ import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelV
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
-import { renderZplToDataUrl, thermalRenderDimensions } from '@/lib/zplRenderClient';
+import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -283,7 +283,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     let active = true;
     setLabels([]);
     setLabelsReady(false);
-    if (!run || !template || !format || isSheetFormat) {
+    if (!run || !template || !format || isSheetFormat || template.thermalRenderMode === 'bitmap-v1') {
       setLabelsReady(true);
       return;
     }
@@ -305,7 +305,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     };
   }, [run, template, format, isSheetFormat]);
 
-  const canStart = !!run && labels.length > 0 && (
+  const canStart = !!run && (template?.thermalRenderMode === 'bitmap-v1' ? run.sourceData.length > 0 : labels.length > 0) && (
     labelsReady &&
     !isSheetFormat &&
     ((transport === 'dazzle' && !!dazzleSelected) ||
@@ -456,7 +456,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   }, []);
 
   const startOrResume = async () => {
-    if (!run || labels.length === 0) return;
+    if (!run || !template || !format || (template.thermalRenderMode !== 'bitmap-v1' && labels.length === 0)) return;
     setErrorMsg(null);
     setStatus('running');
     await setRunStatus(run.id, 'printing', printedCount);
@@ -504,16 +504,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // feed count (what the queue consumes) at the boundary so multi-across
     // progress bars behave intuitively.
     const { startFeed, stopFeed } = feedRangeForLabels(printRange, across);
-    const labelsToSend = stopFeed < labels.length ? labels.slice(0, stopFeed) : labels;
+    void stopFeed;
+    let labelsToSend: string[];
+    try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange); }
+    catch (error) { setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', printedCount); return; }
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
       batchSize: 25,
       delayBetweenBatchesMs: 0,
-      startIndex: startFeed,
+      startIndex: 0,
       onProgress: async (feedsDone) => {
         // Each feed produced up to `across` physical labels. Clamp to total
         // so the last (possibly-partial) feed doesn't overshoot.
-        const physical = Math.min(feedsDone * across, total);
+        const physical = Math.min((startFeed + feedsDone) * across, printRange.to);
         setPrintedCount(physical);
         // Fire-and-forget DB update — don't block printing on persistence.
         void persistProgress(physical);
@@ -523,7 +526,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           setStopAt(0);
           await setRunStatus(run.id, nextStatus, physical);
           await createPrintEvent(run.id, {
-            eventType: 'confirmed',
+            eventType: 'sent',
             output: 'roll-zpl',
             rangeFrom: printRange.from,
             rangeTo: printRange.to,
@@ -538,7 +541,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         setStatus('error');
         setErrorMsg((err as Error)?.message || 'Print failed');
         // Persist physical-label count corresponding to the failed feed.
-        const atPhysical = Math.min(atFeed * across, total);
+        const atPhysical = Math.max(printRange.from - 1, Math.min((startFeed + atFeed) * across, printRange.to));
         await setRunStatus(run.id, 'paused', atPhysical);
         await createPrintEvent(run.id, {
           eventType: 'failed',
@@ -778,10 +781,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !template || !format) return;
     setExporting('zpl');
     try {
-      const allFeeds = await generateLabelsForRunWithImages(run, template, format);
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
-      const { startFeed, stopFeed } = feedRangeForLabels(range, across);
-      const slice = allFeeds.slice(startFeed, stopFeed);
+      const allFeeds = await generateLabelsForRunWithImages(run, template, format, range);
+      const slice = allFeeds;
       const content = slice.join('\n');
       const blob = new Blob([content], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
@@ -800,6 +802,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         printerName: null,
         message: 'Exported ZPL',
       });
+    } catch (error) { setErrorMsg(error instanceof Error ? error.message : 'Export failed');
     } finally {
       setExporting(null);
     }
@@ -810,27 +813,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setExporting('pdf');
     setExportProgress(0);
     try {
-      const allFeeds = await generateLabelsForRunWithImages(run, template, format);
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
+      const allFeeds = await generateLabelsForRunWithImages(run, template, format, range);
       const { startFeed, stopFeed } = feedRangeForLabels(range, across);
       const maxFeedsPerFile = Math.max(1, Math.floor(500 / across));
       const totalFeeds = stopFeed - startFeed;
       const chunkCount = Math.ceil(totalFeeds / maxFeedsPerFile);
       let renderedFeeds = 0;
 
-      const mod = await import('zpl-renderer-js');
-      const { api } = await mod.ready;
-      const { widthMm, heightMm, dpmm } = thermalRenderDimensions(format);
+      const { widthMm, heightMm } = thermalRenderDimensions(format);
+      const bitmapGeometry = thermalRenderGeometry(format);
 
       const { PDFDocument } = await import('pdf-lib');
       // Page size in PDF points (72 pt = 1 inch)
-      const pageW = widthMm * (72 / 25.4);
-      const pageH = heightMm * (72 / 25.4);
+      const pageW = template.thermalRenderMode === 'bitmap-v1' ? bitmapGeometry.linerDots * 72 / (format.dpi || 203) : widthMm * (72 / 25.4);
+      const pageH = template.thermalRenderMode === 'bitmap-v1' ? bitmapGeometry.heightDots * 72 / (format.dpi || 203) : heightMm * (72 / 25.4);
 
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
         const chunkStartFeed = startFeed + chunkIndex * maxFeedsPerFile;
         const chunkStopFeed = Math.min(stopFeed, chunkStartFeed + maxFeedsPerFile);
-        const slice = allFeeds.slice(chunkStartFeed, chunkStopFeed);
+        const slice = allFeeds.slice(chunkStartFeed - startFeed, chunkStopFeed - startFeed);
         const chunkRange = {
           from: Math.max(range.from, chunkStartFeed * across + 1),
           to: Math.min(range.to, chunkStopFeed * across),
@@ -842,7 +844,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           // responsive during long renders. WASM + pdf-lib are synchronous
           // under the hood and will lock the tab without this.
           await new Promise<void>((r) => setTimeout(r, 0));
-          const b64 = await api.zplToBase64Async(feed, widthMm, heightMm, dpmm);
+          const b64 = (await renderZplToDataUrl(feed, format)).split(',')[1];
           const binStr = atob(b64);
           const bytes = new Uint8Array(binStr.length);
           for (let j = 0; j < binStr.length; j++) bytes[j] = binStr.charCodeAt(j);
@@ -872,6 +874,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           message: chunkCount > 1 ? `Exported PDF ${chunkIndex + 1} of ${chunkCount}` : 'Exported PDF',
         });
       }
+    } catch (error) { setErrorMsg(error instanceof Error ? error.message : 'Export failed');
     } finally {
       setExporting(null);
       setExportProgress(0);
@@ -1025,6 +1028,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 // sees 10x20 / 8x11 / whatever grid they designed.
                 <div className="w-full">
                   <LayoutPreview
+                    thermalRenderMode={template.thermalRenderMode}
                     format={format}
                     elements={template.elements}
                     testData={previewValues}
@@ -1324,7 +1328,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           )}
 
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter runId={runId} total={total} connectionTarget={officeConnectionTarget} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} />}
           {/* Export section — preserved for every transport */}
           <div className="pt-3 border-t border-zinc-800/60">
             {!showExport ? (

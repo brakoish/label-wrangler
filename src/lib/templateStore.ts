@@ -30,6 +30,8 @@ interface TemplateStore {
   duplicateElement: (templateId: string, elementId: string) => Promise<void>;
 }
 
+const saveQueues = new Map<string, Promise<void>>();
+
 export const useTemplateStore = create<TemplateStore>()((set, get) => ({
   templates: [],
   selectedTemplateId: null,
@@ -176,11 +178,16 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     const template = get().templates.find((t) => t.id === templateId);
     if (!template) return;
 
-    await fetch(`/api/templates/${templateId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ elements: template.elements }),
+    const body = JSON.stringify({ elements: template.elements });
+    const previous = saveQueues.get(templateId) ?? Promise.resolve();
+    const save = previous.catch(() => {}).then(async () => {
+      const response = await fetch(`/api/templates/${templateId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body,
+      });
+      if (!response.ok) throw new Error('Template save failed. Your edits are still in this tab.');
     });
+    saveQueues.set(templateId, save);
+    try { await save; } finally { if (saveQueues.get(templateId) === save) saveQueues.delete(templateId); }
   },
 
   removeElement: async (templateId, elementId) => {
@@ -268,7 +275,7 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
       y: element.y + offsetY,
       zIndex: maxZIndex + 1,
       // If it has a fieldName, append "-copy" to make it unique
-      fieldName: element.fieldName ? `${element.fieldName}-copy` : undefined,
+      fieldName: element.fieldName,
     } as TemplateElement;
 
     const updatedElements = [...template.elements, duplicated];

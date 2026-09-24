@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useId } from 'react';
+import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
+import { getBitmapProof } from '@/lib/thermal/client';
+import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorGeometry';
 import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
@@ -18,9 +20,30 @@ interface LabelPreviewProps {
   onDragStart?: () => void;
   onDragEnd?: () => void;
   testData?: Record<string, string>;
+  thermalRenderMode?: 'native-v1' | 'bitmap-v1';
+  onSelectElements?: (ids: string[]) => void;
+  onDuplicateSelection?: (ids: Set<string>) => TemplateElement[];
+  onGestureCancel?: () => void;
 }
 
-export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel }: LabelPreviewProps) {
+  const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
+  const [bitmapProof, setBitmapProof] = useState<{ key: string; url: string } | null>(null);
+  const [bitmapError, setBitmapError] = useState('');
+  const bitmapKey = JSON.stringify([elements, format, testData]);
+  const [editing, setEditing] = useState<{ id: string; value: string; bound: boolean; field: string; left: number; top: number; width: number; height: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; endX: number; endY: number; initial: string[] } | null>(null);
+  const suppressClick = useRef(false);
+  useEffect(() => {
+    if (!bitmap) return;
+    let active = true; setBitmapError('');
+    const timer = setTimeout(() => {
+      getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {})
+        .then(result => { if (active) setBitmapProof({ key: bitmapKey, url: result.proof }); })
+        .catch(error => { if (active) setBitmapError(error.message); });
+    }, 180);
+    return () => { active = false; clearTimeout(timer); };
+  }, [bitmap, bitmapKey, elements, format, testData]);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -31,7 +54,9 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     origPositions: Map<string, { x: number; y: number }>;
   } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
-  const [textBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
+  const [measuredTextBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
+
+  const textBounds = useMemo(() => bitmap ? {} : measuredTextBounds, [bitmap, measuredTextBounds]);
 
   const handleTextMeasure = useCallback((id: string, w: number, h: number) => {
     setTextBounds((prev) => {
@@ -109,13 +134,44 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     return { dx: displayDx, dy: displayDy };
   }, [svgW, svgH, totalW, totalH, useUprightThermalEditor]);
 
+  const beginText = useCallback((id: string) => {
+    const element = elements.find((e): e is TextElement => e.id === id && e.type === 'text');
+    if (!element || format.type !== 'thermal' || !svgRef.current) return;
+    const node = svgRef.current.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
+    const rect = node?.getBoundingClientRect();
+    if (!rect) return;
+    onDragStart?.();
+    setEditing({ id, value: element.isStatic ? element.content : element.defaultValue || '', bound: !element.isStatic, field: element.fieldName || 'field', left: rect.left, top: rect.top, width: Math.max(180, rect.width), height: Math.max(90, rect.height) });
+  }, [elements, format.type, onDragStart]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if (e.key === 'Enter' && selectedElementIds.size === 1) { e.preventDefault(); beginText([...selectedElementIds][0]); }
+      if (e.key === 'Escape') { setDragging(null); setMarquee(null); setGuides({ x: [], y: [] }); onGestureCancel?.(); }
+    };
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+  }, [selectedElementIds, beginText, onGestureCancel]);
+  const pointInLabel = (clientX: number, clientY: number) => {
+    const matrix = svgRef.current?.getScreenCTM();
+    if (!matrix) return { x: 0, y: 0 };
+    const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
+    return useUprightThermalEditor ? { x: viewBoxWidth - point.y, y: point.x } : { x: point.x, y: point.y };
+  };
+  const startMarquee = (e: React.PointerEvent) => {
+    if (format.type !== 'thermal' || !onSelectElements) return;
+    e.preventDefault(); suppressClick.current = true;
+    const p = pointInLabel(e.clientX, e.clientY);
+    setMarquee({ x: p.x, y: p.y, endX: p.x, endY: p.y, initial: e.shiftKey ? [...selectedElementIds] : [] });
+    (e.target as Element).setPointerCapture(e.pointerId);
+  };
+
   // Drag handlers
   const handlePointerDown = useCallback((e: React.PointerEvent, elementId: string) => {
     if (!onUpdateElement) return;
     e.stopPropagation();
     e.preventDefault();
 
-    const element = elements.find((el) => el.id === elementId);
+    let element = elements.find((el) => el.id === elementId);
     if (!element) return;
 
     // Shift-click: toggle selection, don't drag
@@ -133,10 +189,18 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     onDragStart?.();
 
     // Snapshot original positions of ALL elements being dragged
-    const dragIds = selectedElementIds.has(elementId) ? selectedElementIds : new Set([elementId]);
+    let dragIds = selectedElementIds.has(elementId) ? selectedElementIds : new Set([elementId]);
+    let dragElements = elements;
+    if (e.altKey && onDuplicateSelection && format.type === 'thermal') {
+      const originals = elements.filter(el => dragIds.has(el.id));
+      const copies = onDuplicateSelection(dragIds);
+      const index = originals.findIndex(el => el.id === elementId);
+      element = copies[index]; elementId = element.id;
+      dragIds = new Set(copies.map(el => el.id)); dragElements = copies;
+    }
     const origPositions = new Map<string, { x: number; y: number }>();
     for (const id of dragIds) {
-      const el = elements.find((e) => e.id === id);
+      const el = dragElements.find((e) => e.id === id);
       if (el) origPositions.set(id, { x: el.x, y: el.y });
     }
 
@@ -148,7 +212,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     });
 
     (e.target as Element).setPointerCapture(e.pointerId);
-  }, [elements, onSelectElement, onUpdateElement, onDragStart, selectedElementIds]);
+  }, [elements, onSelectElement, onUpdateElement, onDragStart, selectedElementIds, onDuplicateSelection, format.type]);
 
   // Resize via window-level listeners (pointer capture on child rects doesn't bubble to SVG)
   const handleResizeDown = useCallback((e: React.PointerEvent, elementId: string, handle: string) => {
@@ -230,6 +294,11 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       const dy = ev.clientY - startY;
       const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
 
+      if (isThermal && !isMultiResize) {
+        onUpdateElement(elementId, resizeArtwork(element, handle, svgDx, svgDy, ev.shiftKey));
+        return;
+      }
+
       let nX = origX;
       let nY = origY;
       let nW = origW;
@@ -245,7 +314,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         const qr = element as QRElement;
         const requestedSize = Math.max(nW, nH);
         const content = resolveElementContent(qr, testData) || 'QR';
-        const size = format.type === 'thermal'
+        const size = format.type === 'thermal' && !bitmap
           ? snapZplQrSize(content, qr.errorCorrection || 'M', requestedSize)
           : requestedSize;
         if (handle.includes('w')) nX = origX + origW - size;
@@ -257,7 +326,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       // Multi-select group resize: scale by pointer distance from the anchor,
       // not by the primary element's own dimensions (those can be misleading
       // for text whose rendered size ≠ stored width).
-      if (isMultiResize && selectedSnapshots && handle.length === 2) {
+      if (isMultiResize && selectedSnapshots) {
         // Current pointer position in viewBox coords relative to anchor.
         const pointerX = grabbedCornerX + svgDx;
         const pointerY = grabbedCornerY + svgDy;
@@ -267,7 +336,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         const groupScaleY = newDistY / grabDistY;
         // Uniform scale (min keeps everything inside the drag envelope;
         // using min avoids runaway growth when one axis is tiny).
-        const uniform = Math.max(0.1, Math.min(groupScaleX, groupScaleY));
+        const uniform = Math.max(0.1, handle.length === 2 ? Math.min(groupScaleX, groupScaleY) : /[ew]/.test(handle) ? groupScaleX : groupScaleY);
 
         for (const [id, snap] of selectedSnapshots) {
           // Scale position relative to anchor
@@ -281,11 +350,11 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           if (snap.type === 'text') {
             const newFs = Math.max(4, Math.round(snap.fontSize * uniform * 10) / 10);
             const svgFs = isThermal ? newFs * (dpi / 72) : newFs / 72;
-            onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: svgFs * 1.2, fontSize: newFs });
+            onUpdateElement(id, { x: newElX, y: newElY, width: newElW, height: isThermal ? newElH : svgFs * 1.2, fontSize: isThermal && !ev.shiftKey ? snap.fontSize : newFs });
           } else if (snap.type === 'qr') {
             const qr = elements.find((el): el is QRElement => el.id === id && el.type === 'qr');
             const requestedSize = Math.max(newElW, newElH);
-            const qrSize = format.type === 'thermal' && qr
+            const qrSize = format.type === 'thermal' && !bitmap && qr
               ? snapZplQrSize(resolveElementContent(qr, testData) || 'QR', qr.errorCorrection || 'M', requestedSize)
               : requestedSize;
             onUpdateElement(id, { x: newElX, y: newElY, width: qrSize, height: qrSize });
@@ -297,12 +366,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       }
 
       // Single element text resize: corner handles scale font size proportionally
-      if (isText && handle.length === 2) {
+      if (isText && handle.length === 2 && (!isThermal || ev.shiftKey)) {
         const scale = Math.max(nW / origW, nH / origH);
         const newFontSize = Math.max(4, Math.round(origFontSize * scale * 10) / 10);
         // Convert fontSize to viewBox units for height calc
         const svgFs = isThermal ? newFontSize * (dpi / 72) : newFontSize / 72;
-        nH = svgFs * 1.2; // approximate line height
+        nH = isThermal ? Math.max(1, origH * scale) : svgFs * 1.2;
         onUpdateElement(elementId, { x: nX, y: nY, width: nW, height: nH, fontSize: newFontSize });
         return;
       }
@@ -313,22 +382,26 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('keydown', onKey);
       onDragEnd?.();
     };
 
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('keydown', onKey); onGestureCancel?.(); } };
+    window.addEventListener('keydown', onKey);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData, bitmap, onGestureCancel]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
-  const snapThreshold = Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
+  const snapThreshold = format.type === 'thermal' ? 6 * totalW / svgW : Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragging || !onUpdateElement) return;
 
     const dx = e.clientX - dragging.startX;
     const dy = e.clientY - dragging.startY;
-    const { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
+    let { dx: svgDx, dy: svgDy } = screenToSvg(dx, dy);
+    if (e.shiftKey && format.type === 'thermal') { if (Math.abs(svgDx) > Math.abs(svgDy)) svgDy = 0; else svgDx = 0; }
 
     const primaryOrig = dragging.origPositions.get(dragging.elementId);
     if (!primaryOrig) return;
@@ -343,45 +416,25 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const yTargets: number[] = [0, viewBoxHeight / 2, viewBoxHeight]; // top, center, bottom of label
 
     for (const el of elements) {
-      if (el.id === dragging.elementId) continue;
+      if (dragging.origPositions.has(el.id)) continue;
       // Other element edges and centers
-      xTargets.push(el.x, el.x + el.width / 2, el.x + el.width);
-      yTargets.push(el.y, el.y + el.height / 2, el.y + el.height);
+      const b = artworkBounds(el);
+      xTargets.push(b.x, b.x + b.width / 2, b.x + b.width);
+      yTargets.push(b.y, b.y + b.height / 2, b.y + b.height);
     }
 
     // Snap points for the dragged element: left edge, center, right edge
-    const elEdgesX = [rawX, rawX + draggedEl.width / 2, rawX + draggedEl.width];
-    const elEdgesY = [rawY, rawY + draggedEl.height / 2, rawY + draggedEl.height];
+    const b = artworkBounds({ ...draggedEl, x: rawX, y: rawY });
+    const elEdgesX = [b.x, b.x + b.width / 2, b.x + b.width];
+    const elEdgesY = [b.y, b.y + b.height / 2, b.y + b.height];
 
     const activeGuideX: number[] = [];
     const activeGuideY: number[] = [];
 
-    // Check X snaps
-    let snappedX = false;
-    for (const edgeX of elEdgesX) {
-      for (const target of xTargets) {
-        if (Math.abs(edgeX - target) < snapThreshold) {
-          rawX += target - edgeX;
-          activeGuideX.push(target);
-          snappedX = true;
-          break;
-        }
-      }
-      if (snappedX) break;
-    }
-
-    // Check Y snaps
-    let snappedY = false;
-    for (const edgeY of elEdgesY) {
-      for (const target of yTargets) {
-        if (Math.abs(edgeY - target) < snapThreshold) {
-          rawY += target - edgeY;
-          activeGuideY.push(target);
-          snappedY = true;
-          break;
-        }
-      }
-      if (snappedY) break;
+    if (!e.ctrlKey && !e.metaKey) {
+      const x = nearestSnap(elEdgesX, xTargets, snapThreshold), y = nearestSnap(elEdgesY, yTargets, snapThreshold);
+      if (x.guide !== undefined && !(e.shiftKey && svgDx === 0)) { rawX += x.delta; activeGuideX.push(x.guide); }
+      if (y.guide !== undefined && !(e.shiftKey && svgDy === 0)) { rawY += y.delta; activeGuideY.push(y.guide); }
     }
 
     setGuides({ x: activeGuideX, y: activeGuideY });
@@ -393,7 +446,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     for (const [id, orig] of dragging.origPositions) {
       onUpdateElement(id, { x: orig.x + snapDx, y: orig.y + snapDy });
     }
-  }, [dragging, onUpdateElement, screenToSvg, elements, viewBoxWidth, viewBoxHeight, snapThreshold]);
+  }, [dragging, onUpdateElement, screenToSvg, elements, viewBoxWidth, viewBoxHeight, snapThreshold, format.type]);
 
   const handlePointerUp = useCallback(() => {
     if (dragging) {
@@ -404,7 +457,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   }, [dragging, onDragEnd]);
 
   return (
-    <div ref={containerRef} className="flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
+    <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError || (bitmapProof?.key === bitmapKey ? 'Exact bitmap artwork · double-click text to edit' : 'Updating bitmap proof… printing waits for the current result')}</p>}
+      {editing && <div className="fixed z-40 bg-zinc-950 border border-amber-400 rounded p-2" style={{ left: Math.max(0, Math.min(editing.left, window.innerWidth - editing.width - 20)), top: Math.max(0, Math.min(editing.top, window.innerHeight - editing.height - 70)), width: editing.width + 16 }}>
+        <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Default for ${editing.field} (binding preserved)` : 'Edit text'} · Ctrl/⌘ Enter saves · Esc cancels</p>
+        <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
+      </div>}
       <svg
         ref={svgRef}
         width={svgW}
@@ -415,9 +473,18 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
           userSelect: 'none',
         }}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerMove={e => {
+          if (marquee) { const p = pointInLabel(e.clientX, e.clientY); setMarquee({ ...marquee, endX: p.x, endY: p.y }); }
+          else handlePointerMove(e);
+        }}
+        onPointerUp={() => {
+          if (marquee) {
+            const x = Math.min(marquee.x, marquee.endX), y = Math.min(marquee.y, marquee.endY), w = Math.abs(marquee.x - marquee.endX), h = Math.abs(marquee.y - marquee.endY);
+            const hit = w + h < 2 ? [] : elements.filter(el => { const b = elementInteractionBounds(el, textBounds); return b.x < x + w && b.x + b.width > x && b.y < y + h && b.y + b.height > y; }).map(el => el.id);
+            onSelectElements?.([...new Set([...marquee.initial, ...hit])]); setMarquee(null);
+          }
+          handlePointerUp();
+        }}
       >
         {/* Dark surround — click to deselect */}
         <rect
@@ -427,7 +494,8 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           height={totalH}
           fill="#1e1e23"
           rx={Math.min(padX, padY) * 0.4}
-          onClick={() => onSelectElement(null)}
+          onPointerDown={startMarquee}
+          onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onSelectElement(null); }}
         />
 
         {/* Label surface — click to deselect */}
@@ -441,19 +509,25 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
             stroke="#52525b"
             strokeWidth={Math.min(viewBoxWidth, viewBoxHeight) * 0.004}
             rx={Math.min(viewBoxWidth, viewBoxHeight) * 0.008}
-            onClick={() => onSelectElement(null)}
+            onPointerDown={startMarquee}
+          onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onSelectElement(null); }}
           />
 
+          {bitmap && bitmapProof && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" opacity={bitmapProof.key === bitmapKey && !bitmapError ? 1 : .3}>
+            <image href={bitmapProof.url} width={thermalRenderGeometry(format).linerDots} height={thermalRenderGeometry(format).heightDots} style={{ imageRendering: 'pixelated' }} />
+          </svg>}
           {/* Elements */}
           <g>
             {sortedElements.map((element) => (
               <g
                 key={element.id}
+                data-element-id={element.id}
+                onDoubleClick={e => { e.stopPropagation(); beginText(element.id); }}
                 onPointerDown={(e) => handlePointerDown(e, element.id)}
                 style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
               >
                 <g pointerEvents="none">
-                  {renderElement(element, format, elements, handleTextMeasure, testData)}
+                  {!bitmap && renderElement(element, format, elements, handleTextMeasure, testData)}
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {
@@ -509,6 +583,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                       return handles.map((h) => (
                         <rect
                           key={h.id}
+                          data-resize-handle={h.id}
                           x={h.cx - half}
                           y={h.cy - half}
                           width={hs}
@@ -545,6 +620,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
             ))}
           </g>
 
+          {marquee && <rect x={Math.min(marquee.x, marquee.endX)} y={Math.min(marquee.y, marquee.endY)} width={Math.abs(marquee.x - marquee.endX)} height={Math.abs(marquee.y - marquee.endY)} fill="#f59e0b22" stroke="#f59e0b" strokeWidth={totalW / svgW} pointerEvents="none" />}
           {/* Group selection bounding box + handles (shown when multi-selected) */}
           {selectedElementIds.size > 1 && (() => {
           const ids = Array.from(selectedElementIds);

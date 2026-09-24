@@ -19,6 +19,7 @@ interface UndoStore {
 
   // Redo: returns the next elements state, or null if nothing to redo
   redo: () => HistoryEntry | null;
+  rememberPast: (templateId: string, elements: TemplateElement[]) => void;
 
   // Store current state for redo when undoing
   setCurrent: (templateId: string, elements: TemplateElement[]) => void;
@@ -53,6 +54,8 @@ export const useUndoStore = create<UndoStore>()((set, get) => ({
 
     return { templateId: previous.templateId, elements: JSON.parse(JSON.stringify(previous.elements)) };
   },
+
+  rememberPast: (templateId, elements) => set(state => ({ past: [...state.past.slice(-(state.maxHistory - 1)), { templateId, elements: structuredClone(elements) }] })),
 
   redo: () => {
     const { future } = get();

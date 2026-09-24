@@ -28,6 +28,7 @@ export const formats = pgTable("formats", {
 });
 
 export const templates = pgTable("templates", {
+  thermalRenderMode: text("thermal_render_mode").notNull().default("native-v1"),
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),

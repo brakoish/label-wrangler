@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Printer } from 'lucide-react';
+import { getBitmapProof, type BitmapResult } from '@/lib/thermal/client';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 
 type PrinterInfo = { station_id: string; id: string; name: string; online: boolean; dispatch_enabled: boolean; needs_review: boolean };
-type Pending = { idempotencyKey: string; stationId: string; printerId: string; quantity: number; template: LabelTemplate; format: LabelFormat; testData: Record<string, string> };
+type Pending = { idempotencyKey: string; stationId: string; printerId: string; quantity: number; template: LabelTemplate; format: LabelFormat; testData: Record<string, string>; expectedPixelDigests?: string[] };
 async function api(url: string, options?: RequestInit) {
   const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json' } });
   const data = await response.json();
@@ -25,6 +26,25 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   const [pending, setPending] = useState<Pending | null>(null);
   const [runId, setRunId] = useState('');
   const inFlight = useRef(false);
+  const bitmap = template.thermalRenderMode === 'bitmap-v1';
+  const [proofs, setProofs] = useState<{ key: string; results: BitmapResult[] } | null>(null);
+  const proofKey = JSON.stringify([template, format, testData, quantity]);
+  useEffect(() => {
+    if (!open || !bitmap || pending) return;
+    let active = true; setError(''); setProofs(null);
+    const timer = setTimeout(async () => {
+      try {
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 25) return;
+        const results: BitmapResult[] = [], across = format.labelsAcross || 1;
+        for (let first = 0; first < quantity; first += across) {
+          const result = await getBitmapProof(template, format, Array.from({ length: across }, (_, lane) => first + lane < quantity ? testData ?? {} : null));
+          if (!active) return; results.push(result);
+        }
+        setProofs({ key: proofKey, results });
+      } catch (e) { if (active) setError((e as Error).message); }
+    }, 200);
+    return () => { active = false; clearTimeout(timer); };
+  }, [open, bitmap, pending, proofKey, template, format, testData, quantity]);
   const storageKey = `lw:designer-office-preview:${template.id}`;
 
   useEffect(() => {
@@ -53,12 +73,13 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
 
   const printer = printers.find(p => p.id === (pending?.printerId ?? selected));
   const submit = async () => {
-    if (inFlight.current || !printer) return;
+    if (inFlight.current || !printer || (bitmap && !pending && proofs?.key !== proofKey)) return;
     inFlight.current = true; setBusy(true); setError(''); setRunId('');
     try {
       const payload = pending ?? {
         idempotencyKey: crypto.randomUUID(), stationId: printer.station_id, printerId: printer.id,
         quantity, template, format, testData: testData ?? {},
+        ...(bitmap ? { expectedPixelDigests: proofs!.results.map(r => r.pixelDigest) } : {}),
       };
       // Persist the exact snapshot before sending; edits/reloads cannot change a retry.
       localStorage.setItem(storageKey, JSON.stringify(payload));
@@ -83,8 +104,9 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       <label className="block text-zinc-400">Preview labels (1–25)
         <input aria-label="Office preview label count" type="number" min={1} max={25} value={pending?.quantity ?? quantity} disabled={busy || !!pending} onChange={e => setQuantity(Number(e.target.value))} className="ml-2 w-16 rounded bg-zinc-900 p-1" />
       </label>
+      {bitmap && !pending && <div className="space-y-1">{proofs?.key === proofKey ? proofs.results.map((r, i) => <img key={i} src={r.proof} alt={`Office feed ${i + 1} final proof`} className="w-full bg-white" style={{ imageRendering: 'pixelated' }} />) : <p className="text-zinc-500">Preparing exact Office proof…</p>}</div>}
       {pending && <p className="text-amber-400">Retry sends the same saved preview, not subsequent edits.</p>}
-      <button disabled={busy || !canPrint || !printer?.dispatch_enabled || (!pending && (printer.needs_review || !Number.isInteger(quantity) || quantity < 1 || quantity > 25))} onClick={() => void submit()} className="rounded bg-amber-500 text-black px-3 py-2 font-semibold disabled:opacity-40">{busy ? 'Queueing…' : pending ? 'Retry same preview' : 'Print preview to Office'}</button>
+      <button disabled={busy || !canPrint || !printer?.dispatch_enabled || (bitmap && !pending && proofs?.key !== proofKey) || (!pending && (printer.needs_review || !Number.isInteger(quantity) || quantity < 1 || quantity > 25))} onClick={() => void submit()} className="rounded bg-amber-500 text-black px-3 py-2 font-semibold disabled:opacity-40">{busy ? 'Queueing…' : pending ? 'Retry same preview' : 'Print preview to Office'}</button>
       {error && <p role="alert" className="text-red-400">{error}</p>}
       {pending && !busy && <p className="text-zinc-400"><Link href="/runs" className="underline">Check Runs</Link> before <button className="underline" onClick={() => {
         if (!confirm('Check Runs first: the preview may already be queued. Clearing this form does not cancel any print job. Continue?')) return;

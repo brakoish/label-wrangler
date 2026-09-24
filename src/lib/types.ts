@@ -122,6 +122,8 @@ export interface TextElement extends TemplateElementBase {
   fontSize: number;      // in points
   fontFamily: string;
   fontWeight: "normal" | "bold";
+  fontStyle?: "normal" | "italic";
+  verticalAlign?: "top" | "middle" | "bottom";
   textAlign: TextAlign;
   color: string;         // hex color (only used for sheet, ignored for thermal)
   lineHeight: number;    // multiplier (e.g. 1.2 = 120%)
@@ -181,6 +183,7 @@ export type TemplateElement = TextElement | QRElement | BarcodeElement | LineEle
 
 // Label template — ties a format to a set of elements
 export interface LabelTemplate {
+  thermalRenderMode?: 'native-v1' | 'bitmap-v1';
   archivedAt?: string | null;
   id: string;
   name: string;

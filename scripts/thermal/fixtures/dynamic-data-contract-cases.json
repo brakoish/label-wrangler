@@ -1,0 +1,352 @@
+{
+  "status": "Specification only; not executed against migrated Label Wrangler",
+  "purpose": "Synthetic data-only cases. No production data, printer submissions, or importable full template geometry.",
+  "sourceRevision": "d13551a40344f9ceaf8711b23fc3bcbf8fa16c6c",
+  "existingSemantics": "Native final output uses truthy field value, then defaultValue, then empty string. Prefix and suffix apply to dynamic content. An absent lane differs from an occupied lane with empty values.",
+  "contentElements": [
+    {
+      "id": "name",
+      "type": "text",
+      "isStatic": false,
+      "fieldName": "productName",
+      "defaultValue": "SAMPLE",
+      "prefix": "",
+      "suffix": ""
+    },
+    {
+      "id": "thc",
+      "type": "text",
+      "isStatic": false,
+      "fieldName": "thcPercent",
+      "defaultValue": "00.00",
+      "prefix": "THC: ",
+      "suffix": "%"
+    },
+    {
+      "id": "qr",
+      "type": "qr",
+      "isStatic": false,
+      "fieldName": "retailId",
+      "defaultValue": "",
+      "prefix": "",
+      "suffix": ""
+    },
+    {
+      "id": "retail-text",
+      "type": "text",
+      "isStatic": false,
+      "fieldName": "retailId",
+      "defaultValue": "",
+      "prefix": "ID: ",
+      "suffix": ""
+    },
+    {
+      "id": "lot",
+      "type": "text",
+      "isStatic": false,
+      "fieldName": "lotNumber",
+      "defaultValue": "UNKNOWN",
+      "prefix": "LOT: ",
+      "suffix": ""
+    },
+    {
+      "id": "company",
+      "type": "text",
+      "isStatic": true,
+      "content": "Example Supply"
+    }
+  ],
+  "cases": [
+    {
+      "name": "seven-unique-rows-mixed-shared-and-variable",
+      "run": {
+        "staticValues": {
+          "lotNumber": "000042",
+          "thcPercent": "99"
+        },
+        "fieldMappings": {
+          "productName": {
+            "mode": "column",
+            "csvColumn": "Product"
+          },
+          "thcPercent": {
+            "mode": "column",
+            "csvColumn": "THC"
+          },
+          "retailId": {
+            "mode": "column",
+            "csvColumn": "RetailURL"
+          },
+          "lotNumber": {
+            "mode": "static"
+          }
+        },
+        "sourceData": [
+          {
+            "Product": "Sample 1",
+            "THC": "20",
+            "RetailURL": "https://example.invalid/retail/UNIT-0001",
+            "UnmappedPrivateColumn": "not required by renderer"
+          },
+          {
+            "Product": "Sample 2",
+            "THC": "0",
+            "RetailURL": "https://example.invalid/retail/UNIT-0002",
+            "UnmappedPrivateColumn": "not required by renderer"
+          },
+          {
+            "Product": "Sample 3",
+            "THC": "",
+            "RetailURL": "https://example.invalid/retail/UNIT-0003",
+            "UnmappedPrivateColumn": "not required by renderer"
+          },
+          {
+            "Product": "Sample 4",
+            "THC": "23",
+            "RetailURL": "https://example.invalid/retail/UNIT-0004",
+            "UnmappedPrivateColumn": "not required by renderer"
+          },
+          {
+            "Product": "Sample 5",
+            "THC": "24",
+            "RetailURL": "https://example.invalid/retail/UNIT-0005",
+            "UnmappedPrivateColumn": "not required by renderer"
+          },
+          {
+            "Product": "Sample 6",
+            "THC": "25",
+            "RetailURL": "https://example.invalid/retail/UNIT-0006",
+            "UnmappedPrivateColumn": "not required by renderer"
+          },
+          {
+            "Product": "A deliberately long synthetic product name for wrapping and auto-fit",
+            "THC": "26",
+            "RetailURL": "https://example.invalid/retail/UNIT-0007",
+            "UnmappedPrivateColumn": "not required by renderer"
+          }
+        ]
+      },
+      "expected": {
+        "labelsAcross": 3,
+        "fullRangeLanes": [
+          [
+            1,
+            2,
+            3
+          ],
+          [
+            4,
+            5,
+            6
+          ],
+          [
+            7,
+            null,
+            null
+          ]
+        ],
+        "range2Through5Lanes": [
+          [
+            null,
+            2,
+            3
+          ],
+          [
+            4,
+            5,
+            null
+          ]
+        ],
+        "qrPayloads": [
+          "https://example.invalid/retail/UNIT-0001",
+          "https://example.invalid/retail/UNIT-0002",
+          "https://example.invalid/retail/UNIT-0003",
+          "https://example.invalid/retail/UNIT-0004",
+          "https://example.invalid/retail/UNIT-0005",
+          "https://example.invalid/retail/UNIT-0006",
+          "https://example.invalid/retail/UNIT-0007"
+        ],
+        "thcText": [
+          "THC: 20%",
+          "THC: 0%",
+          "THC: 00.00%",
+          "THC: 23%",
+          "THC: 24%",
+          "THC: 25%",
+          "THC: 26%"
+        ],
+        "lotTextEveryOccupiedLane": "LOT: 000042",
+        "companyEveryOccupiedLane": "Example Supply",
+        "retailTextRule": "ID: followed by that same row QR payload",
+        "absentLane": "No text, border, symbol or other artwork",
+        "longLastRow": "Recompute wrapping/auto-fit for row 7 without mutating template font size",
+        "compaction": "Mapped columns retained; no dependency on UnmappedPrivateColumn"
+      }
+    },
+    {
+      "name": "four-manual-copies-empty-row-objects-are-occupied",
+      "run": {
+        "staticValues": {
+          "productName": "Manual sample",
+          "thcPercent": "0",
+          "retailId": "https://example.invalid/manual",
+          "lotNumber": "000007"
+        },
+        "fieldMappings": {
+          "productName": {
+            "mode": "static"
+          },
+          "thcPercent": {
+            "mode": "static"
+          },
+          "retailId": {
+            "mode": "static"
+          },
+          "lotNumber": {
+            "mode": "static"
+          }
+        },
+        "sourceData": [
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "expected": {
+        "labelsAcross": 3,
+        "fullRangeLanes": [
+          [
+            1,
+            2,
+            3
+          ],
+          [
+            4,
+            null,
+            null
+          ]
+        ],
+        "qrPayloadEveryOccupiedLane": "https://example.invalid/manual",
+        "thcText": "THC: 0%",
+        "lotText": "LOT: 000007",
+        "totalLogicalLabels": 4
+      }
+    },
+    {
+      "name": "legacy-pasted-string-array",
+      "run": {
+        "staticValues": {
+          "productName": "Legacy",
+          "lotNumber": "000008"
+        },
+        "fieldMappings": {},
+        "mappedField": "retailId",
+        "sourceData": [
+          "https://example.invalid/old/001",
+          "https://example.invalid/old/002"
+        ]
+      },
+      "expected": {
+        "qrPayloads": [
+          "https://example.invalid/old/001",
+          "https://example.invalid/old/002"
+        ]
+      }
+    },
+    {
+      "name": "new-paste-column",
+      "run": {
+        "staticValues": {
+          "productName": "Paste"
+        },
+        "fieldMappings": {
+          "retailId": {
+            "mode": "column",
+            "csvColumn": "__paste__"
+          }
+        },
+        "mappedField": "retailId",
+        "sourceData": [
+          {
+            "__paste__": "https://example.invalid/new/001"
+          },
+          {
+            "__paste__": "https://example.invalid/new/002"
+          }
+        ]
+      },
+      "expected": {
+        "qrPayloads": [
+          "https://example.invalid/new/001",
+          "https://example.invalid/new/002"
+        ]
+      }
+    },
+    {
+      "name": "blank-missing-and-zero",
+      "element": {
+        "type": "text",
+        "isStatic": false,
+        "fieldName": "value",
+        "defaultValue": "FALLBACK",
+        "prefix": "[",
+        "suffix": "]",
+        "content": "DESIGN CONTENT"
+      },
+      "samples": [
+        {
+          "values": {},
+          "expected": "[FALLBACK]"
+        },
+        {
+          "values": {
+            "value": ""
+          },
+          "expected": "[FALLBACK]"
+        },
+        {
+          "values": {
+            "value": "0"
+          },
+          "expected": "[0]"
+        },
+        {
+          "values": {
+            "value": "000042"
+          },
+          "expected": "[000042]"
+        }
+      ],
+      "withoutDefault": {
+        "values": {},
+        "expected": "[]",
+        "note": "Native final output does not fall back to DESIGN CONTENT. Strict missing-data checks, if added, must be explicit."
+      }
+    },
+    {
+      "name": "missing-unit-identifier",
+      "element": {
+        "type": "qr",
+        "isStatic": false,
+        "fieldName": "retailId",
+        "defaultValue": "",
+        "prefix": "",
+        "suffix": ""
+      },
+      "values": {
+        "retailId": ""
+      },
+      "expectedResolvedContent": "",
+      "bitmapPreflightRequirement": "Report the row and field; never substitute the sample photo URL or repeat the preceding unit QR. This is a new-mode acceptance requirement, not an assertion of current UI behavior."
+    }
+  ],
+  "additionalIntegrationChecks": [
+    "Preserve existing Manifest unit expansion, retail-ID deduplication, quantity caps and potency/date normalization before rendering.",
+    "Preserve preset mappings, source compaction and hidden wizard field behavior; hidden input is not automatically hidden artwork.",
+    "Selecting different test rows changes preview only, not template bindings or saved source data.",
+    "Duplicate two objects bound to one field: new element IDs, same field binding.",
+    "Editing after enqueue and retry after lost response retain the originally submitted snapshot and payload.",
+    "Scan every generated QR per lane in unique-row cases; no row may inherit another row cache entry."
+  ]
+}

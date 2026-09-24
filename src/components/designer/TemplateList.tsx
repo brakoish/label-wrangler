@@ -170,6 +170,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
     );
   }
 
+  if (template.thermalRenderMode === 'bitmap-v1') return <p className="text-xs text-zinc-500 p-3">Bitmap proof loading or needs attention — open to review</p>;
   const { vbW, vbH } = labelViewBox(format);
 
   const pad = Math.min(vbW, vbH) * 0.08;
@@ -617,13 +618,14 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
 interface NewTemplateDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (name: string, description: string, formatId: string) => void;
+  onCreate: (name: string, description: string, formatId: string, thermalRenderMode: 'native-v1' | 'bitmap-v1') => void;
 }
 
 export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [formatId, setFormatId] = useState('');
+  const [renderMode, setRenderMode] = useState<'native-v1' | 'bitmap-v1'>('bitmap-v1');
   const { formats } = useFormatStore();
 
   if (!isOpen) return null;
@@ -631,7 +633,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !formatId) return;
-    onCreate(name, description, formatId);
+    onCreate(name, description, formatId, formats.find(f => f.id === formatId)?.type === 'thermal' ? renderMode : 'native-v1');
     setName('');
     setDescription('');
     setFormatId('');
@@ -685,6 +687,13 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
               />
             )}
           </div>
+
+          {formats.find(f => f.id === formatId)?.type === 'thermal' && <label className="block text-sm text-zinc-400">Thermal rendering
+            <select aria-label="Thermal rendering" className="block w-full mt-2 bg-zinc-900 rounded p-2" value={renderMode} onChange={e => setRenderMode(e.target.value as 'native-v1' | 'bitmap-v1')}>
+              <option value="bitmap-v1">Exact bitmap · editable fonts · connection required</option>
+              <option value="native-v1">Native · legacy printer fonts</option>
+            </select>
+          </label>}
 
           <div className="flex gap-3 pt-2">
             <button

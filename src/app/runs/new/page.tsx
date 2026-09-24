@@ -800,7 +800,7 @@ function NewRunContent() {
                   </span>
                 </div>
                 <div className="max-h-[260px] overflow-auto rounded-xl bg-zinc-950/60 p-3">
-                  <LayoutPreview format={format} elements={template.elements} testData={previewValues} />
+                  <LayoutPreview thermalRenderMode={template.thermalRenderMode} format={format} elements={template.elements} testData={previewValues} />
                 </div>
               </div>
             )}
@@ -1234,6 +1234,7 @@ function NewRunContent() {
                       // actual sheet-grid layout so the user sees 10x20 /
                       // 8x11 / whatever their template actually is.
                       <LayoutPreview
+                    thermalRenderMode={template.thermalRenderMode}
                         format={format}
                         elements={template.elements}
                         testData={previewValues}

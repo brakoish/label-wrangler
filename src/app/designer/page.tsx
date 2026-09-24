@@ -6,6 +6,8 @@ import { Undo2, Redo2, Pencil } from 'lucide-react';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { useGlobalElementStore } from '@/lib/globalStore';
+import { arrangeElements, type AlignAction } from '@/lib/thermal/editorGeometry';
+import { BitmapTemplateActions } from '@/components/designer/BitmapTemplateActions';
 import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
@@ -51,7 +53,6 @@ function DesignerContent() {
     selectTemplate,
     getTemplateById,
     addElement,
-    updateElement,
     updateElementLocal,
     saveTemplate,
     removeElement,
@@ -62,7 +63,7 @@ function DesignerContent() {
 
   const { formats, getFormatById } = useFormatStore();
   const { globals, createGlobal, deleteGlobal } = useGlobalElementStore();
-  const { push: pushUndo, undo, redo, setCurrent: setUndoCurrent, canUndo, canRedo, clear: clearUndo } = useUndoStore();
+  const { push: pushUndo, rememberPast, undo, redo, setCurrent: setUndoCurrent, canUndo, canRedo, clear: clearUndo } = useUndoStore();
 
   const [showNewTemplateDialog, setShowNewTemplateDialog] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<LabelTemplate | null>(null);
@@ -93,6 +94,28 @@ function DesignerContent() {
 
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
+  const gesture = useRef<{ id: string; elements: TemplateElement[] } | null>(null);
+  const [saveError, setSaveError] = useState('');
+  const beginGesture = useCallback(() => {
+    const t = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
+    if (t && !gesture.current) gesture.current = { id: t.id, elements: structuredClone(t.elements) };
+  }, [currentTemplate]);
+  const finishGesture = useCallback(() => {
+    const before = gesture.current; gesture.current = null;
+    if (!before) return;
+    const after = useTemplateStore.getState().getTemplateById(before.id);
+    if (!after || JSON.stringify(before.elements) === JSON.stringify(after.elements)) return;
+    pushUndo(before.id, before.elements); setSaveError('');
+    void saveTemplate(before.id).catch(e => setSaveError(e.message));
+  }, [pushUndo, saveTemplate]);
+  const cancelGesture = useCallback(() => {
+    const before = gesture.current; gesture.current = null;
+    if (before) useTemplateStore.setState(state => ({ templates: state.templates.map(t => t.id === before.id ? { ...t, elements: before.elements } : t) }));
+  }, []);
+  useEffect(() => {
+    if (!currentTemplate?.id) return;
+    try { setTestData(JSON.parse(localStorage.getItem(`lw:test-data:${currentTemplate.id}`) || '{}')); } catch { setTestData({}); }
+  }, [currentTemplate?.id]);
   const showThermalOrientationPicker = currentFormat?.type === 'thermal' && currentFormat.width > currentFormat.height;
   const thermalEditorOrientationKey = currentTemplate
     ? `label-wrangler:thermal-editor-orientation:${currentTemplate.id}`
@@ -134,39 +157,33 @@ function DesignerContent() {
       setUndoCurrent(currentTemplate.id, currentTemplate.elements);
       // Apply previous state
       const updatedElements = prev.elements;
-      fetch(`/api/templates/${currentTemplate.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ elements: updatedElements }),
-      });
+
       // Update local store
       useTemplateStore.setState((state) => ({
         templates: state.templates.map((t) =>
           t.id === currentTemplate.id ? { ...t, elements: updatedElements } : t
         ),
       }));
+      void saveTemplate(currentTemplate.id).catch(e => setSaveError(e.message));
     }
-  }, [currentTemplate, undo, setUndoCurrent, canUndo]);
+  }, [saveTemplate, currentTemplate, undo, setUndoCurrent, canUndo]);
 
   // Redo handler
   const handleRedo = useCallback(() => {
     if (!currentTemplate || !canRedo()) return;
     const next = redo();
     if (next) {
-      pushUndo(currentTemplate.id, currentTemplate.elements);
+      rememberPast(currentTemplate.id, currentTemplate.elements);
       const updatedElements = next.elements;
-      fetch(`/api/templates/${currentTemplate.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ elements: updatedElements }),
-      });
+
       useTemplateStore.setState((state) => ({
         templates: state.templates.map((t) =>
           t.id === currentTemplate.id ? { ...t, elements: updatedElements } : t
         ),
       }));
+      void saveTemplate(currentTemplate.id).catch(e => setSaveError(e.message));
     }
-  }, [currentTemplate, redo, pushUndo, canRedo]);
+  }, [saveTemplate, currentTemplate, redo, rememberPast, canRedo]);
 
   // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z (or Cmd on Mac), + arrow key nudging.
   useEffect(() => {
@@ -205,25 +222,27 @@ function DesignerContent() {
         const isThermal = currentFormat?.type === 'thermal';
         const baseStep = isThermal ? 1 : 0.01;
         const step = (e.shiftKey ? 10 : 1) * baseStep;
-        pushUndoState();
+        beginGesture();
+        const direction = isThermal && thermalEditorOrientation === 'upright' && currentFormat.width > currentFormat.height ? { dx: -arrow.dy, dy: arrow.dx } : arrow;
         for (const id of selectedIds) {
-          const el = currentTemplate.elements.find((x) => x.id === id);
+          const el = useTemplateStore.getState().getTemplateById(currentTemplate.id)?.elements.find((x) => x.id === id);
           if (!el) continue;
           updateElementLocal(currentTemplate.id, id, {
-            x: el.x + arrow.dx * step,
-            y: el.y + arrow.dy * step,
+            x: el.x + direction.dx * step,
+            y: el.y + direction.dy * step,
           });
         }
         // Debounce save to avoid hammering the DB on held arrow keys.
         if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current);
         nudgeSaveRef.current = setTimeout(() => {
-          if (currentTemplate) saveTemplate(currentTemplate.id);
+          finishGesture();
         }, 400);
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, pushUndoState]);
+    const finishNudge = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow')) { if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current); finishGesture(); } };
+    window.addEventListener('keydown', handler); window.addEventListener('keyup', finishNudge);
+    return () => { window.removeEventListener('keydown', handler); window.removeEventListener('keyup', finishNudge); };
+  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation]);
 
   // Clear undo history + selection when switching templates
   useEffect(() => {
@@ -237,6 +256,7 @@ function DesignerContent() {
       <AppShell>
         {/* Template List */}
         <div className="flex-1 overflow-auto">
+          <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           <TemplateList
             templates={templates}
             onSelectTemplate={(id) => {
@@ -255,11 +275,12 @@ function DesignerContent() {
         <NewTemplateDialog
           isOpen={showNewTemplateDialog}
           onClose={() => setShowNewTemplateDialog(false)}
-          onCreate={async (name, description, formatId) => {
+          onCreate={async (name, description, formatId, thermalRenderMode) => {
             const newTemplate = await addTemplate({
               name,
               description,
               formatId,
+              thermalRenderMode,
               elements: [],
             });
             selectTemplate(newTemplate.id);
@@ -289,6 +310,7 @@ function DesignerContent() {
               name: newName,
               description: duplicateSource.description,
               formatId: newFormatId,
+              thermalRenderMode: targetFormat.type === 'thermal' ? duplicateSource.thermalRenderMode : 'native-v1',
               elements: elements as TemplateElement[],
             });
             setDuplicateSource(null);
@@ -361,7 +383,7 @@ function DesignerContent() {
           type: 'text',
           content: 'Text',
           fontSize: defaultFontSize,
-          fontFamily: 'Arial',
+          fontFamily: currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Liberation Sans' : 'Arial',
           fontWeight: 'normal',
           textAlign: 'left',
           color: '#000000',
@@ -435,8 +457,9 @@ function DesignerContent() {
 
   const handleUpdateElement = (updates: Partial<TemplateElement>) => {
     if (!selectedElementId) return;
-    pushUndoState();
-    updateElement(currentTemplate.id, selectedElementId, updates);
+    beginGesture();
+    updateElementLocal(currentTemplate.id, selectedElementId, updates);
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) finishGesture();
   };
 
   const handleUpdateSelectedElements = (updates: Partial<TemplateElement>) => {
@@ -447,11 +470,11 @@ function DesignerContent() {
 
     if (selectedTextIds.length === 0) return;
 
-    pushUndoState();
+    beginGesture();
     for (const id of selectedTextIds) {
       updateElementLocal(currentTemplate.id, id, updates);
     }
-    void saveTemplate(currentTemplate.id);
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) finishGesture();
   };
 
   const handleMoveElement = (elementId: string, direction: 'up' | 'down') => {
@@ -485,6 +508,11 @@ function DesignerContent() {
   return (
     <AppShell>
       <PageTitle title="Designer" />
+      {currentFormat.type === 'thermal' && <div className="px-6 py-2 flex items-center gap-3 text-xs text-zinc-400">
+        <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap · final proof uses bundled fonts · connection required' : 'Native · legacy print appearance'}</span>
+        <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
+      </div>}
+      {saveError && <p role="alert" className="text-red-400 px-6">{saveError} <button className="underline" onClick={() => void saveTemplate(currentTemplate.id).then(() => setSaveError('')).catch(e => setSaveError(e.message))}>Retry save</button></p>}
       {/* Editor layout fills the content area */}
       <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
@@ -516,7 +544,7 @@ function DesignerContent() {
           <TestDataPanel
             elements={currentTemplate.elements}
             testData={testData}
-            onTestDataChange={(field, value) => setTestData((prev) => ({ ...prev, [field]: value }))}
+            onTestDataChange={(field, value) => setTestData((prev) => { const next = { ...prev, [field]: value }; localStorage.setItem(`lw:test-data:${currentTemplate.id}`, JSON.stringify(next)); return next; })}
           />
         </div>
 
@@ -641,8 +669,17 @@ function DesignerContent() {
               }
             }}
             onUpdateElement={(id, updates) => updateElementLocal(currentTemplate.id, id, updates)}
-            onDragStart={pushUndoState}
-            onDragEnd={() => saveTemplate(currentTemplate.id)}
+            thermalRenderMode={currentTemplate.thermalRenderMode}
+            onSelectElements={(ids) => setSelectedIds(new Set(ids))}
+            onDuplicateSelection={(ids) => {
+              const originals = currentTemplate.elements.filter(e => ids.has(e.id));
+              const copies = originals.map((e, i) => ({ ...e, id: crypto.randomUUID(), zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + i + 1 }));
+              useTemplateStore.setState(state => ({ templates: state.templates.map(t => t.id === currentTemplate.id ? { ...t, elements: [...t.elements, ...copies] } : t) }));
+              setSelectedIds(new Set(copies.map(e => e.id))); return copies;
+            }}
+            onDragStart={beginGesture}
+            onDragEnd={finishGesture}
+            onGestureCancel={cancelGesture}
             testData={testData}
           />
           {currentFormat.type === 'thermal' ? (
@@ -653,13 +690,22 @@ function DesignerContent() {
         </div>
 
         {/* Right Panel - Properties */}
+        <div className="contents" onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel
           element={selectedElement}
           selectedElements={currentTemplate.elements.filter((e) => selectedIds.has(e.id))}
           format={currentFormat}
           onUpdate={handleUpdateElement}
           onUpdateSelected={handleUpdateSelectedElements}
+          bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
+          onArrange={(action: AlignAction) => {
+            beginGesture();
+            const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id)), action);
+            for (const e of arranged) updateElementLocal(currentTemplate.id, e.id, { x: e.x, y: e.y });
+            finishGesture();
+          }}
         />
+        </div>
       </div>
 
       {/* Add Element Menu */}
@@ -709,11 +755,12 @@ function DesignerContent() {
       <NewTemplateDialog
         isOpen={showNewTemplateDialog}
         onClose={() => setShowNewTemplateDialog(false)}
-        onCreate={async (name, description, formatId) => {
+        onCreate={async (name, description, formatId, thermalRenderMode) => {
           const newTemplate = await addTemplate({
             name,
             description,
             formatId,
+            thermalRenderMode,
             elements: [],
           });
           selectTemplate(newTemplate.id);

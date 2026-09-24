@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
-import { generateZPL, prepareZplImages } from '@/lib/zplGenerator';
+import { generateZPL, generateZPLWithImages, prepareZplImages } from '@/lib/zplGenerator';
 import {
   isWebUsbSupported,
   getAuthorizedPrinters,
@@ -28,6 +28,7 @@ interface PrintControlsProps {
   format: LabelFormat;
   template: LabelTemplate;
   testData?: Record<string, string>;
+  proofReady?: boolean;
 }
 
 type Transport = 'webusb' | 'dazzle';
@@ -41,7 +42,7 @@ type Transport = 'webusb' | 'dazzle';
  * We auto-detect Dazzle on mount; if present, prefer it. Users can still
  * toggle transports manually.
  */
-export function PrintControls({ format, template, testData }: PrintControlsProps) {
+export function PrintControls({ format, template, testData, proofReady = true }: PrintControlsProps) {
   // Detection / transport state
   const [dazzleAvailable, setDazzleAvailable] = useState<boolean>(false);
   const [transport, setTransport] = useState<Transport>('webusb');
@@ -210,7 +211,15 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       setError(null);
       setPrinting(kind);
       try {
-        if (transport === 'dazzle') {
+        if (template.thermalRenderMode === 'bitmap-v1') {
+          for (const feed of Array.isArray(zpl) ? zpl : [zpl]) {
+            if (new TextEncoder().encode(feed).length > 2 * 1024 * 1024) throw new Error('One feed exceeds the 2 MiB printer limit');
+          }
+          for (const feed of Array.isArray(zpl) ? zpl : [zpl]) {
+            if (transport === 'dazzle') await printViaDazzle(feed, selectedDazzlePrinter ?? undefined);
+            else { if (!usbPrinter) throw new Error('No printer connected'); await printZplWebUsb(usbPrinter, feed); }
+          }
+        } else if (transport === 'dazzle') {
           if (Array.isArray(zpl)) {
             await printAllViaDazzle(zpl, selectedDazzlePrinter ?? undefined);
           } else {
@@ -226,12 +235,23 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
         setPrinting(null);
       }
     },
-    [transport, selectedDazzlePrinter, usbPrinter],
+    [transport, selectedDazzlePrinter, usbPrinter, template.thermalRenderMode],
   );
 
   const buildLabelZpl = useCallback(async () => {
     const qty = Math.max(1, Math.min(9999, Math.floor(labelQty) || 1));
     const across = Math.max(1, format.labelsAcross || 1);
+    if (template.thermalRenderMode === 'bitmap-v1') {
+      if (!proofReady) throw new Error('Wait for the current bitmap proof before printing');
+      const feeds: string[] = []; let bytes = 0;
+      for (let first = 0; first < qty; first += across) {
+        const feed = await generateZPLWithImages(template, format, Array.from({ length: across }, (_, lane) => first + lane < qty ? testData ?? {} : undefined));
+        bytes += feed.length;
+        if (bytes > 32 * 1024 * 1024) throw new Error('Test print exceeds 32 MiB. Reduce quantity.');
+        feeds.push(feed);
+      }
+      return feeds;
+    }
     const imageGraphics = await prepareZplImages(template, format);
 
     if (across <= 1) {
@@ -246,10 +266,10 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
       labels.push(generateZPL(template, format, lanes, { imageGraphics }));
     }
     return labels;
-  }, [format, labelQty, template, testData]);
+  }, [format, labelQty, template, testData, proofReady]);
 
   const handlePrintLabel = useCallback(() => {
-    return buildLabelZpl().then((zpl) => doPrint(zpl, 'label'));
+    return buildLabelZpl().then((zpl) => doPrint(zpl, 'label')).catch(err => setError(err instanceof Error ? err.message : 'Print failed'));
   }, [buildLabelZpl, doPrint]);
 
   const handlePrintCalibration = useCallback(() => {
@@ -304,7 +324,7 @@ export function PrintControls({ format, template, testData }: PrintControlsProps
     }
   }, [transport, selectedDazzlePrinter, usbPrinter]);
 
-  const canPrint = transport === 'dazzle' ? !!selectedDazzlePrinter : !!usbPrinter;
+  const canPrint = proofReady && (transport === 'dazzle' ? !!selectedDazzlePrinter : !!usbPrinter);
   const connectedLabel = useMemo(() => {
     if (transport === 'dazzle') return selectedDazzlePrinter ?? 'No printer selected';
     return usbPrinter?.productName ?? '';

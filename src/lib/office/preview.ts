@@ -40,7 +40,7 @@ export async function createPreviewJobs(user: OfficeUser, data: Record<string, u
   const printer = await requirePrinter(user, data.stationId, data.printerId);
   const template = data.template as LabelTemplate;
   const format = data.format as LabelFormat;
-  const fp = hash(JSON.stringify(['designer-preview', data.stationId, data.printerId, data.quantity, template, format, data.testData ?? {}]));
+  const fp = hash(JSON.stringify(['designer-preview', data.stationId, data.printerId, data.quantity, template, format, data.testData ?? {}, ...(data.expectedPixelDigests === undefined ? [] : [data.expectedPixelDigests])]));
   const sql = officeSql();
   const previous = await sql`SELECT id,fingerprint FROM office_requests WHERE requester=${user.id} AND idempotency_key=${data.idempotencyKey}`;
   if (previous.length) {
@@ -52,6 +52,10 @@ export async function createPreviewJobs(user: OfficeUser, data: Record<string, u
   const existing = await sql`SELECT id FROM templates WHERE id=${template.id}`;
   if (!existing.length) throw new OfficeError('Save this template before test printing', 404);
   const batches = await buildBatches(run, template, format, 1, run.totalLabels, printer.dpi, printer.max_width_dots);
+  if (template.thermalRenderMode === 'bitmap-v1') {
+    const actual = batches.flatMap(batch => [...Buffer.from(batch.payload, 'base64').toString().matchAll(/\^FXLWBITMAP1:[a-f0-9]{64}:([a-f0-9]{64})\^FS/g)].map(m => m[1]));
+    if (JSON.stringify(data.expectedPixelDigests) !== JSON.stringify(actual)) throw new OfficeError('Preview changed or is missing. Refresh the bitmap proof before printing.', 409);
+  }
   try {
     // Both statements commit together. Lost-response retries share the same
     // run/key; office_enqueue owns the existing station lock and safety gates.

@@ -54,6 +54,7 @@ export function duplicateElementsForFormat(
   const tgt = formatWorkingDims(targetFormat);
   // Uniform scale preserves element aspect ratios even if label aspect changes.
   const ratio = Math.min(tgt.w / src.w, tgt.h / src.h);
+  const physicalRatio = Math.min(targetFormat.width / sourceFormat.width, targetFormat.height / sourceFormat.height);
 
   return source.elements.map((el, i) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -71,7 +72,9 @@ export function duplicateElementsForFormat(
     // Scale text fontSize too so text stays visually proportional.
     if (base.type === 'text') {
       const t = base as TextElement;
-      (base as TextElement).fontSize = Math.max(4, Math.round(t.fontSize * ratio * 10) / 10);
+      t.fontSize = Math.max(4, Math.round(t.fontSize * physicalRatio * 10) / 10);
+      if (t.minFontSize !== undefined) t.minFontSize = Math.min(t.fontSize, Math.max(.5, t.minFontSize * physicalRatio));
+      if (source.thermalRenderMode === 'bitmap-v1' && targetFormat.type === 'thermal' && t.letterSpacing !== undefined) t.letterSpacing *= ratio;
     }
 
     return base;

@@ -9,6 +9,8 @@ import {
 import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { MANIFEST_FIELD_OPTIONS } from '@/lib/manifestFields';
+import { BITMAP_FONTS } from '@/lib/thermal/import';
+import type { AlignAction } from '@/lib/thermal/editorGeometry';
 import { snapZplQrSize } from '@/lib/zplGenerator';
 
 interface PropertyPanelProps {
@@ -17,9 +19,11 @@ interface PropertyPanelProps {
   format: LabelFormat;
   onUpdate: (updates: Partial<TemplateElement>) => void;
   onUpdateSelected?: (updates: Partial<TemplateElement>) => void;
+  bitmap?: boolean;
+  onArrange?: (action: AlignAction) => void;
 }
 
-export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected }: PropertyPanelProps) {
+export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange }: PropertyPanelProps) {
   const multiSelected = selectedElements.length > 1;
   const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
 
@@ -37,12 +41,16 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           </span>
         </div>
 
+        {format.type === 'thermal' && onArrange && <div className="p-3 grid grid-cols-3 gap-1">
+          {(['left', 'center', 'right', 'top', 'middle', 'bottom', 'distribute-x', 'distribute-y'] as AlignAction[]).map(action => <button key={action} title={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} onClick={() => onArrange(action)} className="text-[10px] text-zinc-300 bg-zinc-800 rounded p-1 disabled:opacity-30">{action.replace('distribute-', 'Space ')}</button>)}
+        </div>}
         {canEditTextGroup ? (
           <div className="p-3 space-y-1">
             <MultiTextProps
               elements={selectedTextElements}
               onUpdate={onUpdateSelected}
               format={format}
+              bitmap={bitmap}
             />
           </div>
         ) : (
@@ -216,7 +224,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         <Divider />
 
         {/* ── Type-specific ── */}
-        {element.type === 'text' && <TextProps element={element as TextElement} onUpdate={onUpdate} format={format} />}
+        {element.type === 'text' && <TextProps element={element as TextElement} onUpdate={onUpdate} format={format} bitmap={bitmap} />}
         {element.type === 'qr' && <QRProps element={element as QRElement} onUpdate={onUpdate} />}
         {element.type === 'barcode' && <BarcodeProps element={element as BarcodeElement} onUpdate={onUpdate} />}
         {element.type === 'line' && <LineProps element={element as LineElement} onUpdate={onUpdate} />}
@@ -229,14 +237,15 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
 // ── Type-specific property sections ──
 
-function TextProps({ element, onUpdate, format }: { element: TextElement; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat }) {
+function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat; bitmap: boolean }) {
   const isThermal = format.type === 'thermal';
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
       <textarea
-        value={element.content}
-        onChange={(e) => onUpdate({ content: e.target.value })}
+        value={element.isStatic ? element.content : element.defaultValue || ''}
+        aria-label={element.isStatic ? 'Text content' : 'Bound field default'}
+        onChange={(e) => onUpdate(element.isStatic ? { content: e.target.value } : { defaultValue: e.target.value })}
         placeholder="Enter text..."
         rows={3}
         className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:outline-none focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-600"
@@ -253,16 +262,16 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
           <div className="grid grid-cols-3 gap-1">
             <CompactInput
               label="CW"
-              value={element.charWidth ?? 0.5}
+              value={element.charWidth ?? (bitmap ? 1 : 0.5)}
               onChange={(v) => onUpdate({ charWidth: v })}
               step={0.05}
               labelRight
             />
             <div className="col-span-2 flex items-center gap-0.5">
             {([
-              { label: 'Tight', value: 0.5 },
-              { label: 'Normal', value: 0.6 },
-              { label: 'Roomy', value: 0.8 },
+              { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
+              { label: 'Normal', value: bitmap ? 1 : 0.6 },
+              { label: 'Roomy', value: bitmap ? 1.2 : 0.8 },
             ] as const).map((p) => (
               <button
                 key={p.label}
@@ -298,7 +307,11 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
           </div>
         </>
       )}
-      <CompactSelect value={element.fontFamily} options={['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
+      {bitmap && <>
+        <div className="grid grid-cols-2 gap-1"><CompactSelect value={element.fontStyle ?? 'normal'} options={['normal', 'italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} /><CompactInput label="Track" value={element.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} /></div>
+        <CompactSelect value={element.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} />
+      </>}
+      <CompactSelect value={element.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
       <div className="flex gap-0.5">
         {(['left', 'center', 'right'] as const).map((a) => (
           <button
@@ -328,7 +341,7 @@ function TextProps({ element, onUpdate, format }: { element: TextElement; onUpda
   );
 }
 
-function MultiTextProps({ elements, onUpdate, format }: { elements: TextElement[]; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat }) {
+function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: TextElement[]; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat; bitmap: boolean }) {
   const first = elements[0];
   const isThermal = format.type === 'thermal';
 
@@ -347,16 +360,16 @@ function MultiTextProps({ elements, onUpdate, format }: { elements: TextElement[
           <div className="grid grid-cols-3 gap-1">
             <CompactInput
               label="CW"
-              value={first.charWidth ?? 0.5}
+              value={first.charWidth ?? (bitmap ? 1 : 0.5)}
               onChange={(v) => onUpdate({ charWidth: v })}
               step={0.05}
               labelRight
             />
             <div className="col-span-2 flex items-center gap-0.5">
             {([
-              { label: 'Tight', value: 0.5 },
-              { label: 'Normal', value: 0.6 },
-              { label: 'Roomy', value: 0.8 },
+              { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
+              { label: 'Normal', value: bitmap ? 1 : 0.6 },
+              { label: 'Roomy', value: bitmap ? 1.2 : 0.8 },
             ] as const).map((p) => (
               <button
                 key={p.label}
@@ -382,7 +395,12 @@ function MultiTextProps({ elements, onUpdate, format }: { elements: TextElement[
           </button>
         </>
       )}
-      <CompactSelect value={first.fontFamily} options={['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
+      {bitmap && <>
+        <CompactSelect value={first.fontStyle ?? 'normal'} options={['normal', 'italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} />
+        <CompactInput label="Track" value={first.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} />
+        <CompactSelect value={first.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} />
+      </>}
+      <CompactSelect value={first.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
       <div className="flex gap-0.5">
         {(['left', 'center', 'right'] as const).map((a) => (
           <button

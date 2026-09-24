@@ -4,6 +4,7 @@ import { useEffect, useId, useState } from 'react';
 import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from '@/lib/types';
+import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPL } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
@@ -15,9 +16,10 @@ interface LayoutPreviewProps {
   testData?: Record<string, string>;
   testDataByLabel?: Array<Record<string, string> | undefined>;
   selectedLabelOffset?: number;
+  thermalRenderMode?: 'native-v1' | 'bitmap-v1';
 }
 
-export function LayoutPreview({ format, elements, testData, testDataByLabel, selectedLabelOffset }: LayoutPreviewProps) {
+export function LayoutPreview({ format, elements, testData, testDataByLabel, selectedLabelOffset, thermalRenderMode }: LayoutPreviewProps) {
   if (format.type === 'sheet') {
     return (
       <SheetLayout
@@ -29,7 +31,18 @@ export function LayoutPreview({ format, elements, testData, testDataByLabel, sel
       />
     );
   }
+  if (thermalRenderMode === 'bitmap-v1') return <BitmapLayout format={format} elements={elements} values={testDataByLabel ?? testData ?? {}} />;
   return <RollLayout format={format} elements={elements} testData={testData} />;
+}
+
+function BitmapLayout({ format, elements, values }: { format: LabelFormat; elements: TemplateElement[]; values: Record<string, string> | Array<Record<string, string> | undefined> }) {
+  const [image, setImage] = useState(''), [error, setError] = useState('');
+  useEffect(() => {
+    let active = true; setImage(''); setError('');
+    getBitmapProof({ id: 'layout', name: '', elements, formatId: format.id, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, values).then(r => { if (active) setImage(r.proof); }).catch(e => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [format, elements, values]);
+  return image ? <img src={image} alt="Exact thermal bitmap layout" className="max-w-full" style={{ imageRendering: 'pixelated' }} /> : <p className="text-xs text-zinc-400">{error || 'Rendering bitmap proof…'}</p>;
 }
 
 // Get the viewBox dimensions for the label content (matches LabelPreview)
@@ -282,7 +295,7 @@ function SheetLabelCell({
   return <g dangerouslySetInnerHTML={{ __html: svgBody }} />;
 }
 
-function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabelOffset }: LayoutPreviewProps) {
+function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabelOffset, thermalRenderMode }: LayoutPreviewProps) {
   const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const cols = format.columns || 1;
   const rows = format.rows || 1;

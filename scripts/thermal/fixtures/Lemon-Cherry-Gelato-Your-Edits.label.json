@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "name": "Lemon Cherry Gelato - photo test",
+  "width": 2,
+  "height": 1,
+  "dpi": 203,
+  "elements": [
+    {
+      "id": "title",
+      "type": "text",
+      "x": 22,
+      "y": 9,
+      "w": 353,
+      "h": 25,
+      "text": "Lemon Cherry Gelato - Hybrid",
+      "font": 22,
+      "bold": true
+    },
+    {
+      "id": "potency-box",
+      "type": "box",
+      "x": 8,
+      "y": 39,
+      "w": 256,
+      "h": 88,
+      "stroke": 1
+    },
+    {
+      "id": "tac",
+      "type": "text",
+      "x": 13,
+      "y": 44,
+      "w": 136,
+      "h": 24,
+      "text": "TAC: 00.00%",
+      "font": 19,
+      "bold": true
+    },
+    {
+      "id": "tac-mg",
+      "type": "text",
+      "x": 155,
+      "y": 44,
+      "w": 104,
+      "h": 24,
+      "text": "000.00mg/g",
+      "font": 18,
+      "bold": true
+    },
+    {
+      "id": "thc",
+      "type": "text",
+      "x": 13,
+      "y": 71,
+      "w": 136,
+      "h": 24,
+      "text": "THC: 00.00%",
+      "font": 19,
+      "bold": true
+    },
+    {
+      "id": "thc-mg",
+      "type": "text",
+      "x": 155,
+      "y": 71,
+      "w": 104,
+      "h": 24,
+      "text": "000.00mg/g",
+      "font": 18,
+      "bold": true
+    },
+    {
+      "id": "cbd",
+      "type": "text",
+      "x": 13,
+      "y": 98,
+      "w": 136,
+      "h": 24,
+      "text": "CBD: 00.00%",
+      "font": 19,
+      "bold": true
+    },
+    {
+      "id": "cbd-mg",
+      "type": "text",
+      "x": 155,
+      "y": 98,
+      "w": 104,
+      "h": 24,
+      "text": "000.00mg/g",
+      "font": 18,
+      "bold": true
+    },
+    {
+      "id": "mfg",
+      "type": "text",
+      "x": 8,
+      "y": 132,
+      "w": 132,
+      "h": 21,
+      "text": "MFG: 00/00/00",
+      "font": 16,
+      "bold": true
+    },
+    {
+      "id": "expiry",
+      "type": "text",
+      "x": 143,
+      "y": 132,
+      "w": 127,
+      "h": 21,
+      "text": "EXP: 00/00/00",
+      "font": 16,
+      "bold": true
+    },
+    {
+      "id": "lot",
+      "type": "text",
+      "x": 8,
+      "y": 156,
+      "w": 256,
+      "h": 21,
+      "text": "LOT: 000000",
+      "font": 17,
+      "bold": true
+    },
+    {
+      "id": "qr",
+      "type": "qr",
+      "x": 270,
+      "y": 34,
+      "w": 116,
+      "h": 116,
+      "text": "HTTPS://1A4.COM/5LO1I9DSOIOZ6RNP6EIO",
+      "scale": 2
+    },
+    {
+      "id": "email",
+      "type": "text",
+      "x": 275,
+      "y": 160,
+      "w": 124,
+      "h": 17,
+      "text": "Info@asdistro.com",
+      "font": 13,
+      "bold": true
+    },
+    {
+      "id": "company",
+      "type": "text",
+      "x": 8,
+      "y": 184,
+      "w": 229,
+      "h": 14,
+      "text": "ASSOCIATED SUPPLY, LLC - 11501",
+      "font": 11,
+      "bold": true
+    },
+    {
+      "id": "license",
+      "type": "text",
+      "x": 244,
+      "y": 184,
+      "w": 155,
+      "h": 14,
+      "text": "OCM-DIST-25-000168",
+      "font": 12,
+      "bold": true
+    }
+  ]
+}
