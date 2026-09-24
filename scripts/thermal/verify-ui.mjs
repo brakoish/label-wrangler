@@ -107,7 +107,8 @@ try{
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Prepare exact range proof')");
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Prepare exact range proof').click()");
  await waitFor(`!!document.querySelector('img[alt="Office range bitmap proof"]')`);
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Start Printing').click()");
+ await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Start Printing'&&!b.disabled)");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Start Printing'&&!b.disabled).click()");
  await waitFor('window.previewRequests.length===1');assert.equal((await evaluate('window.previewRequests[0].expectedBitmapDigest')).length,64);
  await evaluate("localStorage.setItem('testAcross','2')");await send('Page.reload');
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('Export labels'))");
