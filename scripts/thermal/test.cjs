@@ -119,6 +119,17 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
   assert.deepEqual(await sharp(pngOf(draft)).extract(region).raw().toBuffer(),await sharp(pngOf(reference)).extract(region).raw().toBuffer());
   check(true,'valid artwork pixels survive invalid neighbor');
  }
+ // An oversized QR allocation may cross the edge while the required quiet
+ // zone remains entirely inside. Unused padding must not erase adjacent art.
+ for(const rotation of [0,90,180,270]) {
+  const padded={...qr,id:'padded',isStatic:true,content:'PADDING',x:250,y:55,width:200,height:100,rotation};
+  const mark={id:'mark',type:'rectangle',x:260,y:65,width:10,height:10,rotation:0,zIndex:-1,isStatic:true,fillColor:'#000000',strokeColor:'#000000',strokeWidth:0,borderRadius:0};
+  const result=await renderThermalBitmap({...template,elements:[mark,padded]},format);
+  check(await decode(pngOf(result))==='PADDING','padded QR remains decodable at '+rotation);
+  const markPixels=await sharp(pngOf(result)).extract({left:260,top:65,width:10,height:10}).removeAlpha().raw().toBuffer();
+  check(markPixels.every(v=>v===0),'unused QR padding cannot cover neighboring artwork');
+  await assert.rejects(renderThermalBitmap({...template,elements:[{...padded,x:350}]},format),/clipped|outside/);
+ }
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {

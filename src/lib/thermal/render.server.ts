@@ -91,7 +91,7 @@ export function validateBitmapDesign(template: LabelTemplate, format: LabelForma
   return geo;
 }
 
-type Artwork = { png: Buffer; width: number; height: number };
+type Artwork = { png: Buffer; width: number; height: number; padding?: [number, number, number, number] };
 async function textArtwork(e: TextElement, content: string, dpi: number): Promise<Artwork> {
   const family = fontFamilies[e.fontFamily];
   if (!family) throw new Error(`Font "${e.fontFamily}" is not bundled. Choose Liberation Sans, Serif or Mono.`);
@@ -127,6 +127,7 @@ async function textArtwork(e: TextElement, content: string, dpi: number): Promis
 async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode' }>, value: string, dpi: number): Promise<Artwork> {
   const width = Math.round(e.width), height = Math.round(e.height);
   let shapes = '';
+  let padding: Artwork['padding'];
   if (e.type === 'qr') {
     if (!['L', 'M', 'Q', 'H'].includes(e.errorCorrection)) throw new Error('Invalid QR correction');
     const qr = QRCode.create(value, { errorCorrectionLevel: e.errorCorrection });
@@ -134,6 +135,8 @@ async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode
     if (scale < 1) throw new Error(`QR needs at least ${modules + 8} dots including its quiet zone`);
     const x0 = Math.floor((width - (modules + 8) * scale) / 2) + 4 * scale;
     const y0 = Math.floor((height - (modules + 8) * scale) / 2) + 4 * scale;
+    const used = (modules + 8) * scale;
+    padding = [x0 - 4 * scale, y0 - 4 * scale, width - (x0 - 4 * scale) - used, height - (y0 - 4 * scale) - used];
     for (let y = 0; y < modules; y++) for (let x = 0; x < modules; x++) if (qr.modules.get(y, x)) shapes += `<rect x="${x0 + x * scale}" y="${y0 + y * scale}" width="${scale}" height="${scale}"/>`;
   } else {
     if (!['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14'].includes(e.barcodeFormat)) throw new Error('Unsupported barcode');
@@ -151,7 +154,7 @@ async function symbolArtwork(e: Extract<TemplateElement, { type: 'qr' | 'barcode
     const label = await textArtwork({ ...e, type: 'text', fontFamily: 'Liberation Sans', fontSize: 8, minFontSize: 4, autoFit: true, fontWeight: 'normal', textAlign: 'center', color: '#000000', lineHeight: 1, height: Math.round(10 * dpi / 72) }, value, dpi);
     return { png: await sharp(base).composite([{ input: label.png, left: Math.floor((width - label.width) / 2), top: height - label.height }]).png().toBuffer(), width, height };
   }
-  return { png: base, width, height };
+  return { png: base, width, height, padding };
 }
 
 async function elementArtwork(e: TemplateElement, values: Record<string, string>, dpi: number): Promise<Artwork | null> {
@@ -213,6 +216,16 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
             if (e.rotation === 180) { left -= art.width; top -= art.height; }
             if (e.rotation === 270) top -= art.width;
           } else { left += Math.round((art.width - width) / 2); top += Math.round((art.height - height) / 2); }
+        }
+        // QR allocation boxes can contain unused padding beyond the four-module
+        // quiet zone. Remove only that padding, preserving the code's position.
+        if (art.padding) {
+          let [l, t, r, b] = art.padding;
+          if (e.rotation === 90) [l, t, r, b] = [b, l, t, r];
+          else if (e.rotation === 180) [l, t, r, b] = [r, b, l, t];
+          else if (e.rotation === 270) [l, t, r, b] = [t, r, b, l];
+          width -= l + r; height -= t + b; left += l; top += t;
+          png = await sharp(png).extract({ left: l, top: t, width, height }).png().toBuffer();
         }
         // Crop to this label only; graphics cannot bleed into the next lane.
         const cropX = Math.max(0, -left), cropY = Math.max(0, -top);

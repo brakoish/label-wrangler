@@ -1,6 +1,6 @@
 import type { TemplateElement } from '../types';
 
-export const BITMAP_VERSION = 'bitmap-v1-liberation-160-fit3';
+export const BITMAP_VERSION = 'bitmap-v1-liberation-160-qrpadding4';
 export const MAX_RASTER_PIXELS = 12_000_000;
 export type LaneValues = Record<string, string> | null | undefined;
 export type FeedValues = Record<string, string> | LaneValues[];

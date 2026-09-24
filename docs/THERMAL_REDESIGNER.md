@@ -17,7 +17,7 @@ Scope: thermal rolls only. Sheets keep their existing rendering. This branch is 
 
 `src/lib/thermal/render.server.ts` uses the existing Sharp/Pango dependency with explicitly bundled, licensed Liberation fonts. Font bytes, Sharp/library versions, platform/architecture and rendering policy version participate in the input digest. No new production dependency. No browser/system font assumption. Glyph coverage is checked before rendering.
 
-The result includes exact dot dimensions, input/pixel SHA-256, MSB-first packed rows, a PNG reconstructed from those rows, and inspectable ASCII graphic ZPL generated from the same rows. Policy `bitmap-v1-liberation-160-fit3`: composite on white, luminance <160 once, white row padding, graphic strips at most 99,999 bytes. Whole-dot QR and barcode modules include quiet zones; symbols cannot be clipped at the label edge.
+The result includes exact dot dimensions, input/pixel SHA-256, MSB-first packed rows, a PNG reconstructed from those rows, and inspectable ASCII graphic ZPL generated from the same rows. Policy `bitmap-v1-liberation-160-qrpadding4`: composite on white, luminance <160 once, white row padding, graphic strips at most 99,999 bytes. Whole-dot QR and barcode modules include quiet zones; symbols cannot be clipped at the label edge.
 
 Browser preview, thumbnails, layout/run previews, local/Dazzle output, scan generation, ZPL/PDF export, and Office rendering explicitly branch on mode. Synchronous native generation rejects bitmap input. Bitmap ZPL preview decodes its graphics directly rather than invoking the legacy ZPL emulator. PDF dimensions use the actual full-liner dot width / DPI, including the second lane and margins.
 
@@ -62,3 +62,5 @@ Bitmap text without an explicit autoFit setting fits its box; explicit false rem
 Conversion retains native character width, bounds unrotated text boxes to the label and next field origin with a 4-dot gap, and enables fitting. Review is required; failed proofs cannot be saved as converted copies. Earlier converted copies discarded character width: reconvert from the untouched original rather than guessing or overwriting edited copies. Horizontal bitmap scaling uses fill (never cover-crop).
 
 Editing requests use a separate non-printable draft response: unaffected objects remain pixel-exact, edge-clipped artwork is shown with per-object warnings, and unrenderable objects are highlighted. Draft responses intentionally contain no ZPL or packed print bytes. Designer canvas and invalid print previews use drafts; conversion, Office, exports and printing continue to use strict validation. Moving an object back into valid geometry clears the warning without changing other objects.
+
+QR allocation padding outside the four-module quiet zone is transparent/non-printing. Edge validation checks the actual QR plus quiet zone, not the outer resize box; the symbol keeps its existing center and module size.
