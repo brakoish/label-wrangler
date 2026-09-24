@@ -136,5 +136,17 @@ try{
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
  await waitFor(`!!document.querySelector('img[alt="New bitmap proof"]')`);
  assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').disabled"),false);
+ // Off-label QR is an editing warning, not a whole-label render failure.
+ await evaluate(`localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},elements:${JSON.stringify(fixture.elements)}.map(e=>e.id==='qr'?{...e,x:390}:e)}))`);
+ await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
+ await waitFor("document.body.innerText.includes('Fix highlighted objects before printing')");
+ assert.ok(await evaluate(`!!document.querySelector('[data-element-id="qr"] rect[stroke="#ef4444"]')`));
+ assert.ok(await evaluate(`!!document.querySelector('svg image')`));
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
+ await waitFor(`!!document.querySelector('img[alt="Editing preview with warnings"]')`);
+ await evaluate(`localStorage.setItem('fixture',${JSON.stringify(JSON.stringify(fixture))})`);
+ await send('Page.reload');
+ await waitFor("document.body.innerText.includes('Exact bitmap artwork')");
+ assert.equal(await evaluate("document.body.innerText.includes('Fix highlighted objects before printing')"),false);
  console.log('PASS bitmap bound inline edits/cancel, box vs Shift type resize, repeated undo/redo, Alt-drag binding copy, one save per gesture, reload, exact Office proof digest and lost-response retry, upright held nudge, PDF page geometry, saved-run range proof. All print/edit writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}

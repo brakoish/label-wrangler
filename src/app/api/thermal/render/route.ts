@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     if (!data.template || !data.format || !Array.isArray(data.feeds) || data.feeds.length < 1 || data.feeds.length > 8) throw new OfficeError('Choose 1–8 feeds per render');
     const results = []; let bytes = 0;
     for (const feed of data.feeds) {
-      const result = await renderThermalBitmap(data.template as LabelTemplate, data.format as LabelFormat, feed as FeedValues);
+      const result = await renderThermalBitmap(data.template as LabelTemplate, data.format as LabelFormat, feed as FeedValues, data.editing === true);
       bytes += result.zpl.length + result.proof.length + result.packed.length;
       if (bytes > 3_500_000) throw new OfficeError('Bitmap response too large; render fewer or smaller feeds');
       results.push(result);

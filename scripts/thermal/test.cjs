@@ -107,6 +107,18 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  check(JSON.stringify(nativeLayout)===savedLayout,'conversion leaves source unchanged');
  const framed=bitmapCopy({...nativeLayout,elements:[...nativeLayout.elements,{id:'frame',type:'rectangle',x:8,y:43,width:271,height:86,rotation:0}]},format);
  check(framed.elements[1].x+framed.elements[1].width<=275,'conversion leaves space inside enclosing border');
+ // Editing isolates bad objects; strict printing still rejects identical input.
+ const good={...text,id:'good',x:8,y:8,content:'KEEP ME',width:120,height:45};
+ for(const bad of [{...qr,id:'bad',x:380,isStatic:true,content:'QR'}, {...qr,id:'bad',width:2,height:2,isStatic:true,content:'QR'}, {...text,id:'bad',x:400,content:'OUTSIDE'}, {...text,id:'bad',width:2,height:2,content:'TOO SMALL'}]) {
+  const t={...template,elements:[good,bad]};
+  await assert.rejects(renderThermalBitmap(t,format));
+  const draft=await renderThermalBitmap(t,format,{},true), reference=await renderThermalBitmap({...template,elements:[good]},format);
+  check(draft.warnings.length>0 && draft.warnings.every(w=>w.elementId==='bad'),'draft marks only invalid object');
+  check(!draft.zpl && !draft.packed,'draft cannot supply print bytes');
+  const region={left:0,top:0,width:140,height:60};
+  assert.deepEqual(await sharp(pngOf(draft)).extract(region).raw().toBuffer(),await sharp(pngOf(reference)).extract(region).raw().toBuffer());
+  check(true,'valid artwork pixels survive invalid neighbor');
+ }
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {

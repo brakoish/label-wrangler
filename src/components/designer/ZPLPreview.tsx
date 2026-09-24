@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed, ChevronDown } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
+import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
@@ -46,7 +47,15 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       if (token !== revision.current) return;
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
-      if (token === revision.current) setError(err instanceof Error ? err.message : 'Preview failed');
+      if (token !== revision.current) return;
+      setError(err instanceof Error ? err.message : 'Preview failed');
+      setPreviewUrl(null); setZpl('');
+      if (template.thermalRenderMode === 'bitmap-v1') {
+        try {
+          const draft = await getBitmapProof(template, format, testData, true);
+          if (token === revision.current) setPreviewUrl(draft.proof);
+        } catch { /* The original error remains visible; never use stale print bytes. */ }
+      }
     } finally {
       if (token === revision.current) setLoading(false);
     }
@@ -141,6 +150,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
 
       {expanded && (
         <div className="px-6 py-4 flex flex-col" style={{ minHeight: '60vh', maxHeight: '720px' }}>
+          {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Editing preview — fix before printing: {error}</p>}
           {/* ZPL Code view */}
           {showZPL && (
             <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">
@@ -156,7 +166,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             <RefreshCw className="w-5 h-5 animate-spin mr-2" />
             Rendering…
           </div>
-        ) : error ? (
+        ) : error && !previewUrl ? (
           <div className="flex items-center justify-center text-red-400 text-sm">
             {error}
           </div>
@@ -169,7 +179,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
                 At zoom>1 it grows past container bounds and parent scrolls. */}
             <img
               src={previewUrl}
-              alt="ZPL Preview"
+              alt={error ? 'Editing preview with warnings' : 'ZPL Preview'}
               className="rounded-lg border border-zinc-700/50"
               style={{
                 // Native-DPI render — keep pixelated for sharp bitmap-font edges;
@@ -182,7 +192,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
               }}
             />
             {showOutlines && <LabelOutlineOverlay format={format} />}
-            {(loading || !proofReady) && (
+            {(loading || (!proofReady && !error)) && (
               <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center">
                 <RefreshCw className="w-5 h-5 animate-spin text-white" />
               </div>

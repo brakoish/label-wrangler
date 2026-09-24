@@ -183,7 +183,7 @@ async function elementArtwork(e: TemplateElement, values: Record<string, string>
   return { png: await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${shape}</svg>`)).png().toBuffer(), width, height };
 }
 
-export async function renderThermalBitmap(template: LabelTemplate, format: LabelFormat, fieldValues: FeedValues = {}) {
+export async function renderThermalBitmap(template: LabelTemplate, format: LabelFormat, fieldValues: FeedValues = {}, editing = false) {
   const geo = validateBitmapDesign(template, format), across = format.labelsAcross || 1, dpi = format.dpi || 203;
   const lanes = Array.isArray(fieldValues) ? Array.from({ length: across }, (_, i) => fieldValues[i] ?? null) : Array.from({ length: across }, () => fieldValues);
   for (const lane of lanes) if (lane != null && (typeof lane !== 'object' || Array.isArray(lane) || Object.values(lane).some(v => typeof v !== 'string' || v.length > 8192))) throw new Error('Invalid resolved values');
@@ -191,11 +191,13 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const feedLayers: sharp.OverlayOptions[] = [];
   // Same static artwork/values are prepared once per feed, with a bounded cache.
   const artwork = new Map<string, Artwork | null>();
+  const warnings: Array<{ elementId: string; message: string }> = [];
   for (let laneIndex = 0; laneIndex < across; laneIndex++) {
     const values = lanes[laneIndex];
     if (values == null) continue;
     const layers: sharp.OverlayOptions[] = [];
     for (const e of [...template.elements].sort((a, b) => a.zIndex - b.zIndex)) {
+      const warn = (message: string) => { if (!editing) throw new Error(message); if (!warnings.some(w => w.elementId === e.id && w.message === message)) warnings.push({ elementId: e.id, message }); };
       try {
         const key = JSON.stringify([e, resolveThermalContent(e, values)]);
         let art = artwork.get(key);
@@ -223,13 +225,13 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
           const raw = await sharp(png).ensureAlpha().raw().toBuffer();
           const ink = packMonochrome(raw, width, height), stride = Math.ceil(width / 8);
           for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-            if ((x < cropX || x >= cropX + cropW || y < cropY || y >= cropY + cropH) && (ink[y * stride + (x >> 3)] & (128 >> (x % 8)))) throw new Error('Text extends outside the label. Move or resize it before printing');
+            if ((x < cropX || x >= cropX + cropW || y < cropY || y >= cropY + cropH) && (ink[y * stride + (x >> 3)] & (128 >> (x % 8)))) warn('Text extends outside the label. Move or resize it before printing');
           }
         }
-        if ((e.type === 'qr' || e.type === 'barcode') && (cropW !== width || cropH !== height)) throw new Error('Symbol or quiet zone is clipped by the label edge');
+        if ((e.type === 'qr' || e.type === 'barcode') && (cropW !== width || cropH !== height)) warn('QR/barcode quiet zone is clipped at the label edge. Move it inside before printing');
         if (cropW !== width || cropH !== height) png = await sharp(png).extract({ left: cropX, top: cropY, width: cropW, height: cropH }).png().toBuffer();
         layers.push({ input: png, left: Math.max(0, left), top: Math.max(0, top) });
-      } catch (error) { throw new Error(`Lane ${laneIndex + 1}, ${e.fieldName || e.id}: ${error instanceof Error ? error.message : 'Artwork failed'}`); }
+      } catch (error) { warn(`Lane ${laneIndex + 1}, ${e.fieldName || e.id}: ${error instanceof Error ? error.message : 'Artwork failed'}`); }
     }
     const label = await sharp({ create: { width: geo.labelWDots, height: geo.heightDots, channels: 4, background: 'white' } }).composite(layers).png().toBuffer();
     feedLayers.push({ input: label, left: geo.effectiveSideMDots + laneIndex * (geo.labelWDots + Math.round((format.horizontalGapThermal || 0) * dpi)), top: 0 });
@@ -238,5 +240,5 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const packed = packMonochrome(rgba, geo.linerDots, geo.heightDots), pixelDigest = hash(packed);
   const pixels = unpackMonochrome(packed, geo.linerDots, geo.heightDots);
   const png = await sharp(Buffer.from(pixels), { raw: { width: geo.linerDots, height: geo.heightDots, channels: 4 } }).png().toBuffer();
-  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: Buffer.from(packed).toString('base64'), proof: `data:image/png;base64,${png.toString('base64')}`, zpl: bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
+  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
 }
