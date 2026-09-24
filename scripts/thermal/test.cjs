@@ -105,6 +105,8 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  check(fitted.elements[0].x+fitted.elements[0].width<=151 && fitted.elements[1].x+fitted.elements[1].width<=281,'conversion separates neighboring fields');
  check(fitted.elements[3].y+fitted.elements[3].height<=203,'converted footer stays on label');
  check(JSON.stringify(nativeLayout)===savedLayout,'conversion leaves source unchanged');
+ const framed=bitmapCopy({...nativeLayout,elements:[...nativeLayout.elements,{id:'frame',type:'rectangle',x:8,y:43,width:271,height:86,rotation:0}]},format);
+ check(framed.elements[1].x+framed.elements[1].width<=275,'conversion leaves space inside enclosing border');
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {

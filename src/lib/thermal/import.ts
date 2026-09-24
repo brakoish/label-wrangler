@@ -13,6 +13,9 @@ export function bitmapCopy(template: LabelTemplate, format?: LabelFormat) {
       width = Math.min(width, format.width * dpi - e.x);
       height = Math.min(height, format.height * dpi - e.y);
       for (const other of template.elements) {
+        if (other.type === 'rectangle' && !other.rotation && other.x < e.x && other.y <= e.y && other.x + other.width > e.x && other.y + other.height > e.y) {
+          width = Math.min(width, other.x + other.width - e.x - 4);
+        }
         if (other.id === e.id || other.rotation || !['text', 'qr', 'barcode', 'image'].includes(other.type)) continue;
         if (other.x > e.x && other.y <= e.y + 2 && other.y + other.height > e.y + 2) width = Math.min(width, other.x - e.x - 4);
       }
