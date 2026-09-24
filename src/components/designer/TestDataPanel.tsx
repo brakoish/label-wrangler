@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ChevronDown, Circle, FlaskConical, Search, X } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 import { MANIFEST_FIELDS } from '@/lib/manifestFields';
@@ -35,6 +35,23 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
       }
       return acc;
     }, [] as { fieldName: string; defaultValue: string; type: string; prefix: string; suffix: string }[]);
+
+  const fieldNames = JSON.stringify(dynamicFields.map(field => field.fieldName));
+  const selectedRow = manifestRows.find(row => manifestPackageKey(row) === selectedManifestKey);
+  const appliedFields = useRef<{ row: ManifestRow | undefined; names: Set<string> }>({ row: undefined, names: new Set() });
+  useEffect(() => {
+    const names: string[] = JSON.parse(fieldNames);
+    const previous = appliedFields.current;
+    appliedFields.current = { row: selectedRow, names: new Set(names) };
+    if (!selectedRow) return;
+    for (const name of names) {
+      // Populate newly added/rebound fields without overwriting manual edits
+      // to existing test values when an element moves or rerenders.
+      if (previous.row === selectedRow && previous.names.has(name)) continue;
+      const match = findBestManifestField(name, [selectedRow]);
+      if (match) onTestDataChange(name, selectedRow[match] ?? '');
+    }
+  }, [fieldNames, selectedRow, onTestDataChange]);
 
   if (dynamicFields.length === 0) return null;
 

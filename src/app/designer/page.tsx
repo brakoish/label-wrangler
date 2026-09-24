@@ -542,6 +542,7 @@ function DesignerContent() {
             }}
           />
           <TestDataPanel
+            key={currentTemplate.id}
             elements={currentTemplate.elements}
             testData={testData}
             onTestDataChange={(field, value) => setTestData((prev) => { const next = { ...prev, [field]: value }; localStorage.setItem(`lw:test-data:${currentTemplate.id}`, JSON.stringify(next)); return next; })}

@@ -41,6 +41,7 @@ try{
   window.fixture=JSON.parse(localStorage.getItem('fixture')||${JSON.stringify(JSON.stringify(fixture))});
   window.fetch=async(url,options={})=>{
    const json=value=>new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}});
+   if(String(url).startsWith('/api/nabis/search'))return json({packages:[{id:'test-product',packageTag:'SYNTHETIC',productName:'SELECTED PRODUCT',thcPercent:'0',cbdPercent:'2.75',retailId:'https://example.invalid/SELECTED'}]});
    if(String(url)==='/api/templates')return json([window.fixture]);
    if(String(url)==='/api/formats')return json([{...${JSON.stringify(format)},...(localStorage.getItem('testAcross')?{labelsAcross:2,horizontalGapThermal:.05,sideMarginThermal:.02,linerWidth:4.1}:{})}]);
    if(String(url)==='/api/runs')return json([syntheticRun]);
@@ -148,5 +149,20 @@ try{
  await send('Page.reload');
  await waitFor("document.body.innerText.includes('Exact bitmap artwork')");
  assert.equal(await evaluate("document.body.innerText.includes('Fix highlighted objects before printing')"),false);
+ // Newly bound fields inherit the selected product; manual test edits survive.
+ await evaluate(`(()=>{const e=document.querySelector('input[placeholder="Search Manifest package"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'test');e.dispatchEvent(new Event('input',{bubbles:true}));e.focus();})()`);
+ await key('Enter');
+ await waitFor("Array.from(document.querySelectorAll('input')).some(e=>e.value==='SELECTED PRODUCT')");
+ await evaluate(`(()=>{const e=Array.from(document.querySelectorAll('input')).find(e=>e.value==='SELECTED PRODUCT');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'MANUAL OVERRIDE');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ await click('[data-element-id="second"] > rect');
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Dynamic').click()");
+ await waitFor(`!!document.querySelector('input[placeholder="product_name"]')`);
+ const bindField=async value=>{await evaluate(`(()=>{const e=document.querySelector('input[placeholder="product_name"]');e.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));e.blur();})()`);};
+ await bindField('thcPercent');
+ await waitFor("Array.from(document.querySelectorAll('input')).some(e=>e.value==='0') && localStorage.getItem('lw:test-data:thermal-ui-test')?.includes('thcPercent')");
+ assert.equal(JSON.parse(await evaluate("localStorage.getItem('lw:test-data:thermal-ui-test')")).thcPercent,'0');
+ await bindField('cbdPercent');
+ await waitFor("localStorage.getItem('lw:test-data:thermal-ui-test')?.includes('2.75')");
+ assert.equal(JSON.parse(await evaluate("localStorage.getItem('lw:test-data:thermal-ui-test')")).product,'MANUAL OVERRIDE');
  console.log('PASS bitmap bound inline edits/cancel, box vs Shift type resize, repeated undo/redo, Alt-drag binding copy, one save per gesture, reload, exact Office proof digest and lost-response retry, upright held nudge, PDF page geometry, saved-run range proof. All print/edit writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}
