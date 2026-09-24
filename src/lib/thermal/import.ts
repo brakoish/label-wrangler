@@ -17,10 +17,12 @@ export function bitmapCopy(template: LabelTemplate, format?: LabelFormat) {
           width = Math.min(width, other.x + other.width - e.x - 4);
         }
         if (other.id === e.id || other.rotation || !['text', 'qr', 'barcode', 'image'].includes(other.type)) continue;
-        if (other.x > e.x && other.y <= e.y + 2 && other.y + other.height > e.y + 2) width = Math.min(width, other.x - e.x - 4);
+        if (other.x > e.x && (other.type !== 'text' || other.y >= e.y - 2) && other.y <= e.y + 2 && other.y + other.height > e.y + 2) width = Math.min(width, other.x - e.x - 4);
       }
     }
-    return { ...e, width: Math.max(1, width), height: Math.max(1, height),
+    // Native clockwise text starts at the left edge; bitmap text rotates
+    // about its top-left anchor, so its box extends left of that anchor.
+    return { ...e, x: e.rotation === 90 ? e.x + height : e.x, width: Math.max(1, width), height: Math.max(1, height),
       fontFamily: BITMAP_FONTS.includes(e.fontFamily) ? e.fontFamily : /Courier|Mono/i.test(e.fontFamily) ? 'Liberation Mono' : /sans/i.test(e.fontFamily) ? 'Liberation Sans' : /Times|Georgia|Serif/i.test(e.fontFamily) ? 'Liberation Serif' : 'Liberation Sans',
       charWidth: e.charWidth ?? .5, autoFit: true,
     };

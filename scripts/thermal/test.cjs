@@ -146,6 +146,14 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  check(!!printableEdge.zpl && printableEdge.advisories.length===1,'short QR margin permits print bytes');
  await parity(printableEdge);
  await assert.rejects(renderThermalBitmap({...edgeTemplate,elements:[{...liveQr,x:edgeX+30}]},format),/clipped|outside/);
+ // Tall allocation on the previous row must not collapse a rowFooter during conversion.
+ const rowFooter={...text,id:'rowFooter',x:9,y:181,width:177,height:20,fontSize:6,content:'Excelsior Legacy LLC',isStatic:true,charWidth:.8};
+ const rowAbove={...rowFooter,id:'rowAbove',x:16,y:153,width:336,height:34,content:'LOT: 000000'};
+ const convertedFooter=bitmapCopy({...template,elements:[rowAbove,rowFooter]},format);
+ check(convertedFooter.elements[1].width===177,'previous-row box does not collapse converted rowFooter');
+ await renderThermalBitmap(convertedFooter,format);
+ const turned=bitmapCopy({...template,elements:[{...rowFooter,rotation:90,x:380,y:20,width:127,height:14}]},format);
+ check(turned.elements[0].x===394 && turned.elements[0].y===20,'clockwise native conversion retains left edge');
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {
