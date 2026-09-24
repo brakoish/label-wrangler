@@ -46,6 +46,17 @@ const request=process.env.VERCEL_TEST ? async (url,init={})=>{
   assert.equal(new ZX.MultiFormatReader().decode(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.RGBLuminanceSource(Uint8ClampedArray.from(raw),decoded.width,decoded.height)))).getText(),'HTTPS://1A4.COM/5LO1I9DSOIOZ6RNP6EIO');
   if(process.env.CAPTURE_RENDER)fs.writeFileSync(process.env.CAPTURE_RENDER,png);
 
+  if(process.env.GOTTI_FIXTURE){
+   const saved=JSON.parse(fs.readFileSync(process.env.GOTTI_FIXTURE));
+   const gotti=saved.find(x=>x.template.thermalRenderMode==='bitmap-v1');
+   assert.ok(gotti);
+   const response=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({...gotti,feeds:[{}]})});
+   const proof=await response.json();assert.equal(response.status,200,JSON.stringify(proof));
+   const result=proof.results[0],bitmap=decodeBitmapZpl(result.zpl);
+   assert.deepEqual(Buffer.from(bitmap.packed),Buffer.from(result.packed,'base64'));
+   assert.deepEqual(Buffer.from(unpackMonochrome(bitmap.packed,bitmap.width,bitmap.height)),await sharp(Buffer.from(result.proof.split(',')[1],'base64')).ensureAlpha().raw().toBuffer());
+   console.log('PASS persisted Gotti bitmap renders; hosted PNG equals ZPL; no saved data changed');
+  }
   const bad=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({...design,template:{...design.template,thermalRenderMode:'native-v1'},feeds:[{}]})});assert.equal(bad.status,400);
   const wrong=await request(base+'/api/thermal/render',{method:'POST',headers:{...headers,Origin:'https://example.invalid'},body:JSON.stringify({...design,feeds:[{}]})});assert.equal(wrong.status,403);
   console.log(JSON.stringify({host:base,authenticatedRaster:true,hostedPixelDigest:hosted.pixelDigest,localPixelDigest:local.pixelDigest,localHostPixelsIdentical:hosted.pixelDigest===local.pixelDigest,proofEqualsZpl:true,repeatStable:true,qrDecoded:true,renderAndHTTPMs:Date.now()-start,unauthorizedRejected:true,wrongOriginRejected:true,nativeModeRejected:true,physicalJobs:0}));
