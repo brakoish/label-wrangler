@@ -170,7 +170,14 @@ try{
  await evaluate('window.holdProof=false;window.releaseProof?.()');
  await key('z',2,'KeyZ');
  await waitFor("document.body?.innerText.includes('Exact bitmap artwork')");
- await drag('[data-element-id="qr"] [data-resize-handle="se"]',-15,-15);
+ await evaluate('window.holdProof=true');
+ const handle=await center('[data-element-id="qr"] [data-resize-handle="se"]');
+ await mouse('mousePressed',handle);
+ await mouse('mouseMoved',{x:handle.x-15,y:handle.y-15},{buttons:1});
+ await waitFor(`!!document.querySelector('[data-live-layer="qr"]')`);
+ assert.ok(await evaluate(`Number(document.querySelector('[data-live-layer="qr"]').getAttribute('width'))<window.proofs.at(-1).editorLayers.find(l=>l.elementId==='qr').width`),'QR artwork resizes before release/server result');
+ await mouse('mouseReleased',{x:handle.x-15,y:handle.y-15});
+ await evaluate('window.holdProof=false;window.releaseProof?.()');
  await waitFor(`window.fixture.elements.find(e=>e.id==='qr').width<${qrSelection.allocation}`);
  assert.ok(await evaluate(`window.fixture.elements.find(e=>e.id==='qr').width>${qrSelection.allocation*.75}`));
  await key('z',2,'KeyZ');
