@@ -204,5 +204,11 @@ try{
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor(`!!document.querySelector('img[alt="ZPL Preview"]')`);
  assert.equal(await evaluate(`!!document.querySelector('img[alt="Editing preview with warnings"]')`),false);
+ // Library cards show a draft even when a QR is outside print bounds.
+ await evaluate(`(()=>{const t=${JSON.stringify(fixture)};t.elements.find(e=>e.id==='qr').x=390;localStorage.setItem('fixture',JSON.stringify(t));})()`);
+ await send('Page.navigate',{url:base+'/designer'});
+ await waitFor(`!!document.querySelector('img[alt="Synthetic bitmap verification preview"]')`);
+ assert.ok(await evaluate("document.body?.innerText.includes('Draft · needs attention')"));
+ assert.ok(await evaluate(`document.querySelector('img[alt="Synthetic bitmap verification preview"]').naturalWidth>0`));
  console.log('PASS bitmap bound inline edits/cancel, box vs Shift type resize, repeated undo/redo, Alt-drag binding copy, one save per gesture, reload, exact Office proof digest and lost-response retry, upright held nudge, PDF page geometry, saved-run range proof. All print/edit writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}

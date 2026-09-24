@@ -9,6 +9,7 @@ import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { getBitmapProof } from '@/lib/thermal/client';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 
 interface TemplateListProps {
@@ -140,17 +141,24 @@ function labelViewBox(format: LabelFormat) {
 // Mini label preview — renders the actual template instead of a gray skeleton.
 function MiniPreview({ template, format }: { template: LabelTemplate; format?: LabelFormat }) {
   const [thermalUrl, setThermalUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  const [draftWarning, setDraftWarning] = useState('');
   const sampleData = useMemo(() => sampleDataForTemplate(template), [template]);
 
   useEffect(() => {
     let active = true;
-    setThermalUrl(null);
+    setThermalUrl(null); setPreviewError(''); setDraftWarning('');
     if (!format || format.type !== 'thermal') return () => { active = false; };
 
-    generateZPLWithImages(template, format, sampleData)
-      .then((zpl) => renderZplToDataUrl(zpl, format))
+    const preview = template.thermalRenderMode === 'bitmap-v1'
+      ? getBitmapProof(template, format, sampleData, true).then(result => {
+          if (active) setDraftWarning(result.warnings?.[0]?.message || '');
+          return result.proof;
+        })
+      : generateZPLWithImages(template, format, sampleData).then(zpl => renderZplToDataUrl(zpl, format));
+    preview
       .then((url) => { if (active) setThermalUrl(url); })
-      .catch(() => { if (active) setThermalUrl(null); });
+      .catch(error => { if (active) setPreviewError(error instanceof Error ? error.message : 'Preview unavailable'); });
 
     return () => { active = false; };
   }, [format, sampleData, template]);
@@ -159,18 +167,19 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
 
   if (format.type === 'thermal' && thermalUrl) {
     return (
-      <div className="w-full h-full flex items-center justify-center rounded-lg bg-zinc-950">
+      <div className="relative w-full h-full flex items-center justify-center rounded-lg bg-zinc-950">
         <img
           src={thermalUrl}
-          alt=""
+          alt={`${template.name} preview`}
           className="max-w-full max-h-full object-contain"
           style={{ imageRendering: 'pixelated' }}
         />
+        {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-amber-950 px-1 text-xs text-amber-300">Draft · needs attention</span>}
       </div>
     );
   }
 
-  if (template.thermalRenderMode === 'bitmap-v1') return <p className="text-xs text-zinc-500 p-3">Bitmap proof loading or needs attention — open to review</p>;
+  if (template.thermalRenderMode === 'bitmap-v1') return <p className="text-xs text-zinc-500 p-3">{previewError ? `Preview unavailable: ${previewError}` : 'Loading bitmap preview…'}</p>;
   const { vbW, vbH } = labelViewBox(format);
 
   const pad = Math.min(vbW, vbH) * 0.08;
