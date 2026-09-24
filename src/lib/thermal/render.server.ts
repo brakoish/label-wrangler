@@ -194,6 +194,7 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const feedLayers: sharp.OverlayOptions[] = [];
   // Same static artwork/values are prepared once per feed, with a bounded cache.
   const artwork = new Map<string, Artwork | null>();
+  const qrBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const warnings: Array<{ elementId: string; message: string }> = [];
   for (let laneIndex = 0; laneIndex < across; laneIndex++) {
     const values = lanes[laneIndex];
@@ -227,6 +228,7 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
           width -= l + r; height -= t + b; left += l; top += t;
           png = await sharp(png).extract({ left: l, top: t, width, height }).png().toBuffer();
         }
+        if (e.type === 'qr' && laneIndex === 0) qrBounds[e.id] = { x: left, y: top, width, height };
         // Crop to this label only; graphics cannot bleed into the next lane.
         const cropX = Math.max(0, -left), cropY = Math.max(0, -top);
         const cropW = Math.min(width - cropX, geo.labelWDots - Math.max(0, left));
@@ -253,5 +255,5 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const packed = packMonochrome(rgba, geo.linerDots, geo.heightDots), pixelDigest = hash(packed);
   const pixels = unpackMonochrome(packed, geo.linerDots, geo.heightDots);
   const png = await sharp(Buffer.from(pixels), { raw: { width: geo.linerDots, height: geo.heightDots, channels: 4 } }).png().toBuffer();
-  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
+  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, qrBounds, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
 }

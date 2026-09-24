@@ -145,6 +145,9 @@ try{
  assert.ok(await evaluate(`!!document.querySelector('svg image')`));
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor(`!!document.querySelector('img[alt="Editing preview with warnings"]')`);
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Fit QR inside label').click()");
+ await waitFor("document.body.innerText.includes('Exact bitmap artwork') && !document.body.innerText.includes('Fix highlighted objects before printing')");
+ assert.ok(await evaluate("window.fixture.elements.find(e=>e.id==='qr').x<390"));
  await evaluate(`localStorage.setItem('fixture',${JSON.stringify(JSON.stringify(fixture))})`);
  await send('Page.reload');
  await waitFor("document.body.innerText.includes('Exact bitmap artwork')");
