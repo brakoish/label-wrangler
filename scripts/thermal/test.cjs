@@ -84,6 +84,14 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  await assert.rejects(renderThermalBitmap({...template,elements:[{...text,content:'😀'}]},format),/no glyph/);
  await assert.rejects(renderThermalBitmap({...template,elements:[{...text,width:10,height:10}]},format),/overflows/);
  await assert.rejects(renderThermalBitmap({...template,elements:[{...qr,x:300}]},format,{retailId:'clip'}),/clipped/);
+ // Converted legacy shape: omitted fit flag, one-line title/footer, and boxes
+ // extending past the label while their real ink remains inside. No data rewrite.
+ const conversionText={...text,fontWeight:'bold',fontSize:10,autoFit:undefined,minFontSize:undefined,x:4.184,y:11.955,width:397.632,height:33.833,content:'Lemon Cherry Gelato - Hybrid',textAlign:'center'};
+ const oversizedBox={...text,fontWeight:'bold',fontSize:9,autoFit:undefined,x:145.882,y:133.5,width:369.652,height:33.833,lineHeight:1,content:'EXP: 00/00/00'};
+ const footer={...text,fontSize:6,autoFit:undefined,x:11.184,y:183.093,width:252.61,height:19.868,lineHeight:1,content:'SYNTHETIC SUPPLY, LLC - 11501'};
+ for(const e of [conversionText,oversizedBox,footer]) {const snapshot=JSON.stringify(e);await parity(await renderThermalBitmap({...template,elements:[e]},format));assert.equal(JSON.stringify(e),snapshot);}
+ await assert.rejects(renderThermalBitmap({...template,elements:[{...conversionText,autoFit:false}]},format),/overflows/);
+ await assert.rejects(renderThermalBitmap({...template,elements:[{...text,x:400,content:'OUTSIDE'}]},format),/outside/);
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {

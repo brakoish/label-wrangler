@@ -102,7 +102,9 @@ async function textArtwork(e: TextElement, content: string, dpi: number): Promis
   const font = await fontBytes(fontfile);
   for (const char of new Set(content)) if (!/\s/.test(char) && !hasGlyph(font, char.codePointAt(0)!)) throw new Error(`The bundled font has no glyph for ${char}`);
   const fontSize = finite(e.fontSize, .5, 200, 'font size');
-  const min = e.autoFit ? finite(e.minFontSize ?? 4, .5, fontSize, 'minimum font size') : fontSize;
+  // Converted legacy text often omits this flag. Bitmap defaults to fitting the
+  // complete value; an explicit false still requests strict fixed-size text.
+  const min = e.autoFit !== false ? finite(e.minFontSize ?? Math.min(4, fontSize), .5, fontSize, 'minimum font size') : fontSize;
   const leading = finite(e.lineHeight ?? 1.2, .1, 10, 'line height');
   const tracking = finite(e.letterSpacing ?? 0, -20, 100, 'tracking');
   const scaleX = finite(e.charWidth ?? 1, .1, 3, 'character scale');
@@ -215,7 +217,15 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
         const cropW = Math.min(width - cropX, geo.labelWDots - Math.max(0, left));
         const cropH = Math.min(height - cropY, geo.heightDots - Math.max(0, top));
         if (cropW <= 0 || cropH <= 0) throw new Error('Artwork is entirely outside the label');
-        if (e.type === 'text' && (cropW !== width || cropH !== height)) throw new Error('Text box extends outside the label. Move or resize it before printing');
+        if (e.type === 'text' && (cropW !== width || cropH !== height)) {
+          // Legacy boxes can extend beyond the label while all their ink fits.
+          // Reject lost text pixels, not harmless transparent box padding.
+          const raw = await sharp(png).ensureAlpha().raw().toBuffer();
+          const ink = packMonochrome(raw, width, height), stride = Math.ceil(width / 8);
+          for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            if ((x < cropX || x >= cropX + cropW || y < cropY || y >= cropY + cropH) && (ink[y * stride + (x >> 3)] & (128 >> (x % 8)))) throw new Error('Text extends outside the label. Move or resize it before printing');
+          }
+        }
         if ((e.type === 'qr' || e.type === 'barcode') && (cropW !== width || cropH !== height)) throw new Error('Symbol or quiet zone is clipped by the label edge');
         if (cropW !== width || cropH !== height) png = await sharp(png).extract({ left: cropX, top: cropY, width: cropW, height: cropH }).png().toBuffer();
         layers.push({ input: png, left: Math.max(0, left), top: Math.max(0, top) });

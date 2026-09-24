@@ -458,7 +458,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
 
   return (
     <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError || (bitmapProof?.key === bitmapKey ? 'Exact bitmap artwork · double-click text to edit' : 'Updating bitmap proof… printing waits for the current result')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Editing approximation — printing blocked: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? 'Exact bitmap artwork · double-click text to edit' : 'Updating bitmap proof… printing waits for the current result')}</p>}
       {editing && <div className="fixed z-40 bg-zinc-950 border border-amber-400 rounded p-2" style={{ left: Math.max(0, Math.min(editing.left, window.innerWidth - editing.width - 20)), top: Math.max(0, Math.min(editing.top, window.innerHeight - editing.height - 70)), width: editing.width + 16 }}>
         <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Default for ${editing.field} (binding preserved)` : 'Edit text'} · Ctrl/⌘ Enter saves · Esc cancels</p>
         <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
@@ -513,7 +513,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onSelectElement(null); }}
           />
 
-          {bitmap && bitmapProof && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" opacity={bitmapProof.key === bitmapKey && !bitmapError ? 1 : .3}>
+          {bitmap && bitmapProof && !bitmapError && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" opacity={bitmapProof.key === bitmapKey && !bitmapError ? 1 : .3}>
             <image href={bitmapProof.url} width={thermalRenderGeometry(format).linerDots} height={thermalRenderGeometry(format).heightDots} style={{ imageRendering: 'pixelated' }} />
           </svg>}
           {/* Elements */}
@@ -527,7 +527,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
               >
                 <g pointerEvents="none">
-                  {!bitmap && renderElement(element, format, elements, handleTextMeasure, testData)}
+                  {(!bitmap || !!bitmapError) && renderElement(element, format, elements, handleTextMeasure, testData)}
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {

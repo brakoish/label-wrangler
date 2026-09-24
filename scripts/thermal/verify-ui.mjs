@@ -52,6 +52,7 @@ try{
     const changes=JSON.parse(options.body);window.fixture={...window.fixture,...changes};window.saves.push(changes);localStorage.setItem('fixture',JSON.stringify(window.fixture));return json(window.fixture);
    }
    if(String(url)==='/api/office/preview'){window.previewRequests.push(JSON.parse(options.body));return new Response(JSON.stringify(window.previewRequests.length===1?{error:'Simulated lost response'}:{runId:'mock-run'}),{status:window.previewRequests.length===1?503:200,headers:{'Content-Type':'application/json'}});}
+   if(String(url)==='/api/thermal/render'&&window.forceRenderFailure)return new Response(JSON.stringify({error:'Synthetic text overflow'}),{status:400,headers:{'Content-Type':'application/json'}});
    const response=await original(url,options);
    if(String(url)==='/api/thermal/render'&&response.ok){const data=await response.clone().json();window.proofs.push(...data.results);}
    return response;
@@ -95,6 +96,13 @@ try{
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Print preview to Office').click()");await waitFor("document.body.innerText.includes('Simulated lost response')");
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Retry same preview').click()");await waitFor("document.body.innerText.includes('Preview queued.')");
  const requests=await evaluate('window.previewRequests');assert.deepEqual(requests[0],requests[1]);assert.equal(requests[0].expectedPixelDigests.length,1);assert.ok(await evaluate(`window.proofs.some(p=>p.pixelDigest===${JSON.stringify(requests[0].expectedPixelDigests[0])})`));
+ // A failed final proof must not erase editable text or become printable artwork.
+ await evaluate('window.forceRenderFailure=true');
+ await click('[data-element-id="text"] > rect');await key('Enter');await waitFor(`!!document.querySelector('textarea[aria-label="Inline label text"]')`);
+ await setText('VISIBLE EVEN IF PROOF FAILS');await key('Enter',2);
+ await waitFor("document.body.innerText.includes('Editing approximation — printing blocked')");
+ assert.ok(await evaluate(`!!document.querySelector('[data-element-id="text"] text')`));
+ await evaluate('window.forceRenderFailure=false');await key('z',2,'KeyZ');
  // Real saved-run PDF export and Office range proof, with all job writes intercepted.
  await send('Page.navigate',{url:base+'/runs/bitmap-run'});
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('Export labels'))");

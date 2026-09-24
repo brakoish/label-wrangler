@@ -292,14 +292,14 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
             <button
               type="button"
               role="switch"
-              aria-checked={!!element.autoFit}
-              onClick={() => onUpdate({ autoFit: !element.autoFit })}
-              className={`relative h-4 w-7 rounded-full transition-colors ${element.autoFit ? 'bg-amber-500' : 'bg-zinc-700'}`}
+              aria-checked={(element.autoFit ?? bitmap)}
+              onClick={() => onUpdate({ autoFit: !(element.autoFit ?? bitmap) })}
+              className={`relative h-4 w-7 rounded-full transition-colors ${(element.autoFit ?? bitmap) ? 'bg-amber-500' : 'bg-zinc-700'}`}
             >
-              <span className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${element.autoFit ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+              <span className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${(element.autoFit ?? bitmap) ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
             </button>
             <span className="text-[10px] text-zinc-400">Auto-fit text</span>
-            {element.autoFit && (
+            {(element.autoFit ?? bitmap) && (
               <div className="ml-auto w-20">
                 <CompactInput label="Min" value={element.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />
               </div>
@@ -388,10 +388,10 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
           </div>
           <button
             type="button"
-            onClick={() => onUpdate({ autoFit: !first.autoFit })}
-            className={`w-full rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors ${first.autoFit ? 'bg-amber-500/15 text-amber-300' : 'bg-zinc-900/50 text-zinc-500'}`}
+            onClick={() => onUpdate({ autoFit: !(first.autoFit ?? bitmap) })}
+            className={`w-full rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors ${(first.autoFit ?? bitmap) ? 'bg-amber-500/15 text-amber-300' : 'bg-zinc-900/50 text-zinc-500'}`}
           >
-            Auto-fit text {first.autoFit ? 'on' : 'off'}
+            Auto-fit text {(first.autoFit ?? bitmap) ? 'on' : 'off'}
           </button>
         </>
       )}
