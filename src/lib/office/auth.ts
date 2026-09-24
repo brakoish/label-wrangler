@@ -41,7 +41,7 @@ export async function requireStation(req: Request, station: unknown) {
   if (!rows.length) throw new OfficeError('Invalid station credential', 401);
   return station;
 }
-export async function login(username: string, password: string) {
+export async function login(username: string, password: string, staySignedIn = false) {
   const sql = officeSql();
   // Durable username throttle across instances. No IP/header trust required.
   const key = hash(username.toLowerCase());
@@ -55,8 +55,9 @@ export async function login(username: string, password: string) {
   const actual = scryptSync(password, salt, 64);
   if (!timingSafeEqual(actual, Buffer.from(expected, 'hex')) || !rows.length) throw new OfficeError('Invalid username or password', 401);
   const token = randomBytes(32).toString('hex');
-  await sql`INSERT INTO office_sessions(token_hash,user_id,expires_at) VALUES(${hash(token)},${rows[0].id},now()+interval '12 hours')`;
+  const maxAge = staySignedIn ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
+  await sql`INSERT INTO office_sessions(token_hash,user_id,expires_at) VALUES(${hash(token)},${rows[0].id},now()+${maxAge} * interval '1 second')`;
   await sql`DELETE FROM office_login_attempts WHERE key=${key}`;
-  (await cookies()).set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/', maxAge: 43200 });
+  (await cookies()).set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/', maxAge });
   return { username: rows[0].username };
 }
