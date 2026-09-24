@@ -24,7 +24,7 @@ export function bitmapCopy(template: LabelTemplate, format?: LabelFormat) {
     // about its top-left anchor, so its box extends left of that anchor.
     return { ...e, x: e.rotation === 90 ? e.x + height : e.x, width: Math.max(1, width), height: Math.max(1, height),
       fontFamily: BITMAP_FONTS.includes(e.fontFamily) ? e.fontFamily : /Courier|Mono/i.test(e.fontFamily) ? 'Liberation Mono' : /sans/i.test(e.fontFamily) ? 'Liberation Sans' : /Times|Georgia|Serif/i.test(e.fontFamily) ? 'Liberation Serif' : 'Liberation Sans',
-      charWidth: e.charWidth ?? .5, autoFit: true,
+      charWidth: e.charWidth ?? .5, autoFit: e.autoFit === true,
     };
   }) };
 }

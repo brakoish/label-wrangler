@@ -34,12 +34,13 @@ try{
  await send('Page.enable');await send('Runtime.enable');
  await send('Network.setCookie',{name:'lw-office-session',value:cookie.slice(cookie.indexOf('=')+1),url:base,httpOnly:true,secure:base.startsWith('https:'),sameSite:'Strict'});
  await send('Page.addScriptToEvaluateOnNewDocument',{source:`
-  const original=window.fetch.bind(window);window.saves=[];window.previewRequests=[];window.proofs=[];window.downloads=[];
+  const original=window.fetch.bind(window);window.saves=[];window.renderRequests=[];window.previewRequests=[];window.proofs=[];window.downloads=[];
   const objectURL=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{if(blob.type==='application/pdf')window.downloads.push(blob);return objectURL(blob);};
   const syntheticRun={id:'bitmap-run',name:'Synthetic run',templateId:'thermal-ui-test',staticValues:{product:'RUN SAMPLE',url:'https://example.invalid/RUN'},fieldMappings:{},dataSource:'manual',sourceData:[{},{},{}],status:'draft',totalLabels:3,printedCount:0,createdAt:'',updatedAt:''};
 
   window.fixture=JSON.parse(localStorage.getItem('fixture')||${JSON.stringify(JSON.stringify(fixture))});
   window.fetch=async(url,options={})=>{
+   if(String(url)==='/api/thermal/render')window.renderRequests.push(JSON.parse(options.body));
    const json=value=>new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}});
    if(String(url).startsWith('/api/nabis/search'))return json({packages:[{id:'test-product',packageTag:'SYNTHETIC',productName:'SELECTED PRODUCT',thcPercent:'0',cbdPercent:'2.75',retailId:'https://example.invalid/SELECTED'}]});
    if(String(url)==='/api/templates')return json([window.fixture]);
@@ -128,8 +129,8 @@ try{
  await waitFor('window.downloads.length===1');
  const multiPdf=await PDFDocument.load(Uint8Array.from(await evaluate('window.downloads[0].arrayBuffer().then(b=>Array.from(new Uint8Array(b)))')));
  assert.equal(multiPdf.getPageCount(),2);assert.ok(Math.abs(multiPdf.getPage(0).getWidth()-832*72/203)<1e-8);assert.equal(multiPdf.getPage(0).getHeight(),72);
- // Conversion cannot create an invalid copy; a valid reviewed proof enables it.
- await evaluate(`localStorage.removeItem('testAcross'); localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},thermalRenderMode:'native-v1'}))`);
+ // A network/render failure blocks copying; a renderable draft permits manual fixes.
+ await evaluate(`localStorage.removeItem('testAcross'); localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},thermalRenderMode:'native-v1',elements:${JSON.stringify(fixture.elements)}.map(e=>e.type==='text'?{...e,autoFit:false,width:2}:e)}))`);
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Duplicate and convert')");
  await evaluate("window.forceRenderFailure=true; Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
@@ -139,6 +140,7 @@ try{
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
  await waitFor(`!!document.querySelector('img[alt="New bitmap proof"]')`);
  assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').disabled"),false);
+ assert.ok(await evaluate(`window.renderRequests.some(r=>r.editing===true && r.template.elements.filter(e=>e.type==='text').every(e=>e.autoFit===false && e.fontSize===10))`));
  // Off-label QR is an editing warning, not a whole-label render failure.
  await evaluate(`localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},elements:${JSON.stringify(fixture.elements)}.map(e=>e.id==='qr'?{...e,x:390}:e)}))`);
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});

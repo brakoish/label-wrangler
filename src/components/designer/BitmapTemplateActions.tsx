@@ -16,7 +16,14 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
   useEffect(() => {
     let active = true; setProof(''); setOldProof('');
     if (!draft) return;
-    getBitmapProof(draft.template, draft.format, values).then(r => { if (active) setProof(r.proof); }).catch(e => { if (active) setError(e.message); });
+    getBitmapProof(draft.template, draft.format, values).then(r => { if (active) setProof(r.proof); }).catch(async e => {
+      if (!active) return;
+      setError(e.message);
+      if (source) {
+        try { const result = await getBitmapProof(draft.template, draft.format, values, true); if (active) setProof(result.proof); }
+        catch { /* Keep creation disabled when even the editable draft cannot render. */ }
+      }
+    });
     if (source && format) generateZPLWithImages(source, format, values).then(z => renderZplToDataUrl(z, format)).then(url => { if (active) setOldProof(url); }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   // Draft captures the conversion inputs. Parent changes do not alter this proof.
@@ -39,7 +46,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   return <div className="text-xs">
-    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <button className="text-amber-400 border border-zinc-700 rounded px-2 py-1" onClick={() => { setError(''); setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (bitmap)` }, format, report: ['Creates a new editable template. Original templates and runs are unchanged.', 'Fonts use bundled Liberation equivalents. Condensed width is retained; text boxes fit within the label and neighboring fields. Compare the proofs before creating the copy.'] }); }}>Duplicate and convert</button> : <div className="flex gap-3 px-8 pt-5">
+    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <button className="text-amber-400 border border-zinc-700 rounded px-2 py-1" onClick={() => { setError(''); setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (bitmap)` }, format, report: ['Creates a new editable template. Original templates and runs are unchanged.', 'Fonts use bundled Liberation equivalents. Condensed width and Auto-fit preference are retained (off by default). Text boxes fit within the label and neighboring fields. Compare the proofs before creating the copy.'] }); }}>Duplicate and convert</button> : <div className="flex gap-3 px-8 pt-5">
       <button className="text-amber-400" onClick={() => file.current?.click()}>Import Natural label JSON</button>
       <button className="text-amber-400" onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Lemon example</button>
       <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />
@@ -53,7 +60,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
         <div><p>New bitmap proof</p>{proof ? <img src={proof} alt="New bitmap proof" className="w-full bg-white" style={{ imageRendering: 'pixelated' }} /> : <p className="text-zinc-500">{error ? 'Adjust the editable copy to resolve the issue below.' : 'Rendering…'}</p>}</div>
       </div>
       {error && <p role="alert" className="text-red-400">{error}</p>}
-      <p className="text-zinc-500">A valid bitmap proof is required before creating the copy. The original remains available unchanged.</p>
+      <p className="text-zinc-500">{source ? 'You may create an editable draft to fix reported text or layout issues manually. Printing requires a valid proof. The original is unchanged.' : 'A valid bitmap proof is required before creating the copy. The original remains available unchanged.'}</p>
       <button disabled={busy || !proof} onClick={() => void create()} className="bg-amber-500 text-black rounded px-3 py-2">{busy ? 'Creating…' : 'Create editable bitmap copy'}</button>
       <button disabled={busy} className="ml-3" onClick={() => { setDraft(null); setError(''); }}>Cancel</button>
     </div></div>}

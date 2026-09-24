@@ -101,6 +101,11 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  }
  const nativeLayout={...template,elements:[{...text,id:'a',fontFamily:'sans-serif',x:15,y:49,width:200,height:33,charWidth:.8},{...text,id:'b',x:155,y:49,width:169,height:33,charWidth:.8},{...qr,id:'q',x:285,y:34,width:116,height:116},{...footer,id:'footer',y:184.3,height:41}]};
  const savedLayout=JSON.stringify(nativeLayout), fitted=bitmapCopy(nativeLayout,format);
+ for(const autoFit of [undefined,false,true]) {
+  const converted=bitmapCopy({...template,elements:[{...text,autoFit}]},format).elements[0];
+  check(converted.autoFit===(autoFit===true),'conversion preserves explicit Auto-fit, default off');
+  check(converted.fontSize===text.fontSize,'conversion preserves font size');
+ }
  check(fitted.elements[0].charWidth===.8 && fitted.elements[0].fontFamily==='Liberation Sans','conversion preserves condensation and sans family');
  check(fitted.elements[0].x+fitted.elements[0].width<=151 && fitted.elements[1].x+fitted.elements[1].width<=281,'conversion separates neighboring fields');
  check(fitted.elements[3].y+fitted.elements[3].height<=203,'converted footer stays on label');
