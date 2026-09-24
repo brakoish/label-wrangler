@@ -197,5 +197,12 @@ try{
  await bindField('cbdPercent');
  await waitFor("localStorage.getItem('lw:test-data:thermal-ui-test')?.includes('2.75')");
  assert.equal(JSON.parse(await evaluate("localStorage.getItem('lw:test-data:thermal-ui-test')")).product,'MANUAL OVERRIDE');
+ // Insufficient quiet margin is advisory, not a failed proof.
+ await evaluate(`(()=>{const t=${JSON.stringify(fixture)};const q=t.elements.find(e=>e.id==='qr');q.isStatic=true;q.content='LIVE';q.x=282;localStorage.setItem('fixture',JSON.stringify(t));})()`);
+ await send('Page.reload');
+ await waitFor("document.body?.innerText.includes('Printing is available; test-scan')");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
+ await waitFor(`!!document.querySelector('img[alt="ZPL Preview"]')`);
+ assert.equal(await evaluate(`!!document.querySelector('img[alt="Editing preview with warnings"]')`),false);
  console.log('PASS bitmap bound inline edits/cancel, box vs Shift type resize, repeated undo/redo, Alt-drag binding copy, one save per gesture, reload, exact Office proof digest and lost-response retry, upright held nudge, PDF page geometry, saved-run range proof. All print/edit writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}

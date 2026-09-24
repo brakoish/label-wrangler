@@ -199,6 +199,7 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const qrBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const editorLayers: Array<{ elementId: string; x: number; y: number; width: number; height: number; url: string }> = [];
+  const advisories: Array<{ elementId: string; message: string }> = [];
   const warnings: Array<{ elementId: string; message: string }> = [];
   for (let laneIndex = 0; laneIndex < across; laneIndex++) {
     const values = lanes[laneIndex];
@@ -252,7 +253,12 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
             if ((x < cropX || x >= cropX + cropW || y < cropY || y >= cropY + cropH) && (ink[y * stride + (x >> 3)] & (128 >> (x % 8)))) warn('Text extends outside the label. Move or resize it before printing');
           }
         }
-        if ((e.type === 'qr' || e.type === 'barcode') && (cropW !== width || cropH !== height)) warn(e.type === 'qr' && left + (art.quiet || 0) >= 0 && top + (art.quiet || 0) >= 0 && left + width - (art.quiet || 0) <= geo.labelWDots && top + height - (art.quiet || 0) <= geo.heightDots ? 'The black QR fits, but its four-square clear margin crosses the label edge. Use Fit QR inside label before printing.' : 'QR/barcode is clipped outside the label. Move it inside before printing');
+        if ((e.type === 'qr' || e.type === 'barcode') && (cropW !== width || cropH !== height)) {
+          const q = art.quiet || 0;
+          const codeFits = e.type === 'qr' && left + q >= 0 && top + q >= 0 && left + width - q <= geo.labelWDots && top + height - q <= geo.heightDots;
+          if (codeFits) advisories.push({ elementId: e.id, message: 'QR clear margin is smaller than recommended. Printing is available; test-scan a printed label.' });
+          else warn('QR/barcode is clipped outside the label. Move it inside before printing');
+        }
         if (cropW !== width || cropH !== height) png = await sharp(png).extract({ left: cropX, top: cropY, width: cropW, height: cropH }).png().toBuffer();
         layers.push({ input: png, left: Math.max(0, left), top: Math.max(0, top) });
       } catch (error) { warn(`Lane ${laneIndex + 1}, ${e.fieldName || e.id}: ${error instanceof Error ? error.message : 'Artwork failed'}`); }
@@ -264,5 +270,5 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const packed = packMonochrome(rgba, geo.linerDots, geo.heightDots), pixelDigest = hash(packed);
   const pixels = unpackMonochrome(packed, geo.linerDots, geo.heightDots);
   const png = await sharp(Buffer.from(pixels), { raw: { width: geo.linerDots, height: geo.heightDots, channels: 4 } }).png().toBuffer();
-  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, qrBounds, qrInkBounds, editorLayers, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
+  return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, advisories, qrBounds, qrInkBounds, editorLayers, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
 }

@@ -28,7 +28,7 @@ interface LabelPreviewProps {
 
 export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel }: LabelPreviewProps) {
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
-  const [bitmapProof, setBitmapProof] = useState<{ key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
+  const [bitmapProof, setBitmapProof] = useState<{ advisories: Array<{ elementId: string; message: string }>; key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
   // Keep editor artwork attached to the current gesture, not a delayed HTTP result.
   const liveBounds = useCallback((id: string, bounds: { x: number; y: number; width: number; height: number } | undefined) => {
     const old = bitmapProof?.elements.find(e => e.id === id), current = elements.find(e => e.id === id);
@@ -46,7 +46,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     let active = true; setBitmapError('');
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
-        .then(result => { if (active) setBitmapProof({ key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
+        .then(result => { if (active) setBitmapProof({ advisories: result.advisories || [], key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
         .catch(error => { if (active) setBitmapError(error.message); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
@@ -468,12 +468,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     setGuides({ x: [], y: [] });
   }, [dragging, onDragEnd]);
 
-  const badQr = bitmapProof?.key === bitmapKey ? elements.find(e => e.type === 'qr' && bitmapProof.warnings.some(w => w.elementId === e.id) && bitmapProof.qrBounds[e.id]) : undefined;
+  const badQr = bitmapProof?.key === bitmapKey ? elements.find(e => e.type === 'qr' && [...bitmapProof.warnings, ...bitmapProof.advisories].some(w => w.elementId === e.id) && bitmapProof.qrBounds[e.id]) : undefined;
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
     <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Editing approximation — printing blocked: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Editing approximation — printing blocked: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : bitmapProof.advisories.length ? bitmapProof.advisories[0].message : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
       {badQr && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });

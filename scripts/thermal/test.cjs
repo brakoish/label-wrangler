@@ -140,9 +140,12 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  const edgeX=liveQr.x+406-initial.qrBounds.live.x-initial.qrBounds.live.width+1;
  const edgeTemplate={...liveTemplate,elements:[{...liveQr,x:edgeX}]};
  const edge=await renderThermalBitmap(edgeTemplate,format,{},true);
- check(edge.warnings.some(w=>w.message.includes('black QR fits')),'margin warning distinguishes intact code');
+ check(edge.warnings.length===0 && edge.advisories.length===1,'margin advisory does not mark intact code invalid');
  check(edge.editorLayers[0].width===initial.editorLayers[0].width,'draft layer keeps complete code beyond edge');
- await assert.rejects(renderThermalBitmap(edgeTemplate,format),/black QR fits/);
+ const printableEdge=await renderThermalBitmap(edgeTemplate,format);
+ check(!!printableEdge.zpl && printableEdge.advisories.length===1,'short QR margin permits print bytes');
+ await parity(printableEdge);
+ await assert.rejects(renderThermalBitmap({...edgeTemplate,elements:[{...liveQr,x:edgeX+30}]},format),/clipped|outside/);
  // Styled and rotated text, transparency/fits, QR correction and liner geometry.
  const before=JSON.stringify(template);
  for(const family of ['Liberation Sans','Liberation Serif','Liberation Mono']) for(const rotation of [0,90,180,270]) {
