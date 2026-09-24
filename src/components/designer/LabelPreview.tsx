@@ -473,7 +473,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
     <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Editing approximation — printing blocked: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : bitmapProof.advisories.length ? bitmapProof.advisories[0].message : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Last rendered artwork — preview unavailable: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : bitmapProof.advisories.length ? bitmapProof.advisories[0].message : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
       {badQr && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });
@@ -533,7 +533,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onSelectElement(null); }}
           />
 
-          {bitmap && bitmapProof && !bitmapError && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" >
+          {bitmap && bitmapProof && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" >
             {bitmapProof.key !== bitmapKey && bitmapProof.layers.length > 0 ? <g transform={`translate(${thermalRenderGeometry(format).effectiveSideMDots} 0)`}>
               {bitmapProof.layers.map(layer => {
                 if (!elements.some(e => e.id === layer.elementId)) return null;
@@ -553,7 +553,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
               >
                 <g pointerEvents="none">
-                  {(!bitmap || !!bitmapError) && renderElement(element, format, elements, handleTextMeasure, testData)}
+                  {!bitmap && renderElement(element, format, elements, handleTextMeasure, testData)}
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {

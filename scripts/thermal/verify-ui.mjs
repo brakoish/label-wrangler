@@ -102,8 +102,9 @@ try{
  await evaluate('window.forceRenderFailure=true');
  await click('[data-element-id="text"] > rect');await key('Enter');await waitFor(`!!document.querySelector('textarea[aria-label="Inline label text"]')`);
  await setText('VISIBLE EVEN IF PROOF FAILS');await key('Enter',2);
- await waitFor("document.body?.innerText.includes('Editing approximation — printing blocked')");
- assert.ok(await evaluate(`!!document.querySelector('[data-element-id="text"] text')`));
+ await waitFor("document.body?.innerText.includes('Last rendered artwork — preview unavailable')");
+ assert.ok(await evaluate(`!!document.querySelector('[data-live-layer="text"]')`));
+ assert.equal(await evaluate(`!!document.querySelector('[data-element-id="text"] text')`),false,'failed bitmap request never switches all fonts to native SVG');
  await evaluate('window.forceRenderFailure=false');await key('z',2,'KeyZ');
  // Real saved-run PDF export and Office range proof, with all job writes intercepted.
  await send('Page.navigate',{url:base+'/runs/bitmap-run'});
