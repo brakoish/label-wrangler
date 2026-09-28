@@ -43,6 +43,7 @@ try{
    if(String(url)==='/api/thermal/render')window.renderRequests.push(JSON.parse(options.body));
    const json=value=>new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}});
    if(String(url).startsWith('/api/nabis/search'))return json({packages:[{id:'test-product',packageTag:'SYNTHETIC',productName:'SELECTED PRODUCT',thcPercent:'0',cbdPercent:'2.75',retailId:'https://example.invalid/SELECTED'}]});
+   if(String(url)==='/api/templates' && options.method==='POST'){window.createdCopy=JSON.parse(options.body);return json({...window.createdCopy,id:'synthetic-copy'});}
    if(String(url)==='/api/templates')return json([window.fixture]);
    if(String(url)==='/api/formats')return json([{...${JSON.stringify(format)},...(localStorage.getItem('testAcross')?{labelsAcross:2,horizontalGapThermal:.05,sideMarginThermal:.02,linerWidth:4.1}:{})}]);
    if(String(url)==='/api/runs')return json([syntheticRun]);
@@ -54,10 +55,11 @@ try{
     const changes=JSON.parse(options.body);window.fixture={...window.fixture,...changes};window.saves.push(changes);localStorage.setItem('fixture',JSON.stringify(window.fixture));return json(window.fixture);
    }
    if(String(url)==='/api/office/preview'){window.previewRequests.push(JSON.parse(options.body));return new Response(JSON.stringify(window.previewRequests.length===1?{error:'Simulated lost response'}:{runId:'mock-run'}),{status:window.previewRequests.length===1?503:200,headers:{'Content-Type':'application/json'}});}
-   if(String(url)==='/api/thermal/render'&&window.forceRenderFailure)return new Response(JSON.stringify({error:'Synthetic text overflow'}),{status:400,headers:{'Content-Type':'application/json'}});
+   if(['/api/thermal/render','/api/thermal/convert'].includes(String(url))&&window.forceRenderFailure)return new Response(JSON.stringify({error:'Synthetic text overflow'}),{status:400,headers:{'Content-Type':'application/json'}});
    if(String(url)==='/api/thermal/render' && window.holdProof)await new Promise(resolve=>{window.releaseProof=resolve;});
    const response=await original(url,options);
    if(String(url)==='/api/thermal/render'&&response.ok){const data=await response.clone().json();window.proofs.push(...data.results);}
+   if(String(url)==='/api/thermal/convert'&&response.ok)window.conversion=await response.clone().json();
    return response;
   };
  `});
@@ -130,7 +132,7 @@ try{
  const multiPdf=await PDFDocument.load(Uint8Array.from(await evaluate('window.downloads[0].arrayBuffer().then(b=>Array.from(new Uint8Array(b)))')));
  assert.equal(multiPdf.getPageCount(),2);assert.ok(Math.abs(multiPdf.getPage(0).getWidth()-832*72/203)<1e-8);assert.equal(multiPdf.getPage(0).getHeight(),72);
  // A network/render failure blocks copying; a renderable draft permits manual fixes.
- await evaluate(`localStorage.removeItem('testAcross'); localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},thermalRenderMode:'native-v1',elements:${JSON.stringify(fixture.elements)}.map(e=>e.type==='text'?{...e,autoFit:false,width:2}:e)}))`);
+ await evaluate(`localStorage.removeItem('testAcross'); localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},thermalRenderMode:'native-v1',elements:${JSON.stringify(fixture.elements)}.map(e=>e.type==='text'?{...e,autoFit:false,width:100,height:12}:e)}))`);
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Duplicate and convert')");
  await evaluate("window.forceRenderFailure=true; Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
@@ -140,7 +142,10 @@ try{
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Duplicate and convert').click()");
  await waitFor(`!!document.querySelector('img[alt="New bitmap proof"]')`);
  assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').disabled"),false);
- assert.ok(await evaluate(`window.renderRequests.some(r=>r.editing===true && r.template.elements.filter(e=>e.type==='text').every(e=>e.autoFit===false && e.fontSize===10))`));
+ assert.ok(await evaluate(`window.conversion.adjustments.length>0 && window.conversion.template.elements.filter(e=>e.type==='text').every(e=>e.autoFit===false && e.fontSize<=10)`));
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Create editable bitmap copy').click()");
+ await waitFor('!!window.createdCopy');
+ assert.deepEqual(await evaluate('window.createdCopy.elements.map(e=>e.fontSize)'),await evaluate('window.conversion.template.elements.map(e=>e.fontSize)'));
  // Off-label QR is an editing warning, not a whole-label render failure.
  await evaluate(`localStorage.setItem('fixture',JSON.stringify({...${JSON.stringify(fixture)},elements:${JSON.stringify(fixture.elements)}.map(e=>e.id==='qr'?{...e,x:390}:e)}))`);
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});

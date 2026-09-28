@@ -1,0 +1,27 @@
+require('./register.cjs');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const { importNaturalDesign, bitmapCopy } = require('../../src/lib/thermal/import.ts');
+const { fitBitmapCopy, renderThermalBitmap } = require('../../src/lib/thermal/render.server.ts');
+(async () => {
+ const { template, format } = importNaturalDesign(JSON.parse(fs.readFileSync('scripts/thermal/fixtures/Lemon-Cherry-Gelato-Your-Edits.label.json')));
+ const text = template.elements.find(e => e.type === 'text');
+ const source = { ...template, elements: [{ ...text, x: 5, y: 5, width: 180, height: 20, fontSize: 16, autoFit: false, isStatic: false, fieldName: 'productName' }] };
+ const before = JSON.stringify(source), values = { productName: 'Canna Squirt Sour' };
+ const copy = bitmapCopy(source, format);
+ const fitted = await fitBitmapCopy(copy, format, values);
+ assert.equal(fitted.adjustments.length, 1);
+ assert.equal(fitted.issues.length, 0);
+ assert.equal(fitted.template.elements[0].autoFit, false);
+ assert.ok(fitted.template.elements[0].fontSize < 16);
+ await renderThermalBitmap(fitted.template, format, values);
+ assert.equal(JSON.stringify(source), before);
+ const again = await fitBitmapCopy(fitted.template, format, values);
+ assert.equal(again.adjustments.length, 0);
+ const impossible = await fitBitmapCopy({ ...copy, elements: [{ ...copy.elements[0], width: 1, height: 1 }] }, format, values);
+ assert.equal(impossible.issues.length, 1);
+ assert.equal(impossible.template.elements[0].fontSize, 16);
+ const enabled = await fitBitmapCopy({ ...copy, elements: [{ ...copy.elements[0], autoFit: true }] }, format, values);
+ assert.equal(enabled.template.elements[0].autoFit, true);
+ console.log('Conversion fitting: fixed-size proof, source immutability, idempotence, minimum-size failure, and explicit Auto-fit preference passed.');
+})().catch(e => { console.error(e); process.exit(1); });

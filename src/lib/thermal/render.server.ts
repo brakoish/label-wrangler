@@ -91,7 +91,7 @@ export function validateBitmapDesign(template: LabelTemplate, format: LabelForma
   return geo;
 }
 
-type Artwork = { overflow?: boolean; png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
+type Artwork = { fittedFontSize?: number; overflow?: boolean; png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
 async function textArtwork(e: TextElement, content: string, dpi: number, editing = false): Promise<Artwork> {
   const family = fontFamilies[e.fontFamily];
   if (!family) throw new Error(`Font "${e.fontFamily}" is not bundled. Choose Liberation Sans, Serif or Mono.`);
@@ -118,7 +118,7 @@ async function textArtwork(e: TextElement, content: string, dpi: number, editing
     const width = Math.max(1, Math.round(info.width * scaleX));
     const fits = width <= Math.round(e.width) && info.height <= Math.round(e.height);
     if (fits || (editing && size <= min)) {
-      return { overflow: !fits, png: scaleX === 1 ? data : await sharp(data).resize(width, info.height, { fit: 'fill' }).png().toBuffer(), width, height: info.height };
+      return { fittedFontSize: size, overflow: !fits, png: scaleX === 1 ? data : await sharp(data).resize(width, info.height, { fit: 'fill' }).png().toBuffer(), width, height: info.height };
     }
     if (size <= min) throw new Error('Text overflows its box. Enlarge the box, reduce type size, or enable Auto-fit.');
     size = Math.max(min, Math.round((size - .25) * 100) / 100);
@@ -277,4 +277,25 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
   const pixels = unpackMonochrome(packed, geo.linerDots, geo.heightDots);
   const png = await sharp(Buffer.from(pixels), { raw: { width: geo.linerDots, height: geo.heightDots, channels: 4 } }).png().toBuffer();
   return { version: BITMAP_VERSION, width: geo.linerDots, height: geo.heightDots, inputDigest, pixelDigest, packed: editing ? '' : Buffer.from(packed).toString('base64'), warnings, advisories, qrBounds, qrInkBounds, editorLayers, proof: `data:image/png;base64,${png.toString('base64')}`, zpl: editing ? '' : bitmapZpl(packed, geo.linerDots, geo.heightDots, inputDigest, pixelDigest) };
+}
+
+// Conversion-only measurement: bake the measured size, never enable ongoing Auto-fit.
+export async function fitBitmapCopy(template: LabelTemplate, format: LabelFormat, values: Record<string, string>) {
+  validateBitmapDesign(template, format);
+  const elements = template.elements.map(e => ({ ...e }));
+  const adjustments: Array<{ elementId: string; from: number; to: number }> = [];
+  const issues: Array<{ elementId: string; message: string }> = [];
+  for (const e of elements) {
+    if (e.type !== 'text') continue;
+    const content = resolveThermalContent(e, values);
+    if (!content.trim()) continue;
+    try {
+      const art = await textArtwork({ ...e, autoFit: true, minFontSize: Math.min(e.fontSize, e.minFontSize ?? 4) }, content, format.dpi || 203);
+      if (art.fittedFontSize! < e.fontSize) {
+        adjustments.push({ elementId: e.id, from: e.fontSize, to: art.fittedFontSize! });
+        e.fontSize = art.fittedFontSize!;
+      }
+    } catch (error) { issues.push({ elementId: e.id, message: (error as Error).message }); }
+  }
+  return { template: { ...template, elements }, adjustments, issues };
 }

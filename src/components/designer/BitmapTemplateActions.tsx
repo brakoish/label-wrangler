@@ -11,19 +11,21 @@ import type { LabelTemplate, LabelFormat } from '@/lib/types';
 export function BitmapTemplateActions({ source, format, values = {}, onCreated }: { source?: LabelTemplate; format?: LabelFormat; values?: Record<string, string>; onCreated: (id: string) => void }) {
   const file = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<{ template: LabelTemplate; format: LabelFormat; report: string[] } | null>(null);
+  const [prepared, setPrepared] = useState<LabelTemplate | null>(null);
+  const [adjustments, setAdjustments] = useState(0);
   const [proof, setProof] = useState(''), [oldProof, setOldProof] = useState('');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   useEffect(() => {
-    let active = true; setProof(''); setOldProof('');
+    let active = true; setProof(''); setOldProof(''); setPrepared(null); setAdjustments(0);
     if (!draft) return;
-    getBitmapProof(draft.template, draft.format, values).then(r => { if (active) setProof(r.proof); }).catch(async e => {
-      if (!active) return;
-      setError(e.message);
-      if (source) {
-        try { const result = await getBitmapProof(draft.template, draft.format, values, true); if (active) setProof(result.proof); }
-        catch { /* Keep creation disabled when even the editable draft cannot render. */ }
-      }
-    });
+    if (source) {
+      fetch('/api/thermal/convert', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template: source, format: draft.format, values }) })
+        .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Conversion failed'); return result; })
+        .then(result => { if (active) { setPrepared({ ...result.template, name: draft.template.name }); setProof(result.proof); setAdjustments(result.adjustments.length); setError((result.warnings || []).map((w: { message: string }) => w.message).join(' ')); } })
+        .catch(e => { if (active) setError(e.message); });
+    } else {
+      getBitmapProof(draft.template, draft.format, values).then(r => { if (active) { setPrepared(draft.template); setProof(r.proof); } }).catch(e => { if (active) setError(e.message); });
+    }
     if (source && format) generateZPLWithImages(source, format, values).then(z => renderZplToDataUrl(z, format)).then(url => { if (active) setOldProof(url); }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   // Draft captures the conversion inputs. Parent changes do not alter this proof.
@@ -31,7 +33,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
   }, [draft]);
   const load = (value: unknown) => { setError(''); try { setDraft(importNaturalDesign(value)); } catch (e) { setError((e as Error).message); } };
   const create = async () => {
-    if (!draft || !proof) return;
+    if (!draft || !proof || !prepared) return;
     setBusy(true); setError('');
     try {
       let target = useFormatStore.getState().formats.find(f => f.type === 'thermal' && f.width === draft.format.width && f.height === draft.format.height && (f.dpi || 203) === draft.format.dpi && (f.labelsAcross || 1) === (draft.format.labelsAcross || 1) && (f.horizontalGapThermal || 0) === (draft.format.horizontalGapThermal || 0) && (f.linerWidth || 0) === (draft.format.linerWidth || 0) && (f.sideMarginThermal || 0) === (draft.format.sideMarginThermal || 0));
@@ -40,13 +42,13 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
         void _id; void _c; void _u;
         target = await useFormatStore.getState().addFormat(spec);
       }
-      const created = await useTemplateStore.getState().addTemplate({ name: draft.template.name, description: draft.template.description, formatId: target.id, thermalRenderMode: 'bitmap-v1', elements: draft.template.elements.map(e => ({ ...e, id: crypto.randomUUID() })) });
+      const created = await useTemplateStore.getState().addTemplate({ name: draft.template.name, description: draft.template.description, formatId: target.id, thermalRenderMode: 'bitmap-v1', elements: prepared.elements.map(e => ({ ...e, id: crypto.randomUUID() })) });
       if (source) localStorage.setItem(`lw:test-data:${created.id}`, JSON.stringify(values));
       setDraft(null); onCreated(created.id);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   return <div className="text-xs">
-    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <button className="text-amber-400 border border-zinc-700 rounded px-2 py-1" onClick={() => { setError(''); setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (bitmap)` }, format, report: ['Creates a new editable template. Original templates and runs are unchanged.', 'Fonts use bundled Liberation equivalents. Condensed width and Auto-fit preference are retained (off by default). Text boxes fit within the label and neighboring fields. Compare the proofs before creating the copy.'] }); }}>Duplicate and convert</button> : <div className="flex gap-3 px-8 pt-5">
+    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <button className="text-amber-400 border border-zinc-700 rounded px-2 py-1" onClick={() => { setError(''); setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (bitmap)` }, format, report: ['Creates a new editable template. Original templates and runs are unchanged.', 'Fonts use bundled Liberation equivalents. Text sizing is adjusted once to fit the displayed sample values. Auto-fit stays off unless already enabled. Condensed width is retained. Compare the proofs before creating the copy.'] }); }}>Duplicate and convert</button> : <div className="flex gap-3 px-8 pt-5">
       <button className="text-amber-400" onClick={() => file.current?.click()}>Import Natural label JSON</button>
       <button className="text-amber-400" onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Lemon example</button>
       <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />
@@ -59,9 +61,10 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
         {source && <div><p>Original native output</p>{oldProof && <img src={oldProof} alt="Original native proof" className="w-full bg-white" />}</div>}
         <div><p>New bitmap proof</p>{proof ? <img src={proof} alt="New bitmap proof" className="w-full bg-white" style={{ imageRendering: 'pixelated' }} /> : <p className="text-zinc-500">{error ? 'Adjust the editable copy to resolve the issue below.' : 'Rendering…'}</p>}</div>
       </div>
+      {adjustments > 0 && <p className="text-amber-400">Adjusted {adjustments} text sizes once. These remain editable fixed sizes; longer product values may need further adjustment.</p>}
       {error && <p role="alert" className="text-red-400">{error}</p>}
       <p className="text-zinc-500">{source ? 'You may create an editable draft to fix reported text or layout issues manually. Printing requires a valid proof. The original is unchanged.' : 'A valid bitmap proof is required before creating the copy. The original remains available unchanged.'}</p>
-      <button disabled={busy || !proof} onClick={() => void create()} className="bg-amber-500 text-black rounded px-3 py-2">{busy ? 'Creating…' : 'Create editable bitmap copy'}</button>
+      <button disabled={busy || !proof || !prepared} onClick={() => void create()} className="bg-amber-500 text-black rounded px-3 py-2">{busy ? 'Creating…' : 'Create editable bitmap copy'}</button>
       <button disabled={busy} className="ml-3" onClick={() => { setDraft(null); setError(''); }}>Cancel</button>
     </div></div>}
   </div>;
