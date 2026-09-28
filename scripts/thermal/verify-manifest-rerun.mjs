@@ -46,7 +46,7 @@ try{
  const {sourceData,...summary}=run;return json([summary]);}
  if(String(url)==='/api/runs/saved-manifest'){window.detailLoads++;return json(run);}
  if(String(url).startsWith('/api/nabis/search')){window.manifestSearches++;throw Error('Must not reload Manifest for a re-run');}
- if(options.method && options.method!=='GET')throw Error('Unexpected write '+url);
+ if(options.method && options.method!=='GET' && String(url)!=='/api/thermal/render' && String(url)!=='/api/zpl-preview')throw Error('Unexpected write '+url);
  return original(url,options);
  };`});
  await send('Page.navigate',{url:base+'/runs/new?duplicateFrom=saved-manifest'});
