@@ -32,6 +32,14 @@ const request=process.env.VERCEL_TEST ? async (url,init={})=>{
  const cookie=auth.headers.get('set-cookie').split(';')[0],headers={Origin:origin,Cookie:cookie,'Content-Type':'application/json'};
  try{
   const design=importNaturalDesign(JSON.parse(fs.readFileSync('scripts/thermal/fixtures/Lemon-Cherry-Gelato-Your-Edits.label.json')));
+  const conversionSource={...design.template,elements:[{...design.template.elements.find(e=>e.type==='text'),x:5,y:5,width:180,height:20,fontSize:16,autoFit:false,isStatic:false,fieldName:'productName'}]};
+  const values={productName:'Canna Squirt Sour'};
+  const convertedResponse=await request(base+'/api/thermal/convert',{method:'POST',headers,body:JSON.stringify({template:conversionSource,format:design.format,values})});
+  const converted=await convertedResponse.json();assert.equal(convertedResponse.status,200,JSON.stringify(converted));
+  assert.equal(converted.adjustments.length,1);assert.equal(converted.template.elements[0].autoFit,false);assert.ok(converted.template.elements[0].fontSize<16);
+  const fixedResponse=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({template:converted.template,format:design.format,feeds:[values]})});
+  const fixed=await fixedResponse.json();assert.equal(fixedResponse.status,200,JSON.stringify(fixed));assert.equal(fixed.results[0].proof,converted.proof);
+  console.log('PASS hosted conversion bakes fixed size with Auto-fit off; strict print proof matches conversion preview');
   const local=await renderThermalBitmap(design.template,design.format);const start=Date.now();
   const r=await request(base+'/api/thermal/render',{method:'POST',headers,body:JSON.stringify({...design,feeds:[{}]})});const data=await r.json();assert.equal(r.status,200,JSON.stringify(data));
   const hosted=data.results[0],decoded=decodeBitmapZpl(hosted.zpl);
