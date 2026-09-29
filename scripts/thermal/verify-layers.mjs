@@ -85,7 +85,7 @@ try{
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Move to top').click()");
  await waitFor('window.saves.length===1');
  assert.deepEqual(await evaluate('window.fixture.elements.slice().sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id)'),['text','second','qr']);
- assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Move to top').disabled"),true);
+ await waitFor("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Move to top')?.disabled");
  await key('z',2,'KeyZ');await waitFor('window.saves.length===2');
  assert.deepEqual(await evaluate('window.fixture.elements.slice().sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id)'),['qr','text','second']);
  await key('z',10,'KeyZ');await waitFor('window.saves.length===3');
