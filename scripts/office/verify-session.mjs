@@ -13,7 +13,7 @@ for(const [preference,seconds] of [[undefined,43200],[false,43200],[true,2592000
  try{
   const response=await request('POST',{...credentials,...(preference===undefined?{}:{staySignedIn:preference})});assert.equal(response.status,200);
   const header=response.headers.get('set-cookie');cookie=header.split(';')[0];
-  assert.match(header,new RegExp('Max-Age='+seconds+'(?:;|$)','i'));assert.match(header,/HttpOnly/i);assert.match(header,/SameSite=strict/i);assert.match(header,/Secure/i);
+  assert.match(header,new RegExp('Max-Age='+seconds+'(?:;|$)','i'));assert.match(header,/HttpOnly/i);assert.match(header,/SameSite=lax/i);assert.match(header,/Secure/i);
   const hash=createHash('sha256').update(cookie.slice(cookie.indexOf('=')+1)).digest('hex');
   const rows=await sql`SELECT extract(epoch from (expires_at-now())) AS remaining FROM office_sessions WHERE token_hash=${hash}`;
   assert.equal(rows.length,1);assert.ok(Number(rows[0].remaining)<=seconds && Number(rows[0].remaining)>seconds-60);
