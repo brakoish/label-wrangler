@@ -150,6 +150,6 @@ try{
  assert.ok(Math.abs((copies[1].x-copies[0].x)-(group[1].x-group[0].x)) < 1e-9);
  assert.ok(Math.abs((copies[1].y-copies[0].y)-(group[1].y-group[0].y)) < 1e-9);
  await undo();await waitSaves(3);assert.equal(await evaluate('window.fixture.elements.length'),3);
- if(process.env.DESIGNER_SCREENSHOT){await row('text');await row('qr',true);await fs.writeFile(process.env.DESIGNER_SCREENSHOT,Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
+ if(process.env.DESIGNER_SCREENSHOT){await row('text');await row('qr',true);await waitFor('document.body.innerText.includes("Exact bitmap artwork")');await fs.writeFile(process.env.DESIGNER_SCREENSHOT,Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
  console.log('PASS multi-layer ordering, failed saves/retry for move/duplicate/delete/format, lock/unlock/nudge/inline protections, format undo/redo and exact elements, persisted lock/format, search/size/archive/clear filters. All template writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}
