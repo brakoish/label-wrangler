@@ -81,5 +81,16 @@ try{
  await send('Page.reload');
  await waitFor(`!!document.querySelector('[data-element-id="qr"]')`);
  assert.deepEqual(await evaluate('window.fixture.elements.slice().sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id)'),['qr','text','second']);
- console.log('PASS move to back: saved order, bottom disabled, undo, redo, reload; all template writes intercepted.');
+ await click('[data-element-id="qr"] > rect');
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Move to top').click()");
+ await waitFor('window.saves.length===1');
+ assert.deepEqual(await evaluate('window.fixture.elements.slice().sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id)'),['text','second','qr']);
+ assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Move to top').disabled"),true);
+ await key('z',2,'KeyZ');await waitFor('window.saves.length===2');
+ assert.deepEqual(await evaluate('window.fixture.elements.slice().sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id)'),['qr','text','second']);
+ await key('z',10,'KeyZ');await waitFor('window.saves.length===3');
+ await send('Page.reload');
+ await waitFor(`!!document.querySelector('[data-element-id="qr"]')`);
+ assert.deepEqual(await evaluate('window.fixture.elements.slice().sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id)'),['text','second','qr']);
+ console.log('PASS move to back and top: saved order, boundary disabled states, undo, redo, reload; all template writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}

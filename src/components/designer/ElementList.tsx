@@ -9,7 +9,7 @@ interface ElementListProps {
   onSelectElement: (id: string) => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
-  onMoveElement: (id: string, direction: 'up' | 'down' | 'back') => void;
+  onMoveElement: (id: string, direction: 'up' | 'down' | 'back' | 'top') => void;
   onAddElement: () => void;
   onBackToTemplates?: () => void;
   onInsertGlobal?: () => void;
@@ -94,6 +94,7 @@ export function ElementList({
               onMoveUp={() => onMoveElement(element.id, 'up')}
               onMoveDown={() => onMoveElement(element.id, 'down')}
               onMoveToBack={() => onMoveElement(element.id, 'back')}
+              onMoveToTop={() => onMoveElement(element.id, 'top')}
               canMoveUp={element.zIndex < Math.max(...elements.map((e) => e.zIndex))}
               canMoveDown={element.zIndex > Math.min(...elements.map((e) => e.zIndex))}
             />
@@ -114,6 +115,7 @@ function ElementItem({
   onMoveUp,
   onMoveDown,
   onMoveToBack,
+  onMoveToTop,
   canMoveUp,
   canMoveDown,
 }: {
@@ -125,6 +127,7 @@ function ElementItem({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onMoveToBack: () => void;
+  onMoveToTop: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
 }) {
@@ -162,6 +165,14 @@ function ElementItem({
           )}
         </div>
         {isSelected && (
+          <div className="mt-1 flex flex-col items-start gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); onMoveToTop(); }}
+            disabled={!canMoveUp}
+            className="text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-600 disabled:cursor-not-allowed"
+          >
+            Move to top
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); onMoveToBack(); }}
             disabled={!canMoveDown}
@@ -169,6 +180,7 @@ function ElementItem({
           >
             Move to back
           </button>
+          </div>
         )}
       </div>
 
