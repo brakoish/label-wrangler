@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { renderThermalBitmap, validateBitmapDesign } from '../thermal/render.server';
+import { createBitmapRenderer, validateBitmapDesign } from '../thermal/render.server';
 import { createHash, randomUUID } from 'node:crypto';
 import { generateZPL, type PreparedZplImages } from '../zplGenerator';
 import { previewLabelValues } from '../runBuilder';
@@ -85,6 +85,7 @@ export async function prepareServerImages(template: LabelTemplate, format: Label
 export async function buildBatches(run: Run, template: LabelTemplate, format: LabelFormat, from: number, to: number, dpi: number, maxWidth: number) {
   if (template.thermalRenderMode !== undefined && !['native-v1','bitmap-v1'].includes(template.thermalRenderMode)) throw new OfficeError('Unsupported thermal render mode');
   const started = Date.now();
+  const renderThermalBitmap = createBitmapRenderer();
   const bitmap = template.thermalRenderMode === 'bitmap-v1';
   if (bitmap) {
     const geometry = validateBitmapDesign(template, format);
@@ -103,7 +104,7 @@ export async function buildBatches(run: Run, template: LabelTemplate, format: La
   };
   // Keep original lane positions. Unselected lanes are blank, not reprinted.
   for(let first=Math.floor((from-1)/across)*across;first<to;first+=across){
-    if (bitmap && Date.now()-started > 40_000) throw new OfficeError('Bitmap preparation exceeds this request time limit. Choose a smaller range.');
+    if (bitmap && Date.now()-started > 240_000) throw new OfficeError('Bitmap preparation exceeds this request time limit. Choose a smaller range.');
     const laneValues: Array<Record<string,string>|undefined>=[]; let feedCount=0;
     for(let lane=0;lane<across;lane++){
       const index=first+lane;

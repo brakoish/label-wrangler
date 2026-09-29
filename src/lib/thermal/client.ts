@@ -20,3 +20,22 @@ export async function getBitmapProof(template: LabelTemplate, format: LabelForma
   cache.set(key, request);
   return request;
 }
+
+/** Bounded range requests, separate from the small interactive preview cache. */
+export async function getBitmapProofBatch(template: LabelTemplate, format: LabelFormat, feeds: FeedValues[], signal?: AbortSignal): Promise<BitmapResult[]> {
+  const response = await fetch('/api/thermal/render', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(55_000)]) : AbortSignal.timeout(55_000),
+    body: JSON.stringify({ template, format, feeds }),
+  });
+  const data = await response.json();
+  // Larger artwork may exceed the response cap even with eight feeds.
+  if (!response.ok && feeds.length > 1 && /response too large/.test(data.error || '')) {
+    const middle = Math.ceil(feeds.length / 2);
+    return [...await getBitmapProofBatch(template, format, feeds.slice(0, middle), signal),
+      ...await getBitmapProofBatch(template, format, feeds.slice(middle), signal)];
+  }
+  if (!response.ok) throw new Error(data.error || 'Bitmap proof failed');
+  if (!Array.isArray(data.results) || data.results.length !== feeds.length) throw new Error('Incomplete bitmap proof response');
+  return data.results;
+}

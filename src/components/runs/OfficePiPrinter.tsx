@@ -31,18 +31,22 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(proof?.key===proofKey && format) renderZplToDataUrl(proof.feeds[proofIndex],format).then(url=>{if(active)setProofImage(url);}).catch(e=>setError(e.message));
     return()=>{active=false;};
   },[proof,proofKey,proofIndex,format]);
+  const preparationController=useRef<AbortController|null>(null);
+  const [preparationProgress,setPreparationProgress]=useState<{completed:number;total:number}|null>(null);
+  useEffect(()=>()=>{preparationController.current?.abort();},[proofKey]);
   const prepareProof=async()=>{
     if(!run||!template||!format||inFlight.current)return;
     inFlight.current=true;setBusy(true);setError('');setProof(null);
     const key=proofKey;
+    const controller=new AbortController();preparationController.current=controller;
     try{
-      const feeds=await generateLabelsForRunWithImages(run,template,format,{from:Number(from),to:Number(to)});
+      const feeds=await generateLabelsForRunWithImages(run,template,format,{from:Number(from),to:Number(to)}, {signal:controller.signal,onProgress:(completed,total)=>setPreparationProgress({completed,total})});
       if(!feeds.length)throw new Error('Choose a valid label range');
       const digests=feeds.map(z=>z.match(/\^FXLWBITMAP1:[a-f0-9]{64}:([a-f0-9]{64})\^FS/)?.[1]);
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(digests.join('\n')));
       const digest=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
-      if(currentProofKey.current===key){setProof({key,digest,feeds});setProofIndex(0);}
-    }catch(e){setError(e instanceof Error?e.message:'Proof failed');}finally{inFlight.current=false;setBusy(false);}
+      if(!controller.signal.aborted && currentProofKey.current===key){setProof({key,digest,feeds});setProofIndex(0);}
+    }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:'Proof failed');}finally{preparationController.current=null;setPreparationProgress(null);inFlight.current=false;setBusy(false);}
   };
   const [showReprint,setShowReprint]=useState(false);
   const [reprintOf,setReprintOf]=useState('');
@@ -130,14 +134,15 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {pending && <p className="text-xs text-amber-400">Pending submission for labels {pending.from}–{pending.to}. Retry checks the same request; it does not create another batch.</p>}
     {reprintOf && <div className="space-y-2 rounded border border-amber-700 p-2 text-xs"><p>Reprint linked to the original print. This will be recorded in history.</p><button onClick={()=>{setReprintOf('');}}>Exit reprint mode</button></div>}
     {bitmap && !pending && <div className="space-y-2 text-xs">
-      <button disabled={busy} onClick={()=>void prepareProof()} className="text-amber-400 underline disabled:opacity-40">{busy?'Preparing…':'Prepare exact range proof'}</button>
+      <button disabled={busy} onClick={()=>void prepareProof()} className="text-amber-400 underline disabled:opacity-40">{preparationProgress?`Preparing ${preparationProgress.completed} / ${preparationProgress.total} labels…`:'Prepare exact range proof'}</button>
+      {preparationProgress && <div role="status"><progress className="w-full" max={preparationProgress.total} value={preparationProgress.completed} aria-label="Label preparation" /><button onClick={()=>preparationController.current?.abort()} className="text-zinc-300 underline">Cancel preparation</button><p className="text-zinc-400">Checking artwork only; nothing has been sent to the printer.</p></div>}
       {proof?.key===proofKey && <div><p>{proof.feeds.length} feeds checked · preview feed {proofIndex+1}</p>
         {proofImage && <img src={proofImage} alt="Office range bitmap proof" className="w-full bg-white" style={{imageRendering:'pixelated'}} />}
         <input aria-label="Office proof feed" type="number" min={1} max={proof.feeds.length} value={proofIndex+1} onChange={e=>setProofIndex(Math.max(0,Math.min(proof.feeds.length-1,Number(e.target.value)-1)))} className={inputClass} />
       </div>}
       {proof?.key!==proofKey && <p className="text-zinc-400">Prepare the selected range before printing. Missing values or overflow stop the entire request.</p>}
     </div>}
-    <button disabled={(bitmap && !pending && proof?.key!==proofKey) || (!reprintOf && !pending && delivered >= total) || busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review} onClick={()=>void submit()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40"><PrinterIcon className="w-4 h-4" />{busy?'Working…':pending?'Retry same request':reprintOf?'Start Reprint':delivered>=total?'Completed':delivered>0?'Resume Printing':'Start Printing'}</button>
+    <button disabled={(bitmap && !pending && proof?.key!==proofKey) || (!reprintOf && !pending && delivered >= total) || busy || !canPrint || !printer?.dispatch_enabled || !!printer?.needs_review} onClick={()=>void submit()} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40"><PrinterIcon className="w-4 h-4" />{busy?(preparationProgress?'Working…':pending?'Queuing checked labels…':'Working…'):pending?'Retry same request':reprintOf?'Start Reprint':delivered>=total?'Completed':delivered>0?'Resume Printing':'Start Printing'}</button>
     <div className="pt-3 border-t border-zinc-800/60 space-y-2">
       <button disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><Hash className="w-3 h-3" />Reprint from label…</button>
       <button disabled={busy || !!pending || !reprintRequests.length || allJobs.some(j=>j.review || ['queued','claimed','submitted','needs_review'].includes(j.state))} onClick={()=>{rangeEdited.current=true;setReprintOf(reprintRequests[0].id);setFrom('1');setTo(String(total));setShowReprint(false);}} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><RotateCcw className="w-3 h-3" />Reprint all</button>

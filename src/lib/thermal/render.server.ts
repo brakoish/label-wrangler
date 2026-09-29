@@ -193,14 +193,20 @@ async function elementArtwork(e: TemplateElement, values: Record<string, string>
   return { png: await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${shape}</svg>`)).png().toBuffer(), width, height };
 }
 
-export async function renderThermalBitmap(template: LabelTemplate, format: LabelFormat, fieldValues: FeedValues = {}, editing = false) {
+// Request-scoped reuse of identical element artwork across variable-data feeds.
+// Never retain a run's values globally; cap both entry count and PNG bytes.
+export function createBitmapRenderer() {
+  const artwork = new Map<string, Artwork | null>();
+  return (template: LabelTemplate, format: LabelFormat, values: FeedValues = {}, editing = false) =>
+    renderThermalBitmap(template, format, values, editing, artwork);
+}
+
+export async function renderThermalBitmap(template: LabelTemplate, format: LabelFormat, fieldValues: FeedValues = {}, editing = false, artwork = new Map<string, Artwork | null>()) {
   const geo = validateBitmapDesign(template, format), across = format.labelsAcross || 1, dpi = format.dpi || 203;
   const lanes = Array.isArray(fieldValues) ? Array.from({ length: across }, (_, i) => fieldValues[i] ?? null) : Array.from({ length: across }, () => fieldValues);
   for (const lane of lanes) if (lane != null && (typeof lane !== 'object' || Array.isArray(lane) || Object.values(lane).some(v => typeof v !== 'string' || v.length > 8192))) throw new Error('Invalid resolved values');
   const inputDigest = hash(JSON.stringify({ version: BITMAP_VERSION, engine: sharp.versions, platform: process.platform, arch: process.arch, fonts: await fontsDigest(), elements: template.elements, format, lanes }));
   const feedLayers: sharp.OverlayOptions[] = [];
-  // Same static artwork/values are prepared once per feed, with a bounded cache.
-  const artwork = new Map<string, Artwork | null>();
   const qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const qrBounds: Record<string, { x: number; y: number; width: number; height: number }> = {};
   const editorLayers: Array<{ elementId: string; x: number; y: number; width: number; height: number; url: string }> = [];
@@ -213,9 +219,15 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
     for (const e of [...template.elements].sort((a, b) => a.zIndex - b.zIndex)) {
       const warn = (message: string) => { if (!editing) throw new Error(message); if (!warnings.some(w => w.elementId === e.id && w.message === message)) warnings.push({ elementId: e.id, message }); };
       try {
-        const key = JSON.stringify([e, resolveThermalContent(e, values)]);
+        const key = JSON.stringify([dpi, editing, e, resolveThermalContent(e, values)]);
         let art = artwork.get(key);
-        if (art === undefined) { art = await elementArtwork(e, values, dpi, editing); artwork.set(key, art); }
+        if (art === undefined) {
+          art = await elementArtwork(e, values, dpi, editing);
+          const entryBytes = key.length * 2 + (art?.png.length || 0);
+          const retainedBytes = [...artwork].reduce((n, [k, a]) => n + k.length * 2 + (a?.png.length || 0), 0);
+          if (artwork.size >= 256 || retainedBytes + entryBytes > 8_000_000) artwork.clear();
+          if (entryBytes <= 8_000_000) artwork.set(key, art);
+        }
         if (!art) continue;
         if (art.overflow) warn('Text overflows its box. Draft shows the portion that fits; enlarge the box or reduce type size.');
         let { png, width, height } = art;
