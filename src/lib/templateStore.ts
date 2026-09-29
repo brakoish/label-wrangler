@@ -178,7 +178,7 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     const template = get().templates.find((t) => t.id === templateId);
     if (!template) return;
 
-    const body = JSON.stringify({ elements: template.elements });
+    const body = JSON.stringify({ elements: template.elements, formatId: template.formatId });
     const previous = saveQueues.get(templateId) ?? Promise.resolve();
     const save = previous.catch(() => {}).then(async () => {
       const response = await fetch(`/api/templates/${templateId}`, {

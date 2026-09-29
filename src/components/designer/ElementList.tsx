@@ -1,15 +1,17 @@
 'use client';
 
 import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, ChevronUp, ChevronDown, Plus, ArrowLeft, Copy, Globe, Save } from 'lucide-react';
+import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
 
 interface ElementListProps {
   elements: TemplateElement[];
-  selectedElementId: string | null;
-  onSelectElement: (id: string) => void;
+  selectedElementIds: Set<string>;
+  onSelectElement: (id: string, additive?: boolean) => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
-  onMoveElement: (id: string, direction: 'up' | 'down' | 'back' | 'top') => void;
+  onMoveElement: (id: string, direction: LayerDirection) => void;
+  onLockElements: (ids: Set<string>, locked: boolean) => void;
   onAddElement: () => void;
   onBackToTemplates?: () => void;
   onInsertGlobal?: () => void;
@@ -18,17 +20,21 @@ interface ElementListProps {
 
 export function ElementList({
   elements,
-  selectedElementId,
+  selectedElementIds,
   onSelectElement,
   onDeleteElement,
   onDuplicateElement,
   onMoveElement,
   onAddElement,
+  onLockElements,
   onBackToTemplates,
   onInsertGlobal,
   onSaveAsGlobal,
 }: ElementListProps) {
   const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+
+  const selected = sortedElements.filter(e => selectedElementIds.has(e.id));
+  const primary = selected[0];
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -72,6 +78,17 @@ export function ElementList({
         )}
       </div>
 
+      <p className="px-4 pb-2 text-xs text-zinc-500">Shift/Ctrl-click layers to select several.</p>
+      {primary && <div className="px-4 pb-3 space-y-2" aria-label="Selected layer actions">
+        <p className="text-xs text-zinc-400">{selected.length} selected{selected.some(e => e.locked) ? ' · locked layers stay protected' : ''}</p>
+        <div className="grid grid-cols-2 gap-1">
+          {([['top', 'Move to top'], ['back', 'Move to back'], ['up', 'Move up'], ['down', 'Move down']] as const).map(([direction, label]) => (
+            <button key={direction} onClick={() => onMoveElement(primary.id, direction)} disabled={moveLayers(elements, selectedElementIds, direction) === elements} className="rounded bg-zinc-800 p-1 text-xs text-zinc-300 disabled:opacity-30">{label}</button>
+          ))}
+          <button onClick={() => onLockElements(selectedElementIds, true)} disabled={selected.every(e => e.locked)} className="rounded bg-zinc-800 p-1 text-xs text-zinc-300 disabled:opacity-30">Lock selected</button>
+          <button onClick={() => onLockElements(selectedElementIds, false)} disabled={selected.every(e => !e.locked)} className="rounded bg-zinc-800 p-1 text-xs text-zinc-300 disabled:opacity-30">Unlock selected</button>
+        </div>
+      </div>}
       {/* Element list */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
         {sortedElements.length === 0 ? (
@@ -87,16 +104,15 @@ export function ElementList({
             <ElementItem
               key={element.id}
               element={element}
-              isSelected={selectedElementId === element.id}
-              onSelect={() => onSelectElement(element.id)}
+              isSelected={selectedElementIds.has(element.id)}
+              onSelect={(additive) => onSelectElement(element.id, additive)}
               onDelete={() => onDeleteElement(element.id)}
               onDuplicate={() => onDuplicateElement(element.id)}
               onMoveUp={() => onMoveElement(element.id, 'up')}
               onMoveDown={() => onMoveElement(element.id, 'down')}
-              onMoveToBack={() => onMoveElement(element.id, 'back')}
-              onMoveToTop={() => onMoveElement(element.id, 'top')}
-              canMoveUp={element.zIndex < Math.max(...elements.map((e) => e.zIndex))}
-              canMoveDown={element.zIndex > Math.min(...elements.map((e) => e.zIndex))}
+              onToggleLock={() => onLockElements(new Set([element.id]), !element.locked)}
+              canMoveUp={!element.locked && element.zIndex < Math.max(...elements.map((e) => e.zIndex))}
+              canMoveDown={!element.locked && element.zIndex > Math.min(...elements.map((e) => e.zIndex))}
             />
           ))
         )}
@@ -114,20 +130,18 @@ function ElementItem({
   onDuplicate,
   onMoveUp,
   onMoveDown,
-  onMoveToBack,
-  onMoveToTop,
+  onToggleLock,
   canMoveUp,
   canMoveDown,
 }: {
   element: TemplateElement;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
-  onMoveToBack: () => void;
-  onMoveToTop: () => void;
+  onToggleLock: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
 }) {
@@ -137,7 +151,8 @@ function ElementItem({
 
   return (
     <div
-      onClick={onSelect}
+      data-layer-id={element.id}
+      onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
       className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all card-hover ${
         isSelected
           ? 'bg-amber-500/10 border border-amber-500/30 shadow-sm shadow-amber-500/10'
@@ -164,24 +179,13 @@ function ElementItem({
             </span>
           )}
         </div>
-        {isSelected && (
-          <div className="mt-1 flex flex-col items-start gap-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); onMoveToTop(); }}
-            disabled={!canMoveUp}
-            className="text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-600 disabled:cursor-not-allowed"
-          >
-            Move to top
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onMoveToBack(); }}
-            disabled={!canMoveDown}
-            className="mt-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:text-zinc-600 disabled:cursor-not-allowed"
-          >
-            Move to back
-          </button>
-          </div>
-        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
+          aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`}
+          className="mt-1 text-xs text-zinc-400 hover:text-zinc-200"
+        >
+          {element.locked ? 'Unlock layer' : 'Lock layer'}
+        </button>
       </div>
 
       {/* Actions */}
@@ -189,6 +193,8 @@ function ElementItem({
         <div className="flex flex-col">
           <button
             onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
+            title="Move up"
+            aria-label="Move up"
             disabled={!canMoveUp}
             className={`p-0.5 rounded-md transition-colors ${
               canMoveUp ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200' : 'text-zinc-800 cursor-not-allowed'
@@ -198,6 +204,8 @@ function ElementItem({
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
+            title="Move down"
+            aria-label="Move down"
             disabled={!canMoveDown}
             className={`p-0.5 rounded-md transition-colors ${
               canMoveDown ? 'hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200' : 'text-zinc-800 cursor-not-allowed'
@@ -216,7 +224,8 @@ function ElementItem({
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"
-          title="Delete"
+          disabled={element.locked}
+          title={element.locked ? "Unlock layer to delete" : "Delete"}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>

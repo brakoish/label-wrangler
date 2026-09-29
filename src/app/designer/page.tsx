@@ -8,6 +8,8 @@ import { useFormatStore } from '@/lib/store';
 import { useGlobalElementStore } from '@/lib/globalStore';
 import { arrangeElements, type AlignAction } from '@/lib/thermal/editorGeometry';
 import { BitmapTemplateActions } from '@/components/designer/BitmapTemplateActions';
+import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
+import { duplicateElementsForFormat } from '@/lib/templateScale';
 import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
@@ -52,12 +54,8 @@ function DesignerContent() {
     deleteTemplate,
     selectTemplate,
     getTemplateById,
-    addElement,
     updateElementLocal,
     saveTemplate,
-    removeElement,
-    reorderElement,
-    duplicateElement,
     updateTemplate,
   } = useTemplateStore();
 
@@ -94,20 +92,35 @@ function DesignerContent() {
 
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
-  const gesture = useRef<{ id: string; elements: TemplateElement[] } | null>(null);
+  const gesture = useRef<{ id: string; elements: TemplateElement[]; formatId: string } | null>(null);
   const [saveError, setSaveError] = useState('');
+  const saveRevision = useRef(0);
+  const persistEdits = useCallback((id: string) => {
+    const revision = ++saveRevision.current;
+    setSaveError('');
+    void saveTemplate(id).catch(error => {
+      if (revision === saveRevision.current) setSaveError(error.message);
+    });
+  }, [saveTemplate]);
+  const commitEdit = useCallback((updates: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'formatId'>>) => {
+    const before = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
+    if (!before || (updates.elements === before.elements && (!updates.formatId || updates.formatId === before.formatId))) return;
+    pushUndo(before.id, before.elements, before.formatId);
+    useTemplateStore.setState(state => ({ templates: state.templates.map(t => t.id === before.id ? { ...t, ...updates } : t) }));
+    persistEdits(before.id);
+  }, [currentTemplate, pushUndo, persistEdits]);
   const beginGesture = useCallback(() => {
     const t = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
-    if (t && !gesture.current) gesture.current = { id: t.id, elements: structuredClone(t.elements) };
+    if (t && !gesture.current) gesture.current = { id: t.id, elements: structuredClone(t.elements), formatId: t.formatId };
   }, [currentTemplate]);
   const finishGesture = useCallback(() => {
     const before = gesture.current; gesture.current = null;
     if (!before) return;
     const after = useTemplateStore.getState().getTemplateById(before.id);
     if (!after || JSON.stringify(before.elements) === JSON.stringify(after.elements)) return;
-    pushUndo(before.id, before.elements); setSaveError('');
-    void saveTemplate(before.id).catch(e => setSaveError(e.message));
-  }, [pushUndo, saveTemplate]);
+    pushUndo(before.id, before.elements, before.formatId);
+    persistEdits(before.id);
+  }, [pushUndo, persistEdits]);
   const cancelGesture = useCallback(() => {
     const before = gesture.current; gesture.current = null;
     if (before) useTemplateStore.setState(state => ({ templates: state.templates.map(t => t.id === before.id ? { ...t, elements: before.elements } : t) }));
@@ -141,49 +154,42 @@ function DesignerContent() {
     }
   }, [thermalEditorOrientationKey]);
 
-  // Push undo state before making changes
-  const pushUndoState = useCallback(() => {
-    if (currentTemplate) {
-      pushUndo(currentTemplate.id, currentTemplate.elements);
-    }
-  }, [currentTemplate, pushUndo]);
-
   // Undo handler
   const handleUndo = useCallback(() => {
     if (!currentTemplate || !canUndo()) return;
     const prev = undo();
     if (prev) {
       // Save current state for redo
-      setUndoCurrent(currentTemplate.id, currentTemplate.elements);
+      setUndoCurrent(currentTemplate.id, currentTemplate.elements, currentTemplate.formatId);
       // Apply previous state
       const updatedElements = prev.elements;
 
       // Update local store
       useTemplateStore.setState((state) => ({
         templates: state.templates.map((t) =>
-          t.id === currentTemplate.id ? { ...t, elements: updatedElements } : t
+          t.id === currentTemplate.id ? { ...t, elements: updatedElements, formatId: prev.formatId ?? t.formatId } : t
         ),
       }));
-      void saveTemplate(currentTemplate.id).catch(e => setSaveError(e.message));
+      persistEdits(currentTemplate.id);
     }
-  }, [saveTemplate, currentTemplate, undo, setUndoCurrent, canUndo]);
+  }, [persistEdits, currentTemplate, undo, setUndoCurrent, canUndo]);
 
   // Redo handler
   const handleRedo = useCallback(() => {
     if (!currentTemplate || !canRedo()) return;
     const next = redo();
     if (next) {
-      rememberPast(currentTemplate.id, currentTemplate.elements);
+      rememberPast(currentTemplate.id, currentTemplate.elements, currentTemplate.formatId);
       const updatedElements = next.elements;
 
       useTemplateStore.setState((state) => ({
         templates: state.templates.map((t) =>
-          t.id === currentTemplate.id ? { ...t, elements: updatedElements } : t
+          t.id === currentTemplate.id ? { ...t, elements: updatedElements, formatId: next.formatId ?? t.formatId } : t
         ),
       }));
-      void saveTemplate(currentTemplate.id).catch(e => setSaveError(e.message));
+      persistEdits(currentTemplate.id);
     }
-  }, [saveTemplate, currentTemplate, redo, rememberPast, canRedo]);
+  }, [persistEdits, currentTemplate, redo, rememberPast, canRedo]);
 
   // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z (or Cmd on Mac), + arrow key nudging.
   useEffect(() => {
@@ -226,7 +232,7 @@ function DesignerContent() {
         const direction = isThermal && thermalEditorOrientation === 'upright' && currentFormat.width > currentFormat.height ? { dx: -arrow.dy, dy: arrow.dx } : arrow;
         for (const id of selectedIds) {
           const el = useTemplateStore.getState().getTemplateById(currentTemplate.id)?.elements.find((x) => x.id === id);
-          if (!el) continue;
+          if (!el || el.locked) continue;
           updateElementLocal(currentTemplate.id, id, {
             x: el.x + direction.dx * step,
             y: el.y + direction.dy * step,
@@ -248,6 +254,8 @@ function DesignerContent() {
   useEffect(() => {
     clearUndo();
     setSelectedIds(new Set());
+    saveRevision.current++;
+    setSaveError('');
   }, [selectedTemplateId, clearUndo]);
 
   // If no template is selected, show template list view
@@ -296,8 +304,7 @@ function DesignerContent() {
           onClose={() => setDuplicateSource(null)}
           onCreate={async (newName, newFormatId, scale) => {
             if (!duplicateSource) return;
-            const { duplicateElementsForFormat } = await import('@/lib/templateScale');
-            const sourceFormat = getFormatById(duplicateSource.formatId);
+                    const sourceFormat = getFormatById(duplicateSource.formatId);
             const targetFormat = getFormatById(newFormatId);
             if (!sourceFormat || !targetFormat) return;
             const elements = duplicateElementsForFormat(
@@ -338,7 +345,6 @@ function DesignerContent() {
     : null;
 
   const handleAddElement = (type: ElementType) => {
-    pushUndoState();
     // Calculate dimensions in the label's native units
     const isThermal = currentFormat.type === 'thermal';
     const dpi = currentFormat.dpi || 203;
@@ -452,11 +458,11 @@ function DesignerContent() {
         return;
     }
 
-    addElement(currentTemplate.id, elementData);
+    commitEdit({ elements: [...currentTemplate.elements, { ...elementData, id: crypto.randomUUID(), zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + 1 } as TemplateElement] });
   };
 
   const handleUpdateElement = (updates: Partial<TemplateElement>) => {
-    if (!selectedElementId) return;
+    if (!selectedElementId || selectedElement?.locked) return;
     beginGesture();
     updateElementLocal(currentTemplate.id, selectedElementId, updates);
     if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) finishGesture();
@@ -465,7 +471,7 @@ function DesignerContent() {
   const handleUpdateSelectedElements = (updates: Partial<TemplateElement>) => {
     if (selectedIds.size === 0) return;
     const selectedTextIds = currentTemplate.elements
-      .filter((el) => selectedIds.has(el.id) && el.type === 'text')
+      .filter((el) => selectedIds.has(el.id) && !el.locked && el.type === 'text')
       .map((el) => el.id);
 
     if (selectedTextIds.length === 0) return;
@@ -477,24 +483,31 @@ function DesignerContent() {
     if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) finishGesture();
   };
 
-  const handleMoveElement = (elementId: string, direction: 'up' | 'down' | 'back' | 'top') => {
-    pushUndoState();
-    const element = currentTemplate.elements.find((e) => e.id === elementId);
-    if (!element) return;
-
-    const newZIndex = direction === 'back'
-      ? Math.min(...currentTemplate.elements.map((e) => e.zIndex))
-      : direction === 'top'
-        ? Math.max(...currentTemplate.elements.map((e) => e.zIndex))
-        : direction === 'up' ? element.zIndex + 1 : element.zIndex - 1;
-    reorderElement(currentTemplate.id, elementId, newZIndex);
+  const actionIds = (id: string) => selectedIds.has(id) ? selectedIds : new Set([id]);
+  const handleMoveElement = (id: string, direction: LayerDirection) => {
+    commitEdit({ elements: moveLayers(currentTemplate.elements, actionIds(id), direction) });
+  };
+  const handleDeleteElements = (id: string) => {
+    const ids = actionIds(id);
+    commitEdit({ elements: currentTemplate.elements.filter(e => !ids.has(e.id) || e.locked) });
+    setSelectedIds(new Set(currentTemplate.elements.filter(e => ids.has(e.id) && e.locked).map(e => e.id)));
+  };
+  const handleDuplicateElements = (id: string) => {
+    const originals = currentTemplate.elements.filter(e => actionIds(id).has(e.id)).sort((a, b) => a.zIndex - b.zIndex);
+    const top = Math.max(0, ...currentTemplate.elements.map(e => e.zIndex));
+    const offsetX = (originals[0]?.width ?? 0) * .12, offsetY = (originals[0]?.height ?? 0) * .12;
+    const copies = originals.map((e, i) => ({ ...e, id: crypto.randomUUID(), locked: false, x: e.x + offsetX, y: e.y + offsetY, zIndex: top + i + 1 }));
+    commitEdit({ elements: [...currentTemplate.elements, ...copies] });
+    setSelectedIds(new Set(copies.map(e => e.id)));
+  };
+  const handleLockElements = (ids: Set<string>, locked: boolean) => {
+    commitEdit({ elements: currentTemplate.elements.map(e => ids.has(e.id) ? { ...e, locked } : e) });
   };
 
-  const handleChangeFormat = async (formatId: string) => {
+  const handleChangeFormat = (formatId: string) => {
     const targetFormat = getFormatById(formatId);
     if (!targetFormat || targetFormat.id === currentTemplate.formatId) return;
 
-    const { duplicateElementsForFormat } = await import('@/lib/templateScale');
     const elements = duplicateElementsForFormat(
       currentTemplate,
       currentFormat,
@@ -502,9 +515,8 @@ function DesignerContent() {
       { scale: true },
     ) as TemplateElement[];
 
-    clearUndo();
-    setSelectedIds(new Set());
-    await updateTemplate(currentTemplate.id, { formatId: targetFormat.id, elements });
+    // Resizing the same design must retain layer identities and stacking order.
+    commitEdit({ formatId: targetFormat.id, elements: elements.map((e, i) => ({ ...e, id: currentTemplate.elements[i].id, zIndex: currentTemplate.elements[i].zIndex })) });
   };
 
   const compatibleFormats = formats.filter((format) => format.type === currentFormat.type);
@@ -516,24 +528,21 @@ function DesignerContent() {
         <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap · final proof uses bundled fonts · connection required' : 'Native · legacy print appearance'}</span>
         <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
       </div>}
-      {saveError && <p role="alert" className="text-red-400 px-6">{saveError} <button className="underline" onClick={() => void saveTemplate(currentTemplate.id).then(() => setSaveError('')).catch(e => setSaveError(e.message))}>Retry save</button></p>}
+      {saveError && <p role="alert" className="text-red-400 px-6">{saveError} <button className="underline" onClick={() => persistEdits(currentTemplate.id)}>Retry save</button></p>}
       {/* Editor layout fills the content area */}
       <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
         <div className="w-full xl:w-[280px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 xl:max-h-none">
           <ElementList
             elements={currentTemplate.elements}
-            selectedElementId={selectedElementId}
-            onSelectElement={(id) => setSelectedIds(new Set(id ? [id] : []))}
-            onDeleteElement={(id) => {
-              pushUndoState();
-              removeElement(currentTemplate.id, id);
-              setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
-            }}
-            onDuplicateElement={(id) => {
-              pushUndoState();
-              duplicateElement(currentTemplate.id, id);
-            }}
+            selectedElementIds={selectedIds}
+            onSelectElement={(id, additive) => setSelectedIds(prev => {
+              if (!additive) return new Set([id]);
+              const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next;
+            })}
+            onDeleteElement={handleDeleteElements}
+            onDuplicateElement={handleDuplicateElements}
+            onLockElements={handleLockElements}
             onMoveElement={handleMoveElement}
             onAddElement={() => setShowAddElementMenu(true)}
             onInsertGlobal={() => setShowGlobalPicker(true)}
@@ -673,11 +682,11 @@ function DesignerContent() {
                 setSelectedIds(new Set([id]));
               }
             }}
-            onUpdateElement={(id, updates) => updateElementLocal(currentTemplate.id, id, updates)}
+            onUpdateElement={(id, updates) => { if (!currentTemplate.elements.find(e => e.id === id)?.locked) updateElementLocal(currentTemplate.id, id, updates); }}
             thermalRenderMode={currentTemplate.thermalRenderMode}
             onSelectElements={(ids) => setSelectedIds(new Set(ids))}
             onDuplicateSelection={(ids) => {
-              const originals = currentTemplate.elements.filter(e => ids.has(e.id));
+              const originals = currentTemplate.elements.filter(e => ids.has(e.id) && !e.locked).sort((a, b) => a.zIndex - b.zIndex);
               const copies = originals.map((e, i) => ({ ...e, id: crypto.randomUUID(), zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + i + 1 }));
               useTemplateStore.setState(state => ({ templates: state.templates.map(t => t.id === currentTemplate.id ? { ...t, elements: [...t.elements, ...copies] } : t) }));
               setSelectedIds(new Set(copies.map(e => e.id))); return copies;
@@ -705,7 +714,7 @@ function DesignerContent() {
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
           onArrange={(action: AlignAction) => {
             beginGesture();
-            const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id)), action);
+            const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id) && !e.locked), action);
             for (const e of arranged) updateElementLocal(currentTemplate.id, e.id, { x: e.x, y: e.y });
             finishGesture();
           }}
@@ -744,16 +753,10 @@ function DesignerContent() {
         onClose={() => setShowGlobalPicker(false)}
         globals={globals}
         onInsert={(elements) => {
-          pushUndoState();
-          for (const el of elements) {
-            const newEl: TemplateElement = {
-              ...el,
-              id: `element-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              x: el.x + 10,
-              y: el.y + 10,
-            };
-            void addElement(currentTemplate.id, newEl as NewTemplateElement);
-          }
+          const top = Math.max(0, ...currentTemplate.elements.map(e => e.zIndex));
+          const offset = currentFormat.type === 'thermal' ? 10 : .05;
+          const copies = [...elements].sort((a, b) => a.zIndex - b.zIndex).map((el, i) => ({ ...el, id: crypto.randomUUID(), zIndex: top + i + 1, x: el.x + offset, y: el.y + offset }));
+          commitEdit({ elements: [...currentTemplate.elements, ...copies] });
         }}
         onDelete={deleteGlobal}
       />

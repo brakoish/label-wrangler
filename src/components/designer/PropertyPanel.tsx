@@ -27,6 +27,10 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   const multiSelected = selectedElements.length > 1;
   const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
 
+  if (element?.locked || selectedElements.some(e => e.locked)) {
+    return <div className="w-full xl:w-[280px] p-4 text-sm text-zinc-400 border-l border-zinc-800">Selection includes locked layers. Unlock them in the layer list to edit properties.</div>;
+  }
+
   if (multiSelected) {
     const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
 

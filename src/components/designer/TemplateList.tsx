@@ -33,9 +33,14 @@ export function TemplateList({
 }: TemplateListProps) {
   const { formats } = useFormatStore();
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState('');
+  const [formatFilter, setFormatFilter] = useState('');
   const [error, setError] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const visibleTemplates = templates.filter((t) => Boolean(t.archivedAt) === showArchived);
+  const visibleTemplates = templates.filter((t) => Boolean(t.archivedAt) === showArchived
+    && (!formatFilter || t.formatId === formatFilter)
+    && t.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const isFiltered = !!query.trim() || !!formatFilter;
   const changeArchive = async (template: LabelTemplate) => {
     setError('');
     setPendingId(template.id);
@@ -54,6 +59,14 @@ export function TemplateList({
         <button onClick={() => setShowArchived(false)} aria-pressed={!showArchived} className={!showArchived ? 'text-amber-400' : 'text-zinc-400'}>Active ({templates.filter((t) => !t.archivedAt).length})</button>
         <button onClick={() => setShowArchived(true)} aria-pressed={showArchived} className={showArchived ? 'text-amber-400' : 'text-zinc-400'}>Archived ({templates.filter((t) => t.archivedAt).length})</button>
       </div>
+      <div className="flex flex-wrap gap-3 mb-6">
+        <input type="search" aria-label="Search templates" placeholder="Search templates…" value={query} onChange={e => setQuery(e.target.value)} className="rounded-lg bg-zinc-900 border border-zinc-700 p-2 text-sm text-zinc-200" />
+        <select aria-label="Filter label format" value={formatFilter} onChange={e => setFormatFilter(e.target.value)} className="rounded-lg bg-zinc-900 border border-zinc-700 p-2 text-sm text-zinc-200">
+          <option value="">All label sizes / formats</option>
+          {formats.map(f => <option key={f.id} value={f.id}>{f.name} · {f.width} × {f.height} in · {f.type}</option>)}
+        </select>
+        {isFiltered && <button onClick={() => { setQuery(''); setFormatFilter(''); }} className="text-sm text-amber-400">Clear filters</button>}
+      </div>
       {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
       {visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
@@ -61,15 +74,15 @@ export function TemplateList({
             <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
               <FileText className="w-10 h-10 text-zinc-600" />
             </div>
-            <h3 className="text-zinc-300 font-semibold text-lg">{showArchived ? 'No archived templates' : 'No active templates'}</h3>
+            <h3 className="text-zinc-300 font-semibold text-lg">{isFiltered ? 'No matching templates' : showArchived ? 'No archived templates' : 'No active templates'}</h3>
             <p className="text-zinc-500 text-sm mt-2">
-              {showArchived ? 'Archived templates will appear here. Saved runs keep working.' : 'Create a template or restore one from Archived.'}
+              {isFiltered ? 'Try another name or label format, or clear the filters.' : showArchived ? 'Archived templates will appear here. Saved runs keep working.' : 'Create a template or restore one from Archived.'}
             </p>
             <button
               onClick={onNewTemplate}
               className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium"
             >
-              Create your first template
+              New Template
             </button>
           </div>
         </div>

@@ -94,7 +94,7 @@ try{
  assert.equal(await evaluate('window.fixture.elements.find(e=>e.id==="second").y'),y0+3);
  await key('z',2,'KeyZ');await waitFor('window.saves.length===11');
  // Reload uses saved structured objects, mode and defaults (not flattened image).
- await send('Page.reload');await waitFor('document.body?.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
+ await send('Page.reload');await waitFor('window.saves?.length===0 && document.body?.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Office printer')");await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Office printer').click()");
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Print preview to Office'&&!b.disabled)");

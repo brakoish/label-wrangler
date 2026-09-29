@@ -107,6 +107,7 @@ export interface TemplateElementBase {
   height: number;
   rotation: number;     // degrees
   zIndex: number;
+  locked?: boolean;    // editor-only protection; does not change printed artwork
   isStatic: boolean;    // true = fixed value, false = dynamic placeholder
   fieldName?: string;   // for dynamic elements — the key used in label filler
   hideInRuns?: boolean;  // legacy designer-level run visibility flag
