@@ -477,12 +477,14 @@ function DesignerContent() {
     if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName || '')) finishGesture();
   };
 
-  const handleMoveElement = (elementId: string, direction: 'up' | 'down') => {
+  const handleMoveElement = (elementId: string, direction: 'up' | 'down' | 'back') => {
     pushUndoState();
     const element = currentTemplate.elements.find((e) => e.id === elementId);
     if (!element) return;
 
-    const newZIndex = direction === 'up' ? element.zIndex + 1 : element.zIndex - 1;
+    const newZIndex = direction === 'back'
+      ? Math.min(...currentTemplate.elements.map((e) => e.zIndex))
+      : direction === 'up' ? element.zIndex + 1 : element.zIndex - 1;
     reorderElement(currentTemplate.id, elementId, newZIndex);
   };
 
