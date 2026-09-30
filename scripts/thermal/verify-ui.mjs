@@ -94,7 +94,9 @@ try{
  assert.equal(await evaluate('window.fixture.elements.find(e=>e.id==="second").y'),y0+3);
  await key('z',2,'KeyZ');await waitFor('window.saves.length===11');
  // Reload uses saved structured objects, mode and defaults (not flattened image).
- await send('Page.reload');await waitFor('window.saves?.length===0 && document.body?.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
+ await evaluate('window.__beforeReload=true');
+ await send('Page.reload');
+ await waitFor('!window.__beforeReload && !!document.body');await waitFor('window.saves?.length===0 && document.body?.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Office printer')");await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Office printer').click()");
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Print preview to Office'&&!b.disabled)");
@@ -168,7 +170,9 @@ try{
  await waitFor("document.body?.innerText.includes('Exact bitmap artwork') && !document.body?.innerText.includes('Fix highlighted objects before printing')");
  assert.ok(await evaluate("window.fixture.elements.find(e=>e.id==='qr').x<390"));
  await evaluate(`localStorage.setItem('fixture',${JSON.stringify(JSON.stringify(fixture))})`);
+ await evaluate('window.__beforeReload=true');
  await send('Page.reload');
+ await waitFor('!window.__beforeReload && !!document.body');
  await waitFor("document.body?.innerText.includes('Exact bitmap artwork')");
  assert.equal(await evaluate("document.body?.innerText.includes('Fix highlighted objects before printing')"),false);
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Printer').click()");
@@ -200,6 +204,7 @@ try{
  assert.ok(await evaluate(`window.fixture.elements.find(e=>e.id==='qr').width>${qrSelection.allocation*.75}`));
  await key('z',2,'KeyZ');
  await waitFor(`Math.abs(window.fixture.elements.find(e=>e.id==='qr').width-${qrSelection.allocation})<.001`);
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Test data').click()");
  // Newly bound fields inherit the selected product; manual test edits survive.
  await evaluate(`(()=>{const e=document.querySelector('input[placeholder="Search Manifest package"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'test');e.dispatchEvent(new Event('input',{bubbles:true}));e.focus();})()`);
  await key('Enter');
@@ -217,7 +222,9 @@ try{
  assert.equal(JSON.parse(await evaluate("localStorage.getItem('lw:test-data:thermal-ui-test')")).product,'MANUAL OVERRIDE');
  // Insufficient quiet margin is advisory, not a failed proof.
  await evaluate(`(()=>{const t=${JSON.stringify(fixture)};const q=t.elements.find(e=>e.id==='qr');q.isStatic=true;q.content='LIVE';q.x=282;localStorage.setItem('fixture',JSON.stringify(t));})()`);
+ await evaluate('window.__beforeReload=true');
  await send('Page.reload');
+ await waitFor('!window.__beforeReload && !!document.body');
  await waitFor("document.body?.innerText.includes('Printing is available; test-scan')");
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
  await waitFor(`!!document.querySelector('img[alt="ZPL Preview"]')`);

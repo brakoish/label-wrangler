@@ -152,7 +152,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   }, [elements, format.type, onDragStart]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if ((e.target as HTMLElement)?.closest('input,textarea,select,button,a,summary,[role="button"],[role="combobox"],[contenteditable="true"]')) return;
       if (e.key === 'Enter' && selectedElementIds.size === 1) { e.preventDefault(); beginText([...selectedElementIds][0]); }
       if (e.key === 'Escape') { setDragging(null); setMarquee(null); setGuides({ x: [], y: [] }); onGestureCancel?.(); }
     };
@@ -472,7 +472,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
-    <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
+    <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-6 pt-16 pb-6 overflow-hidden" style={{ minHeight: '340px', height: 'calc(100dvh - 270px)', maxHeight: '800px' }}>
       {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Last rendered artwork — preview unavailable: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : bitmapProof.advisories.length ? bitmapProof.advisories[0].message : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();

@@ -94,14 +94,41 @@ function DesignerContent() {
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
   const gesture = useRef<{ id: string; elements: TemplateElement[]; formatId: string } | null>(null);
   const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [leftPanel, setLeftPanel] = useState<'layers' | 'data'>('layers');
   const saveRevision = useRef(0);
   const persistEdits = useCallback((id: string) => {
     const revision = ++saveRevision.current;
     setSaveError('');
+    setSaving(true);
     void saveTemplate(id).catch(error => {
       if (revision === saveRevision.current) setSaveError(error.message);
-    });
+    }).finally(() => { if (revision === saveRevision.current) setSaving(false); });
   }, [saveTemplate]);
+  useEffect(() => {
+    if (!saving && !saveError) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [saving, saveError]);
+  const saveBeforeLeaving = async () => {
+    if (!currentTemplate || (!saving && !saveError && !gesture.current)) return true;
+    const revision = ++saveRevision.current;
+    try {
+      setSaving(true);
+      await saveTemplate(currentTemplate.id);
+      if (revision !== saveRevision.current) return false;
+      setSaving(false);
+      setSaveError('');
+      return true;
+    } catch (error) {
+      if (revision !== saveRevision.current) return false;
+      setSaving(false);
+      setSaveError((error as Error).message);
+      return false;
+    }
+  };
+  const leaveEditor = async () => { if (await saveBeforeLeaving()) router.push(returnTo ?? '/designer'); };
   const commitEdit = useCallback((updates: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'formatId'>>) => {
     const before = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
     if (!before || (updates.elements === before.elements && (!updates.formatId || updates.formatId === before.formatId))) return;
@@ -214,6 +241,9 @@ function DesignerContent() {
         return;
       }
 
+      // Focused menus and controls own their arrow keys; layer selections
+      // retain arrow-key nudging for keyboard-only editing.
+      if (t?.closest('button,a,summary,[role="combobox"],[role="listbox"]') && !t.closest('[data-layer-id]')) return;
       // Arrow key nudge for selected element(s).
       const arrowMap: Record<string, { dx: number; dy: number }> = {
         ArrowLeft: { dx: -1, dy: 0 },
@@ -256,6 +286,7 @@ function DesignerContent() {
     setSelectedIds(new Set());
     saveRevision.current++;
     setSaveError('');
+    setSaving(false);
   }, [selectedTemplateId, clearUndo]);
 
   // If no template is selected, show template list view
@@ -522,17 +553,25 @@ function DesignerContent() {
   const compatibleFormats = formats.filter((format) => format.type === currentFormat.type);
 
   return (
-    <AppShell>
+    <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title="Designer" />
-      {currentFormat.type === 'thermal' && <div className="px-6 py-2 flex items-center gap-3 text-xs text-zinc-400">
-        <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap · final proof uses bundled fonts · connection required' : 'Native · legacy print appearance'}</span>
+      <div className="px-4 py-2 flex flex-wrap items-center gap-3 text-xs text-zinc-400 border-b border-zinc-800/50">
+        <span role="status" aria-live="polite" className={saveError ? 'text-red-400' : saving ? 'text-amber-400' : 'text-emerald-400'}>{saveError ? 'Not saved' : saving ? 'Saving…' : 'All changes saved'}</span>
+        {currentFormat.type === 'thermal' && <>
+        <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
         <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
-      </div>}
+        </>}
+      </div>
       {saveError && <p role="alert" className="text-red-400 px-6">{saveError} <button className="underline" onClick={() => persistEdits(currentTemplate.id)}>Retry save</button></p>}
       {/* Editor layout fills the content area */}
-      <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className="w-full xl:w-[280px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 xl:max-h-none">
+        <div className="w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex flex-col border-b lg:border-b-0 lg:border-r border-zinc-800/50 max-h-[420px] lg:max-h-none">
+          <div className="grid grid-cols-2 gap-1 p-2 border-b border-zinc-800/50" aria-label="Designer panels">
+            <button aria-pressed={leftPanel === 'layers'} onClick={() => setLeftPanel('layers')} className={`rounded-lg px-3 py-2 text-sm font-medium ${leftPanel === 'layers' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>Layers <span className="text-zinc-400">{currentTemplate.elements.length}</span></button>
+            <button aria-pressed={leftPanel === 'data'} onClick={() => setLeftPanel('data')} className={`rounded-lg px-3 py-2 text-sm font-medium ${leftPanel === 'data' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>Test data</button>
+          </div>
+          <div className={leftPanel === 'layers' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
           <ElementList
             elements={currentTemplate.elements}
             selectedElementIds={selectedIds}
@@ -547,30 +586,28 @@ function DesignerContent() {
             onAddElement={() => setShowAddElementMenu(true)}
             onInsertGlobal={() => setShowGlobalPicker(true)}
             onSaveAsGlobal={() => setShowGlobalSave(true)}
-            onBackToTemplates={() => {
-              // Hard navigate so the page fully re-renders as the template list.
-              // If the user came from a run detail page, bounce them back
-              // instead of dropping them on the generic template list.
-              window.location.href = returnTo ?? '/designer';
-            }}
           />
+          </div>
+          <div className={leftPanel === 'data' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
           <TestDataPanel
             key={currentTemplate.id}
             elements={currentTemplate.elements}
             testData={testData}
             onTestDataChange={(field, value) => setTestData((prev) => { const next = { ...prev, [field]: value }; localStorage.setItem(`lw:test-data:${currentTemplate.id}`, JSON.stringify(next)); return next; })}
           />
+          </div>
         </div>
 
         {/* Center Panel - Preview */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-[520px] xl:min-h-0 overflow-y-auto">
+        <div className="flex-1 flex flex-col min-w-0 min-h-[440px] lg:min-h-0 overflow-y-auto">
           {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
               so the round-trip feels like 'I edited this and came back'
               rather than 'I'm lost in the designer'. */}
-          <div className="px-6 py-3 border-b border-zinc-800/50 flex items-center gap-2 text-sm">
+          <div className="px-4 py-3 border-b border-zinc-800/50 flex flex-wrap items-center gap-2 text-sm shrink-0">
             {returnTo ? (
               <a
                 href={returnTo}
+                onClick={e => { e.preventDefault(); void leaveEditor(); }}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors"
               >
                 ← Done editing
@@ -578,6 +615,7 @@ function DesignerContent() {
             ) : (
               <a
                 href="/designer"
+                onClick={e => { e.preventDefault(); void leaveEditor(); }}
                 className="text-zinc-500 hover:text-amber-400 transition-colors"
               >
                 Templates
@@ -586,22 +624,14 @@ function DesignerContent() {
             <span className="text-zinc-700">/</span>
             <button
               onClick={() => setRenameSource(currentTemplate)}
-              className="flex min-w-0 items-center gap-1.5 text-zinc-100 font-semibold hover:text-amber-400 transition-colors"
+              className="flex min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 text-zinc-100 font-semibold hover:text-amber-400 transition-colors"
               title="Rename template"
             >
               <span className="truncate">{currentTemplate.name}</span>
               <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-600" />
             </button>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 ${
-              currentFormat.type === 'thermal'
-                ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
-                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-            }`}>
-              {currentFormat.name}
-            </span>
-
             {compatibleFormats.length > 1 && (
-              <div className="w-56 ml-2">
+              <div className="w-44 shrink-0">
                 <CustomSelect
                   value={currentFormat.id}
                   onChange={(value) => void handleChangeFormat(value)}
@@ -615,7 +645,7 @@ function DesignerContent() {
             )}
 
             {/* Undo/Redo */}
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
               {showThermalOrientationPicker && (
                 <>
                   <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50 mr-1">
@@ -649,6 +679,7 @@ function DesignerContent() {
                 onClick={handleUndo}
                 disabled={!canUndo()}
                 title="Undo (Ctrl+Z)"
+                aria-label="Undo"
                 className={`p-1.5 rounded-lg transition-colors ${canUndo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5' : 'text-zinc-700 cursor-not-allowed'}`}
               >
                 <Undo2 className="w-4 h-4" />
@@ -657,6 +688,7 @@ function DesignerContent() {
                 onClick={handleRedo}
                 disabled={!canRedo()}
                 title="Redo (Ctrl+Shift+Z)"
+                aria-label="Redo"
                 className={`p-1.5 rounded-lg transition-colors ${canRedo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5' : 'text-zinc-700 cursor-not-allowed'}`}
               >
                 <Redo2 className="w-4 h-4" />

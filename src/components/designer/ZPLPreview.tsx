@@ -80,13 +80,13 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const basePreviewWidth = Math.min(900, Math.max(520, format.width * (format.dpi || 203) * 1.25));
 
   return (
-    <div className="border-t border-zinc-800/50 flex flex-col">
+    <div className="border-t border-zinc-800/50 flex flex-col shrink-0">
       <div className={`flex items-center gap-2 px-6 py-3 flex-wrap ${expanded ? 'border-b border-zinc-800/50' : ''}`}>
         <Printer className="w-4 h-4 text-amber-400" />
         <button
           onClick={() => setExpanded((value) => !value)}
-          className="flex items-center gap-2 text-left"
           aria-expanded={expanded}
+          className="flex flex-wrap items-center gap-2 text-left min-h-9"
         >
           <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Print Preview</span>
           <span className="text-xs text-zinc-500">{template.thermalRenderMode === 'bitmap-v1' ? 'Exact bitmap proof — bundled fonts' : 'Actual ZPL output — open to check alignment'}</span>
@@ -149,7 +149,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       </div>
 
       {expanded && (
-        <div className="px-6 py-4 flex flex-col" style={{ minHeight: '60vh', maxHeight: '720px' }}>
+        <div className="px-6 py-4 flex flex-col" style={{ minHeight: '320px', maxHeight: '65vh' }}>
           {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Editing preview — fix before printing: {error}</p>}
           {/* ZPL Code view */}
           {showZPL && (

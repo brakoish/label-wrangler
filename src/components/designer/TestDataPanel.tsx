@@ -110,7 +110,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
   };
 
   return (
-    <div className="shrink-0 max-h-[45%] min-h-0 border-t border-zinc-800/50 flex flex-col">
+    <div className="flex-1 min-h-0 border-t border-zinc-800/50 flex flex-col">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-zinc-800/30 transition-all"
@@ -137,6 +137,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') void searchManifest();
                   }}
+                  aria-label="Search Manifest package"
                   placeholder="Search Manifest package"
                   className="h-7 w-full rounded-lg border border-zinc-800/50 bg-zinc-900/60 pl-7 pr-7 text-xs text-zinc-100 outline-none transition-all placeholder-zinc-600 focus:border-amber-500/30"
                 />
