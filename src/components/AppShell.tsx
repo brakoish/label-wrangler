@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 
 interface AppShellProps {
@@ -12,7 +12,6 @@ interface AppShellProps {
 
 export function AppShell({ children, headerAction, beforeLeave }: AppShellProps) {
   const pathname = usePathname();
-  const router = useRouter();
   // Runs is the new home. Formats moved from '/' to '/formats'. Designer
   // stays at /designer. Nav order reflects day-to-day usage.
   const isRuns = pathname === '/' || pathname === '/runs' || pathname.startsWith('/runs');
@@ -31,7 +30,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         event.preventDefault();
         event.stopPropagation();
         const href = link.getAttribute('href')!;
-        void beforeLeave().then(ready => { if (ready) router.push(href); });
+        void beforeLeave().then(ready => { if (ready) window.location.assign(href); });
       }}>
         <div className="max-w-[1600px] mx-auto px-3 sm:px-6 min-h-14 sm:min-h-16 flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-0">
           <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">

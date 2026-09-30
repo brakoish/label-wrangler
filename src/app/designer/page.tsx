@@ -97,29 +97,34 @@ function DesignerContent() {
   const [saving, setSaving] = useState(false);
   const [leftPanel, setLeftPanel] = useState<'layers' | 'data'>('layers');
   const saveRevision = useRef(0);
+  const unsavedChanges = useRef(false);
   const persistEdits = useCallback((id: string) => {
     const revision = ++saveRevision.current;
     setSaveError('');
     setSaving(true);
-    void saveTemplate(id).catch(error => {
+    unsavedChanges.current = true;
+    void saveTemplate(id).then(() => {
+      if (revision === saveRevision.current) unsavedChanges.current = false;
+    }).catch(error => {
       if (revision === saveRevision.current) setSaveError(error.message);
     }).finally(() => { if (revision === saveRevision.current) setSaving(false); });
   }, [saveTemplate]);
   useEffect(() => {
-    if (!saving && !saveError) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    const warn = (event: BeforeUnloadEvent) => { if (unsavedChanges.current) event.preventDefault(); };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [saving, saveError]);
+  }, []);
   const saveBeforeLeaving = async () => {
-    if (!currentTemplate || (!saving && !saveError && !gesture.current)) return true;
+    if (!currentTemplate || (!unsavedChanges.current && !gesture.current)) return true;
     const revision = ++saveRevision.current;
     try {
       setSaving(true);
+      unsavedChanges.current = true;
       await saveTemplate(currentTemplate.id);
       if (revision !== saveRevision.current) return false;
       setSaving(false);
       setSaveError('');
+      unsavedChanges.current = false;
       return true;
     } catch (error) {
       if (revision !== saveRevision.current) return false;
@@ -128,7 +133,7 @@ function DesignerContent() {
       return false;
     }
   };
-  const leaveEditor = async () => { if (await saveBeforeLeaving()) router.push(returnTo ?? '/designer'); };
+  const leaveEditor = async () => { if (await saveBeforeLeaving()) window.location.assign(returnTo ?? '/designer'); };
   const commitEdit = useCallback((updates: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'formatId'>>) => {
     const before = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
     if (!before || (updates.elements === before.elements && (!updates.formatId || updates.formatId === before.formatId))) return;
@@ -285,6 +290,7 @@ function DesignerContent() {
     clearUndo();
     setSelectedIds(new Set());
     saveRevision.current++;
+    unsavedChanges.current = false;
     setSaveError('');
     setSaving(false);
   }, [selectedTemplateId, clearUndo]);

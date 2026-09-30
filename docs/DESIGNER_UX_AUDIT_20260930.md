@@ -63,3 +63,12 @@ Independent review verdict: materially clearer and easier to use; no remaining
 release-blocking finding in tested scope. This is not a claim of perfection or a
 complete accessibility-conformance certification. Phone layouts and physical
 printer performance are outside this laptop/desktop UX task.
+
+### Production-only finding
+
+The first live validator run found that save-aware client-router navigation could
+remain on the current editor even after saving. No data was lost, but this blocked
+release approval. Restored the existing full-page navigation behavior after a
+successful save, with synchronous unsaved-state tracking to avoid a false unload
+warning. The validator now explicitly tests both header navigation with a held save
+and the exact Templates breadcrumb after error recovery.
