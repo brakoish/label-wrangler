@@ -143,7 +143,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
 
   const beginText = useCallback((id: string) => {
     const element = elements.find((e): e is TextElement => e.id === id && e.type === 'text');
-    if (!element || format.type !== 'thermal' || !svgRef.current) return;
+    if (!element || element.locked || format.type !== 'thermal' || !svgRef.current) return;
     const node = svgRef.current.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
     const rect = node?.getBoundingClientRect();
     if (!rect) return;
@@ -152,7 +152,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   }, [elements, format.type, onDragStart]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]')) return;
+      if ((e.target as HTMLElement)?.closest('input,textarea,select,button,a,summary,[role="button"],[role="combobox"],[contenteditable="true"]')) return;
       if (e.key === 'Enter' && selectedElementIds.size === 1) { e.preventDefault(); beginText([...selectedElementIds][0]); }
       if (e.key === 'Escape') { setDragging(null); setMarquee(null); setGuides({ x: [], y: [] }); onGestureCancel?.(); }
     };
@@ -179,7 +179,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     e.preventDefault();
 
     let element = elements.find((el) => el.id === elementId);
-    if (!element) return;
+    if (!element || element.locked) return;
 
     // Shift-click: toggle selection, don't drag
     if (e.shiftKey) {
@@ -196,10 +196,10 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     onDragStart?.();
 
     // Snapshot original positions of ALL elements being dragged
-    let dragIds = selectedElementIds.has(elementId) ? selectedElementIds : new Set([elementId]);
+    let dragIds = new Set(elements.filter(el => !el.locked && (selectedElementIds.has(elementId) ? selectedElementIds.has(el.id) : el.id === elementId)).map(el => el.id));
     let dragElements = elements;
     if (e.altKey && onDuplicateSelection && format.type === 'thermal') {
-      const originals = elements.filter(el => dragIds.has(el.id));
+      const originals = elements.filter(el => dragIds.has(el.id)).sort((a, b) => a.zIndex - b.zIndex);
       const copies = onDuplicateSelection(dragIds);
       const index = originals.findIndex(el => el.id === elementId);
       element = copies[index]; elementId = element.id;
@@ -228,7 +228,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     e.preventDefault();
 
     const element = elements.find((el) => el.id === elementId);
-    if (!element) return;
+    if (!element || element.locked) return;
 
     onDragStart?.();
 
@@ -251,7 +251,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const getEffectiveBounds = (el: TemplateElement) => elementInteractionBounds(el, textBounds);
     const selectedSnapshots = isMultiResize ? new Map(
       elements
-        .filter((el) => selectedElementIds.has(el.id))
+        .filter((el) => selectedElementIds.has(el.id) && !el.locked)
         .map((el) => {
           const bounds = getEffectiveBounds(el);
           return [el.id, {
@@ -472,9 +472,9 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
-    <div ref={containerRef} className="relative flex items-center justify-center p-6 overflow-hidden" style={{ minHeight: '420px', height: '65vh', maxHeight: '720px' }}>
+    <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-6 pt-16 pb-6 overflow-hidden" style={{ minHeight: '340px', height: 'calc(100dvh - 270px)', maxHeight: '800px' }}>
       {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Last rendered artwork — preview unavailable: ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : bitmapProof.advisories.length ? bitmapProof.advisories[0].message : 'Exact bitmap artwork · double-click text to edit' : 'Live editing preview · updating print proof…')}</p>}
-      {badQr && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
+      {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });
         onDragEnd?.();
@@ -500,7 +500,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         onPointerUp={() => {
           if (marquee) {
             const x = Math.min(marquee.x, marquee.endX), y = Math.min(marquee.y, marquee.endY), w = Math.abs(marquee.x - marquee.endX), h = Math.abs(marquee.y - marquee.endY);
-            const hit = w + h < 2 ? [] : elements.filter(el => { const b = elementInteractionBounds(el, textBounds); return b.x < x + w && b.x + b.width > x && b.y < y + h && b.y + b.height > y; }).map(el => el.id);
+            const hit = w + h < 2 ? [] : elements.filter(el => { if (el.locked) return false; const b = elementInteractionBounds(el, textBounds); return b.x < x + w && b.x + b.width > x && b.y < y + h && b.y + b.height > y; }).map(el => el.id);
             onSelectElements?.([...new Set([...marquee.initial, ...hit])]); setMarquee(null);
           }
           handlePointerUp();
@@ -535,7 +535,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
 
           {bitmap && bitmapProof && <svg x={0} y={0} width={viewBoxWidth} height={viewBoxHeight} viewBox={`${thermalRenderGeometry(format).effectiveSideMDots} 0 ${viewBoxWidth} ${viewBoxHeight}`} pointerEvents="none" >
             {bitmapProof.key !== bitmapKey && bitmapProof.layers.length > 0 ? <g transform={`translate(${thermalRenderGeometry(format).effectiveSideMDots} 0)`}>
-              {bitmapProof.layers.map(layer => {
+              {[...bitmapProof.layers].sort((a, b) => (elements.find(e => e.id === a.elementId)?.zIndex ?? 0) - (elements.find(e => e.id === b.elementId)?.zIndex ?? 0)).map(layer => {
                 if (!elements.some(e => e.id === layer.elementId)) return null;
                 const b = liveBounds(layer.elementId, layer)!;
                 return <image data-live-layer={layer.elementId} key={layer.elementId} href={layer.url} x={b.x} y={b.y} width={b.width} height={b.height} preserveAspectRatio="none" style={{ imageRendering: 'pixelated' }} />;
@@ -548,6 +548,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
               <g
                 key={element.id}
                 data-element-id={element.id}
+                pointerEvents={element.locked ? "none" : undefined}
                 onDoubleClick={e => { e.stopPropagation(); beginText(element.id); }}
                 onPointerDown={(e) => handlePointerDown(e, element.id)}
                 style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
@@ -571,7 +572,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                     />
                   );
                 })()}
-                {selectedElementIds.has(element.id) && selectedElementIds.size === 1 && (
+                {selectedElementIds.has(element.id) && !element.locked && selectedElementIds.size === 1 && (
                   <>
                     {/* Selection border — use measured bounds for text */}
                     {(() => {
@@ -652,7 +653,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           {marquee && <rect x={Math.min(marquee.x, marquee.endX)} y={Math.min(marquee.y, marquee.endY)} width={Math.abs(marquee.x - marquee.endX)} height={Math.abs(marquee.y - marquee.endY)} fill="#f59e0b22" stroke="#f59e0b" strokeWidth={totalW / svgW} pointerEvents="none" />}
           {/* Group selection bounding box + handles (shown when multi-selected) */}
           {selectedElementIds.size > 1 && (() => {
-          const ids = Array.from(selectedElementIds);
+          const ids = elements.filter(el => selectedElementIds.has(el.id) && !el.locked).map(el => el.id);
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
           for (const id of ids) {
             const el = elements.find((e) => e.id === id);

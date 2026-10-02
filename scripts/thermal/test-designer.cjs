@@ -1,0 +1,40 @@
+require('./register.cjs');
+const assert = require('node:assert/strict');
+const { moveLayers } = require('../../src/lib/designerLayers.ts');
+const { useTemplateStore } = require('../../src/lib/templateStore.ts');
+const { useUndoStore } = require('../../src/lib/undoStore.ts');
+const elements = ['a','b','c','d','e'].map((id,i) => ({id,zIndex:i*5,type:'rectangle',x:i,y:0,width:20,height:20}));
+const order = es => [...es].sort((a,b)=>a.zIndex-b.zIndex).map(e=>e.id).join('');
+const ids = new Set(['b','d']);
+assert.equal(order(moveLayers(elements,ids,'top')),'acebd');
+assert.equal(order(moveLayers(elements,ids,'back')),'bdace');
+assert.equal(order(moveLayers(elements,ids,'up')),'acbed');
+assert.equal(order(moveLayers(elements,ids,'down')),'badce');
+assert.equal(moveLayers(elements,new Set(['e']),'top'),elements);
+assert.equal(moveLayers(elements,new Set(['a']),'down'),elements);
+assert.equal(order(moveLayers(elements.map(e=>({...e,locked:ids.has(e.id)})),ids,'top')),'abcde');
+for(let mask=0;mask<32;mask++) for(const direction of ['top','back','up','down']) {
+ const selected = new Set(elements.filter((_,i)=>mask&(1<<i)).map(e=>e.id));
+ const moved = moveLayers(elements,selected,direction);
+ const ordered = [...moved].sort((a,b)=>a.zIndex-b.zIndex);
+ assert.deepEqual(ordered.filter(e=>selected.has(e.id)).map(e=>e.id),elements.filter(e=>selected.has(e.id)).map(e=>e.id));
+ assert.deepEqual(ordered.filter(e=>!selected.has(e.id)).map(e=>e.id),elements.filter(e=>!selected.has(e.id)).map(e=>e.id));
+ assert.equal(new Set(moved.map(e=>e.id)).size,5);
+}
+const history=useUndoStore.getState();history.clear();history.push('t',elements,'small');
+assert.equal(history.undo().formatId,'small');history.setCurrent('t',elements,'large');assert.equal(history.redo().formatId,'large');
+(async()=>{
+ const requests=[];let release;
+ global.fetch=async(url,init)=>{requests.push(JSON.parse(init.body)); if(requests.length===1) await new Promise(r=>release=r); return {ok:requests.length!==1};};
+ useTemplateStore.setState({templates:[{id:'t',formatId:'small',elements}]});
+ const first=useTemplateStore.getState().saveTemplate('t').catch(e=>e.message);
+ await new Promise(r=>setImmediate(r));
+ const changed=moveLayers(elements,ids,'top');
+ useTemplateStore.setState({templates:[{id:'t',formatId:'large',elements:changed}]});
+ const second=useTemplateStore.getState().saveTemplate('t');
+ assert.equal(requests.length,1);release();
+ assert.match(await first,/edits are still in this tab/);await second;
+ assert.equal(requests[0].formatId,'small');assert.equal(requests[1].formatId,'large');
+ assert.equal(order(requests[0].elements),'abcde');assert.equal(order(requests[1].elements),'acebd');
+ console.log('PASS sparse/group layer ordering, stable selection order, lock/no-op, format history, serialized save snapshots and recovery after failure');
+})().catch(e=>{console.error(e);process.exitCode=1;});

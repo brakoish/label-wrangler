@@ -4,6 +4,7 @@ import { TemplateElement } from './types';
 interface HistoryEntry {
   templateId: string;
   elements: TemplateElement[];
+  formatId?: string;
 }
 
 interface UndoStore {
@@ -12,17 +13,17 @@ interface UndoStore {
   maxHistory: number;
 
   // Push current state before a change
-  push: (templateId: string, elements: TemplateElement[]) => void;
+  push: (templateId: string, elements: TemplateElement[], formatId?: string) => void;
 
   // Undo: returns the previous elements state, or null if nothing to undo
   undo: () => HistoryEntry | null;
 
   // Redo: returns the next elements state, or null if nothing to redo
   redo: () => HistoryEntry | null;
-  rememberPast: (templateId: string, elements: TemplateElement[]) => void;
+  rememberPast: (templateId: string, elements: TemplateElement[], formatId?: string) => void;
 
   // Store current state for redo when undoing
-  setCurrent: (templateId: string, elements: TemplateElement[]) => void;
+  setCurrent: (templateId: string, elements: TemplateElement[], formatId?: string) => void;
 
   canUndo: () => boolean;
   canRedo: () => boolean;
@@ -36,9 +37,9 @@ export const useUndoStore = create<UndoStore>()((set, get) => ({
   future: [],
   maxHistory: 50,
 
-  push: (templateId, elements) => {
+  push: (templateId, elements, formatId) => {
     set((state) => ({
-      past: [...state.past.slice(-(state.maxHistory - 1)), { templateId, elements: JSON.parse(JSON.stringify(elements)) }],
+      past: [...state.past.slice(-(state.maxHistory - 1)), { templateId, formatId, elements: JSON.parse(JSON.stringify(elements)) }],
       future: [], // New action clears redo stack
     }));
   },
@@ -52,10 +53,10 @@ export const useUndoStore = create<UndoStore>()((set, get) => ({
       past: state.past.slice(0, -1),
     }));
 
-    return { templateId: previous.templateId, elements: JSON.parse(JSON.stringify(previous.elements)) };
+    return { templateId: previous.templateId, formatId: previous.formatId, elements: JSON.parse(JSON.stringify(previous.elements)) };
   },
 
-  rememberPast: (templateId, elements) => set(state => ({ past: [...state.past.slice(-(state.maxHistory - 1)), { templateId, elements: structuredClone(elements) }] })),
+  rememberPast: (templateId, elements, formatId) => set(state => ({ past: [...state.past.slice(-(state.maxHistory - 1)), { templateId, formatId, elements: structuredClone(elements) }] })),
 
   redo: () => {
     const { future } = get();
@@ -66,12 +67,12 @@ export const useUndoStore = create<UndoStore>()((set, get) => ({
       future: state.future.slice(0, -1),
     }));
 
-    return { templateId: next.templateId, elements: JSON.parse(JSON.stringify(next.elements)) };
+    return { templateId: next.templateId, formatId: next.formatId, elements: JSON.parse(JSON.stringify(next.elements)) };
   },
 
-  setCurrent: (templateId, elements) => {
+  setCurrent: (templateId, elements, formatId) => {
     set((state) => ({
-      future: [...state.future, { templateId, elements: JSON.parse(JSON.stringify(elements)) }],
+      future: [...state.future, { templateId, formatId, elements: JSON.parse(JSON.stringify(elements)) }],
     }));
   },
 

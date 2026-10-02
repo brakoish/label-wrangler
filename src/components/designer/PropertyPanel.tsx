@@ -27,11 +27,15 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   const multiSelected = selectedElements.length > 1;
   const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
 
+  if (element?.locked || selectedElements.some(e => e.locked)) {
+    return <div className="w-full lg:w-[264px] 2xl:w-[280px] p-4 text-sm text-zinc-400 border-l border-zinc-800">Selection includes locked layers. Unlock them in the layer list to edit properties.</div>;
+  }
+
   if (multiSelected) {
     const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
 
     return (
-      <div className="w-full xl:w-[280px] xl:shrink-0 max-h-[48vh] xl:max-h-none border-t xl:border-t-0 xl:border-l border-zinc-800/50 overflow-y-auto">
+      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 max-h-[48vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
         <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
             <Type className="w-3 h-3" />
@@ -64,8 +68,8 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
   if (!element) {
     return (
-      <div className="w-full xl:w-[280px] xl:shrink-0 min-h-20 xl:min-h-0 border-t xl:border-t-0 xl:border-l border-zinc-800/50 flex items-center justify-center">
-        <p className="text-zinc-600 text-xs">Select an element</p>
+      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 min-h-20 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 flex items-center justify-center">
+        <div className="p-5 space-y-3 text-sm text-zinc-400"><h2 className="font-medium text-zinc-200">Edit your label</h2><p>Select an object on the label or in Layers to edit it.</p><p>Double-click text to edit. Shift-click to select several objects.</p><p className="text-xs">Arrow keys move · Shift + arrow moves faster · Ctrl/⌘ Z undoes</p></div>
       </div>
     );
   }
@@ -88,7 +92,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   };
 
   return (
-    <div className="w-full xl:w-[280px] xl:shrink-0 max-h-[48vh] xl:max-h-none border-t xl:border-t-0 xl:border-l border-zinc-800/50 overflow-y-auto">
+    <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 max-h-[48vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
       {/* Element type header */}
       <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
         <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
@@ -130,7 +134,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         </div>
 
         {/* ── Rotation ── */}
-        <div className="grid grid-cols-2 gap-1">
+        <div>
           <div>
             <SectionLabel icon={<RotateCw className="w-3 h-3" />} label="Rotate" />
             <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
@@ -138,6 +142,8 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
                 <button
                   key={deg}
                   onClick={() => onUpdate({ rotation: deg })}
+                  aria-label={`Rotate ${deg} degrees`}
+                  aria-pressed={element.rotation === deg}
                   className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
                     element.rotation === deg
                       ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
@@ -528,6 +534,7 @@ function Divider() {
 function CompactInput({ label, value, onChange, step, labelRight }: {
   label: string; value: number; onChange: (v: number) => void; step: number; labelRight?: boolean;
 }) {
+  const accessibleLabel = ({ S: 'QR size', W: 'Width', H: 'Height', X: 'Horizontal position', Y: 'Vertical position', Pt: 'Font size in points', LH: 'Line height', CW: 'Character width', Min: 'Minimum font size', Track: 'Letter spacing', Wt: 'Line weight', Bdr: 'Border width', Rad: 'Corner radius' } as Record<string, string>)[label] || label;
   const [draft, setDraft] = useState(() => formatInputNumber(value));
   const [isFocused, setIsFocused] = useState(false);
 
@@ -552,6 +559,8 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
       )}
       <input
         type="number"
+        aria-label={accessibleLabel}
+        title={accessibleLabel}
         value={draft}
         onFocus={() => setIsFocused(true)}
         onChange={(e) => {

@@ -1,15 +1,29 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+function nextPath(){
+  const next=new URLSearchParams(window.location.search).get('next') || '/runs';
+  return next.startsWith('/') && !next.startsWith('//') && !next.includes('\\') ? next : '/runs';
+}
 export default function LoginPage(){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+  useEffect(()=>{
+    const controller=new AbortController();
+    // Older Strict cookies may be absent on an external navigation but are
+    // available to this same-origin session check. Do not ask for login again.
+    void fetch('/api/office/session',{cache:'no-store',signal:controller.signal})
+      .then(response=>response.ok?response.json():null)
+      .then(result=>{if(result?.user && !controller.signal.aborted)window.location.replace(nextPath());})
+      .catch(()=>{}); // Leave the normal login form available on failure.
+    return ()=>controller.abort();
+  },[]);
   return <main className="min-h-screen grid place-items-center p-6"><form className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);setError('');
     const form=new FormData(e.currentTarget);
     try{
       const response=await fetch('/api/office/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.get('username'),password:form.get('password'),staySignedIn:form.get('staySignedIn')==='on'})});
       const result=await response.json();if(!response.ok)throw new Error(result.error);
-      const next=new URLSearchParams(window.location.search).get('next') || '/runs';
-      window.location.assign(next.startsWith('/') && !next.startsWith('//') && !next.includes('\\')?next:'/runs');
+      window.location.assign(nextPath());
     }catch(err){setError(err instanceof Error?err.message:'Unable to sign in');setBusy(false);}
   }}>
     <h1 className="text-xl font-semibold text-amber-400">Label Wrangler</h1>

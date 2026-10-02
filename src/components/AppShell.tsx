@@ -7,9 +7,10 @@ interface AppShellProps {
   children: React.ReactNode;
   /** Optional action button in header right side (e.g. "New Format", "New Template") */
   headerAction?: React.ReactNode;
+  beforeLeave?: () => Promise<boolean>;
 }
 
-export function AppShell({ children, headerAction }: AppShellProps) {
+export function AppShell({ children, headerAction, beforeLeave }: AppShellProps) {
   const pathname = usePathname();
   // Runs is the new home. Formats moved from '/' to '/formats'. Designer
   // stays at /designer. Nav order reflects day-to-day usage.
@@ -22,7 +23,15 @@ export function AppShell({ children, headerAction }: AppShellProps) {
     <div className="h-screen flex flex-col bg-[#0c0c0e]">
       {/* Shared Header — tighter padding + smaller logo on mobile so the
           nav tabs and any headerAction fit without wrapping below. */}
-      <header className="glass sticky top-0 z-40">
+      <header className="glass sticky top-0 z-40" onClickCapture={event => {
+        if (!beforeLeave || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const link = (event.target as HTMLElement).closest('a[href]');
+        if (!link) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const href = link.getAttribute('href')!;
+        void beforeLeave().then(ready => { if (ready) window.location.assign(href); });
+      }}>
         <div className="max-w-[1600px] mx-auto px-3 sm:px-6 min-h-14 sm:min-h-16 flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-0">
           <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
             <Link href="/runs">
@@ -88,6 +97,7 @@ export function AppShell({ children, headerAction }: AppShellProps) {
             </nav>
 
             <button className="shrink-0 text-xs text-zinc-500 hover:text-zinc-200" onClick={async()=>{
+              if (beforeLeave && !await beforeLeave()) return;
               const result=await fetch('/api/office/session',{method:'DELETE'});
               if(result.ok)window.location.assign('/login');
             }}>Sign out</button>

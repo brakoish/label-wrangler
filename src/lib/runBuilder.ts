@@ -1,5 +1,6 @@
+import { getBitmapProofBatch } from './thermal/client';
 import type { LabelFormat, LabelTemplate, TemplateElement, Run, FieldMapping } from './types';
-import { generateZPL, generateZPLWithImages, prepareZplImages, type GenerateZplOptions } from './zplGenerator';
+import { generateZPL, prepareZplImages, type GenerateZplOptions } from './zplGenerator';
 
 /**
  * Get the list of dynamic-field names present in a template (deduplicated,
@@ -135,6 +136,7 @@ export async function generateLabelsForRunWithImages(
   template: LabelTemplate,
   format: LabelFormat,
   range?: { from: number; to: number },
+  preparation?: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void },
 ): Promise<string[]> {
   const total = run.sourceData.length;
   const from = range?.from ?? 1, to = range?.to ?? total;
@@ -142,19 +144,34 @@ export async function generateLabelsForRunWithImages(
   const across = Math.max(1, format.labelsAcross || 1);
   const imageGraphics = template.thermalRenderMode === 'bitmap-v1' ? {} : await prepareZplImages(template, format);
   const feeds: string[] = []; let bytes = 0;
-  for (let first = Math.floor((from - 1) / across) * across; first < to; first += across) {
-    const lanes = Array.from({ length: across }, (_, lane) => {
-      const index = first + lane;
-      return index >= from - 1 && index < to ? valuesForLabel(run, index) : undefined;
-    });
+  const firstFeed = Math.floor((from - 1) / across) * across;
+  const feedTotal = Math.ceil((to - firstFeed) / across);
+  const batchSize = template.thermalRenderMode === 'bitmap-v1' ? 8 : 1;
+  preparation?.onProgress?.(0, to - from + 1);
+  for (let offset = 0; offset < feedTotal; offset += batchSize) {
+    preparation?.signal?.throwIfAborted();
+    const first = firstFeed + offset * across;
+    const batchEnd = Math.min(to, first + batchSize * across);
+    const values = Array.from({ length: Math.min(batchSize, feedTotal - offset) }, (_, feed) =>
+      Array.from({ length: across }, (_, lane) => {
+        const index = first + feed * across + lane;
+        return index >= from - 1 && index < to ? valuesForLabel(run, index) : undefined;
+      }));
     try {
-      const zpl = template.thermalRenderMode === 'bitmap-v1'
-        ? await generateZPLWithImages(template, format, lanes)
-        : generateZPL(template, format, lanes, { imageGraphics });
-      bytes += new TextEncoder().encode(zpl).length;
-      if (template.thermalRenderMode === 'bitmap-v1' && bytes > 32 * 1024 * 1024) throw new Error('Selected range exceeds 32 MiB; select a smaller range');
-      feeds.push(zpl);
-    } catch (error) { throw new Error(`Labels ${Math.max(first + 1, from)}–${Math.min(first + across, to)}: ${error instanceof Error ? error.message : 'Render failed'}`); }
+      const rendered = template.thermalRenderMode === 'bitmap-v1'
+        ? (await getBitmapProofBatch(template, format, values, preparation?.signal)).map(result => result.zpl)
+        : values.map(lanes => generateZPL(template, format, lanes, { imageGraphics }));
+      preparation?.signal?.throwIfAborted();
+      for (const zpl of rendered) {
+        bytes += new TextEncoder().encode(zpl).length;
+        if (template.thermalRenderMode === 'bitmap-v1' && bytes > 32 * 1024 * 1024) throw new Error('Selected range exceeds 32 MiB; select a smaller range');
+        feeds.push(zpl);
+      }
+      preparation?.onProgress?.(batchEnd - from + 1, to - from + 1);
+    } catch (error) {
+      preparation?.signal?.throwIfAborted();
+      throw new Error(`Labels ${Math.max(first + 1, from)}–${batchEnd}: ${error instanceof Error ? error.message : 'Render failed'}`);
+    }
   }
   return feeds;
 }

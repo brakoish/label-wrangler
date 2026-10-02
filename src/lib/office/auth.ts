@@ -58,6 +58,7 @@ export async function login(username: string, password: string, staySignedIn = f
   const maxAge = staySignedIn ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
   await sql`INSERT INTO office_sessions(token_hash,user_id,expires_at) VALUES(${hash(token)},${rows[0].id},now()+${maxAge} * interval '1 second')`;
   await sql`DELETE FROM office_login_attempts WHERE key=${key}`;
-  (await cookies()).set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/', maxAge });
+  // Allow top-level links from other sites; mutating requests still require sameOrigin.
+  (await cookies()).set(COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge });
   return { username: rows[0].username };
 }

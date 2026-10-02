@@ -2,7 +2,7 @@ import { body, json, failure, OfficeError } from '@/lib/office/http';
 import { requireUser } from '@/lib/office/auth';
 import { officeSql } from '@/lib/office/db';
 import { createJobs } from '@/lib/office/jobs';
-export const maxDuration=60;
+export const maxDuration=300;
 export async function POST(req: Request){
   try{return json(await createJobs(await requireUser(req,'print'),await body(req)));}catch(error){return failure(error);}
 }
