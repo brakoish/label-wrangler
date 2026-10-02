@@ -449,6 +449,7 @@ function LineProps({ element, onUpdate }: { element: LineElement; onUpdate: (u: 
   return (
     <>
       <SectionLabel icon={<span className="w-3 h-0.5 bg-current rounded" />} label="Line" />
+      <CompactSelect value={element.lineStyle || 'solid'} options={['solid', 'dotted']} onChange={(v) => onUpdate({ lineStyle: v as LineElement['lineStyle'] })} />
       <CompactInput label="Wt" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} />
       <ColorRow label="Color" value={element.color} onChange={(v) => onUpdate({ color: v })} />
     </>

@@ -673,6 +673,24 @@ function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues
 function lineToZPL(element: LineElement, x: number, y: number, format: LabelFormat): string {
   const dpi = format.dpi || 203;
   const strokeW = Math.max(1, Math.round(element.strokeWidth * (dpi / 72)));
+  if (element.lineStyle === 'dotted') {
+    // Position round dots along the same center-rotated segment as the designer.
+    const length = Math.hypot(element.width, element.height);
+    const spacing = Math.max(1, element.strokeWidth * (dpi / 72)) * 3;
+    const angle = (element.rotation || 0) * Math.PI / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const dots: string[] = [];
+    for (let distance = 0; distance <= length; distance += spacing) {
+      const fraction = length ? distance / length : 0;
+      const dx = element.width * (fraction - 0.5);
+      const dy = element.height * (fraction - 0.5);
+      const dotX = Math.round(x + element.width / 2 + dx * cos - dy * sin - strokeW / 2);
+      const dotY = Math.round(y + element.height / 2 + dx * sin + dy * cos - strokeW / 2);
+      dots.push(`^FO${dotX},${dotY}^GC${strokeW},${strokeW},B^FS`);
+    }
+    return dots.join('\n');
+  }
   const rotation = normalizeRotation(element.rotation);
   const originalW = Math.max(strokeW, Math.round(element.width));
   const originalH = Math.max(strokeW, Math.round(element.height));

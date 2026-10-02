@@ -358,6 +358,7 @@ function MiniLine({ element, format, transform }: { element: LineElement; format
       y2={element.height}
       stroke={format.type === 'thermal' ? '#000000' : element.color || '#111827'}
       strokeWidth={strokeWidth}
+      strokeDasharray={element.lineStyle === 'dotted' ? `0 ${strokeWidth * 3}` : undefined}
       strokeLinecap="round"
     />
   );
