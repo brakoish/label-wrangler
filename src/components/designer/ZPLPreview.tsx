@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed, ChevronDown } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
+import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
+import { OfficePreviewPrint } from './OfficePreviewPrint';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 
 interface ZPLPreviewProps {
@@ -21,6 +23,10 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const [error, setError] = useState<string | null>(null);
   const [showZPL, setShowZPL] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const revision = useRef(0);
+  const signature = JSON.stringify([template, format, testData]);
+  const [renderedSignature, setRenderedSignature] = useState('');
+  const proofReady = template.thermalRenderMode !== 'bitmap-v1' || (signature === renderedSignature && !loading && !error);
   // Zoom level as multiplier of "fit" size. 1 = fit to container, 2 = double.
   const [zoom, setZoom] = useState<number>(1);
   // Overlay label outlines so the user can see lane boundaries on multi-across rolls.
@@ -30,21 +36,30 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const fetchPreview = useCallback(async () => {
     if (format.type !== 'thermal') return;
 
+    const token = ++revision.current;
     setLoading(true);
     setError(null);
 
     try {
-      // Render ZPL → PNG entirely in the browser via zpl-renderer-js (Zebrash WASM).
-      // No network, no rate limits. 8MB WASM is lazy-loaded once and cached.
+      // Bitmap decodes its authoritative packed pixels; native ZPL uses local WASM.
       const nextZpl = await generateZPLWithImages(template, format, testData);
-      setZpl(nextZpl);
-      setPreviewUrl(await renderZplToDataUrl(nextZpl, format));
+      const url = await renderZplToDataUrl(nextZpl, format);
+      if (token !== revision.current) return;
+      setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
+      if (token !== revision.current) return;
       setError(err instanceof Error ? err.message : 'Preview failed');
+      setPreviewUrl(null); setZpl('');
+      if (template.thermalRenderMode === 'bitmap-v1') {
+        try {
+          const draft = await getBitmapProof(template, format, testData, true);
+          if (token === revision.current) setPreviewUrl(draft.proof);
+        } catch { /* The original error remains visible; never use stale print bytes. */ }
+      }
     } finally {
-      setLoading(false);
+      if (token === revision.current) setLoading(false);
     }
-  }, [template, format, testData]);
+  }, [template, format, testData, signature]);
 
   // Render only while the secondary print preview is open. Local WASM uses a
   // tight debounce because there is no network or rate limit.
@@ -55,7 +70,9 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       fetchPreview();
     }, 200);
 
-    return () => clearTimeout(timer);
+    // Invalidate async work, not a DOM ref. Older results may never replace new artwork.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { clearTimeout(timer); revision.current++; };
   }, [expanded, fetchPreview]);
 
   if (format.type !== 'thermal') return null;
@@ -72,14 +89,15 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           aria-expanded={expanded}
         >
           <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Print Preview</span>
-          <span className="text-xs text-zinc-500">Actual ZPL output — open to check alignment</span>
+          <span className="text-xs text-zinc-500">{template.thermalRenderMode === 'bitmap-v1' ? 'Exact bitmap proof — bundled fonts' : 'Actual ZPL output — open to check alignment'}</span>
           <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </button>
 
         {expanded && <div className="w-px h-4 bg-zinc-800 mx-2" />}
 
         {/* WebUSB test print controls — connect, print current template, calibration. */}
-        {expanded && <PrintControls format={format} template={template} testData={testData} />}
+        {expanded && <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />}
+        {expanded && <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />}
 
         {expanded && <div className="ml-auto flex items-center gap-1">
           <button
@@ -132,6 +150,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
 
       {expanded && (
         <div className="px-6 py-4 flex flex-col" style={{ minHeight: '60vh', maxHeight: '720px' }}>
+          {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Editing preview — fix before printing: {error}</p>}
           {/* ZPL Code view */}
           {showZPL && (
             <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">
@@ -147,7 +166,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             <RefreshCw className="w-5 h-5 animate-spin mr-2" />
             Rendering…
           </div>
-        ) : error ? (
+        ) : error && !previewUrl ? (
           <div className="flex items-center justify-center text-red-400 text-sm">
             {error}
           </div>
@@ -160,7 +179,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
                 At zoom>1 it grows past container bounds and parent scrolls. */}
             <img
               src={previewUrl}
-              alt="ZPL Preview"
+              alt={error ? 'Editing preview with warnings' : 'ZPL Preview'}
               className="rounded-lg border border-zinc-700/50"
               style={{
                 // Native-DPI render — keep pixelated for sharp bitmap-font edges;
@@ -173,7 +192,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
               }}
             />
             {showOutlines && <LabelOutlineOverlay format={format} />}
-            {loading && (
+            {(loading || (!proofReady && !error)) && (
               <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center">
                 <RefreshCw className="w-5 h-5 animate-spin text-white" />
               </div>

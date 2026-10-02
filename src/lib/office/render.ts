@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { renderThermalBitmap, validateBitmapDesign } from '../thermal/render.server';
 import { createHash, randomUUID } from 'node:crypto';
 import { generateZPL, type PreparedZplImages } from '../zplGenerator';
 import { previewLabelValues } from '../runBuilder';
@@ -82,9 +83,16 @@ export async function prepareServerImages(template: LabelTemplate, format: Label
   return prepared;
 }
 export async function buildBatches(run: Run, template: LabelTemplate, format: LabelFormat, from: number, to: number, dpi: number, maxWidth: number) {
-  const { across }=validateLayout(template,format,dpi,maxWidth);
+  if (template.thermalRenderMode !== undefined && !['native-v1','bitmap-v1'].includes(template.thermalRenderMode)) throw new OfficeError('Unsupported thermal render mode');
+  const started = Date.now();
+  const bitmap = template.thermalRenderMode === 'bitmap-v1';
+  if (bitmap) {
+    const geometry = validateBitmapDesign(template, format);
+    if ((format.dpi || 203) !== dpi || geometry.linerDots > maxWidth) throw new OfficeError(`Office printer requires ${dpi} DPI and at most ${maxWidth} dots wide`);
+  }
+  const across = bitmap ? (format.labelsAcross || 1) : validateLayout(template,format,dpi,maxWidth).across;
   if (!Array.isArray(run.sourceData) || !Number.isInteger(from) || !Number.isInteger(to) || from<1 || to<from || to>run.sourceData.length || to-from+1>10000) throw new OfficeError('Choose a valid range of up to 10,000 saved labels');
-  const imageGraphics=await prepareServerImages(template,format);
+  const imageGraphics=bitmap ? {} : await prepareServerImages(template,format);
   const batches: OfficeBatch[]=[];
   let feeds: string[]=[]; let count=0; let start=from; let end=from; let bytes=0; let totalBytes=0;
   const flush=()=>{
@@ -95,15 +103,19 @@ export async function buildBatches(run: Run, template: LabelTemplate, format: La
   };
   // Keep original lane positions. Unselected lanes are blank, not reprinted.
   for(let first=Math.floor((from-1)/across)*across;first<to;first+=across){
+    if (bitmap && Date.now()-started > 40_000) throw new OfficeError('Bitmap preparation exceeds this request time limit. Choose a smaller range.');
     const laneValues: Array<Record<string,string>|undefined>=[]; let feedCount=0;
     for(let lane=0;lane<across;lane++){
       const index=first+lane;
       if(index<from-1 || index>=to){laneValues.push(undefined);continue;}
       const values=previewLabelValues(run,index);
-      for(const value of Object.values(values)) content(value);
+      if (!bitmap) for(const value of Object.values(values)) content(value);
       laneValues.push(values);feedCount++;
     }
-    const zpl=generateZPL(template,format,laneValues,{imageGraphics}).replace('^XA','^XA\n^PON\n^LH0,0\n^LT0\n^LS0\n^PQ1');
+    let rendered: string;
+    try { rendered = bitmap ? (await renderThermalBitmap(template,format,laneValues)).zpl : generateZPL(template,format,laneValues,{imageGraphics}); }
+    catch (error) { throw new OfficeError(`Labels ${Math.max(from,first+1)}–${Math.min(to,first+across)}: ${error instanceof Error ? error.message : 'Rendering failed'}`); }
+    const zpl=rendered.replace('^XA','^XA\n^PON\n^LH0,0\n^LT0\n^LS0\n^PQ1');
     const size=Buffer.byteLength(zpl,'utf8');
     if(size>MAX_BYTES)throw new OfficeError('One feed exceeds the 2 MiB payload limit. Reduce logo size.');
     if(count && (count+feedCount>25 || bytes+size+1>MAX_BYTES))flush();

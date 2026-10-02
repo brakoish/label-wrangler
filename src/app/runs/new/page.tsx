@@ -157,6 +157,9 @@ function NewRunContent() {
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [manifestSearch, setManifestSearch] = useState('');
   const [manifestRows, setManifestRows] = useState<ManifestRow[]>([]);
+  // Saved rows may omit package metadata. Keep their exact order and mappings
+  // until a new Manifest search explicitly replaces them.
+  const [savedManifestRows, setSavedManifestRows] = useState<ManifestRow[] | null>(null);
   const [selectedManifestPackageKey, setSelectedManifestPackageKey] = useState<string | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
   const [isSearchingManifest, setIsSearchingManifest] = useState(false);
@@ -246,6 +249,8 @@ function NewRunContent() {
         setInputMode(src.dataSource === 'manual' ? 'manual' : src.dataSource === 'manifest' ? 'manifest' : 'csv');
         if (src.dataSource === 'manifest') {
           setManifestRows(rows as ManifestRow[]);
+          setSavedManifestRows(rows as ManifestRow[]);
+          setSelectedManifestPackageKey(manifestPackageKey(rows[0] as ManifestRow));
         } else {
           setCsvHeaders(headers);
           setCsvRows(rows);
@@ -424,9 +429,9 @@ function NewRunContent() {
   }, [manifestDeepLinkQuery, searchManifest]);
 
   useEffect(() => {
-    if (inputMode !== 'manifest' || manifestRows.length === 0) return;
+    if (inputMode !== 'manifest' || manifestRows.length === 0 || manifestRows === savedManifestRows) return;
     applyAutoColumnMapping(MANIFEST_HEADERS, manifestRows);
-  }, [applyAutoColumnMapping, inputMode, manifestRows]);
+  }, [applyAutoColumnMapping, inputMode, manifestRows, savedManifestRows]);
 
   // List of fields mapped to columns (variable fields).
   const variableFields = useMemo(
@@ -448,9 +453,10 @@ function NewRunContent() {
   }, [template, dynamicFields, pasteField]);
 
   const manifestSelectedRows = useMemo(() => {
+    if (manifestRows === savedManifestRows) return manifestRows;
     if (!selectedManifestPackageKey) return [];
     return manifestRows.filter((row) => manifestPackageKey(row) === selectedManifestPackageKey);
-  }, [manifestRows, selectedManifestPackageKey]);
+  }, [manifestRows, selectedManifestPackageKey, savedManifestRows]);
 
   // Compute the effective sourceData based on input mode. New runs always use
   // row objects so manual/paste/CSV/Manifest can feed the same downstream shape.
@@ -779,7 +785,7 @@ function NewRunContent() {
                     value={templateId}
                     onChange={setTemplateId}
                     placeholder="Select template..."
-                    options={templates.map((t) => {
+                    options={templates.filter((t) => !t.archivedAt || t.id === templateId).map((t) => {
                       const f = formats.find((x) => x.id === t.formatId);
                       return {
                         value: t.id,
@@ -800,7 +806,7 @@ function NewRunContent() {
                   </span>
                 </div>
                 <div className="max-h-[260px] overflow-auto rounded-xl bg-zinc-950/60 p-3">
-                  <LayoutPreview format={format} elements={template.elements} testData={previewValues} />
+                  <LayoutPreview thermalRenderMode={template.thermalRenderMode} format={format} elements={template.elements} testData={previewValues} />
                 </div>
               </div>
             )}
@@ -1234,6 +1240,7 @@ function NewRunContent() {
                       // actual sheet-grid layout so the user sees 10x20 /
                       // 8x11 / whatever their template actually is.
                       <LayoutPreview
+                    thermalRenderMode={template.thermalRenderMode}
                         format={format}
                         elements={template.elements}
                         testData={previewValues}

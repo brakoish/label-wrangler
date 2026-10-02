@@ -46,6 +46,7 @@ export function generateZPL(
   fieldValues?: Record<string, string> | Array<Record<string, string> | null | undefined>,
   options: GenerateZplOptions = {},
 ): string {
+  if (template.thermalRenderMode === 'bitmap-v1') throw new Error('Bitmap templates require the asynchronous proof renderer');
   const dpi = format.dpi || 203;
   const labelWDots = Math.round(format.width * dpi);
   const heightDots = Math.round(format.height * dpi);
@@ -104,6 +105,10 @@ export async function generateZPLWithImages(
   format: LabelFormat,
   fieldValues?: Record<string, string> | Array<Record<string, string> | null | undefined>,
 ): Promise<string> {
+  if (template.thermalRenderMode === 'bitmap-v1') {
+    const { getBitmapProof } = await import('./thermal/client');
+    return (await getBitmapProof(template, format, fieldValues ?? {})).zpl;
+  }
   const imageGraphics = await prepareZplImages(template, format);
   return generateZPL(template, format, fieldValues, { imageGraphics });
 }

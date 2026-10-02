@@ -16,6 +16,8 @@ export interface RunQueueOptions {
   labels: string[];
   /** How many labels to bundle into a single transfer. Default 25. */
   batchSize?: number;
+  /** Decoded UTF-8 ceiling; 2 MiB is below Dazzle limits after base64 overhead. */
+  maxBatchBytes?: number;
   /** Optional breath between batches to let the printer catch up. Default 0. */
   delayBetweenBatchesMs?: number;
   /** Where to start printing from (inclusive, 0-based). Use for resume. Default 0. */
@@ -48,6 +50,7 @@ export function startPrintQueue(
   const {
     labels,
     batchSize = 25,
+    maxBatchBytes = 2 * 1024 * 1024,
     delayBetweenBatchesMs = 0,
     startIndex = 0,
     onProgress,
@@ -77,7 +80,13 @@ export function startPrintQueue(
           if ((status as RunQueueStatus) === 'cancelled') return;
         }
 
-        const end = Math.min(printedCount + batchSize, total);
+        let end = printedCount, bytes = 0;
+        while (end < Math.min(printedCount + Math.max(1, batchSize), total)) {
+          const nextBytes = new TextEncoder().encode(labels[end]).length + (end > printedCount ? 1 : 0);
+          if (nextBytes > maxBatchBytes) throw new Error('One feed exceeds the printer payload limit. Reduce the label/image size.');
+          if (bytes + nextBytes > maxBatchBytes) break;
+          bytes += nextBytes; end++;
+        }
         const batch = labels.slice(printedCount, end);
         const payload = batch.join('\n');
 

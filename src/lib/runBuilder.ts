@@ -1,5 +1,5 @@
 import type { LabelFormat, LabelTemplate, TemplateElement, Run, FieldMapping } from './types';
-import { generateZPL, prepareZplImages, type GenerateZplOptions } from './zplGenerator';
+import { generateZPL, generateZPLWithImages, prepareZplImages, type GenerateZplOptions } from './zplGenerator';
 
 /**
  * Get the list of dynamic-field names present in a template (deduplicated,
@@ -134,9 +134,29 @@ export async function generateLabelsForRunWithImages(
   run: Run,
   template: LabelTemplate,
   format: LabelFormat,
+  range?: { from: number; to: number },
 ): Promise<string[]> {
-  const imageGraphics = await prepareZplImages(template, format);
-  return generateLabelsForRun(run, template, format, { imageGraphics });
+  const total = run.sourceData.length;
+  const from = range?.from ?? 1, to = range?.to ?? total;
+  if (!total || from < 1 || to > total || to < from) return [];
+  const across = Math.max(1, format.labelsAcross || 1);
+  const imageGraphics = template.thermalRenderMode === 'bitmap-v1' ? {} : await prepareZplImages(template, format);
+  const feeds: string[] = []; let bytes = 0;
+  for (let first = Math.floor((from - 1) / across) * across; first < to; first += across) {
+    const lanes = Array.from({ length: across }, (_, lane) => {
+      const index = first + lane;
+      return index >= from - 1 && index < to ? valuesForLabel(run, index) : undefined;
+    });
+    try {
+      const zpl = template.thermalRenderMode === 'bitmap-v1'
+        ? await generateZPLWithImages(template, format, lanes)
+        : generateZPL(template, format, lanes, { imageGraphics });
+      bytes += new TextEncoder().encode(zpl).length;
+      if (template.thermalRenderMode === 'bitmap-v1' && bytes > 32 * 1024 * 1024) throw new Error('Selected range exceeds 32 MiB; select a smaller range');
+      feeds.push(zpl);
+    } catch (error) { throw new Error(`Labels ${Math.max(first + 1, from)}–${Math.min(first + across, to)}: ${error instanceof Error ? error.message : 'Render failed'}`); }
+  }
+  return feeds;
 }
 
 /** Total physical labels a run will produce. For single-across this equals

@@ -1,6 +1,9 @@
 'use client';
 
 import { LabelFormat } from './types';
+import { decodeBitmapZpl, unpackMonochrome } from './thermal/bitmap';
+import { thermalRenderGeometry } from './thermal/geometry';
+export { thermalRenderGeometry } from './thermal/geometry';
 
 type ZplRendererApi = {
   zplToBase64Async: (zpl: string, widthMm?: number, heightMm?: number, dpmm?: number) => Promise<string>;
@@ -28,39 +31,22 @@ export function thermalRenderDimensions(format: Pick<LabelFormat, 'width' | 'hei
   };
 }
 
-export function thermalRenderGeometry(format: Pick<LabelFormat, 'width' | 'height' | 'dpi' | 'labelsAcross' | 'horizontalGapThermal' | 'sideMarginThermal' | 'linerWidth'>) {
-  const dpi = format.dpi || 203;
-  const across = Math.max(1, format.labelsAcross || 1);
-  const gapIn = format.horizontalGapThermal || 0;
-  const sideIn = format.sideMarginThermal || 0;
-  const labelWDots = Math.round(format.width * dpi);
-  const heightDots = Math.round(format.height * dpi);
-  const gapDots = Math.round(gapIn * dpi);
-  const sideMDots = Math.round(sideIn * dpi);
-  const computedLinerIn = sideIn * 2 + across * format.width + (across - 1) * gapIn;
-  const linerIn = format.linerWidth || computedLinerIn;
-  const linerDots = format.linerWidth
-    ? Math.round(format.linerWidth * dpi)
-    : sideMDots * 2 + across * labelWDots + (across - 1) * gapDots;
-  const effectiveSideMDots = sideIn > 0
-    ? sideMDots
-    : Math.max(0, Math.round((linerDots - (across * labelWDots + (across - 1) * gapDots)) / 2));
-
-  return {
-    labelWDots,
-    heightDots,
-    linerDots,
-    effectiveSideMDots,
-    linerIn,
-    heightIn: format.height,
-    dpmm: Math.round((format.dpi || 203) / 25.4),
-  };
-}
 
 export async function renderZplToDataUrl(
   zpl: string,
   format: Pick<LabelFormat, 'width' | 'height' | 'dpi' | 'labelsAcross' | 'horizontalGapThermal' | 'sideMarginThermal' | 'linerWidth'>,
 ) {
+  const bitmap = decodeBitmapZpl(zpl);
+  if (bitmap) {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Unable to display bitmap proof');
+    const pixels = ctx.createImageData(bitmap.width, bitmap.height);
+    pixels.data.set(unpackMonochrome(bitmap.packed, bitmap.width, bitmap.height));
+    ctx.putImageData(pixels, 0, 0);
+    return canvas.toDataURL('image/png');
+  }
   const api = await getLocalZplApi();
   const { widthMm, heightMm, dpmm } = thermalRenderDimensions(format);
   const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);

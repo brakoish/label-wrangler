@@ -7,7 +7,8 @@ export async function POST(req: Request){
   try{
     sameOrigin(req);const data=await body(req,2048);
     if(typeof data.username!=='string' || !/^[a-zA-Z0-9._@+-]{1,100}$/.test(data.username) || typeof data.password!=='string' || data.password.length>256)throw new OfficeError('Invalid login');
-    return json(await login(data.username,data.password));
+    if(data.staySignedIn !== undefined && typeof data.staySignedIn !== 'boolean')throw new OfficeError('Invalid sign-in preference');
+    return json(await login(data.username,data.password,data.staySignedIn === true));
   }catch(error){return failure(error);}
 }
 export async function DELETE(req: Request){

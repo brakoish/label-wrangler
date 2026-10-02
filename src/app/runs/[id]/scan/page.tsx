@@ -134,6 +134,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   }, []);
 
   const sendLabel = useCallback(async (zpl: string) => {
+    if (new TextEncoder().encode(zpl).length > 2 * 1024 * 1024) throw new Error('This feed exceeds the 2 MiB printer limit. Reduce the label/image size.');
     if (transport === 'dazzle') {
       await printViaDazzle(zpl, dazzleSelected ?? undefined);
     } else if (transport === 'webusb' && usbPrinter) {
