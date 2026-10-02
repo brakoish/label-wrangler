@@ -569,7 +569,7 @@ async function rowWithMetrcLabFallback(
   const potency = await fetchMetrcLabPotency(pkg.metrcPackageId).catch(() => ({
     ...EMPTY_LAB_POTENCY,
   }));
-  const thcPercent = options.preferLabThc ? potency.thcPercent || pkg.thcPercent : pkg.thcPercent;
+  const thcPercent = options.preferLabThc ? potency.thcPercent || pkg.thcPercent : pkg.thcPercent || potency.thcPercent;
   const tacPercent = hasPositiveNumber(pkg.tacPercent) ? pkg.tacPercent : potency.tacPercent;
   const thcMgPackage = potency.thcMgPackage || pkg.thcMgPackage;
   const tacMgPackage = potency.tacMgPackage || pkg.tacMgPackage;
