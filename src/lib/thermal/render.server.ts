@@ -188,7 +188,7 @@ async function elementArtwork(e: TemplateElement, values: Record<string, string>
   }
   const stroke = finite(e.strokeWidth, 0, 100, 'stroke width') * dpi / 72;
   const shape = e.type === 'line'
-    ? `<line x1="${stroke / 2}" y1="${stroke / 2}" x2="${width - stroke / 2}" y2="${height - stroke / 2}" stroke="${colour(e.color)}" stroke-width="${stroke}"/>`
+    ? `<line x1="${stroke / 2}" y1="${stroke / 2}" x2="${width - stroke / 2}" y2="${height - stroke / 2}" stroke="${colour(e.color)}" stroke-width="${stroke}"${e.lineStyle === 'dotted' ? ` stroke-dasharray="0 ${stroke * 3}" stroke-linecap="round"` : ''}/>`
     : `<rect x="${stroke / 2}" y="${stroke / 2}" width="${Math.max(0, width - stroke)}" height="${Math.max(0, height - stroke)}" rx="${finite(e.borderRadius, 0, 1000, 'corner radius')}" fill="${e.fillColor ? colour(e.fillColor) : 'none'}" stroke="${colour(e.strokeColor)}" stroke-width="${stroke}"/>`;
   return { png: await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${shape}</svg>`)).png().toBuffer(), width, height };
 }
