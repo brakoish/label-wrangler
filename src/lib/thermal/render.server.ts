@@ -91,7 +91,7 @@ export function validateBitmapDesign(template: LabelTemplate, format: LabelForma
   return geo;
 }
 
-type Artwork = { fittedFontSize?: number; overflow?: boolean; png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
+type Artwork = { margin?: number; fittedFontSize?: number; overflow?: boolean; png: Buffer; width: number; height: number; quiet?: number; padding?: [number, number, number, number] };
 async function textArtwork(e: TextElement, content: string, dpi: number, editing = false): Promise<Artwork> {
   const family = fontFamilies[e.fontFamily];
   if (!family) throw new Error(`Font "${e.fontFamily}" is not bundled. Choose Liberation Sans, Serif or Mono.`);
@@ -187,8 +187,16 @@ async function elementArtwork(e: TemplateElement, values: Record<string, string>
     return { png: await sharp(bytes, { limitInputPixels: 16_000_000 }).resize(width, height, { fit: e.objectFit, background: '#00000000' }).png().toBuffer(), width, height };
   }
   const stroke = finite(e.strokeWidth, 0, 100, 'stroke width') * dpi / 72;
+  if (e.type === 'line' && e.lineStyle === 'dotted') {
+    // Stroke extends beyond the segment, not just inside its often one-dot-high box.
+    // Symmetric padding keeps the same center when the artwork is rotated.
+    const margin = Math.ceil(stroke / 2) + 1;
+    const paddedWidth = width + margin * 2, paddedHeight = height + margin * 2;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paddedWidth}" height="${paddedHeight}"><line x1="${margin}" y1="${margin}" x2="${margin + width}" y2="${margin + height}" stroke="${colour(e.color)}" stroke-width="${stroke}" stroke-dasharray="0 ${stroke * 3}" stroke-linecap="round"/></svg>`;
+    return { png: await sharp(Buffer.from(svg)).png().toBuffer(), width: paddedWidth, height: paddedHeight, margin };
+  }
   const shape = e.type === 'line'
-    ? `<line x1="${stroke / 2}" y1="${stroke / 2}" x2="${width - stroke / 2}" y2="${height - stroke / 2}" stroke="${colour(e.color)}" stroke-width="${stroke}"${e.lineStyle === 'dotted' ? ` stroke-dasharray="0 ${stroke * 3}" stroke-linecap="round"` : ''}/>`
+    ? `<line x1="${stroke / 2}" y1="${stroke / 2}" x2="${width - stroke / 2}" y2="${height - stroke / 2}" stroke="${colour(e.color)}" stroke-width="${stroke}"/>`
     : `<rect x="${stroke / 2}" y="${stroke / 2}" width="${Math.max(0, width - stroke)}" height="${Math.max(0, height - stroke)}" rx="${finite(e.borderRadius, 0, 1000, 'corner radius')}" fill="${e.fillColor ? colour(e.fillColor) : 'none'}" stroke="${colour(e.strokeColor)}" stroke-width="${stroke}"/>`;
   return { png: await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${shape}</svg>`)).png().toBuffer(), width, height };
 }
@@ -231,7 +239,7 @@ export async function renderThermalBitmap(template: LabelTemplate, format: Label
         if (!art) continue;
         if (art.overflow) warn('Text overflows its box. Draft shows the portion that fits; enlarge the box or reduce type size.');
         let { png, width, height } = art;
-        let left = Math.round(e.x), top = Math.round(e.y);
+        let left = Math.round(e.x) - (art.margin || 0), top = Math.round(e.y) - (art.margin || 0);
         if (e.rotation) {
           const rotated = await sharp(png).rotate(e.rotation, { background: '#00000000' }).png().toBuffer({ resolveWithObject: true });
           png = rotated.data; width = rotated.info.width; height = rotated.info.height;
