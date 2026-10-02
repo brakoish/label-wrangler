@@ -159,7 +159,7 @@ export interface BarcodeElement extends TemplateElementBase {
 // Line element
 export interface LineElement extends TemplateElementBase {
   type: "line";
-  lineStyle?: "solid" | "dotted";
+  lineStyle?: "solid" | "dotted" | "dashed";
   strokeWidth: number;
   color: string;
 }

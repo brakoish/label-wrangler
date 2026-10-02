@@ -1193,7 +1193,7 @@ function LineElementRenderer({ element, transform, format }: { element: LineElem
       y2={element.y + element.height}
       stroke={isThermal ? '#000000' : element.color}
       strokeWidth={sw}
-      strokeDasharray={element.lineStyle === 'dotted' ? `0 ${sw * 3}` : undefined}
+      strokeDasharray={element.lineStyle === 'dotted' ? `0 ${sw * 3}` : element.lineStyle === 'dashed' ? `${sw * 4} ${sw * 2}` : undefined}
       strokeLinecap={element.lineStyle === 'dotted' ? 'round' : undefined}
       transform={transform}
     />

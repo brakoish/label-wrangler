@@ -566,7 +566,7 @@ function renderBarcode(element: BarcodeElement, values: Record<string, string>, 
 
 function renderLine(element: LineElement, format: LabelFormat, rotation: string): string {
   const sw = element.strokeWidth / 72;
-  return `<line x1="${element.x}" y1="${element.y}" x2="${element.x + element.width}" y2="${element.y + element.height}" stroke="${escapeAttr(element.color || '#000000')}" stroke-width="${sw}"${element.lineStyle === 'dotted' ? ` stroke-dasharray="0 ${sw * 3}" stroke-linecap="round"` : ''}${rotation} />`;
+  return `<line x1="${element.x}" y1="${element.y}" x2="${element.x + element.width}" y2="${element.y + element.height}" stroke="${escapeAttr(element.color || '#000000')}" stroke-width="${sw}"${element.lineStyle === 'dotted' ? ` stroke-dasharray="0 ${sw * 3}" stroke-linecap="round"` : element.lineStyle === 'dashed' ? ` stroke-dasharray="${sw * 4} ${sw * 2}"` : ''}${rotation} />`;
 }
 
 function renderRectangle(element: RectangleElement, format: LabelFormat, rotation: string): string {

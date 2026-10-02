@@ -118,7 +118,7 @@ function MiniElements({ elements, vbW, format, testData }: { elements: TemplateE
           case 'rectangle':
             return <rect key={el.id} x={el.x} y={el.y} width={el.width} height={el.height} fill="none" stroke="#9ca3af" strokeWidth={vbW * 0.003} />;
           case 'line':
-            return <line key={el.id} x1={el.x} y1={el.y} x2={el.x + el.width} y2={el.y + el.height} stroke="#9ca3af" strokeWidth={vbW * 0.003} strokeDasharray={el.lineStyle === 'dotted' ? `0 ${vbW * 0.009}` : undefined} strokeLinecap={el.lineStyle === 'dotted' ? 'round' : undefined} />;
+            return <line key={el.id} x1={el.x} y1={el.y} x2={el.x + el.width} y2={el.y + el.height} stroke="#9ca3af" strokeWidth={vbW * 0.003} strokeDasharray={el.lineStyle === 'dotted' ? `0 ${vbW * 0.009}` : el.lineStyle === 'dashed' ? `${vbW * 0.012} ${vbW * 0.006}` : undefined} strokeLinecap={el.lineStyle === 'dotted' ? 'round' : undefined} />;
           default:
             return null;
         }

@@ -678,6 +678,29 @@ function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues
 function lineToZPL(element: LineElement, x: number, y: number, format: LabelFormat): string {
   const dpi = format.dpi || 203;
   const strokeW = Math.max(1, Math.round(element.strokeWidth * (dpi / 72)));
+  if (element.lineStyle === 'dashed') {
+    const length = Math.hypot(element.width, element.height);
+    const stroke = Math.max(1, element.strokeWidth * dpi / 72);
+    const angle = (element.rotation || 0) * Math.PI / 180;
+    const point = (distance: number) => {
+      const fraction = length ? distance / length - 0.5 : 0;
+      const dx = element.width * fraction, dy = element.height * fraction;
+      return { x: x + element.width / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),
+        y: y + element.height / 2 + dx * Math.sin(angle) + dy * Math.cos(angle) };
+    };
+    const dashes: string[] = [];
+    for (let distance = 0; distance < length; distance += stroke * 6) {
+      const start = point(distance), end = point(Math.min(length, distance + stroke * 4));
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const horizontal = Math.abs(dy) < 0.5, vertical = Math.abs(dx) < 0.5;
+      const left = Math.round(Math.min(start.x, end.x) - (vertical ? strokeW / 2 : 0));
+      const top = Math.round(Math.min(start.y, end.y) - (horizontal ? strokeW / 2 : 0));
+      const w = Math.max(strokeW, Math.round(Math.abs(dx))), h = Math.max(strokeW, Math.round(Math.abs(dy)));
+      const graphic = horizontal || vertical ? `^GB${w},${h},${strokeW}` : `^GD${w},${h},${strokeW},B,${dx * dy >= 0 ? 'R' : 'L'}`;
+      dashes.push(`^FO${left},${top}${graphic}^FS`);
+    }
+    return dashes.join('\n');
+  }
   if (element.lineStyle === 'dotted') {
     // Position round dots along the same center-rotated segment as the designer.
     const length = Math.hypot(element.width, element.height);

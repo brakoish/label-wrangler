@@ -187,12 +187,12 @@ async function elementArtwork(e: TemplateElement, values: Record<string, string>
     return { png: await sharp(bytes, { limitInputPixels: 16_000_000 }).resize(width, height, { fit: e.objectFit, background: '#00000000' }).png().toBuffer(), width, height };
   }
   const stroke = finite(e.strokeWidth, 0, 100, 'stroke width') * dpi / 72;
-  if (e.type === 'line' && e.lineStyle === 'dotted') {
+  if (e.type === 'line' && (e.lineStyle === 'dotted' || e.lineStyle === 'dashed')) {
     // Stroke extends beyond the segment, not just inside its often one-dot-high box.
     // Symmetric padding keeps the same center when the artwork is rotated.
     const margin = Math.ceil(stroke / 2) + 1;
     const paddedWidth = width + margin * 2, paddedHeight = height + margin * 2;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paddedWidth}" height="${paddedHeight}"><line x1="${margin}" y1="${margin}" x2="${margin + width}" y2="${margin + height}" stroke="${colour(e.color)}" stroke-width="${stroke}" stroke-dasharray="0 ${stroke * 3}" stroke-linecap="round"/></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paddedWidth}" height="${paddedHeight}"><line x1="${margin}" y1="${margin}" x2="${margin + width}" y2="${margin + height}" stroke="${colour(e.color)}" stroke-width="${stroke}" stroke-dasharray="${e.lineStyle === 'dotted' ? `0 ${stroke * 3}` : `${stroke * 4} ${stroke * 2}`}" stroke-linecap="${e.lineStyle === 'dotted' ? 'round' : 'butt'}"/></svg>`;
     return { png: await sharp(Buffer.from(svg)).png().toBuffer(), width: paddedWidth, height: paddedHeight, margin };
   }
   const shape = e.type === 'line'
