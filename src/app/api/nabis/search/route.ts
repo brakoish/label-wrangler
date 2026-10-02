@@ -108,6 +108,10 @@ type MetrcLabResult = {
 };
 
 type LabPotency = {
+  cbdPercent: string;
+  thcMgG: string;
+  cbdMgG: string;
+  tacMgG: string;
   thcPercent: string;
   thcMgPackage: string;
   thcMgServing: string;
@@ -119,6 +123,10 @@ type LabPotency = {
 };
 
 const EMPTY_LAB_POTENCY: LabPotency = {
+  cbdPercent: '',
+  thcMgG: '',
+  cbdMgG: '',
+  tacMgG: '',
   thcPercent: '',
   thcMgPackage: '',
   thcMgServing: '',
@@ -167,7 +175,7 @@ function formatShortDate(year: number, month: number, day: number): string {
 }
 
 function mgGFromPercent(value: string): string {
-  if (!hasPositiveNumber(value)) return '';
+  if (!value || !Number.isFinite(Number(value)) || Number(value) < 0) return '';
   const number = Number(value);
   return Number.isFinite(number) ? cleanDecimalValue(number * 10) : '';
 }
@@ -354,7 +362,7 @@ function extractPotencyFromLabResults(results: unknown): LabPotency {
   for (const result of rows as MetrcLabResult[]) {
     const name = cleanText(result.TestTypeName).toLowerCase();
     const value = cleanValue(result.TestResultLevel);
-    if (!hasPositiveNumber(value)) continue;
+    if (!value || !Number.isFinite(Number(value)) || Number(value) < 0) continue;
 
     const isThc = /^total thc\b/.test(name);
     const isCbd = /^total cbd\b/.test(name);
@@ -369,6 +377,14 @@ function extractPotencyFromLabResults(results: unknown): LabPotency {
 
     if (isThc && isPercent) {
       potency.thcPercent = potency.thcPercent || cleanDecimalValue(value);
+    } else if (isThc && isGramMg) {
+      potency.thcMgG = potency.thcMgG || cleanDecimalValue(value);
+    } else if (isCbd && isPercent) {
+      potency.cbdPercent = potency.cbdPercent || cleanDecimalValue(value);
+    } else if (isCbd && isGramMg) {
+      potency.cbdMgG = potency.cbdMgG || cleanDecimalValue(value);
+    } else if (isTac && isGramMg) {
+      potency.tacMgG = potency.tacMgG || cleanDecimalValue(value);
     } else if (isThc && isServingMg) {
       potency.thcMgServing = potency.thcMgServing || cleanDecimalValue(value);
     } else if (isThc && isPackageMg) {
@@ -386,6 +402,12 @@ function extractPotencyFromLabResults(results: unknown): LabPotency {
     }
   }
 
+  for (const cannabinoid of ['thc', 'cbd', 'tac'] as const) {
+    const percent = `${cannabinoid}Percent` as const;
+    const mgG = `${cannabinoid}MgG` as const;
+    if (!potency[percent] && potency[mgG]) potency[percent] = cleanDecimalValue(Number(potency[mgG]) / 10);
+    if (!potency[mgG] && potency[percent]) potency[mgG] = mgGFromPercent(potency[percent]);
+  }
   return potency;
 }
 
@@ -586,12 +608,14 @@ async function rowWithMetrcLabFallback(
   return {
     ...pkg,
     thcPercent,
-    thcMgG: potency.thcPercent ? mgGFromPercent(potency.thcPercent) : pkg.thcMgG,
+    thcMgG: potency.thcMgG || pkg.thcMgG,
     thcMgPackage,
     thcMgServing,
     thcPerServing: thcMgServing,
     tacPercent,
-    tacMgG: potency.tacPercent ? mgGFromPercent(potency.tacPercent) : pkg.tacMgG,
+    tacMgG: potency.tacMgG || pkg.tacMgG,
+    cbdPercent: pkg.cbdPercent || potency.cbdPercent,
+    cbdMgG: pkg.cbdMgG || potency.cbdMgG,
     tacMgPackage,
     tacMgServing,
     tacPerServing: tacMgServing,
