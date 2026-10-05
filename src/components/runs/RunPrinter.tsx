@@ -142,6 +142,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [showReprint, setShowReprint] = useState(false);
   const [reprintFrom, setReprintFrom] = useState(1);
   const [stopAt, setStopAt] = useState(0); // 0 = print all; >0 = stop after this physical label
+  const [fromDraft, setFromDraft] = useState<string | null>(null);
+  const [throughDraft, setThroughDraft] = useState<string | null>(null);
+  const [countDraft, setCountDraft] = useState<string | null>(null);
+  const fromValue = fromDraft ?? String(printedCount + 1);
+  const throughValue = throughDraft ?? String(stopAt || total);
+  const selectedFrom = Number(fromValue);
+  const selectedThrough = Number(throughValue);
+  const rangeValid = fromValue.trim() !== '' && throughValue.trim() !== '' &&
+    Number.isInteger(selectedFrom) && Number.isInteger(selectedThrough) &&
+    selectedFrom >= 1 && selectedThrough >= selectedFrom && selectedThrough <= total &&
+    (countDraft === null || (countDraft.trim() !== '' && Number.isInteger(Number(countDraft)) && Number(countDraft) > 0));
+  const clearRangeDrafts = () => { setFromDraft(null); setThroughDraft(null); setCountDraft(null); };
   const [showExport, setShowExport] = useState(false);
   const [exportFrom, setExportFrom] = useState(1);
   const [exportTo, setExportTo] = useState(0); // 0 = use total at render
@@ -457,6 +469,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const startOrResume = async () => {
     if (!run || !template || !format || (template.thermalRenderMode !== 'bitmap-v1' && labels.length === 0)) return;
+    if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     setErrorMsg(null);
     setStatus('running');
     await setRunStatus(run.id, 'printing', printedCount);
@@ -496,8 +509,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
     const printRange = normalizeLabelRange({
       total,
-      fallbackFrom: printedCount + 1,
-      fallbackTo: stopAt > 0 ? Math.min(stopAt, total) : total,
+      from: selectedFrom,
+      to: selectedThrough,
     });
     // The queue tracks feeds internally (startIndex/done are feed counts).
     // We convert between physical-label count (what the user + DB see) and
@@ -517,12 +530,15 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         // Each feed produced up to `across` physical labels. Clamp to total
         // so the last (possibly-partial) feed doesn't overshoot.
         const physical = Math.min((startFeed + feedsDone) * across, printRange.to);
+        setFromDraft(null);
+        setCountDraft(null);
         setPrintedCount(physical);
         // Fire-and-forget DB update — don't block printing on persistence.
         void persistProgress(physical);
         if (feedsDone >= labelsToSend.length) {
           const nextStatus = physical >= total ? 'completed' : 'paused';
           setStatus(nextStatus);
+          clearRangeDrafts();
           setStopAt(0);
           await setRunStatus(run.id, nextStatus, physical);
           await createPrintEvent(run.id, {
@@ -590,6 +606,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run) return;
     const n = Math.max(1, Math.min(total, Math.floor(oneBased)));
     const newPrinted = n - 1;
+    clearRangeDrafts();
     setPrintedCount(newPrinted);
     setStatus('paused');
     setShowReprint(false);
@@ -601,6 +618,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const handleReprintAll = async () => {
     if (!run) return;
     if (!confirm(`Reprint all ${total} labels from the beginning?`)) return;
+    clearRangeDrafts();
     setPrintedCount(0);
     setStatus('idle');
     await setRunStatus(run.id, 'queued', 0);
@@ -610,8 +628,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     total,
     from: range?.from,
     to: range?.to,
-    fallbackFrom: printedCount + 1,
-    fallbackTo: stopAt > 0 ? Math.min(stopAt, total) : total,
+    fallbackFrom: selectedFrom,
+    fallbackTo: selectedThrough,
   });
 
   const sheetPrintHref = (range?: { from?: number; to?: number }) => {
@@ -624,6 +642,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   const openSheetPrintRange = (range?: { from?: number; to?: number }) => {
+    if (!range && !rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     const resolved = normalizeSheetRange(range);
     const opened = window.open(sheetPrintHref(resolved), '_blank', 'noopener,noreferrer');
     if (!opened) {
@@ -673,6 +692,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !pendingSheetRange) return;
     const nextPrinted = Math.max(printedCount, pendingSheetRange.to);
     const nextStatus = nextPrinted >= total ? 'completed' : 'paused';
+    clearRangeDrafts();
     setPrintedCount(nextPrinted);
     setStatus(nextStatus);
     setPendingSheetRange(null);
@@ -1206,15 +1226,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <div className="space-y-3 text-xs text-zinc-400">
               <div className="grid grid-cols-2 gap-2">
                 <label>From label
-                  <input aria-label="Local from label" type="number" readOnly value={printedCount + 1} title="Next label to print. Use Reprint from label to start earlier." className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-400" />
+                  <input aria-label="Local from label" type="number" min={1} max={total} value={fromValue} onChange={e => { setFromDraft(e.target.value); setCountDraft(null); }} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-400" />
                 </label>
                 <label>Stop after label
-                  <input aria-label="Local through label" type="number" min={printedCount + 1} max={total} value={stopAt || total} onChange={e=>setStopAt(e.target.value ? Math.min(total,Math.max(printedCount+1,Number(e.target.value))) : 0)} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                  <input aria-label="Local through label" type="number" min={selectedFrom || 1} max={total} value={throughValue} onChange={e => { setThroughDraft(e.target.value); setCountDraft(null); }} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
                 </label>
               </div>
               <label className="block">Print count
-                <input aria-label="Print label count" type="number" min={1} max={total-printedCount} value={(stopAt || total)-printedCount} onChange={e=>setStopAt(e.target.value ? Math.min(total,printedCount+Math.max(1,Number(e.target.value))) : 0)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                <input aria-label="Print label count" type="number" min={1} max={total-selectedFrom+1} value={countDraft ?? (rangeValid ? selectedThrough-selectedFrom+1 : '')} onChange={e => { setCountDraft(e.target.value); if (e.target.value.trim() && Number.isInteger(Number(e.target.value)) && Number(e.target.value) > 0) setThroughDraft(String(selectedFrom + Number(e.target.value) - 1)); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
               </label>
+              {!rangeValid && <p role="alert" className="text-amber-400">Enter whole label numbers from 1 to {total}, with the stop number at or after the start.</p>}
             </div>
           )}
 
@@ -1241,7 +1262,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
               <button
                 onClick={startOrResume}
-                disabled={!canStart}
+                disabled={!canStart || !rangeValid}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
               >
                 {status === 'paused' ? <Play className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
