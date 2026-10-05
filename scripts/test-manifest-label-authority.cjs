@@ -41,9 +41,12 @@ async function search({ query=tag, database=true, payload=current, failManifest=
     for(const row of result.body.packages){assert.equal(row.thcPercent,'31.79');assert.equal(row.thcMgG,'317.87');assert.equal(row.tacPercent,'36.64');assert.equal(row.tacMgG,'366.42');assert.equal(row.lotNumber,'HVRW-0426');assert.equal(row.batchNumber,'HVRW-0426');assert.equal(row.coaDocumentId,'103618');assert.equal(row.testPerformedDate,'6/1/26');}
     assert.equal(result.calls.length,1,'Successful Manifest response must not trigger raw Metrc lab fallback');assert.equal(result.calls[0].cache,'no-store');count++;
   }
-  const missing=await search({payload:{...current,tacPercent:null,tacMgG:null,lotNumber:null,batchNumber:null}});
-  for(const row of missing.body.packages){assert.equal(row.tacPercent,'');assert.equal(row.tacMgG,'');assert.equal(row.lotNumber,'');assert.equal(row.batchNumber,'');}
+  const missing=await search({payload:{...current,tacPercent:null,tacMgG:null,lotNumber:null,batchNumber:null,expirationDate:null}});
+  for(const row of missing.body.packages){assert.equal(row.tacPercent,'');assert.equal(row.tacMgG,'');assert.equal(row.lotNumber,'');assert.equal(row.batchNumber,'');assert.equal(row.expirationDate,'');}
   assert.equal(missing.calls.length,1);count++;
+  // Synthetic contract date only; never assigns an expiration to a real package.
+  const dated=await search({payload:{...current,expirationDate:'2032-02-29'}});
+  for(const row of dated.body.packages){assert.equal(row.expirationDate,'2/29/32');assert.equal(row.lotNumber,'HVRW-0426');}count++;
   const capped=await search({payload:{...current,quantity:1}});assert.equal(capped.body.packages.length,1);assert.equal(capped.body.packages[0].retailId,'fixture-unit-1');count++;
   // Keep the pre-existing unavailable-Manifest fallback behavior outside this patch.
   const fallback=await search({failManifest:true});assert.equal(fallback.status,200);assert(fallback.calls.some(c=>c.path==='/labtests/v2/results'));count++;

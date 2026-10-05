@@ -20,15 +20,16 @@ The fallback when the authoritative endpoint is unavailable is intentionally unc
 
 ## Verification
 
-`node scripts/test-manifest-label-authority.cjs` runs six hermetic cases through the actual transpiled search handler, stubbing only framework/auth/DB/network boundaries:
+`node scripts/test-manifest-label-authority.cjs` runs seven hermetic cases through the actual transpiled search handler, stubbing only framework/auth/DB/network boundaries:
 
 - Exact-tag DB-backed lookup with stale list/raw results and current Manifest response.
 - Product-name DB lookup with the same competing sources.
 - Exact-tag direct label-data path without a configured search DB.
-- Intentionally missing TAC and lot remain blank.
+- Intentionally missing TAC, lot, and expiration remain blank.
+- A supplied synthetic expiration date survives normalization and per-unit expansion.
 - Retail-ID rows remain capped to package quantity.
 - Existing unavailable-Manifest fallback compatibility.
 
-The pre-fix handler reproduces `28.19` THC instead of `31.79`; the corrected handler passes all six cases and makes only the no-store Manifest lookup for successful imports. All external requests are intercepted, with fixture-only credentials. No live search/Metrc sweep or print job is issued by these tests.
+The pre-fix handler reproduces `28.19` THC instead of `31.79`; the corrected handler passes all seven cases and makes only the no-store Manifest lookup for successful imports. All external requests are intercepted, with fixture-only credentials. No live search/Metrc sweep or print job is issued by these tests.
 
 Production Next.js build passed with fixture-only database configuration and no production credentials. Live Label Wrangler deployment and rendered labels are not verified during preparation. After deployment, refresh an import (not a saved historical re-run) and verify the API/preview with the current RoseWater values.
