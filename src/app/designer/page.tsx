@@ -133,7 +133,7 @@ function DesignerContent() {
       return false;
     }
   };
-  const leaveEditor = async () => { if (await saveBeforeLeaving()) window.location.assign(returnTo ?? '/designer'); };
+  const leaveEditor = async () => { if (await saveBeforeLeaving()) router.push(returnTo ?? '/designer'); };
   const commitEdit = useCallback((updates: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'formatId'>>) => {
     const before = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
     if (!before || (updates.elements === before.elements && (!updates.formatId || updates.formatId === before.formatId))) return;
