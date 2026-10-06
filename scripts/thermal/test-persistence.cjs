@@ -31,7 +31,7 @@ const {neon}=require('@neondatabase/serverless');
  await item.DELETE(new Request('http://test'),ctx(bitmap.id));
  let loaded=await(await item.GET(new Request('http://test'),ctx(bitmap.id))).json();assert.equal(loaded.thermalRenderMode,'bitmap-v1');assert.ok(loaded.archivedAt);
  assert.equal((await scoped`SELECT * FROM runs WHERE template_id=${bitmap.id}`).length,1);
- await item.PUT(req({archivedAt:null}),ctx(bitmap.id));loaded=await(await item.GET(new Request('http://test'),ctx(bitmap.id))).json();assert.equal(loaded.archivedAt,null);assert.equal(loaded.thermalRenderMode,'bitmap-v1');
+ await item.PUT(req({archivedAt:null,expectedUpdatedAt:loaded.updatedAt}),ctx(bitmap.id));loaded=await(await item.GET(new Request('http://test'),ctx(bitmap.id))).json();assert.equal(loaded.archivedAt,null);assert.equal(loaded.thermalRenderMode,'bitmap-v1');
  assert.equal((await(await item.GET(new Request('http://test'),ctx(legacy.id))).json()).thermalRenderMode,'native-v1');
  console.log(JSON.stringify({passed:['real API default mode','thermal-only validation','immutable mode','save/load','archive/restore','saved-run references'],isolatedSchema:schema,productionTemplatesChanged:0}));
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

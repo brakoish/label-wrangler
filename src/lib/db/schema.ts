@@ -76,6 +76,7 @@ export const globalElements = pgTable("global_elements", {
 // values, the variable list (QR URLs), mapping, and progress. Persisting
 // this lets us resume partial runs, reprint, and audit historical batches.
 export const runs = pgTable("runs", {
+  designSnapshot: jsonb("design_snapshot").$type<import("../types").RunDesign>(),
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   templateId: text("template_id")

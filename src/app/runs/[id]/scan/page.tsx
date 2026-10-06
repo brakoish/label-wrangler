@@ -6,8 +6,6 @@ import { ArrowLeft, AlertCircle, CheckCircle2, Loader2, Plug, ScanBarcode } from
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { useRunStore } from '@/lib/runStore';
-import { useTemplateStore } from '@/lib/templateStore';
-import { useFormatStore } from '@/lib/store';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { dynamicFieldsForTemplate } from '@/lib/runBuilder';
 import {
@@ -57,11 +55,11 @@ interface ScanEntry {
 export default function ScanModePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const run = useRunStore((s) => s.runs.find((r) => r.id === id));
-  const { templates } = useTemplateStore();
-  const { formats } = useFormatStore();
 
-  const template = run ? templates.find((t) => t.id === run.templateId) ?? null : null;
-  const format = template ? formats.find((f) => f.id === template.formatId) ?? null : null;
+  const template = run?.designSnapshot?.template ?? null;
+  const format = run?.designSnapshot?.format ?? null;
+
+  useEffect(() => { void useRunStore.getState().fetchRun(id); }, [id]);
 
   // Which dynamic field gets the scanned value. Default to the first
   // column-mapped field, or the legacy mappedField, or the first dynamic

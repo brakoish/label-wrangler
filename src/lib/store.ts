@@ -1,3 +1,4 @@
+import { apiJson } from './apiClient';
 import { create } from 'zustand';
 import { LabelFormat, calculateLabelsPerSheet } from './types';
 
@@ -5,9 +6,13 @@ interface FormatStore {
   formats: LabelFormat[];
   selectedFormatId: string | null;
   hydrated: boolean;
+  loading: boolean;
+  error: string | null;
+  hasMore: boolean;
+  offset: number;
 
   // Actions
-  fetchFormats: () => Promise<void>;
+  fetchFormats: (more?: boolean) => Promise<void>;
   addFormat: (format: Omit<LabelFormat, 'id' | 'createdAt' | 'updatedAt'>) => Promise<LabelFormat>;
   updateFormat: (id: string, updates: Partial<LabelFormat>) => Promise<void>;
   deleteFormat: (id: string) => Promise<void>;
@@ -22,19 +27,17 @@ interface FormatStore {
 export const useFormatStore = create<FormatStore>()((set, get) => ({
   formats: [],
   selectedFormatId: null,
-  hydrated: false,
+  hydrated: false, loading: false, error: null, hasMore: false, offset: 0,
 
-  fetchFormats: async () => {
+  fetchFormats: async (more = false) => {
+    if (get().loading) return;
+    const offset = more ? get().offset : 0;
+    set({ loading: true, error: null });
     try {
-      const res = await fetch('/api/formats');
-      if (res.ok) {
-        const formats = await res.json();
-        set({ formats, hydrated: true });
-      }
-    } catch (error) {
-      console.error('Error fetching formats:', error);
-      set({ hydrated: true });
-    }
+      const rows = await apiJson<LabelFormat[]>(`/api/formats?offset=${offset}`);
+      if (!Array.isArray(rows)) throw new Error('Invalid formats response');
+      set(state => ({ formats: more ? [...state.formats.filter(old => !rows.some(row => row.id === old.id)), ...rows] : rows, hydrated: true, loading: false, offset: offset + rows.length, hasMore: rows.length === 50 }));
+    } catch(error) { set({ loading: false, hydrated: true, error: (error as Error).message }); }
   },
 
   addFormat: async (formatData) => {

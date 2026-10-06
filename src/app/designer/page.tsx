@@ -1,5 +1,6 @@
 'use client';
 
+import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Undo2, Redo2, Pencil } from 'lucide-react';
@@ -295,8 +296,21 @@ function DesignerContent() {
     setSaving(false);
   }, [selectedTemplateId, clearUndo]);
 
+  const [recovery, setRecovery] = useState<Array<TemplateDraft & {key:string}>>([]);
+  useEffect(() => {
+    if (templateId) void useTemplateStore.getState().fetchTemplate(templateId);
+    try { setRecovery(templateId ? readDrafts(templateId) : []); } catch { setSaveError('Draft recovery storage is unavailable. Keep this tab open until changes save.'); }
+  }, [templateId]);
+  const recoverCopy = async (draft: LabelTemplate) => {
+    try {
+      const created = await addTemplate({ name:draft.name+' (recovered)', description:draft.description, formatId:draft.formatId, elements:draft.elements, thermalRenderMode:draft.thermalRenderMode });
+      unsavedChanges.current = false;
+      router.push(`/designer?id=${created.id}`);
+    } catch(error) { setSaveError((error as Error).message); }
+  };
+
   // If no template is selected, show template list view
-  if (!currentTemplate || !currentFormat) {
+  if (!currentTemplate || currentTemplate.summaryOnly || !currentFormat) {
     return (
       <AppShell>
         {/* Template List */}
@@ -310,7 +324,7 @@ function DesignerContent() {
             }}
             onDeleteTemplate={deleteTemplate}
             onRestoreTemplate={(id) => updateTemplate(id, { archivedAt: null })}
-            onDuplicateTemplate={(t) => setDuplicateSource(t)}
+            onDuplicateTemplate={async (t) => { await useTemplateStore.getState().fetchTemplate(t.id); const full=useTemplateStore.getState().getTemplateById(t.id); if(full && !full.summaryOnly) setDuplicateSource(full); }}
             onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
@@ -569,6 +583,10 @@ function DesignerContent() {
         </>}
       </div>
       {saveError && <p role="alert" className="text-red-400 px-6">{saveError} <button className="underline" onClick={() => persistEdits(currentTemplate.id)}>Retry save</button></p>}
+      {recovery.length > 0 && <div role="alert" className="px-6 py-2 text-amber-300 text-sm">Recovered unsaved drafts are available. Recovering makes a separate template, so the saved design is not overwritten.
+        {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
+      </div>}
+      {saveError && <button className="text-amber-300 underline px-6 text-left" onClick={()=>void recoverCopy(currentTemplate)}>Save my edits as a separate template</button>}
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}

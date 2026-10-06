@@ -2,10 +2,8 @@
 
 import { use, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { useFormatStore } from '@/lib/store';
 import { useRunStore } from '@/lib/runStore';
 import { buildSheetPrintHtml } from '@/lib/sheetPrint';
-import { useTemplateStore } from '@/lib/templateStore';
 
 export default function SheetRunPrintPage({
   params,
@@ -19,14 +17,12 @@ export default function SheetRunPrintPage({
   const wroteDocument = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { runs, fetchRun, hydrated: runsHydrated } = useRunStore();
-  const { templates, hydrated: templatesHydrated } = useTemplateStore();
-  const { formats, hydrated: formatsHydrated } = useFormatStore();
+  const { runs, fetchRun } = useRunStore();
 
   const run = runs.find((r) => r.id === id) ?? null;
-  const template = run ? templates.find((t) => t.id === run.templateId) ?? null : null;
-  const format = template ? formats.find((f) => f.id === template.formatId) ?? null : null;
-  const hydrated = runsHydrated && templatesHydrated && formatsHydrated;
+  const template = run?.designSnapshot?.template ?? null;
+  const format = run?.designSnapshot?.format ?? null;
+  const hydrated = !!run?.designSnapshot;
 
   const range = useMemo(() => ({
     from: Math.max(1, parseInt(query.from || '1', 10) || 1),
@@ -34,14 +30,14 @@ export default function SheetRunPrintPage({
   }), [query.from, query.to, run?.totalLabels]);
 
   useEffect(() => {
-    if (!run || (run.totalLabels > 0 && run.sourceData.length === 0)) {
+    if (!run || !run.designSnapshot || (run.totalLabels > 0 && run.sourceData.length === 0)) {
       void fetchRun(id);
     }
   }, [fetchRun, id, run]);
 
   useEffect(() => {
     if (!hydrated || wroteDocument.current) return;
-    if (!run || (run.totalLabels > 0 && run.sourceData.length === 0)) return;
+    if (!run || !run.designSnapshot || (run.totalLabels > 0 && run.sourceData.length === 0)) return;
 
     if (!run || !template || !format) {
       setError('Could not find this run, template, or label format.');

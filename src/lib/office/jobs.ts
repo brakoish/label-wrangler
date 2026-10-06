@@ -1,7 +1,5 @@
+import { loadRunWithDesign } from '../runDesign.server';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
-import { db } from '../db';
-import { runs, templates, formats } from '../db/schema';
 import type { Run, LabelTemplate, LabelFormat } from '../types';
 import { hash, requirePrinter, type OfficeUser } from './auth';
 import { officeSql } from './db';
@@ -22,11 +20,9 @@ export async function createJobs(user: OfficeUser, data: Record<string,unknown>)
   }
   const station=await sql`SELECT dispatch_enabled,paired_at FROM office_stations WHERE id=${data.stationId} AND revoked_at IS NULL`;
   if(!station[0]?.dispatch_enabled || !station[0]?.paired_at)throw new OfficeError('Office Pi is awaiting verified pairing. Job creation is disabled.',409);
-  // One database statement snapshots the entire referenced run/design/format.
-  const snapshots=await db.select({run:runs,template:templates,format:formats}).from(runs)
-    .innerJoin(templates,eq(runs.templateId,templates.id)).innerJoin(formats,eq(templates.formatId,formats.id)).where(eq(runs.id,data.runId));
-  if(!snapshots.length)throw new OfficeError('Run not found in this office workspace',404);
-  const snapshot=snapshots[0];
+  // Use the immutable run design for both proof validation and queued output.
+  const savedRun = await loadRunWithDesign(String(data.runId));
+  const snapshot = { run: savedRun, ...savedRun.designSnapshot! };
   const batches=await buildBatches(snapshot.run as Run,snapshot.template as LabelTemplate,snapshot.format as LabelFormat,Number(data.from),Number(data.to),printer.dpi,printer.max_width_dots);
   if (snapshot.template.thermalRenderMode === 'bitmap-v1') {
     const digests = batches.flatMap(batch => [...Buffer.from(batch.payload, 'base64').toString().matchAll(/\^FXLWBITMAP1:[a-f0-9]{64}:([a-f0-9]{64})\^FS/g)].map(m => m[1]));

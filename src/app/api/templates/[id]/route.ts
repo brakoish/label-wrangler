@@ -1,8 +1,10 @@
+import { validatedBody, OfficeError } from '@/lib/validation';
+import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { templates, formats } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 async function handleGET(
   request: NextRequest,
@@ -18,6 +20,7 @@ async function handleGET(
 
     return NextResponse.json(template[0]);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error fetching template:", error);
     return NextResponse.json({ error: "Failed to fetch template" }, { status: 500 });
   }
@@ -29,7 +32,7 @@ async function handlePUT(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await validatedBody(request, 'template', false);
     if (body.thermalRenderMode !== undefined) {
       if (!['native-v1', 'bitmap-v1'].includes(body.thermalRenderMode)) return NextResponse.json({ error: 'Invalid thermal render mode' }, { status: 400 });
       const [current] = await db.select().from(templates).where(eq(templates.id, id));
@@ -40,14 +43,13 @@ async function handlePUT(
       const [format] = await db.select().from(formats).where(eq(formats.id, body.formatId));
       if (current?.thermalRenderMode === 'bitmap-v1' && format?.type !== 'thermal') return NextResponse.json({ error: 'Bitmap mode is thermal only' }, { status: 400 });
     }
-    const now = new Date().toISOString();
+    if (typeof body.expectedUpdatedAt !== 'string') throw new OfficeError('This tab needs an update. Duplicate any unsaved design before refreshing, then reopen it.',428);
+    const { expectedUpdatedAt, ...changes } = body;
+    const now = new Date(Math.max(Date.now(), Date.parse(expectedUpdatedAt) + 1)).toISOString();
 
-    await db
-      .update(templates)
-      .set({ ...body, updatedAt: now })
-      .where(eq(templates.id, id));
-
-    const updated = await db.select().from(templates).where(eq(templates.id, id));
+    const updated = await db.update(templates).set({ ...changes, updatedAt: now })
+      .where(and(eq(templates.id,id),eq(templates.updatedAt,expectedUpdatedAt))).returning();
+    if (!updated.length) throw new OfficeError('This design changed in another tab. Your draft is safe. Reload the latest design before saving again.',409);
 
     if (updated.length === 0) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
@@ -55,6 +57,7 @@ async function handlePUT(
 
     return NextResponse.json(updated[0]);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error updating template:", error);
     return NextResponse.json({ error: "Failed to update template" }, { status: 500 });
   }
@@ -68,11 +71,12 @@ async function handleDELETE(
     const { id } = await params;
     // Preserve references from saved runs and presets; DELETE archives only.
     const [archived] = await db.update(templates)
-      .set({ archivedAt: new Date().toISOString() })
+      .set({ archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
       .where(eq(templates.id, id)).returning();
     if (!archived) return NextResponse.json({ error: "Template not found" }, { status: 404 });
     return NextResponse.json(archived);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error archiving template:", error);
     return NextResponse.json({ error: "Failed to archive template" }, { status: 500 });
   }

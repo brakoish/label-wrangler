@@ -1,5 +1,6 @@
 'use client';
 
+import { canLeaveLocalPrint, setLocalPrintRunning } from '@/lib/printNavigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode, Download, FileText, FileCode2, Search } from 'lucide-react';
 import Link from 'next/link';
@@ -8,12 +9,10 @@ import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import type { LabelTemplate, LabelFormat, Run, RunPrintEvent, RunStatus } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
-import { useTemplateStore } from '@/lib/templateStore';
-import { useFormatStore } from '@/lib/store';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
-import { updateRunWithQueue, flushOfflineQueue } from '@/lib/offlineQueue';
+import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import {
@@ -100,12 +99,10 @@ function printEventLabel(event: RunPrintEvent) {
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const { runs, fetchRun, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent } = useRunStore();
-  const { templates } = useTemplateStore();
-  const { formats } = useFormatStore();
 
   const run = runs.find((r) => r.id === runId) ?? null;
-  const template: LabelTemplate | null = run ? templates.find((t) => t.id === run.templateId) ?? null : null;
-  const format: LabelFormat | null = template ? formats.find((f) => f.id === template.formatId) ?? null : null;
+  const template: LabelTemplate | null = run?.designSnapshot?.template ?? null;
+  const format: LabelFormat | null = run?.designSnapshot?.format ?? null;
 
   // Transport detection
   const [dazzleAvailable, setDazzleAvailable] = useState(false);
@@ -119,13 +116,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   // Print state
   const queueRef = useRef<RunQueueHandle | null>(null);
+  const mounted = useRef(true);
+  const starting = useRef(false);
+  const [sending, setSending] = useState(false);
+  const preparation = useRef<AbortController | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; preparation.current?.abort(); queueRef.current?.cancel(); }; }, []);
   const [status, setStatus] = useState<PrinterUiStatus>('idle');
   const statusRef = useRef<PrinterUiStatus>('idle');
   const webUsbStatusUnavailableRef = useRef(false);
   const webUsbStatusWorkingRef = useRef(false);
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
-  const [labels, setLabels] = useState<string[]>([]);
-  const [labelsReady, setLabelsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const total = run?.totalLabels ?? 0;
@@ -173,7 +173,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
 
   useEffect(() => {
-    if (!run || (run.totalLabels > 0 && run.sourceData.length === 0)) {
+    if (!run || !run.designSnapshot || (run.totalLabels > 0 && run.sourceData.length === 0)) {
       void fetchRun(runId);
     }
   }, [fetchRun, run, runId]);
@@ -182,7 +182,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   useEffect(() => {
     statusRef.current = status;
-  }, [status]);
+    setLocalPrintRunning(status === 'running' && transport !== 'office' && !isSheetFormat);
+    const guard = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest('a[href]') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      if (!canLeaveLocalPrint()) { event.preventDefault(); event.stopPropagation(); }
+    };
+    document.addEventListener('click', guard, true);
+    return () => { setLocalPrintRunning(false); document.removeEventListener('click', guard, true); };
+  }, [status, transport, isSheetFormat]);
 
   useEffect(() => {
     if (!run || statusRef.current === 'running') return;
@@ -291,34 +298,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // single-across rolls one feed = one physical label. For multi-across
   // each feed produces `across` physical labels with unique data per lane.
   const across = Math.max(1, format?.labelsAcross || 1);
-  useEffect(() => {
-    let active = true;
-    setLabels([]);
-    setLabelsReady(false);
-    if (!run || !template || !format || isSheetFormat || template.thermalRenderMode === 'bitmap-v1') {
-      setLabelsReady(true);
-      return;
-    }
-
-    generateLabelsForRunWithImages(run, template, format)
-      .then((nextLabels) => {
-        if (!active) return;
-        setLabels(nextLabels);
-        setLabelsReady(true);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setLabelsReady(true);
-        setErrorMsg((err as Error)?.message || 'Could not build label ZPL.');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [run, template, format, isSheetFormat]);
-
-  const canStart = !!run && (template?.thermalRenderMode === 'bitmap-v1' ? run.sourceData.length > 0 : labels.length > 0) && (
-    labelsReady &&
+  const canStart = !sending && !!run && run.sourceData.length > 0 && (
     !isSheetFormat &&
     ((transport === 'dazzle' && !!dazzleSelected) ||
     (transport === 'webusb' && !!usbPrinter))
@@ -455,7 +435,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // Use the offline-friendly wrapper so a transient network flap during a
     // long print doesn't cost us the latest printedCount. Failed calls
     // queue in localStorage and flush on reconnect.
-    await updateRunWithQueue(run.id, { printedCount: next });
+    try { await updateRunWithQueue(run.id, { printedCount: next }); }
+    catch (error) { queueRef.current?.pause(); setStatus('paused'); setErrorMsg((error as Error).message); }
   };
 
   // Flush any offline progress updates on mount + whenever the browser
@@ -468,14 +449,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   }, []);
 
   const startOrResume = async () => {
-    if (!run || !template || !format || (template.thermalRenderMode !== 'bitmap-v1' && labels.length === 0)) return;
+    if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
+    starting.current = true;
+    try {
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     setErrorMsg(null);
+    if (pendingPatchCount()) { await flushOfflineQueue(); if (pendingPatchCount()) { setErrorMsg('Sync pending print progress before starting another batch. Use Retry sync above.'); return; } }
     setStatus('running');
-    await setRunStatus(run.id, 'printing', printedCount);
+    const controller = new AbortController();
+    preparation.current = controller;
+    try { await setRunStatus(run.id, 'printing', printedCount); }
+    catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
+    if (pendingPatchCount()) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (!mounted.current || controller.signal.aborted) return;
 
     const sender = {
       send: async (zpl: string) => {
+        if (!mounted.current || controller.signal.aborted) throw new Error('Printing stopped because the page was left. Already sent labels may still print.');
+        setSending(true);
+        try {
         if (transport === 'dazzle') {
           await printViaDazzle(zpl, dazzleSelected ?? undefined);
         } else if (transport === 'webusb' && usbPrinter) {
@@ -504,6 +496,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         } else {
           throw new Error('No printer connected');
         }
+        } finally { if (mounted.current) setSending(false); }
       },
     };
 
@@ -519,8 +512,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const { startFeed, stopFeed } = feedRangeForLabels(printRange, across);
     void stopFeed;
     let labelsToSend: string[];
-    try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange); }
-    catch (error) { setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', printedCount); return; }
+    try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange, { signal: controller.signal }); }
+    catch (error) { if (controller.signal.aborted) return; setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', printedCount); return; }
+    if (!mounted.current || controller.signal.aborted) return;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
       batchSize: 25,
@@ -573,15 +567,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     });
 
     queueRef.current = handle;
+    } finally { starting.current = false; }
   };
 
   const handlePause = async () => {
-    queueRef.current?.pause();
+    preparation.current?.abort();
+    queueRef.current?.cancel();
     setStatus('paused');
-    if (run) await setRunStatus(run.id, 'paused', printedCount);
+    if (run) try { await setRunStatus(run.id, 'paused', printedCount); } catch(error) { setErrorMsg((error as Error).message); }
   };
 
   const handleCancel = async () => {
+    preparation.current?.abort();
     queueRef.current?.cancel();
     setStatus('cancelled');
     if (run) {
@@ -950,10 +947,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <Link
               href={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
               className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-              title="Open this run's template in the designer"
+              title="Edit the template for new runs; this run keeps its saved design"
             >
               <Pencil className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Edit template</span>
+              <span className="hidden sm:inline">Edit future template</span>
             </Link>
             <div className="hidden sm:flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border border-zinc-800 bg-zinc-900/60">
               <span className={
@@ -1239,6 +1236,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </div>
           )}
 
+          <p className="text-xs text-zinc-500">This run uses its saved design. Template edits apply to new runs. {run.designSnapshot?.legacy && "Older run: the design was captured during the reliability update, not at its original creation."}</p>
           {/* Controls */}
           <div className="flex items-center gap-2 pt-2">
             {isSheetFormat && pendingSheetRange && (

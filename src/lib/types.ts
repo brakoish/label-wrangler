@@ -185,6 +185,9 @@ export type TemplateElement = TextElement | QRElement | BarcodeElement | LineEle
 
 // Label template — ties a format to a set of elements
 export interface LabelTemplate {
+  summaryOnly?: boolean;
+  elementCount?: number;
+  dynamicCount?: number;
   thermalRenderMode?: 'native-v1' | 'bitmap-v1';
   archivedAt?: string | null;
   id: string;
@@ -232,8 +235,11 @@ export type RunDataSource = 'paste' | 'csv' | 'manual' | 'manifest';
 export type RunPrintEventType = 'opened' | 'sent' | 'confirmed' | 'failed' | 'cancelled';
 export type RunPrintOutput = 'roll-zpl' | 'sheet-pdf' | 'roll-pdf' | 'scan' | 'office-pi';
 
+export interface RunDesign { template: LabelTemplate; format: LabelFormat; capturedAt: string; legacy?: boolean }
+
 /** One execution of a print run. */
 export interface Run {
+  designSnapshot?: RunDesign | null;
   id: string;
   name: string;
   templateId: string;

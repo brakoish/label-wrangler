@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { canLeaveLocalPrint } from '@/lib/printNavigation';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -25,13 +26,14 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
       {/* Shared Header — tighter padding + smaller logo on mobile so the
           nav tabs and any headerAction fit without wrapping below. */}
       <header className="glass sticky top-0 z-40" onClickCapture={event => {
-        if (!beforeLeave || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         const link = (event.target as HTMLElement).closest('a[href]');
         if (!link) return;
         event.preventDefault();
         event.stopPropagation();
+        if (!canLeaveLocalPrint()) return;
         const href = link.getAttribute('href')!;
-        void beforeLeave().then(ready => { if (ready) router.push(href); });
+        void (beforeLeave ? beforeLeave() : Promise.resolve(true)).then(ready => { if (ready) router.push(href); });
       }}>
         <div className="max-w-[1600px] mx-auto px-3 sm:px-6 min-h-14 sm:min-h-16 flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-0">
           <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
@@ -98,6 +100,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
             </nav>
 
             <button className="shrink-0 text-xs text-zinc-500 hover:text-zinc-200" onClick={async()=>{
+              if (!canLeaveLocalPrint()) return;
               if (beforeLeave && !await beforeLeave()) return;
               const result=await fetch('/api/office/session',{method:'DELETE'});
               if(result.ok)window.location.assign('/login');

@@ -172,12 +172,10 @@ export default function Home() {
               format={selectedFormat}
               onDelete={() => {
                 if (confirm(`Delete "${selectedFormat.name}"?`)) {
-                  deleteFormat(selectedFormat.id);
+                  void deleteFormat(selectedFormat.id).catch(error=>useFormatStore.setState({error:(error as Error).message}));
                 }
               }}
-              onUpdate={(id, updates) => {
-                updateFormat(id, updates);
-              }}
+              onUpdate={updateFormat}
             />
           ) : (
             <div className="h-full flex items-center justify-center">

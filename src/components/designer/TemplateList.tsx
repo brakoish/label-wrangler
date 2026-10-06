@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useId, useMemo } from 'react';
 import QRCode from 'qrcode';
+import Link from 'next/link';
 import JsBarcode from 'jsbarcode';
 import { Plus, FileText, Archive, RotateCcw, Type, QrCode, Barcode, Square, Image, Minus, Copy, Pencil } from 'lucide-react';
 import { BarcodeElement, ImageElement, LabelFormat, LabelTemplate, LineElement, QRElement, RectangleElement, TemplateElement, TextElement } from '@/lib/types';
@@ -442,7 +443,7 @@ function TemplateCard({
   onDuplicate?: () => void;
   onRename?: () => void;
 }) {
-  const dynamicCount = template.elements.filter((e) => !e.isStatic).length;
+  const dynamicCount = template.dynamicCount ?? template.elements.filter((e) => !e.isStatic).length;
   const formatName = format?.name || 'Unknown Format';
   const formatType = format?.type || 'sheet';
 
@@ -472,7 +473,7 @@ function TemplateCard({
           <MiniPreview template={template} format={format} />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-zinc-700 text-xs">Empty template</span>
+            <span className="text-zinc-700 text-xs">{template.summaryOnly ? `${template.elementCount ?? 0} elements · Open to preview` : 'Empty template'}</span>
           </div>
         )}
       </div>
@@ -695,7 +696,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             <label className="text-sm text-zinc-400 block mb-2">Label Format</label>
             {formats.length === 0 ? (
               <p className="text-sm text-zinc-500 py-2">
-                No formats yet — <a href="/formats" className="text-amber-400 hover:text-amber-300">create a format</a> first
+                No formats yet — <Link href="/formats" className="text-amber-400 hover:text-amber-300">create a format</Link> first
               </p>
             ) : (
               <CustomSelect

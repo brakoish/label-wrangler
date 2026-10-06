@@ -1,3 +1,5 @@
+import { validatedBody, OfficeError } from '@/lib/validation';
+import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -14,6 +16,7 @@ async function handleGET(
     if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(row);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error fetching global element:", error);
     return NextResponse.json({ error: "Failed to fetch global element" }, { status: 500 });
   }
@@ -25,11 +28,11 @@ async function handlePUT(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await validatedBody(request, 'global', false);
     const now = new Date().toISOString();
     const updates: Record<string, unknown> = { updatedAt: now };
     for (const k of ["name", "description", "elements"]) {
-      if (k in body) updates[k] = (body as Record<string, unknown>)[k];
+      if (k in body) updates[k] = (body as unknown as Record<string, unknown>)[k];
     }
     const [updated] = await db
       .update(globalElements)
@@ -39,6 +42,7 @@ async function handlePUT(
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error updating global element:", error);
     return NextResponse.json({ error: "Failed to update global element" }, { status: 500 });
   }
@@ -53,6 +57,7 @@ async function handleDELETE(
     await db.delete(globalElements).where(eq(globalElements.id, id));
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error deleting global element:", error);
     return NextResponse.json({ error: "Failed to delete global element" }, { status: 500 });
   }

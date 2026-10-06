@@ -25,7 +25,7 @@ const history=useUndoStore.getState();history.clear();history.push('t',elements,
 assert.equal(history.undo().formatId,'small');history.setCurrent('t',elements,'large');assert.equal(history.redo().formatId,'large');
 (async()=>{
  const requests=[];let release;
- global.fetch=async(url,init)=>{requests.push(JSON.parse(init.body)); if(requests.length===1) await new Promise(r=>release=r); return {ok:requests.length!==1};};
+ global.fetch=async(url,init)=>{requests.push(JSON.parse(init.body)); if(requests.length===1) await new Promise(r=>release=r); return new Response(JSON.stringify(requests.length===1 ? {error:'Your edits are still in this tab'} : {id:'t',updatedAt:'2026-01-02T00:00:00.000Z'}),{status:requests.length===1?503:200});};
  useTemplateStore.setState({templates:[{id:'t',formatId:'small',elements}]});
  const first=useTemplateStore.getState().saveTemplate('t').catch(e=>e.message);
  await new Promise(r=>setImmediate(r));

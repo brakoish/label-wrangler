@@ -9,11 +9,13 @@ interface FormatDetailProps {
   format: LabelFormat;
   onDelete?: () => void;
   onEdit?: () => void;
-  onUpdate?: (id: string, updates: Partial<LabelFormat>) => void;
+  onUpdate?: (id: string, updates: Partial<LabelFormat>) => Promise<void>;
 }
 
 export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) {
   const isThermal = format.type === 'thermal';
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<LabelFormat>>({});
 
@@ -27,12 +29,16 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
     setEditing(false);
   };
 
-  const saveEdit = () => {
-    if (onUpdate && Object.keys(draft).length > 0) {
-      onUpdate(format.id, draft);
-    }
-    setEditing(false);
-    setDraft({});
+  const saveEdit = async () => {
+    setSaving(true); setSaveError('');
+    try {
+      if (onUpdate && Object.keys(draft).length > 0) {
+        const { id: _id, createdAt: _created, updatedAt: _updated, ...changes } = draft;
+        await onUpdate(format.id, changes);
+      }
+      setEditing(false); setDraft({});
+    } catch(error) { setSaveError((error as Error).message); }
+    finally { setSaving(false); }
   };
 
   const d = (key: keyof LabelFormat) => (editing ? (draft[key] ?? format[key]) : format[key]);
@@ -40,6 +46,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
 
   return (
     <div className="h-full">
+      {saveError && <p role="alert" className="p-4 text-red-400">{saveError}</p>}
       {/* Hero header */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent" />
@@ -112,7 +119,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     Cancel
                   </button>
                   <button
-                    onClick={saveEdit}
+                    onClick={()=>void saveEdit()} disabled={saving}
                     className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 rounded-xl transition-colors shadow-lg shadow-amber-500/20"
                   >
                     <Check className="w-4 h-4" />

@@ -1,4 +1,6 @@
 'use client';
+import { apiJson } from './apiClient';
+import { updateRunWithQueue, savePrintEvent } from './offlineQueue';
 
 import { create } from 'zustand';
 import type { Run, RunPreset, RunPrintEvent, RunStatus } from './types';
@@ -8,7 +10,11 @@ interface RunStore {
   presets: RunPreset[];
   printEvents: RunPrintEvent[];
   hydrated: boolean;
-  loadAll: () => Promise<void>;
+  loading: boolean;
+  error: string | null;
+  hasMore: boolean;
+  offset: number;
+  loadAll: (more?: boolean) => Promise<void>;
   fetchRun: (id: string) => Promise<Run | null>;
 
   // Runs
@@ -30,40 +36,45 @@ interface RunStore {
   deletePreset: (id: string) => Promise<void>;
 }
 
+async function loadPresets() {
+  const rows: RunPreset[] = [];
+  for (let offset=0;offset<100000;offset+=50) {
+    const page=await apiJson<RunPreset[]>(`/api/presets?offset=${offset}`);
+    if(!Array.isArray(page)) throw new Error('Invalid presets response');
+    rows.push(...page); if(page.length<50) break;
+  }
+  return rows;
+}
+
 export const useRunStore = create<RunStore>((set, get) => ({
   runs: [],
   presets: [],
   printEvents: [],
-  hydrated: false,
+  hydrated: false, loading: false, error: null, hasMore: false, offset: 0,
 
-  loadAll: async () => {
+  loadAll: async (more = false) => {
+    if (get().loading) return;
+    const offset = more ? get().offset : 0;
+    set({ loading: true, error: null });
     try {
-      const [rRes, pRes] = await Promise.all([
-        fetch('/api/runs').then((r) => r.json()),
-        fetch('/api/presets').then((r) => r.json()),
+      const [rows, presets] = await Promise.all([
+        apiJson<Run[]>(`/api/runs?offset=${offset}`),
+        more ? Promise.resolve(get().presets) : loadPresets(),
       ]);
-      set({
-        runs: Array.isArray(rRes)
-          ? rRes.map((run) => ({ sourceData: [], ...run })) as Run[]
-          : [],
-        presets: Array.isArray(pRes) ? pRes : [],
-        hydrated: true,
-      });
-    } catch (error) {
-      console.error('Error loading runs:', error);
-      set({ hydrated: true });
-    }
+      if (!Array.isArray(rows) || !Array.isArray(presets)) throw new Error('Invalid run response');
+      set(state => ({ runs: [...state.runs.filter(old => !rows.some(row => row.id === old.id)), ...rows.map(row => ({...state.runs.find(old=>old.id===row.id), ...row, sourceData: row.sourceData ?? state.runs.find(old=>old.id===row.id)?.sourceData ?? []}))], presets, hydrated:true, loading:false, offset:offset+rows.length, hasMore:rows.length===50 }));
+    } catch (error) { set({ loading:false, hydrated:true, error:(error as Error).message }); }
   },
 
   fetchRun: async (id) => {
-    const res = await fetch(`/api/runs/${id}`);
-    if (!res.ok) return null;
-    const run = (await res.json()) as Run;
+    let run: Run;
+    try { run = await apiJson<Run>(`/api/runs/${id}`); }
+    catch(error) { set({error:(error as Error).message}); return null; }
     set((state) => {
       const exists = state.runs.some((r) => r.id === id);
       return {
         runs: exists
-          ? state.runs.map((r) => (r.id === id ? run : r))
+          ? state.runs.map((r) => (r.id === id ? { ...r, ...run } : r))
           : [run, ...state.runs],
       };
     });
@@ -88,9 +99,9 @@ export const useRunStore = create<RunStore>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) return null;
+    if (!res.ok) { const data = await res.json().catch(()=>null); set({error:data?.error || 'Update failed. Please retry.'}); return null; }
     const run = (await res.json()) as Run;
-    set((state) => ({ runs: state.runs.map((r) => (r.id === id ? run : r)) }));
+    set((state) => ({ runs: state.runs.map((r) => (r.id === id ? { ...r, ...run } : r)) }));
     return run;
   },
 
@@ -98,11 +109,13 @@ export const useRunStore = create<RunStore>((set, get) => ({
     const body: Record<string, unknown> = { status };
     if (typeof printedCount === 'number') body.printedCount = printedCount;
     if (status === 'completed') body.completedAt = new Date().toISOString();
-    return get().updateRun(id, body as Partial<Run>);
+    const run=await updateRunWithQueue(id,body as Partial<Run>);
+    if(run) set(state=>({runs:state.runs.map(r=>r.id===id?{...r,...run}:r)}));
+    return run;
   },
 
   deleteRun: async (id) => {
-    await fetch(`/api/runs/${id}`, { method: 'DELETE' });
+    try { await apiJson(`/api/runs/${id}`, { method: 'DELETE' }); } catch(error) { set({error:(error as Error).message}); return; }
     set((state) => ({ runs: state.runs.filter((r) => r.id !== id) }));
   },
 
@@ -115,9 +128,9 @@ export const useRunStore = create<RunStore>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pinned: !current.pinnedAt }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) { const data = await res.json().catch(()=>null); set({error:data?.error || 'Update failed. Please retry.'}); return null; }
     const updated = (await res.json()) as Run;
-    set((state) => ({ runs: state.runs.map((r) => (r.id === id ? updated : r)) }));
+    set((state) => ({ runs: state.runs.map((r) => (r.id === id ? {...r,...updated} : r)) }));
     return updated;
   },
 
@@ -135,15 +148,10 @@ export const useRunStore = create<RunStore>((set, get) => ({
   },
 
   createPrintEvent: async (runId, data) => {
-    const res = await fetch(`/api/runs/${runId}/print-events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) return null;
-    const event = (await res.json()) as RunPrintEvent;
+    const event = await savePrintEvent(runId,data);
+    if (!event) return null;
     set((state) => ({
-      printEvents: [event, ...state.printEvents],
+      printEvents: [event, ...state.printEvents.filter(old=>old.id!==event.id)],
     }));
     return event;
   },
@@ -166,14 +174,14 @@ export const useRunStore = create<RunStore>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) return null;
+    if (!res.ok) { const data = await res.json().catch(()=>null); set({error:data?.error || 'Update failed. Please retry.'}); return null; }
     const preset = (await res.json()) as RunPreset;
     set((state) => ({ presets: state.presets.map((p) => (p.id === id ? preset : p)) }));
     return preset;
   },
 
   deletePreset: async (id) => {
-    await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+    try { await apiJson(`/api/presets/${id}`, { method: 'DELETE' }); } catch(error) { set({error:(error as Error).message}); return; }
     set((state) => ({ presets: state.presets.filter((p) => p.id !== id) }));
   },
 }));

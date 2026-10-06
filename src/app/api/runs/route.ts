@@ -1,11 +1,15 @@
+import { captureDesign } from '@/lib/runDesign.server';
+import { validatedBody, OfficeError } from '@/lib/validation';
+import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runs } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
 
-async function handleGET() {
+async function handleGET(request: NextRequest) {
   try {
+    const offset = Math.max(0, Math.min(100000, Math.floor(Number(new URL(request.url).searchParams.get('offset'))) || 0));
     const all = await db
       .select({
         id: runs.id,
@@ -26,9 +30,10 @@ async function handleGET() {
         completedAt: runs.completedAt,
       })
       .from(runs)
-      .orderBy(desc(runs.createdAt));
+      .orderBy(desc(runs.createdAt)).limit(50).offset(offset);
     return NextResponse.json(all);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error fetching runs:", error);
     return NextResponse.json({ error: "Failed to fetch runs" }, { status: 500 });
   }
@@ -36,11 +41,12 @@ async function handleGET() {
 
 async function handlePOST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await validatedBody(request, 'run', true);
     const now = new Date().toISOString();
-    const id = `run-${Date.now()}`;
+    const id = `run-${randomUUID()}`;
     const newRun = {
       id,
+      designSnapshot: await captureDesign(String(body.templateId)),
       name: body.name,
       templateId: body.templateId,
       presetId: body.presetId ?? null,
@@ -61,6 +67,7 @@ async function handlePOST(request: NextRequest) {
     await db.insert(runs).values(newRun);
     return NextResponse.json(newRun, { status: 201 });
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error creating run:", error);
     return NextResponse.json({ error: "Failed to create run" }, { status: 500 });
   }

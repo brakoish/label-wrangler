@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Plus, Printer, Clock, Trash2, Copy, Play, Search, LayoutGrid, List, Pin, PinOff, CheckCircle2, Loader2, TrendingUp, FileSpreadsheet } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
@@ -160,8 +161,8 @@ export default function RunsPage() {
         <div {...scrollProps}>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {collection.map((r) => {
-              const t = templates.find((x) => x.id === r.templateId) ?? null;
-              const f = t ? formats.find((x) => x.id === t.formatId) ?? null : null;
+              const t = r.designSnapshot?.template ?? null;
+              const f = r.designSnapshot?.format ?? null;
               return (
                 <RunCard
                   key={r.id}
@@ -183,8 +184,8 @@ export default function RunsPage() {
       <div {...scrollProps}>
         <div className="space-y-2">
           {collection.map((r) => {
-            const t = templates.find((x) => x.id === r.templateId) ?? null;
-            const f = t ? formats.find((x) => x.id === t.formatId) ?? null : null;
+            const t = r.designSnapshot?.template ?? null;
+            const f = r.designSnapshot?.format ?? null;
             return (
               <RunRow
                 key={r.id}
@@ -671,6 +672,7 @@ function RunRow({
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
+  const router = useRouter();
   const pct = run.totalLabels > 0 ? Math.round((run.printedCount / run.totalLabels) * 100) : 0;
   const resumable = run.status === 'paused' || run.status === 'draft' || (run.status === 'error' as RunStatus);
   const pinned = !!run.pinnedAt;
@@ -757,7 +759,7 @@ function RunRow({
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            window.location.href = `/runs/new?duplicateFrom=${run.id}`;
+            router.push(`/runs/new?duplicateFrom=${run.id}`);
           }}
           className="p-1.5 rounded-md text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
           title="Duplicate run"
@@ -802,6 +804,7 @@ function RunCard({
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
+  const router = useRouter();
   const pct = run.totalLabels > 0 ? Math.round((run.printedCount / run.totalLabels) * 100) : 0;
   const resumable = run.status === 'paused' || run.status === 'draft' || (run.status === 'error' as RunStatus);
   const pinned = !!run.pinnedAt;
@@ -865,7 +868,7 @@ function RunCard({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          window.location.href = `/runs/new?duplicateFrom=${run.id}`;
+          router.push(`/runs/new?duplicateFrom=${run.id}`);
         }}
         className="absolute bottom-2 right-10 p-1.5 rounded-md text-zinc-700 hover:text-amber-400 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition"
         title="Duplicate run"

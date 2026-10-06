@@ -1,3 +1,5 @@
+import { validatedBody, OfficeError } from '@/lib/validation';
+import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -11,6 +13,7 @@ async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: 
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(row);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error fetching preset:", error);
     return NextResponse.json({ error: "Failed to fetch preset" }, { status: 500 });
   }
@@ -19,10 +22,10 @@ async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: 
 async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const body = await req.json();
+    const body = await validatedBody(req, 'preset', false);
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     for (const k of ['name', 'staticDefaults', 'fieldMappings', 'mappedField', 'csvColumn', 'templateId']) {
-      if (k in body) updates[k] = (body as Record<string, unknown>)[k];
+      if (k in body) updates[k] = (body as unknown as Record<string, unknown>)[k];
     }
     // Increment-use sentinel: PUT with { touch: true } bumps lastUsedAt + useCount.
     if (body.touch) {
@@ -33,6 +36,7 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error updating preset:", error);
     return NextResponse.json({ error: "Failed to update preset" }, { status: 500 });
   }
@@ -44,6 +48,7 @@ async function handleDELETE(_req: NextRequest, { params }: { params: Promise<{ i
     await db.delete(runPresets).where(eq(runPresets.id, id));
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error deleting preset:", error);
     return NextResponse.json({ error: "Failed to delete preset" }, { status: 500 });
   }

@@ -1,30 +1,33 @@
+import { apiJson } from './apiClient';
 import { create } from 'zustand';
 import type { GlobalElement, TemplateElement } from './types';
 
 interface GlobalElementStore {
   globals: GlobalElement[];
   hydrated: boolean;
-  fetchGlobals: () => Promise<void>;
+  loading: boolean;
+  error: string | null;
+  hasMore: boolean;
+  offset: number;
+  fetchGlobals: (more?: boolean) => Promise<void>;
   createGlobal: (name: string, elements: TemplateElement[], description?: string) => Promise<GlobalElement>;
   updateGlobal: (id: string, updates: Partial<Pick<GlobalElement, 'name' | 'description' | 'elements'>>) => Promise<void>;
   deleteGlobal: (id: string) => Promise<void>;
 }
 
-export const useGlobalElementStore = create<GlobalElementStore>((set) => ({
+export const useGlobalElementStore = create<GlobalElementStore>((set, get) => ({
   globals: [],
-  hydrated: false,
+  hydrated: false, loading: false, error: null, hasMore: false, offset: 0,
 
-  fetchGlobals: async () => {
+  fetchGlobals: async (more = false) => {
+    if (get().loading) return;
+    const offset = more ? get().offset : 0;
+    set({ loading: true, error: null });
     try {
-      const res = await fetch('/api/globals');
-      if (res.ok) {
-        const globals = await res.json();
-        set({ globals, hydrated: true });
-      }
-    } catch (error) {
-      console.error('Error fetching global elements:', error);
-      set({ hydrated: true });
-    }
+      const rows = await apiJson<GlobalElement[]>(`/api/globals?offset=${offset}`);
+      if (!Array.isArray(rows)) throw new Error('Invalid globals response');
+      set(state => ({ globals: more ? [...state.globals.filter(old => !rows.some(row => row.id === old.id)), ...rows] : rows, hydrated: true, loading: false, offset: offset + rows.length, hasMore: rows.length === 50 }));
+    } catch(error) { set({ loading: false, hydrated: true, error: (error as Error).message }); }
   },
 
   createGlobal: async (name, elements, description) => {

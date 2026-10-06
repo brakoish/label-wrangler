@@ -263,7 +263,8 @@ function NewRunContent() {
     }
   }, [duplicateFrom, fetchRun, runs]);
 
-  const template = useMemo(() => templates.find((t) => t.id === templateId) ?? null, [templates, templateId]);
+  useEffect(() => { if (templateId) void useTemplateStore.getState().fetchTemplate(templateId); }, [templateId]);
+  const template = useMemo(() => templates.find((t) => t.id === templateId && !t.summaryOnly) ?? null, [templates, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
   const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
   const hiddenRunFieldSet = useMemo(() => new Set(hiddenRunFields), [hiddenRunFields]);

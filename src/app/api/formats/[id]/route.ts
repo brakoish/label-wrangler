@@ -1,3 +1,5 @@
+import { validatedBody, OfficeError } from '@/lib/validation';
+import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -18,6 +20,7 @@ async function handleGET(
 
     return NextResponse.json(format[0]);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error fetching format:", error);
     return NextResponse.json({ error: "Failed to fetch format" }, { status: 500 });
   }
@@ -29,7 +32,7 @@ async function handlePUT(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await validatedBody(request, 'format', false);
     const now = new Date().toISOString();
 
     await db
@@ -45,6 +48,7 @@ async function handlePUT(
 
     return NextResponse.json(updated[0]);
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error updating format:", error);
     return NextResponse.json({ error: "Failed to update format" }, { status: 500 });
   }
@@ -59,6 +63,7 @@ async function handleDELETE(
     await db.delete(formats).where(eq(formats.id, id));
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("Error deleting format:", error);
     return NextResponse.json({ error: "Failed to delete format" }, { status: 500 });
   }

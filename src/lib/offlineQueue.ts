@@ -1,159 +1,114 @@
-/**
- * Small offline-friendly queue for run updates.
- *
- * Problem we solve: during a long print run, losing the network for a few
- * seconds shouldn't nuke progress tracking. The print queue keeps going
- * regardless (it only talks to the printer, not the DB), but the
- * fire-and-forget `updateRun` calls to persist `printedCount` / `status`
- * were silently swallowed on failure.
- *
- * This module wraps persistence calls so:
- *  - A failed PUT is serialized into localStorage under `lw:pending-run-ops`.
- *  - Subsequent calls for the same run MERGE with any pending entry (we
- *    only need the LATEST printed count, not every intermediate step).
- *  - `flushOfflineQueue()` replays everything on reconnect / startup.
- *
- * Deliberately minimal:
- *  - Only queues run updates. Formats / templates / presets aren't
- *    long-running so they don't need the same protection today.
- *  - No timestamps / conflict resolution — the client is the source of
- *    truth for progress during a print, and the printer is the only
- *    authoritative producer of "I printed N more labels" data.
- */
+/** Durable, append-only progress outbox. Each acknowledgement removes only its
+ * own operation; a reconnect can never erase a newer pending update. */
+import type { Run, RunStatus, RunPrintEvent } from './types';
 
-import type { Run, RunStatus } from './types';
-
-const STORAGE_KEY = 'lw:pending-run-ops';
-
-/** The subset of run fields we persist offline. Keep it small so the
- *  localStorage payload stays tiny even during big runs. */
+const PREFIX = 'lw:run-op:';
+const LEGACY = 'lw:pending-run-ops';
 export interface RunPatch {
   printedCount?: number;
   status?: RunStatus;
   completedAt?: string | null;
   notes?: string | null;
 }
-
-/** A queued patch carries the target runId so we can replay it later. */
-export interface QueuedRunPatch extends RunPatch {
-  runId: string;
+export interface QueuedRunPatch extends RunPatch { runId: string }
+type PrintEventData = Omit<RunPrintEvent,'id'|'runId'|'createdAt'>;
+type Operation = { id: string; createdAt: number; patch: QueuedRunPatch; event?: PrintEventData };
+const syncedEvents = new Map<string,RunPrintEvent>();
+let flushing: Promise<{ flushed: number; remaining: number }> | null = null;
+let lastError = '';
+let lastTime = 0;
+const syncedRuns = new Map<string, Run>();
+export const QUEUE_EVENT = 'lw:progress-sync';
+function announce(error = '') {
+  lastError = error;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_EVENT));
 }
-
-/** Internal shape: keyed by runId so repeated updates coalesce. */
-type QueueMap = Record<string, QueuedRunPatch>;
-
-function readQueue(): QueueMap {
-  if (typeof window === 'undefined') return {};
+export function progressSyncError() { return lastError; }
+function entries(): Operation[] {
+  if (typeof window === 'undefined') return [];
+  const storage = window.localStorage;
+  const result: Operation[] = [];
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i);
+    if (!key?.startsWith(PREFIX)) continue;
+    const op = JSON.parse(storage.getItem(key)!);
+    if (!op?.id || !op?.patch?.runId) throw new Error('Saved print progress needs recovery. Do not clear browser storage.');
+    result.push(op);
+  }
+  return result.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+}
+export function enqueueRunPatch(patch: QueuedRunPatch, event?: PrintEventData): string {
+  const id = crypto.randomUUID();
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as QueueMap;
-    }
-    return {};
+    window.localStorage.setItem(PREFIX + id, JSON.stringify({ id, createdAt: (lastTime = Math.max(performance.timeOrigin + performance.now(), lastTime + 0.001)), patch, event }));
+    announce();
+    return id;
   } catch {
-    return {};
+    announce('Print progress could not be stored on this device. Pause printing and keep this tab open.');
+    throw new Error(lastError);
   }
 }
-
-function writeQueue(q: QueueMap): void {
-  if (typeof window === 'undefined') return;
-  try {
-    // Prune empty entries so the key doesn't grow forever.
-    const compact: QueueMap = {};
-    for (const [k, v] of Object.entries(q)) {
-      if (v && (v.printedCount !== undefined || v.status !== undefined
-        || v.completedAt !== undefined || v.notes !== undefined)) {
-        compact[k] = v;
-      }
-    }
-    if (Object.keys(compact).length === 0) {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
-    }
-  } catch {
-    /* quota exceeded / private mode — swallow */
-  }
+function migrate() {
+  const raw = window.localStorage.getItem(LEGACY);
+  if (!raw) return;
+  const queue = JSON.parse(raw);
+  for (const patch of Object.values(queue) as QueuedRunPatch[]) enqueueRunPatch(patch);
+  window.localStorage.removeItem(LEGACY);
 }
-
-/** Merge a patch into the pending queue. Call when a PUT fails. */
-export function enqueueRunPatch(patch: QueuedRunPatch): void {
-  const q = readQueue();
-  const existing = q[patch.runId] || { runId: patch.runId };
-  q[patch.runId] = { ...existing, ...patch };
-  writeQueue(q);
-}
-
-/**
- * Attempt a run update with automatic offline queueing. Returns the parsed
- * response on success; returns `null` on network failure and adds the patch
- * to the pending queue so it can be replayed later.
- */
-export async function updateRunWithQueue(
-  runId: string,
-  patch: RunPatch,
-): Promise<Run | null> {
-  try {
-    const res = await fetch(`/api/runs/${runId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) {
-      // 4xx/5xx — don't queue, this is a real server error we want surfaced.
-      return null;
-    }
-    return (await res.json()) as Run;
-  } catch {
-    // Fetch threw (offline / DNS / abort). Queue and move on.
-    enqueueRunPatch({ runId, ...patch });
-    return null;
-  }
-}
-
-/**
- * Replay every pending run patch against the API. Clears entries that
- * succeed; leaves the rest in the queue for the next attempt.
- * Returns a count of how many patches were flushed.
- */
-export async function flushOfflineQueue(): Promise<{ flushed: number; remaining: number }> {
-  const q = readQueue();
-  const entries = Object.entries(q);
-  if (entries.length === 0) return { flushed: 0, remaining: 0 };
-  let flushed = 0;
-  const remaining: QueueMap = {};
-  for (const [runId, patch] of entries) {
-    try {
-      const body: RunPatch = {
-        printedCount: patch.printedCount,
-        status: patch.status,
-        completedAt: patch.completedAt,
-        notes: patch.notes,
-      };
-      const res = await fetch(`/api/runs/${runId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        flushed++;
-      } else {
-        // Keep the patch; 4xx likely means run was deleted — we could
-        // drop in that case, but being conservative is safer.
-        remaining[runId] = patch;
-      }
-    } catch {
-      remaining[runId] = patch;
-    }
-  }
-  writeQueue(remaining);
-  return { flushed, remaining: Object.keys(remaining).length };
-}
-
-/** Number of pending patches. UI surfaces this to let users know there's
- *  unsaved progress. */
 export function pendingPatchCount(): number {
-  return Object.keys(readQueue()).length;
+  try { return entries().length + (typeof window !== 'undefined' && window.localStorage.getItem(LEGACY) ? 1 : 0); }
+  catch { return 1; }
+}
+export async function flushOfflineQueue(): Promise<{ flushed: number; remaining: number }> {
+  if (typeof window === 'undefined') return { flushed: 0, remaining: 0 };
+  if (flushing) return flushing;
+  const drain = async () => {
+    let flushed = 0;
+    try {
+      migrate();
+      // Re-read after each response so concurrent enqueues are included. The
+      // browser lock serializes senders across tabs, not just this module.
+      for (let i = 0; i < 1000; i++) {
+        const op = entries()[0];
+        if (!op) { announce(); break; }
+        const { runId, ...patch } = op.patch;
+        const response = await fetch(`/api/runs/${runId}${op.event ? '/print-events' : ''}`, {
+          method: op.event ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(op.event ? {...op.event,idempotencyKey:op.id} : { ...patch, progressOnly: !patch.status && patch.printedCount !== undefined }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) {
+          announce(response.status === 401 ? 'Sign in again to sync saved print progress.' : `Print progress is saved on this device but not synced (${response.status}). Retry when the connection is restored.`);
+          break;
+        }
+        const run = await response.json?.().catch(()=>null);
+        if (op.event && run?.id) { syncedEvents.set(op.id,run); if(syncedEvents.size>128) syncedEvents.delete(syncedEvents.keys().next().value!); window.dispatchEvent(new CustomEvent('lw:event-synced',{detail:run})); }
+        else if (run?.id) { syncedRuns.set(run.id,run); window.dispatchEvent(new CustomEvent('lw:run-synced',{detail:run})); }
+        window.localStorage.removeItem(PREFIX + op.id);
+        flushed++;
+        announce();
+      }
+    } catch (error) {
+      announce(error instanceof Error ? `Progress sync pending: ${error.message}` : 'Progress sync pending. Keep this browser data.');
+    }
+    return { flushed, remaining: pendingPatchCount() };
+  };
+  flushing = (typeof navigator !== 'undefined' && navigator.locks
+    ? Promise.resolve(navigator.locks.request('lw-progress-outbox', drain)).then(result => result) : drain());
+  try { return await flushing; } finally { flushing = null; }
+}
+export async function updateRunWithQueue(runId: string, patch: RunPatch): Promise<Run | null> {
+  enqueueRunPatch({ runId, ...patch });
+  await flushOfflineQueue();
+  // Callers should display pendingPatchCount rather than implying that local
+  // printer acceptance means the server has persisted progress.
+  return entries().some(op=>op.patch.runId===runId) ? null : syncedRuns.get(runId) ?? null;
+}
+
+export async function savePrintEvent(runId: string, event: PrintEventData): Promise<RunPrintEvent | null> {
+  const id=enqueueRunPatch({runId},event);
+  await flushOfflineQueue();
+  const saved=syncedEvents.get(id) ?? null;
+  syncedEvents.delete(id);
+  return saved;
 }
