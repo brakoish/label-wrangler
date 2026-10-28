@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useGlobalElementStore } from '@/lib/globalStore';
 import type { LabelTemplate, ImageElement } from '@/lib/types';
 import { MAX_RUN_IMAGE_BYTES, MAX_RUN_IMAGE_PIXELS, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 
@@ -9,7 +10,11 @@ export function RunImagePicker({ template, selections, onChange, onBusyChange }:
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [librarySlot, setLibrarySlot] = useState<string | null>(null);
+  const { globals, fetchGlobals, hydrated, loading, hasMore, error: libraryError } = useGlobalElementStore();
+  const savedImages = globals.flatMap(group => group.elements.filter((e): e is ImageElement => e.type === 'image').map(image => ({ id: group.id + ':' + image.id, name: group.name, src: image.src })));
   const mounted = useRef(true);
+  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; onBusyChange(false); }; }, [onBusyChange]);
   const slots = template.elements.filter((e): e is ImageElement => e.type === 'image' && e.runSelectable === true);
   if (!slots.length) return null;
@@ -39,12 +44,22 @@ export function RunImagePicker({ template, selections, onChange, onBusyChange }:
     {slots.map((slot, index) => <div key={slot.id} className="flex items-center gap-3">
       <img src={selections[slot.id] ?? slot.src} alt={'Image slot ' + (index + 1) + ' preview'} className="w-20 h-20 bg-white rounded border border-zinc-700" style={{ objectFit: slot.objectFit }} />
       <div className="min-w-0 space-y-1">
-        <label className="block text-xs text-zinc-300">{slot.fieldName || ('Image slot ' + (index + 1))}
-          <input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} className="block w-full text-xs mt-1" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(slot.id, file); }} />
-        </label>
+        <p className="text-xs text-zinc-300">{slot.fieldName || ('Image slot ' + (index + 1))}</p>
+        <input ref={node => { inputs.current[slot.id] = node; }} type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} className="hidden" aria-label={'Choose image for ' + (slot.fieldName || ('slot ' + (index + 1)))} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(slot.id, file); }} />
+        <button type="button" disabled={busy} className="block rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-700 disabled:opacity-40" onClick={() => inputs.current[slot.id]?.click()}>{Object.hasOwn(selections, slot.id) ? 'Replace image' : 'Choose image'}</button>
+        <button type="button" disabled={busy} className="block text-xs text-amber-400" onClick={() => { setLibrarySlot(slot.id); if (!hydrated) void fetchGlobals(); }}>Choose from saved blocks</button>
+        <p className="text-[10px] text-zinc-500">{Object.hasOwn(selections, slot.id) ? 'Selected for this run' : 'Using template image'}</p>
         <button type="button" disabled={busy || !Object.hasOwn(selections, slot.id)} className="text-xs text-amber-400 disabled:opacity-40" onClick={() => { const next = { ...selections }; delete next[slot.id]; onChange(next); setError(''); }}>Reset to template image</button>
       </div>
     </div>)}
+    {librarySlot && <div className="rounded-lg border border-zinc-700 p-3 space-y-2">
+      <div className="flex justify-between"><h3 className="text-xs text-zinc-300">Images from saved blocks</h3><button type="button" className="text-xs text-zinc-400" onClick={() => setLibrarySlot(null)}>Close</button></div>
+      <div className="flex flex-wrap gap-2">{savedImages.map(image => <button key={image.id} type="button" disabled={busy} className="w-24 rounded border border-zinc-700 p-1 text-xs text-zinc-300 hover:border-amber-500" onClick={() => { try { const next = { ...selections, [librarySlot]: image.src }; validateRunImages(next); onChange(next); setLibrarySlot(null); setError(''); } catch (e) { setError(e instanceof Error ? e.message : 'Unsupported saved image'); } }}><img src={image.src} alt={image.name} className="h-16 w-full object-contain bg-white" /><span>{image.name}</span></button>)}</div>
+      {!loading && !savedImages.length && <p className="text-xs text-zinc-500">No images in loaded saved blocks. Upload an image, or save an image as a Global in the designer.</p>}
+      {libraryError && <p role="alert" className="text-xs text-red-400">{libraryError}</p>}
+      {(hasMore || libraryError) && <button type="button" disabled={loading} className="text-xs text-amber-400" onClick={() => void fetchGlobals(hasMore)}>Load saved blocks</button>}
+      {loading && <p role="status" className="text-xs text-zinc-500">Loading saved blocks…</p>}
+    </div>}
     {busy && <p role="status" className="text-xs text-zinc-400">Loading image…</p>}
     {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
   </section>;

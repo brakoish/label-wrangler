@@ -315,7 +315,7 @@ function NewRunContent() {
   useEffect(() => {
     if (!template) return;
     if (didHealTemplateRef.current === template.id) return;
-    const needsHeal = template.elements.some((el) => !el.isStatic && (!el.fieldName || !el.fieldName.trim()));
+    const needsHeal = template.elements.some((el) => el.type !== 'image' && !el.isStatic && (!el.fieldName || !el.fieldName.trim()));
     if (!needsHeal) {
       didHealTemplateRef.current = template.id;
       return;
@@ -325,7 +325,7 @@ function NewRunContent() {
       if (el.fieldName && el.fieldName.trim()) used.add(el.fieldName.trim());
     }
     for (const el of template.elements) {
-      if (el.isStatic) continue;
+      if (el.isStatic || el.type === 'image') continue;
       if (el.fieldName && el.fieldName.trim()) continue;
       // Generate a type-based name, incrementing until unique.
       let n = 1;

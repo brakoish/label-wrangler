@@ -9,7 +9,7 @@ import { generateZPL, prepareZplImages, type GenerateZplOptions } from './zplGen
 export function dynamicFieldsForTemplate(template: LabelTemplate): string[] {
   const names = new Set<string>();
   for (const el of template.elements) {
-    if (el.isStatic) continue;
+    if (el.isStatic || el.type === 'image') continue;
     const name = el.fieldName;
     if (name && name.trim()) names.add(name);
   }
