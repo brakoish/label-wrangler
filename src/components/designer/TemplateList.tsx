@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useId, useMemo } from 'react';
+import { useState, useEffect, useId, useMemo, useRef } from 'react';
 import QRCode from 'qrcode';
+import { loadTemplatePreview } from '@/lib/templatePreviewLoader';
 import Link from 'next/link';
 import JsBarcode from 'jsbarcode';
 import { Plus, FileText, Archive, RotateCcw, Type, QrCode, Barcode, Square, Image, Minus, Copy, Pencil } from 'lucide-react';
@@ -152,11 +153,44 @@ function labelViewBox(format: LabelFormat) {
   };
 }
 
+// Only visible cards fetch full detail; background responses never touch the store.
+function CardPreview({ template, format }: { template: LabelTemplate; format?: LabelFormat }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [loaded, setLoaded] = useState<LabelTemplate | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!ref.current) return;
+    if (typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); }
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!visible || !template.summaryOnly) return;
+    let active = true;
+    setError('');
+    loadTemplatePreview(template).then(value => { if (active) setLoaded(value); })
+      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : 'Unable to load preview'); });
+    return () => { active = false; };
+  }, [visible, template, attempt]);
+  const full = template.summaryOnly ? loaded : template;
+  return <div ref={ref} className="w-full h-full flex items-center justify-center">
+    {visible && full ? (full.elements.length ? <MiniPreview template={full} format={format} /> : <span className="text-zinc-500 text-xs">Empty template</span>)
+      : error ? <div className="text-xs text-zinc-400 text-center"><p role="status">{error}</p><button className="text-amber-400 mt-2" onClick={event => { event.stopPropagation(); setError(''); setAttempt(value => value + 1); }}>Retry preview</button></div>
+      : <span role="status" className="text-zinc-500 text-xs">{visible ? 'Loading preview…' : 'Preview loads when visible'}</span>}
+  </div>;
+}
+
 // Mini label preview — renders the actual template instead of a gray skeleton.
 function MiniPreview({ template, format }: { template: LabelTemplate; format?: LabelFormat }) {
   const [thermalUrl, setThermalUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [draftWarning, setDraftWarning] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const sampleData = useMemo(() => sampleDataForTemplate(template), [template]);
 
   useEffect(() => {
@@ -175,7 +209,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       .catch(error => { if (active) setPreviewError(error instanceof Error ? error.message : 'Preview unavailable'); });
 
     return () => { active = false; };
-  }, [format, sampleData, template]);
+  }, [format, sampleData, template, attempt]);
 
   if (!format) return <div className="w-full h-full bg-zinc-900 rounded-lg" />;
 
@@ -193,7 +227,8 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
     );
   }
 
-  if (template.thermalRenderMode === 'bitmap-v1') return <p className="text-xs text-zinc-500 p-3">{previewError ? `Preview unavailable: ${previewError}` : 'Loading bitmap preview…'}</p>;
+  if (previewError) return <div className="text-xs text-zinc-400 p-3"><p role="status">Preview unavailable: {previewError}</p><button className="text-amber-400 mt-2" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1); }}>Retry preview</button></div>;
+  if (template.thermalRenderMode === 'bitmap-v1') return <p role="status" className="text-xs text-zinc-500 p-3">Loading bitmap preview…</p>;
   const { vbW, vbH } = labelViewBox(format);
 
   const pad = Math.min(vbW, vbH) * 0.08;
@@ -469,13 +504,7 @@ function TemplateCard({
     >
       {/* Preview area */}
       <div className="h-[140px] bg-zinc-950 p-3 border-b border-zinc-800/50">
-        {template.elements.length > 0 ? (
-          <MiniPreview template={template} format={format} />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <span className="text-zinc-700 text-xs">{template.summaryOnly ? `${template.elementCount ?? 0} elements · Open to preview` : 'Empty template'}</span>
-          </div>
-        )}
+        <CardPreview key={`${template.id}:${template.updatedAt}`} template={template} format={format} />
       </div>
 
       {/* Info area */}
