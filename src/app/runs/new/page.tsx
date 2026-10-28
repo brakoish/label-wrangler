@@ -15,6 +15,8 @@ import { parseCsv, detectUrlColumn } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { RunImagePicker } from '@/components/runs/RunImagePicker';
+import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { RunPrinter } from '@/components/runs/RunPrinter';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
@@ -147,6 +149,8 @@ function NewRunContent() {
   // Form state
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
+  const [imagesByTemplate, setImagesByTemplate] = useState<Record<string, RunImageSelections>>({});
+  const [imageBusy, setImageBusy] = useState(false);
   const [staticValues, setStaticValues] = useState<Record<string, string>>({});
   const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
   const [hiddenRunFields, setHiddenRunFields] = useState<string[]>([]);
@@ -225,13 +229,20 @@ function NewRunContent() {
     if (!duplicateFrom) return;
     if (didApplyDuplicateRef.current === duplicateFrom) return;
     const src = runs.find((r) => r.id === duplicateFrom);
-    if (!src || (src.totalLabels > 0 && src.sourceData.length === 0)) {
+    if (!src || !src.designSnapshot || (src.totalLabels > 0 && src.sourceData.length === 0)) {
       void fetchRun(duplicateFrom);
       return;
     }
     didApplyDuplicateRef.current = duplicateFrom;
     setName(`${src.name} — ${new Date().toLocaleDateString()}`);
     setTemplateId(src.templateId);
+    // Legacy defaults may not meet the stricter upload limits.
+    const copiedImages: RunImageSelections = {};
+    for (const element of src.designSnapshot.template.elements) {
+      if (element.type !== 'image' || !element.runSelectable) continue;
+      try { validateRunImages({ ...copiedImages, [element.id]: element.src }); copiedImages[element.id] = element.src; } catch { /* Keep the template default for unsupported legacy artwork. */ }
+    }
+    setImagesByTemplate(current => ({ ...current, [src.templateId]: copiedImages }));
     setStaticValues(src.staticValues || {});
     setFieldMappings(src.fieldMappings || {});
     // Source data is migrating toward one row-object shape. Older paste runs
@@ -265,6 +276,8 @@ function NewRunContent() {
 
   useEffect(() => { if (templateId) void useTemplateStore.getState().fetchTemplate(templateId); }, [templateId]);
   const template = useMemo(() => templates.find((t) => t.id === templateId && !t.summaryOnly) ?? null, [templates, templateId]);
+  const imageSelections = useMemo(() => imagesByTemplate[templateId] ?? {}, [imagesByTemplate, templateId]);
+  const previewTemplate = useMemo(() => template ? applyRunImages(template, Object.fromEntries(Object.entries(imageSelections).filter(([id]) => template.elements.some(e => e.id === id && e.type === 'image' && e.runSelectable)))) : null, [template, imageSelections]);
   const format = template ? getFormatById(template.formatId) : null;
   const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
   const hiddenRunFieldSet = useMemo(() => new Set(hiddenRunFields), [hiddenRunFields]);
@@ -557,7 +570,7 @@ function NewRunContent() {
     if (!template || !format || format.type !== 'thermal') return;
     (async () => {
       try {
-        const nextZpl = await generateZPLWithImages(template, format, previewValues);
+        const nextZpl = await generateZPLWithImages(previewTemplate ?? template, format, previewValues);
         if (!cancelled) setPreviewZpl(nextZpl);
       } catch {
         if (!cancelled) setPreviewZpl('');
@@ -566,11 +579,12 @@ function NewRunContent() {
     return () => {
       cancelled = true;
     };
-  }, [template, format, previewValues]);
+  }, [template, previewTemplate, format, previewValues]);
 
   const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
 
   const canCreate =
+    !imageBusy &&
     name.trim().length > 0 &&
     !!template &&
     !!format &&
@@ -622,6 +636,7 @@ function NewRunContent() {
       const run = await createRun({
         name: name.trim(),
         templateId: template.id,
+        imageSelections,
         presetId: presetId ?? null,
         staticValues: visibleStaticValues,
         fieldMappings: finalMappings,
@@ -807,11 +822,13 @@ function NewRunContent() {
                   </span>
                 </div>
                 <div className="max-h-[260px] overflow-auto rounded-xl bg-zinc-950/60 p-3">
-                  <LayoutPreview thermalRenderMode={template.thermalRenderMode} format={format} elements={template.elements} testData={previewValues} />
+                  <LayoutPreview thermalRenderMode={template.thermalRenderMode} format={format} elements={(previewTemplate ?? template).elements} testData={previewValues} />
                 </div>
               </div>
             )}
           </section>
+
+          {template && <RunImagePicker key={template.id} template={template} selections={imageSelections} onBusyChange={setImageBusy} onChange={value => setImagesByTemplate(current => ({ ...current, [template.id]: value }))} />}
 
           {template && flippable.length > 0 && (
             <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
@@ -1243,7 +1260,7 @@ function NewRunContent() {
                       <LayoutPreview
                     thermalRenderMode={template.thermalRenderMode}
                         format={format}
-                        elements={template.elements}
+                        elements={(previewTemplate ?? template).elements}
                         testData={previewValues}
                         testDataByLabel={sheetPreviewValues}
                         selectedLabelOffset={selectedSheetLabelOffset}

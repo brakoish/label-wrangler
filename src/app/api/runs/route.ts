@@ -1,3 +1,4 @@
+import { resolveRunImages } from '@/lib/runImages.server';
 import { captureDesign } from '@/lib/runDesign.server';
 import { validatedBody, OfficeError } from '@/lib/validation';
 import { randomUUID } from 'node:crypto';
@@ -44,9 +45,11 @@ async function handlePOST(request: NextRequest) {
     const body = await validatedBody(request, 'run', true);
     const now = new Date().toISOString();
     const id = `run-${randomUUID()}`;
+    const design = await captureDesign(String(body.templateId));
+    if (body.imageSelections) design.template = await resolveRunImages(design.template, body.imageSelections);
     const newRun = {
       id,
-      designSnapshot: await captureDesign(String(body.templateId)),
+      designSnapshot: design,
       name: body.name,
       templateId: body.templateId,
       presetId: body.presetId ?? null,

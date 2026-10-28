@@ -173,11 +173,12 @@ export interface RectangleElement extends TemplateElementBase {
   borderRadius: number;
 }
 
-// Image element (static logos only)
+// Image element (fixed artwork or a run-selectable slot)
 export interface ImageElement extends TemplateElementBase {
   type: "image";
   src: string;           // data URL of uploaded image
   objectFit: "contain" | "cover" | "fill";
+  runSelectable?: boolean; // choose once during run setup; src is the default
 }
 
 // Union type for all elements

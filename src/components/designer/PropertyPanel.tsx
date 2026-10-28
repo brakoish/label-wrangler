@@ -172,8 +172,8 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         <Divider />
 
-        {/* ── Data Binding ── */}
-        <div className="flex items-center justify-between py-1">
+        {/* Images are selected once per run, never bound to source rows. */}
+        {element.type !== 'image' && <div className="flex items-center justify-between py-1">
           <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Binding</span>
           <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
             <button
@@ -204,9 +204,9 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
               Dynamic
             </button>
           </div>
-        </div>
+        </div>}
 
-        {!element.isStatic && (
+        {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1">
             <CompactTextInput label="Field" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
             <CustomSelect
@@ -511,6 +511,11 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
         onChange={handleUpload}
         className="text-[10px] text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:cursor-pointer w-full"
       />
+      <label className="flex items-center gap-2 text-xs text-zinc-300">
+        <input type="checkbox" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
+        Choose image during run setup
+      </label>
+      <p className="text-[10px] text-zinc-500">One image per run, not per data row. This image remains the default; position, size and fit stay fixed.</p>
       <CompactSelect value={element.objectFit} options={['contain', 'cover', 'fill']} onChange={(v) => onUpdate({ objectFit: v as ImageElement['objectFit'] })} />
     </>
   );

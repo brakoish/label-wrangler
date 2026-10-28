@@ -1,0 +1,47 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+require('../thermal/register.cjs');
+const assert = require('node:assert/strict');
+const sharp = require('sharp');
+const {applyRunImages, validateRunImages} = require('../../src/lib/runImages.ts');
+const {resolveRunImages} = require('../../src/lib/runImages.server.ts');
+const {validate} = require('../../src/lib/validation.ts');
+(async () => {
+ const png = 'data:image/png;base64,' + (await sharp({create:{width:8,height:6,channels:4,background:'#ffffff'}}).png().toBuffer()).toString('base64');
+ const slot = {id:'slot',type:'image',isStatic:true,runSelectable:true,src:png,x:12,y:34,width:100,height:50,rotation:90,zIndex:2,objectFit:'cover'};
+ const fixed = {...slot,id:'fixed',runSelectable:undefined};
+ const template = {id:'t',name:'Test',formatId:'f',elements:[slot,fixed]};
+ const replacement = 'data:image/png;base64,' + (await sharp({create:{width:5,height:9,channels:4,background:'#000000'}}).png().toBuffer()).toString('base64');
+ assert.deepEqual(applyRunImages(template,{}),template,'old static/default behavior unchanged');
+ const resolved = await resolveRunImages(template,{slot:replacement});
+ assert.deepEqual(resolved.elements[0],{...slot,src:replacement});
+ assert.equal(resolved.elements[1],fixed);
+ assert.equal(template.elements[0].src,png,'library template never mutated');
+ const saved = JSON.parse(JSON.stringify({designSnapshot:{template:resolved,format:{id:'f'},capturedAt:'now'},sourceData:[{},{}],staticValues:{}}));
+ template.elements[0] = {...slot,src:'changed later'};
+ assert.equal(saved.designSnapshot.template.elements[0].src,replacement,'persisted reload/reprint uses embedded source independent of library');
+ const {buildBatches} = require('../../src/lib/office/render.ts');
+ const format = {id:'f',type:'thermal',width:2,height:1,dpi:203,labelsAcross:1};
+ for (const thermalRenderMode of ['native-v1','bitmap-v1']) {
+   const reloaded = {...saved.designSnapshot.template,thermalRenderMode};
+   const first = await buildBatches(saved,reloaded,format,1,2,203,832);
+   const second = await buildBatches(JSON.parse(JSON.stringify(saved)),reloaded,format,1,2,203,832);
+   assert.equal(first[0].payload,second[0].payload,thermalRenderMode+' persisted reprint parity');
+   assert.match(Buffer.from(first[0].payload,'base64').toString(),/\^GF/);
+   const defaultBatches = await buildBatches(saved,{...reloaded,elements:[slot,fixed]},format,1,2,203,832);
+   assert.notEqual(first[0].payload,defaultBatches[0].payload,thermalRenderMode+' selected artwork reaches renderer');
+ }
+ assert.deepEqual(saved.sourceData,[{},{}]); assert.deepEqual(saved.staticValues,{});
+ assert.throws(()=>applyRunImages(template,{fixed:png}),/not run-selectable/);
+ assert.throws(()=>applyRunImages(template,{missing:png}),/not run-selectable/);
+ for(const invalid of ['https://example.com/image.png','data:image/svg+xml;base64,AAAA','data:image/gif;base64,AAAA','data:image/png;base64,!', 'data:image/png;base64,'+'A'.repeat(1333340)]) assert.throws(()=>validateRunImages({slot:invalid}));
+ assert.throws(()=>validateRunImages({a:'data:image/png;base64,'+'A'.repeat(1000000),b:'data:image/png;base64,'+'A'.repeat(1000000),c:'data:image/png;base64,'+'A'.repeat(1000000)}),/Combined/);
+ await assert.rejects(resolveRunImages(template,{slot:'data:image/png;base64,AAAA'}),/Invalid run image/);
+ await assert.rejects(resolveRunImages(template,{slot:png.replace('image/png','image/jpeg')}),/Invalid run image/);
+ const huge='data:image/png;base64,'+(await sharp({create:{width:4001,height:4000,channels:3,background:'#ffffff'}}).png().toBuffer()).toString('base64');
+ await assert.rejects(resolveRunImages(template,{slot:huge}),/Invalid run image/);
+ validate({name:'Run',templateId:'t',imageSelections:{slot:png}},'run',true);
+ assert.throws(()=>validate({imageSelections:{slot:png}},'run',false),/immutable/);
+ assert.throws(()=>validate({name:'Preset',templateId:'t',imageSelections:{slot:png}},'preset',true),/Invalid field/);
+ assert.throws(()=>validate({designSnapshot:{}},'run',false),/Invalid field/);
+ console.log('PASS run images: defaults, geometry/fit, immutable embedded reload, row isolation, slot authorization, MIME/decode/pixel/size limits, create-only validation');
+})().catch(error=>{console.error(error);process.exitCode=1;});

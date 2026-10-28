@@ -18,7 +18,7 @@ interface RunStore {
   fetchRun: (id: string) => Promise<Run | null>;
 
   // Runs
-  createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings'] }) => Promise<Run>;
+  createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections }) => Promise<Run>;
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   setRunStatus: (id: string, status: RunStatus, printedCount?: number) => Promise<Run | null>;
   deleteRun: (id: string) => Promise<void>;
@@ -87,7 +87,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to create run');
+    if (!res.ok) { const error = await res.json().catch(() => null); throw new Error(error?.error || 'Failed to create run'); }
     const run = (await res.json()) as Run;
     set((state) => ({ runs: [run, ...state.runs] }));
     return run;

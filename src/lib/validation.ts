@@ -1,3 +1,4 @@
+import { validateRunImages, type RunImageSelections } from './runImages';
 import type { LabelTemplate, LabelFormat, Run, RunPreset, GlobalElement } from './types';
 import { body, OfficeError } from './office/http';
 export { OfficeError };
@@ -36,18 +37,19 @@ function elements(value: unknown) {
       if (typeof v === 'string') text(v,k,k==='src'?3_000_000:20000);
       if (v !== null && typeof v === 'object') invalid(k);
     }
+    if (e.runSelectable !== undefined && (e.type !== 'image' || typeof e.runSelectable !== 'boolean')) invalid('run-selectable image');
     if (e.type === 'image' && (typeof e.src !== 'string' || !/^data:image\/(png|jpeg|webp|gif|svg\+xml);/i.test(e.src))) invalid('image source');
   }
 }
 const fields = {
   template: ['name','description','formatId','elements','thermalRenderMode','archivedAt','expectedUpdatedAt'],
   format: ['name','description','type','width','height','dpi','labelsAcross','linerWidth','horizontalGapThermal','sideMarginThermal','labelGap','sheetWidth','sheetHeight','columns','rows','labelsPerSheet','topMargin','sideMargin','horizontalGap','verticalGap'],
-  run: ['name','templateId','presetId','staticValues','fieldMappings','dataSource','sourceData','mappedField','status','totalLabels','printedCount','notes','completedAt','pinnedAt','pinned','progressOnly'],
+  run: ['imageSelections','name','templateId','presetId','staticValues','fieldMappings','dataSource','sourceData','mappedField','status','totalLabels','printedCount','notes','completedAt','pinnedAt','pinned','progressOnly'],
   preset: ['name','templateId','staticDefaults','fieldMappings','mappedField','csvColumn','touch'],
   global: ['name','description','elements'],
 } as const;
 export type Entity = keyof typeof fields;
-type Shapes = { template: LabelTemplate & { expectedUpdatedAt?: string }; format: LabelFormat; run: Run & { pinned?: boolean; progressOnly?: boolean }; preset: RunPreset & { touch?: boolean }; global: GlobalElement };
+type Shapes = { template: LabelTemplate & { expectedUpdatedAt?: string }; format: LabelFormat; run: Run & { imageSelections?: RunImageSelections; pinned?: boolean; progressOnly?: boolean }; preset: RunPreset & { touch?: boolean }; global: GlobalElement };
 export async function validatedBody<E extends Entity>(req: Request, entity: E, create = false): Promise<Shapes[E]> {
   return validate(await body(req, 4_000_000), entity, create) as unknown as Shapes[E];
 }
@@ -67,6 +69,10 @@ export function validate(data: Data, entity: Entity, create = false): Data {
   for (const k of ['expectedUpdatedAt','completedAt','pinnedAt','archivedAt']) if(data[k]!=null && !Number.isFinite(Date.parse(String(data[k])))) invalid(k);
   if (data.name !== undefined && (typeof data.name !== 'string' || !data.name.trim())) invalid('name');
   if (data.thermalRenderMode !== undefined && !['native-v1','bitmap-v1'].includes(String(data.thermalRenderMode))) invalid('thermal render mode');
+  if (data.imageSelections !== undefined) {
+    if (!create) invalid('image selections: saved run designs are immutable');
+    validateRunImages(data.imageSelections);
+  }
   if (data.elements !== undefined) elements(data.elements);
   for (const k of ['staticValues','staticDefaults']) if (data[k] !== undefined) strings(data[k],k);
   if (data.fieldMappings !== undefined) for (const m of Object.values(object(data.fieldMappings,'field mappings'))) {
