@@ -15,6 +15,7 @@ import { parseCsv, detectUrlColumn } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { RunPrinter } from '@/components/runs/RunPrinter';
@@ -563,23 +564,22 @@ function NewRunContent() {
 
   // Preview ZPL for the current row. Image elements need async preparation so
   // the local Zebra render matches the browser canvas and actual print path.
-  const [previewZpl, setPreviewZpl] = useState('');
+  // Input identity also invalidates the old proof before effect cleanup runs.
+  const previewInput = useMemo(() => ({ template: previewTemplate ?? template, format, values: previewValues }), [template, previewTemplate, format, previewValues]);
+  const [previewResult, setPreviewResult] = useState<{ input: typeof previewInput; state: RunPreviewState } | null>(null);
+  const previewState: RunPreviewState = previewResult?.input === previewInput
+    ? previewResult.state
+    : { status: 'loading' };
   useEffect(() => {
-    let cancelled = false;
-    setPreviewZpl('');
-    if (!template || !format || format.type !== 'thermal') return;
-    (async () => {
-      try {
-        const nextZpl = await generateZPLWithImages(previewTemplate ?? template, format, previewValues);
-        if (!cancelled) setPreviewZpl(nextZpl);
-      } catch {
-        if (!cancelled) setPreviewZpl('');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [template, previewTemplate, format, previewValues]);
+    if (!previewInput.template || !previewInput.format || previewInput.format.type !== 'thermal') return;
+    const { template, format, values } = previewInput;
+    return prepareRunPreview(
+      () => generateZPLWithImages(template, format, values),
+      (zpl) => renderZplToDataUrl(zpl, format),
+      (state) => setPreviewResult({ input: previewInput, state }),
+    );
+  }, [previewInput]);
+  const previewReady = format?.type !== 'thermal' || previewState.status === 'ready';
 
   const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
 
@@ -611,7 +611,7 @@ function NewRunContent() {
   };
 
   const handleCreateRun = async (autoStart = false) => {
-    if (!canCreate || !template || isCreatingRun) return null;
+    if (!canCreate || !previewReady || !template || isCreatingRun) return null;
     setIsCreatingRun(true);
     setCreateRunError(null);
     let finalMappings = fieldMappings;
@@ -1266,7 +1266,7 @@ function NewRunContent() {
                         selectedLabelOffset={selectedSheetLabelOffset}
                       />
                     ) : (
-                      <LocalZplPreview zpl={previewZpl} format={format} />
+                      <LocalZplPreview state={previewState} format={format} />
                     )}
                   </div>
                 </section>
@@ -1300,6 +1300,17 @@ function NewRunContent() {
                         : 'Need a run name, template, and data to proceed.'}
                   </p>
                 )}
+                {format?.type === 'thermal' && (
+                  <p className="text-xs text-amber-400">
+                    {previewState.status === 'error'
+                      ? 'Cannot start: correct the preview error above, then review again.'
+                      : previewState.status === 'loading'
+                        ? 'Rendering current label before starting…'
+                        : previewState.status === 'empty'
+                          ? 'Cannot start: no label output was generated. Check the template and data.'
+                          : 'Current label preview only — other rows have not been validated.'}
+                  </p>
+                )}
                 {createRunError && (
                   <p className="text-xs text-red-400 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5" />
@@ -1308,7 +1319,7 @@ function NewRunContent() {
                 )}
                 <button
                   onClick={handleSaveAndPrint}
-                  disabled={!canCreate || isCreatingRun}
+                  disabled={!canCreate || !previewReady || isCreatingRun}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Play className="w-4 h-4" /> {isCreatingRun ? 'Starting...' : `Start Run (${labelCount} label${labelCount === 1 ? '' : 's'})`}
@@ -1326,7 +1337,7 @@ function NewRunContent() {
                   </div>
                   <button
                     onClick={handleSaveAndPrint}
-                    disabled={!canCreate || isCreatingRun}
+                    disabled={!canCreate || !previewReady || isCreatingRun}
                     className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                   >
                     <Play className="h-4 w-4" /> {isCreatingRun ? 'Starting...' : 'Start run'}
@@ -1385,35 +1396,17 @@ function SectionHeader({
 // Inline ZPL preview via zpl-renderer-js WASM. Accepts the extra thermal
 // fields needed to size the canvas for multi-across rolls plus an optional
 // outlines overlay matching the designer + run detail page treatment.
-function LocalZplPreview({ zpl, format, showOutlines = true }: { zpl: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; showOutlines?: boolean }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setErr(null);
-    (async () => {
-      try {
-        const nextUrl = await renderZplToDataUrl(zpl, format);
-        if (!cancelled) setUrl(nextUrl);
-      } catch (e) {
-        if (!cancelled) setErr((e as Error)?.message || 'Render failed');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [zpl, format]);
-
-  if (err) return <p className="text-xs text-red-400">{err}</p>;
-  if (!url) return <p className="text-xs text-zinc-500">Rendering…</p>;
+function LocalZplPreview({ state, format, showOutlines = true }: { state: RunPreviewState; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; showOutlines?: boolean }) {
+  if (state.status === 'error') return <p role="alert" className="text-xs text-red-400">{state.message} Correct the field value or template layout, then review again.</p>;
+  if (state.status === 'loading') return <p role="status" className="text-xs text-zinc-500">Rendering…</p>;
+  if (state.status === 'empty') return <p className="text-xs text-zinc-500">No label output was generated. Check the template and data.</p>;
   // LabelOutlineOverlay needs the full LabelFormat shape; coerce the loose
   // format prop (which only guarantees thermal fields) for the overlay. Safe
   // because the overlay only reads those thermal fields.
   return (
     <div className="relative inline-block mx-auto">
       <img
-        src={url}
+        src={state.url}
         alt="Label preview"
         className="rounded-lg border border-zinc-800 bg-white"
         style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '400px', display: 'block' }}
