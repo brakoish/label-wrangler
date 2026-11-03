@@ -655,10 +655,12 @@ async function enrichWithManifestLabelData(
   const enriched = await Promise.all(
     packages.slice(0, 25).map(async (pkg) => {
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
+      // Manifest selects one current report and its COA/batch as a whole.
+      // Do not mix that response with the raw Metrc fallback's older reports,
+      // including when an authoritative field is intentionally unknown.
+      if (rows && rows.length > 0) return rows;
       const labPkg = await rowWithMetrcLabFallback(pkg, options);
-      return rows && rows.length > 0
-        ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row, options)))
-        : rowsWithMetrcRetailIds(labPkg);
+      return rowsWithMetrcRetailIds(labPkg);
     }),
   );
   return finalizeLabelRows(enriched.flat());
@@ -816,7 +818,7 @@ async function handleGET(request: NextRequest) {
     const labelRows = isExactPackageSearch ? await fetchManifestLabelRows(search).catch(() => null) : null;
     if (labelRows && labelRows.length > 0) {
       return NextResponse.json({
-        packages: finalizeLabelRows(await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true })))),
+        packages: finalizeLabelRows(labelRows),
       });
     }
 
