@@ -117,7 +117,7 @@ assert.equal(barcodeTickLabel('The Metrc barcode on all 20 labels prints 2.1″ 
 assert.equal(barcodeTickLabel('The Metrc barcode on both labels prints 2.1″ wide.'), 'Print both anyway');
 assert.equal(barcodeTickLabel('The Metrc barcode on labels 1, 3, 5 and 17 more (rows 2, 4, 6…) prints 2.1″ wide.'), 'Print these 20 anyway');
 assert.equal(barcodeTickLabel('The Metrc barcode on label 7 (row 8) prints 2.1″ wide.'), 'Print anyway');
-assert.equal(FIX_IN_DESIGNER, 'Fix in the designer');
+assert.equal(FIX_IN_DESIGNER, 'Open in designer');
 assert.match(barcodeWaitWords(false, 1), /tick “Print anyway”/);
 assert.match(barcodeWaitWords(true, 1), /can’t print/);
 assert.ok(!/list|above|below/i.test(barcodeWaitWords(false, 3)), 'never points to a list');
@@ -155,4 +155,4 @@ assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
   assert.equal(runBarcodeFixes(short, shortRun, fmt, [{ field: 'package_tag', label: 1, value: 'é', problem: 'x', kind: 'characters', elementId: 'b3' }]), null);
 }
 
-console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Fix in the designer');
+console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Open in designer');

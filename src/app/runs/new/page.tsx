@@ -47,6 +47,17 @@ import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
+/** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
+function runFixWords(before: TemplateElement, after: TemplateElement): string {
+  if (before.type !== after.type) return `Swapped the barcode for a ${after.type === 'qr' ? 'QR code' : after.type}`;
+  const done: string[] = [];
+  if ((before.rotation || 0) !== (after.rotation || 0)) done.push('turned');
+  if (before.x !== after.x || before.y !== after.y) done.push('moved');
+  if (before.width !== after.width || before.height !== after.height) done.push('resized');
+  const verbs = done.length ? andList(done) : 'changed';
+  return `${verbs.charAt(0).toUpperCase()}${verbs.slice(1)} the barcode`;
+}
+
 /** “Strain, THC, CBD and Batch”: a plain list join for the wait reasons. */
 function andList(items: string[]): string {
   if (items.length <= 1) return items.join('');
@@ -985,12 +996,22 @@ function NewRunContent() {
   const applyRunFix = async (fix: BarcodeAutoFix, elementId: string) => {
     if (!template || runFixBusy) return;
     const changed = fix.elements.find((el) => el.id === elementId);
-    if (!changed) return;
+    const was = template.elements.find((el) => el.id === elementId);
+    if (!changed || !was) return;
+    // This changes the shared design, not just this run: say so plainly, once.
+    const what = runFixWords(was, changed);
+    const ok = await confirmDialog({
+      title: `Change the design “${template.name}”?`,
+      body: `${what} in the design itself, so every run made from it from now on gets this change too. Runs you already made keep their design. You can undo it right after.`,
+      confirmLabel: 'Change the design',
+      cancelLabel: 'Not now',
+    });
+    if (!ok) return;
     const before = template.elements;
     setRunFixBusy(true);
     try {
       await updateTemplate(template.id, { elements: before.map((el) => (el.id === elementId ? changed : el)) });
-      setRunFixNote({ templateId: template.id, text: `${fix.done} Saved to the design.`, before, tone: 'ok' });
+      setRunFixNote({ templateId: template.id, text: `${what} in the design “${template.name}”. Runs made from it from now on use this too.`, before, tone: 'ok' });
     } catch {
       setRunFixNote({ templateId: template.id, text: 'The design couldn’t be saved, so nothing changed. Check your connection and try again.', before, tone: 'error' });
     } finally {
@@ -2061,7 +2082,7 @@ function NewRunContent() {
                       onTick={tickBarcodeItem}
                       fix={<>
                         {barcodeFixes?.fix && (
-                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
+                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
                         )}
                         {!barcodeFixes?.fix && barcodeFixes?.qr && (
                           <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>

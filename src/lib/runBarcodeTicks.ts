@@ -60,7 +60,8 @@ export function barcodeTickLabel(item: string): string {
 }
 
 /** The fix link's words, the same wherever a barcode problem is shown outside the designer. */
-export const FIX_IN_DESIGNER = 'Fix in the designer';
+/** The secondary way out, beside "Fix it for me", named the same on every page. */
+export const FIX_IN_DESIGNER = 'Open in designer';
 
 function firstSentence(text: string): string {
   // A sentence ends at ". " that isn't inside quotes or a measurement ("2.84"").
