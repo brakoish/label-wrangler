@@ -220,13 +220,13 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   {isParsing ? (
                     <>
                       <div className="size-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" aria-hidden="true" />
-                      <span className="text-sm text-amber-400">Reading the PDF…</span>
+                      <span className="text-sm text-amber-300">Reading the PDF…</span>
                     </>
                   ) : (
                     <>
                       <FileIcon className="w-5 h-5 text-zinc-400" />
                       <span className="text-sm text-zinc-400">
-                        Drop PDF or <span className="text-amber-400">browse</span>
+                        Drop PDF or <span className="text-amber-300">browse</span>
                       </span>
                     </>
                   )}

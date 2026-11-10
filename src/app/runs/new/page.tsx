@@ -212,27 +212,26 @@ const SOURCES: ReadonlyArray<{ value: RunInputMode; label: string; Icon: typeof 
 
 /**
  * Where the values come from: one choice of four, as a radio group. Arrow
- * keys move and choose (Tab enters and leaves the group); on a narrow phone
+ * keys move, Space or Enter chooses (Tab enters and leaves); on a narrow phone
  * the four sit in two rows so no label is squeezed.
  */
 function SourceSwitch({ value, onChange }: { value: RunInputMode; onChange: (value: RunInputMode) => void }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const active = Math.max(0, SOURCES.findIndex((s) => s.value === value));
-  const choose = (index: number) => {
-    const next = (index + SOURCES.length) % SOURCES.length;
-    onChange(SOURCES[next].value);
-    refs.current[next]?.focus();
-  };
+  // Arrows only move focus; Space or Enter picks, so one stray key press
+  // never swaps a loaded spreadsheet for an empty paste box.
+  const focusAt = (index: number) => refs.current[(index + SOURCES.length) % SOURCES.length]?.focus();
   return (
     <div
       role="radiogroup"
       aria-label="Where the values come from"
       className="segmented source-switch w-full md:w-auto"
       onKeyDown={(event) => {
-        const moves: Record<string, number> = { ArrowRight: active + 1, ArrowDown: active + 1, ArrowLeft: active - 1, ArrowUp: active - 1, Home: 0, End: SOURCES.length - 1 };
+        const at = Math.max(0, refs.current.findIndex((node) => node === document.activeElement));
+        const moves: Record<string, number> = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: SOURCES.length - 1 };
         if (!(event.key in moves)) return;
         event.preventDefault();
-        choose(moves[event.key]);
+        focusAt(moves[event.key]);
       }}
     >
       <SegmentedIndicator index={active} count={SOURCES.length} />

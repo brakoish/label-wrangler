@@ -236,7 +236,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Chooseâ€
           <div className="flex-1 text-left truncate">
             <span className="truncate">{option.label}</span>
             {option.sublabel && (
-              <span className="block text-xs text-zinc-500">{option.sublabel}</span>
+              <span className="block text-xs text-zinc-400">{option.sublabel}</span>
             )}
           </div>
           {option.value === value && <Check className="w-4 h-4 text-amber-400 flex-shrink-0" />}
@@ -259,7 +259,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Chooseâ€
           <div className="text-left truncate">
             <span className="truncate">{selected?.label || <span className="text-zinc-500">{placeholder}</span>}</span>
             {selected?.sublabel && (
-              <span className="block text-xs text-zinc-500 truncate">{selected.sublabel}</span>
+              <span className="block text-xs text-zinc-400 truncate">{selected.sublabel}</span>
             )}
           </div>
         </div>

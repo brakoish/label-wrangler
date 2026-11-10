@@ -99,7 +99,8 @@ body {
 }
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+.field:focus-visible {
   outline-offset: 0;
 }
 /* Containers that only receive focus programmatically (dialog panels) don't need a ring. */
@@ -280,7 +281,7 @@ textarea:focus-visible {
   .section-title {
     font-size: var(--text-sm);
     font-weight: 600;
-    color: var(--color-zinc-200);
+    color: var(--color-zinc-100);
   }
 
   /* Segmented control with a sliding indicator (equal-width segments). */

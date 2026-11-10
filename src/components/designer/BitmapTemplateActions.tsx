@@ -90,7 +90,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
         {source && <div className="space-y-2"><p className="section-title">How it prints now</p>{oldProof && <img src={oldProof} alt="How it prints now" className="w-full bg-white" />}</div>}
         <div className="space-y-2"> <p className="section-title">Picture copy</p>{proof ? <img src={proof} alt="Picture copy" className="w-full bg-white" style={{ imageRendering: 'pixelated' }} /> : <p className="text-zinc-400">{error ? 'Fix the problem below, then try again.' : 'Drawing the preview…'}</p>}</div>
       </div>
-      {adjustments > 0 && <p className="text-amber-400">Made {adjustments} text {adjustments === 1 ? 'item' : 'items'} smaller to fit. Longer values may need more room.</p>}
+      {adjustments > 0 && <p className="text-amber-300">Made {adjustments} text {adjustments === 1 ? 'item' : 'items'} smaller to fit. Longer values may need more room.</p>}
       {error && <p role="alert" className="text-red-400">{friendlyError(error)}</p>}
       <p className="text-zinc-400">{source ? 'You can fix any problems in the copy afterwards. This design stays as it is.' : 'The copy needs a working preview first.'}</p>
       <button disabled={busy || !proof || !prepared} onClick={() => void create()} className="btn btn-primary">{busy ? (source ? 'Making the copy…' : 'Adding…') : source ? 'Make the copy' : 'Add the design'}</button>
