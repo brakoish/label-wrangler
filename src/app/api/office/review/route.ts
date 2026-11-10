@@ -1,6 +1,7 @@
 import { body, json, browserFailure, uuid, OfficeError } from '@/lib/office/http';
 import { requireUser, requirePrinter } from '@/lib/office/auth';
 import { officeSql } from '@/lib/office/db';
+import { knownOfficeRefusal } from '@/lib/officeRouteRefusals';
 export async function POST(req: Request){
   try{
     const user=await requireUser(req,'print');const data=await body(req);
@@ -10,5 +11,5 @@ export async function POST(req: Request){
     await requirePrinter(user,jobs[0].station_id,jobs[0].printer_id);
     await sql`SELECT office_resolve(${user.id}::uuid,${data.jobId}::uuid,${data.reason})`;
     return json({ok:true});
-  }catch(error){return browserFailure(error);}
+  }catch(error){return knownOfficeRefusal(error) ?? browserFailure(error);}
 }

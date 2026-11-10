@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { requireUser,requirePrinter } from '@/lib/office/auth';
 import { body,json,browserFailure,uuid,OfficeError } from '@/lib/office/http';
 import { officeSql } from '@/lib/office/db';
+import { knownOfficeRefusal } from '@/lib/officeRouteRefusals';
 export async function GET(req:Request){try{
  const user=await requireUser(req);await requirePrinter(user,'office-zebra-pi','black-zebra');const sql=officeSql();
  const [permission]=await sql`SELECT can_control FROM office_users WHERE id=${user.id}`;
@@ -15,4 +16,4 @@ export async function POST(req:Request){try{
  const sql=officeSql();const [permission]=await sql`SELECT can_control FROM office_users WHERE id=${user.id}`;if(!permission.can_control)throw new OfficeError('Printer control permission required',403);
  const [r]=await sql`SELECT office_control_create(${user.id},'office-zebra-pi','black-zebra',${String(d.action)},${d.idempotencyKey},${randomUUID()}) AS id`;
  return json({id:r.id});
-}catch(e){return browserFailure(e);}}
+}catch(e){return knownOfficeRefusal(e) ?? browserFailure(e);}}
