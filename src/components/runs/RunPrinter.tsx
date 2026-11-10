@@ -338,7 +338,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   });
   const checksOk = printCheckAllows(printCheck, { ...goAhead, barcode: barcodeOk ? printCheck.blockingKey : undefined });
   const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || !barcodeOk)
-    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : `${printCheck.verdict.heading}. Fix it in the designer, or tick “Print anyway” for each one.`)
+    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : `${printCheck.verdict.heading}. Fix the design, or tick “Print anyway” above to print as it is.`)
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.
@@ -1416,10 +1416,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     <>
     <div className="flex-1 overflow-auto">
       <div className="page-container space-y-5 sm:space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100 break-words">{run.name}</h1>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-zinc-400">
+            <p className="mt-1 text-sm">
               <span className="inline-flex items-center gap-1.5 font-medium text-zinc-100">
                 <span aria-hidden="true" className={`size-2 rounded-full ${
                   display.tone === 'done' ? 'bg-emerald-400' :
@@ -1428,18 +1428,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
                   display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
                 }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap inline-flex gap-1.5 ${display.tone === 'attention' ? 'text-red-400' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300">· {display.detail}</span>}</span></span>
-              <span aria-hidden="true">·</span>
-              <span>{template.name}</span>
-              <span aria-hidden="true">·</span>
-              <span>{format.name}{/["″]/.test(format.name) ? '' : ` (${format.width}″ × ${format.height}″)`}</span>
-              <span aria-hidden="true">·</span>
-              <span className="tabular-nums">{total.toLocaleString()} label{total === 1 ? '' : 's'}</span>
             </p>
+            {/* Facts as separate items that wrap whole, never a run-on line of dots. */}
+            <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-zinc-400" aria-label="About this run">
+              <li>{template.name}</li>
+              <li>{format.name}{/["″]/.test(format.name) ? '' : ` (${format.width}″ × ${format.height}″)`}</li>
+              <li className="tabular-nums">{total.toLocaleString()} label{total === 1 ? '' : 's'}</li>
+            </ul>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {scanInHeader && <Link href={`/runs/${run.id}/scan`} className="btn btn-secondary btn-sm" title="One label per scan, hands-free">
               <ScanBarcode className="w-4 h-4 text-amber-400" aria-hidden="true" />
-              Scan mode
+              <span className="max-sm:sr-only">Scan mode</span>
             </Link>}
             <Menu items={moreItems} label="More" />
           </div>
@@ -1844,7 +1844,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <section className="px-1 space-y-2">
             <h2 className="section-title">Print history</h2>
             <ul className="space-y-1.5">
-              {groupPrintHistory(eventsForRun).slice(0, 5).map(({ event, parts }) => (
+              {/* Office sends in a row read as one line: no part count, which
+                  wouldn't match the parts the send flow named. */}
+              {groupPrintHistory(eventsForRun).slice(0, 5).map(({ event }) => (
                 <li key={event.id} className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="flex min-w-0 items-baseline gap-2 text-zinc-300">
                     <span aria-hidden="true" className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${
@@ -1853,7 +1855,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       event.eventType === 'cancelled' ? 'bg-amber-300' :
                       'bg-zinc-500'
                     }`} />
-                    {event.eventType === REWIND_EVENT ? `Went back to label ${event.rangeFrom.toLocaleString()}` : printEventLabel(event)}{parts > 1 ? ` (${parts.toLocaleString()} parts)` : ''}
+                    {event.eventType === REWIND_EVENT ? `Went back to label ${event.rangeFrom.toLocaleString()}` : printEventLabel(event)}
                   </span>
                   <span className="shrink-0 text-zinc-400 tabular-nums">{formatEventTime(event.createdAt)}</span>
                 </li>

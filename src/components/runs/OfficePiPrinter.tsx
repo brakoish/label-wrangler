@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Printer as PrinterIcon, RotateCcw, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Fold, FoldToggle } from '@/components/ui/Fold';
 import { choiceDialog, confirmDialog } from '@/components/ui/feedback';
@@ -659,7 +660,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         {!printer.online && printer.last_seen && <p className="pl-4 text-zinc-400">{lastSeen(printer.last_seen)}</p>}
         {status.hold && !ownHold && !heldBlock && <p className="pl-4"><Link href={`/runs/${encodeURIComponent(status.hold.run_id)}`} className="link">Open that run</Link><span className="text-zinc-400"> to check {status.hold.from===status.hold.to?'it':'them'}.</span></p>}
       </div>
-      {printer.dispatch_enabled && printer.paired_at!==null && <OfficePrinterControls primaryResume={owner==='resume'} onPausedChange={setControlPaused} onChange={()=>void refreshStations().catch(()=>{})} />}
+      {printer.dispatch_enabled && printer.paired_at!==null && <OfficePrinterControls stopped={!!status.stopped} primaryResume={owner==='resume'} onPausedChange={setControlPaused} onChange={()=>void refreshStations().catch(()=>{})} />}
     </div>}
   </div>;
 
@@ -769,7 +770,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const ownBlocking=failedParts.find(p=>p.kind!=='print-again');
   const movingLine=moving && !ownBlocking && !series
     ?(status.stopped?`${capitalise(waitingWords)} wait until the office printer’s check is done.`
-      :status.paused?`${capitalise(waitingWords)} ${single(waiting)?'is':'are'} queued. The printer is paused, so nothing prints until someone taps Resume.`
+      // The printer's own line already says it is paused: said once.
+      :status.paused?`${capitalise(waitingWords)} ${single(waiting)?'is':'are'} queued.`
       :printer && !printer.online?`${capitalise(waitingWords)} wait for the office computer to reconnect.`
       :null)
     :null;
@@ -859,8 +861,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     </div>}
 
     {series && <div role="status" className="space-y-2 text-sm">
-      <p className="flex items-center gap-2 text-zinc-100 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />Part {series.index+1} of {series.total}: {series.phase==='checking'?`checking ${range(series.part.from,series.part.to)}…`:`sending ${range(series.part.from,series.part.to)}…`}</p>
-      {series.progress && <progress className="w-full accent-amber-500" max={series.progress.total} value={series.progress.completed} aria-label={`Checking part ${series.index+1}`} />}
+      <p className="flex items-center gap-2 text-zinc-100 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />Part {series.index+1} of {series.total}: {series.phase==='checking'?`checking ${range(series.part.from,series.part.to)}…`:`sending ${range(series.part.from,series.part.to)}…`}{series.progress && <ProgressBar inline value={series.progress.completed} max={series.progress.total} label={`Checking part ${series.index+1}`} />}</p>
       <p className="text-zinc-400">Keep this page open until the last part is queued.</p>
       <button type="button" onClick={()=>{stopSeries.current=true;}} className="btn btn-secondary btn-sm">Stop after this part</button>
     </div>}
@@ -896,8 +897,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="text-sm text-zinc-300">This run was cancelled after {printedCount.toLocaleString()} of {total.toLocaleString()} labels.</p>
       {canPrint && <button type="button" disabled={busy} onClick={()=>openAgain('again')} className="btn btn-ghost btn-sm -ml-2 text-zinc-300">Print some labels anyway…</button>}
     </div>}
-    {heldBlock && heldByRun && <div role="status" className="space-y-2 text-sm">
-      <p className="text-zinc-200">You can’t send yet: the office printer is stopped until {range(heldByRun.from,heldByRun.to)} of “{heldByRun.run_name || 'another run'}” {heldByRun.from===heldByRun.to?'is':'are'} checked.</p>
+    {/* The printer's line above names the run that stops it: said once, so here only the way there. */}
+    {heldBlock && heldByRun && <div className="space-y-2 text-sm">
       <Link href={`/runs/${encodeURIComponent(heldByRun.run_id)}`} className={`btn ${owner==='held'?'btn-primary':'btn-secondary'}`}>Open “{heldByRun.run_name || 'that run'}”</Link>
     </div>}
     {status.stopped && !heldByRun && !ownHold && !pending && !settled && !movingLine && runStatus!=='draft' && <p className="text-sm text-zinc-400">You can’t send yet: the office printer is stopped until someone checks it.</p>}
@@ -926,13 +927,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {pending && <button type="button" onClick={()=>void startOver()} disabled={busy} className="btn btn-ghost btn-sm -ml-2 text-zinc-300">Start over</button>}
     </>}
     {directCheck && <div role="status" className="space-y-2 text-sm">
-      <p className="flex items-center gap-2 text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{directCheck.progress?`Checking ${range(directCheck.span.from,directCheck.span.to)}: ${directCheck.progress.completed.toLocaleString()} of ${directCheck.progress.total.toLocaleString()}… then it sends.`:`Checking ${range(directCheck.span.from,directCheck.span.to)}… then it sends.`}</p>
-      {directCheck.progress && <progress className="w-full accent-amber-500" max={directCheck.progress.total} value={directCheck.progress.completed} aria-label="Checking labels" />}
+      <p className="flex items-center gap-2 text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{directCheck.progress?`Checking ${range(directCheck.span.from,directCheck.span.to)}: ${directCheck.progress.completed.toLocaleString()} of ${directCheck.progress.total.toLocaleString()}… then it sends.`:`Checking ${range(directCheck.span.from,directCheck.span.to)}… then it sends.`}{directCheck.progress && <ProgressBar inline value={directCheck.progress.completed} max={directCheck.progress.total} label="Checking labels" />}</p>
       <button type="button" onClick={()=>preparationController.current?.abort()} className="btn btn-secondary btn-sm">Stop</button>
     </div>}
     {bitmap && showForm && !pending && preparationProgress && !directCheck && <div role="status" className="space-y-2 text-sm">
-      <p className="text-zinc-300 tabular-nums">Checked {preparationProgress.completed.toLocaleString()} of {preparationProgress.total.toLocaleString()} labels… nothing is sent yet.</p>
-      <progress className="w-full accent-amber-500" max={preparationProgress.total} value={preparationProgress.completed} aria-label="Checking labels" />
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-zinc-300 tabular-nums">Checked {preparationProgress.completed.toLocaleString()} of {preparationProgress.total.toLocaleString()} labels… nothing is sent yet.<ProgressBar inline value={preparationProgress.completed} max={preparationProgress.total} label="Checking labels" /></p>
       <button type="button" onClick={()=>preparationController.current?.abort()} className="btn btn-secondary btn-sm">Stop checking</button>
     </div>}
     {bitmap && showForm && !pending && !preparationProgress && proofCurrent && proof && <p className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="size-4 rounded-full animate-success" aria-hidden="true" />{plural(proof.count)} checked. Nothing is sent until you tap Send.</p>}

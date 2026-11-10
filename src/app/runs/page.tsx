@@ -51,6 +51,18 @@ const TONE_DOT: Record<RunDisplayTone, string> = {
   cancelled: 'bg-zinc-500',
 };
 
+/**
+ * A row's office state, also used by the status filter so both agree.
+ * Labels of this run waiting behind another run's part: "Paused", with that
+ * run named once. A run with nothing sent yet waits too when this device
+ * sends to the office printer, the same rule the run page uses.
+ */
+function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null, officeDefault: boolean) {
+  const leftToSend = run.status !== 'draft' && run.status !== 'cancelled' && (run.printedCount || 0) < run.totalLabels;
+  const heldBy = holdRun && holdRun.runId !== run.id && ((run.office?.onTheWay ?? 0) > 0 || (officeDefault && leftToSend)) ? holdRun : null;
+  return run.office ? { ...run.office, held: printerHeld, heldBy } : heldBy ? { sent: 0, onTheWay: 0, failed: 0, firstFailed: null, held: printerHeld, heldBy } as ListOffice & { held: boolean; heldBy: typeof heldBy } : null;
+}
+
 function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null }) | null }) {
   const display = runDisplayStatus(run, office);
   return (
@@ -158,7 +170,7 @@ function OfficePrinterBar({ onHeld, runs = [] }: { onHeld?: (held: boolean, hold
       <div className="flex flex-wrap items-center gap-2">
         {/* The bar's action is the row's action: open that run and fix it there. */}
         {status.stopped && status.hold && <Link href={`/runs/${encodeURIComponent(status.hold.run_id)}`} className="btn btn-secondary btn-sm">Open “{runName}”</Link>}
-        <OfficePrinterControls onPausedChange={setControlPaused} onUnavailable={() => setHidden(true)} onChange={() => void read()} />
+        <OfficePrinterControls stopped={!!status.stopped} onPausedChange={setControlPaused} onUnavailable={() => setHidden(true)} onChange={() => void read()} />
       </div>
     </section>
   );
@@ -416,7 +428,7 @@ export default function RunsPage() {
     const q = search.trim().toLowerCase();
     const matches = (r: Run) => {
       // The same five words as the rows and the run page.
-      if (statusFilter !== 'all' && runDisplayStatus(r, (r as ListRun).office ?? null).bucket !== statusFilter) return false;
+      if (statusFilter !== 'all' && runDisplayStatus(r, rowOffice(r as ListRun, printerHeld, holdRun, officeDefault)).bucket !== statusFilter) return false;
       if (templateFilter !== 'all' && r.templateId !== templateFilter) return false;
       if (q) {
         const hay = [
@@ -439,7 +451,7 @@ export default function RunsPage() {
       history: history.filter(matches),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, pinned, history, search, statusFilter, templateFilter, templates, formats]);
+  }, [active, pinned, history, search, statusFilter, templateFilter, templates, formats, printerHeld, holdRun, officeDefault]);
 
   // Runs whose sent office labels nobody counted yet (for the bulk action).
   const markableRuns = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.markable?.ranges.length ?? 0) > 0 && (r.office?.onTheWay ?? 0) === 0), [active]);
@@ -602,13 +614,13 @@ export default function RunsPage() {
           {/* Active runs */}
           {filteredRuns.active.length > 0 && (
             <section>
-              <div className="flex items-baseline gap-3 mb-3">
-                <h2 className="section-title">Not finished</h2>
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 className="section-title whitespace-nowrap">Not finished</h2>
                 <span className="text-sm text-zinc-400 tabular-nums">
                   {filteredRuns.active.length}{filteredRuns.active.length !== active.length ? ` of ${active.length}` : ''}
                 </span>
                 {markableRuns.length > 0 && (
-                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm ml-auto text-zinc-300">
+                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm text-zinc-300 max-sm:-ml-2 max-sm:basis-full max-sm:justify-start sm:ml-auto">
                     <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Mark sent labels as printed…
                   </button>
                 )}
@@ -830,12 +842,7 @@ function RunRow({
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
-  // Labels of this run waiting behind another run's part: "Waiting on another run".
-  // A run with nothing sent yet waits too when this device sends to the office
-  // printer, the same rule the run page uses, so both say the same thing.
-  const leftToSend = run.status !== 'draft' && run.status !== 'cancelled' && (run.printedCount || 0) < run.totalLabels;
-  const heldBy = holdRun && holdRun.runId !== run.id && ((run.office?.onTheWay ?? 0) > 0 || (officeDefault && leftToSend)) ? holdRun : null;
-  const office = run.office ? { ...run.office, held: printerHeld, heldBy } : heldBy ? { sent: 0, onTheWay: 0, failed: 0, firstFailed: null, held: printerHeld, heldBy } as ListOffice & { held: boolean; heldBy: typeof heldBy } : null;
+  const office = rowOffice(run, printerHeld, holdRun, officeDefault);
   const { setRunStatus, createPrintEvent } = useRunStore();
   const display = runDisplayStatus(run, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
@@ -897,8 +904,8 @@ function RunRow({
     <div className="run-row relative flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
       <Link href={`/runs/${run.id}`} className="flex min-w-0 flex-1 flex-col gap-2 rounded-lg sm:flex-row sm:items-center sm:gap-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-3">
-            <h3 className="line-clamp-2 break-words text-sm font-semibold text-zinc-100 max-sm:pr-10">{run.name}</h3>
+          <div className="flex items-center gap-3 max-sm:pr-12">
+            <h3 className="line-clamp-2 min-w-0 break-words text-sm font-semibold text-zinc-100">{run.name}</h3>
             <RunStatusText run={run} office={office} />
           </div>
           <p className="mt-0.5 truncate text-xs text-zinc-400">
@@ -923,7 +930,7 @@ function RunRow({
               : <><span className="font-medium text-zinc-100">{printed.toLocaleString()}</span> of {run.totalLabels.toLocaleString()} printed</>}
           </p>
           <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
-            <div className={`h-full rounded-full ${finished ? 'bg-emerald-400' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
+            <div className={`h-full rounded-full ${run.status === 'cancelled' ? 'bg-zinc-500' : finished ? 'bg-emerald-400' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
           </div>
           {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>
