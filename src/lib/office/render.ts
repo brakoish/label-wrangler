@@ -82,7 +82,7 @@ export async function prepareServerImages(template: LabelTemplate, format: Label
   }
   return prepared;
 }
-export async function buildBatches(run: Run, template: LabelTemplate, format: LabelFormat, from: number, to: number, dpi: number, maxWidth: number) {
+export async function buildBatches(run: Run, template: LabelTemplate, format: LabelFormat, from: number, to: number, dpi: number, maxWidth: number, endBlank = false) {
   if (template.thermalRenderMode !== undefined && !['native-v1','bitmap-v1'].includes(template.thermalRenderMode)) throw new OfficeError('Unsupported thermal render mode');
   const started = Date.now();
   const renderThermalBitmap = createBitmapRenderer();
@@ -123,6 +123,18 @@ export async function buildBatches(run: Run, template: LabelTemplate, format: La
     if(!count)start=Math.max(from,first+1);
     end=Math.min(to,first+across);count+=feedCount;bytes+=size+(feeds.length?1:0);feeds.push(zpl);totalBytes+=size;
     if(totalBytes>32*1024*1024)throw new OfficeError('This range exceeds 32 MiB of printer data. Queue a smaller range.');
+  }
+  if (endBlank) {
+    // Keep the blank inside the final immutable job, never a fake record/job.
+    const last = feeds[feeds.length - 1];
+    const width = last.match(/\^PW(\d+)/)?.[1];
+    const height = last.match(/\^LL(\d+)/)?.[1];
+    if (!width || !height) throw new OfficeError('Cannot determine blank feed dimensions');
+    const blank = ['^XA', '^PON', '^LH0,0', '^LT0', '^LS0', '^PW'+width, '^LL'+height, '^PQ1', '^XZ'].join('\n');
+    const extraBytes = Buffer.byteLength(blank, 'utf8') + 1;
+    if (bytes + extraBytes > MAX_BYTES) throw new OfficeError('Final batch has no room for a blank feed. Choose a smaller range or reduce artwork size.');
+    if (totalBytes + extraBytes > 32 * 1024 * 1024) throw new OfficeError('This range with its blank feed exceeds 32 MiB. Choose a smaller range.');
+    feeds.push(blank);
   }
   flush();return batches;
 }

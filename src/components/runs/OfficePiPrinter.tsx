@@ -20,6 +20,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [requests,setRequests]=useState<PrintRequest[]>([]);const [canPrint,setCanPrint]=useState(false);
   const [from,setFrom]=useState('1');const [to,setTo]=useState(String(total));
   const [error,setError]=useState('');const [notice,setNotice]=useState('');const [busy,setBusy]=useState(false);
+  const [endBlank,setEndBlank]=useState(false);
   const [pending,setPending]=useState<{from:number;to:number}|null>(null);
   const bitmap = template?.thermalRenderMode === 'bitmap-v1';
   const proofKey = JSON.stringify([run,template,format,from,to]);
@@ -58,7 +59,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const storageKey=`lw:office-pending:${runId}`;
   useEffect(()=>{
     const saved=localStorage.getItem(storageKey);
-    if(saved){try{const data=JSON.parse(saved);setPending({from:data.from,to:data.to});setFrom(String(data.from));setTo(String(data.to));setReprintOf(data.reprintOf || '');}catch{setError('The pending request record could not be read. Check the queue before clearing it.');}}
+    if(saved){try{const data=JSON.parse(saved);setPending({from:data.from,to:data.to});setFrom(String(data.from));setTo(String(data.to));setReprintOf(data.reprintOf || '');setEndBlank(data.endBlank === true);}catch{setError('The pending request record could not be read. Check the queue before clearing it.');}}
   },[storageKey]);
   const refresh=useCallback(async()=>{
     const [stationData,jobData]=await Promise.all([api('/api/office/stations'),api('/api/office/jobs?runId='+encodeURIComponent(runId))]);
@@ -85,11 +86,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       const saved=localStorage.getItem(storageKey);
       if(saved)payload=JSON.parse(saved);
       else{
-        payload={runId,stationId:printer.station_id,printerId:printer.id,from:Number(from),to:Number(to),idempotencyKey:crypto.randomUUID(),...(reprintOf?{reprintOf}: {}),...(bitmap?{expectedBitmapDigest:proof?.digest}:{})};
+        payload={runId,endBlank,stationId:printer.station_id,printerId:printer.id,from:Number(from),to:Number(to),idempotencyKey:crypto.randomUUID(),...(reprintOf?{reprintOf}: {}),...(bitmap?{expectedBitmapDigest:proof?.digest}:{})};
         localStorage.setItem(storageKey,JSON.stringify(payload));setPending({from:payload.from,to:payload.to});
       }
       const result=await api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)});
-      localStorage.removeItem(storageKey);setPending(null);setNotice(`Queued labels ${payload.from}–${payload.to}. Request ${result.requestId.slice(0,8)}. You can close this page.`);
+      localStorage.removeItem(storageKey);setPending(null);setNotice(`Queued labels ${payload.from}–${payload.to}. ${payload.endBlank?'One blank feed follows the selected range. ':''}Request ${result.requestId.slice(0,8)}. You can close this page.`);
       setReprintOf('');rangeEdited.current=false;await refresh();
     }catch(err){setError(err instanceof Error?err.message:'Unable to queue labels');}
     finally{inFlight.current=false;setBusy(false);}
@@ -131,6 +132,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <label className="text-xs text-zinc-400">Stop after label<input aria-label="Office through label" className={inputClass} inputMode="numeric" disabled={!!pending} value={to} onChange={e=>{rangeEdited.current=true;setTo(e.target.value);}} /></label>
     </div>
     <label className="block text-xs text-zinc-400">Print count<input aria-label="Office print label count" type="number" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending} className={inputClass+' mt-1'} value={Math.max(0,Number(to)-Number(from)+1)} onChange={e=>{rangeEdited.current=true;setTo(String(Math.min(total,Number(from)+Math.max(1,Number(e.target.value))-1)));}} /></label>
+    <label className="flex items-start gap-2 text-xs text-zinc-400"><input type="checkbox" checked={endBlank} disabled={busy || !!pending} onChange={e=>setEndBlank(e.target.checked)} /><span>Blank label after this run<span className="block mt-1 text-[11px] text-zinc-500">One blank feed after the entire selected range, including all saved copies — not after each batch. Multi-across stock feeds one blank row. Product counts stay unchanged. Cancelling unclaimed final work also cancels its blank; assigned work cannot be recalled.</span></span></label>
     {pending && <p className="text-xs text-amber-400">Pending submission for labels {pending.from}–{pending.to}. Retry checks the same request; it does not create another batch.</p>}
     {reprintOf && <div className="space-y-2 rounded border border-amber-700 p-2 text-xs"><p>Reprint linked to the original print. This will be recorded in history.</p><button onClick={()=>{setReprintOf('');}}>Exit reprint mode</button></div>}
     {bitmap && !pending && <div className="space-y-2 text-xs">

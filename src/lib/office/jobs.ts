@@ -10,9 +10,10 @@ export async function createJobs(user: OfficeUser, data: Record<string,unknown>)
   if (!uuid(data.idempotencyKey) || typeof data.runId!=='string' || data.stationId!=='office-zebra-pi' || data.printerId!=='black-zebra' || !Number.isInteger(data.from) || !Number.isInteger(data.to)) throw new OfficeError('Invalid print request');
   if (data.reprintOf!==undefined && data.reprintOf!==null && !uuid(data.reprintOf)) throw new OfficeError('Invalid reprint reference');
   if (data.reason!==undefined && (typeof data.reason!=='string' || data.reason.length>500)) throw new OfficeError('Invalid reprint reason');
+  if (data.endBlank !== undefined && typeof data.endBlank !== 'boolean') throw new OfficeError('Invalid end blank option');
   const printer=await requirePrinter(user,data.stationId,data.printerId);
   const sql=officeSql();
-  const fp=hash(JSON.stringify([data.runId,data.stationId,data.printerId,data.from,data.to,data.reprintOf || null,data.reason || null,...(data.expectedBitmapDigest === undefined ? [] : [data.expectedBitmapDigest])]));
+  const fp=hash(JSON.stringify([data.runId,data.stationId,data.printerId,data.from,data.to,data.reprintOf || null,data.reason || null,...(data.expectedBitmapDigest === undefined ? [] : [data.expectedBitmapDigest]),...(data.endBlank === true ? [{endBlank:true}] : [])]));
   const previous=await sql`SELECT id,fingerprint FROM office_requests WHERE requester=${user.id} AND idempotency_key=${data.idempotencyKey}`;
   if(previous.length){
     if(previous[0].fingerprint!==fp)throw new OfficeError('Request key already used for another range',409);
@@ -23,7 +24,7 @@ export async function createJobs(user: OfficeUser, data: Record<string,unknown>)
   // Use the immutable run design for both proof validation and queued output.
   const savedRun = await loadRunWithDesign(String(data.runId));
   const snapshot = { run: savedRun, ...savedRun.designSnapshot! };
-  const batches=await buildBatches(snapshot.run as Run,snapshot.template as LabelTemplate,snapshot.format as LabelFormat,Number(data.from),Number(data.to),printer.dpi,printer.max_width_dots);
+  const batches=await buildBatches(snapshot.run as Run,snapshot.template as LabelTemplate,snapshot.format as LabelFormat,Number(data.from),Number(data.to),printer.dpi,printer.max_width_dots,data.endBlank === true);
   if (snapshot.template.thermalRenderMode === 'bitmap-v1') {
     const digests = batches.flatMap(batch => [...Buffer.from(batch.payload, 'base64').toString().matchAll(/\^FXLWBITMAP1:[a-f0-9]{64}:([a-f0-9]{64})\^FS/g)].map(m => m[1]));
     if (data.expectedBitmapDigest !== hash(digests.join('\n'))) throw new OfficeError('The saved run/design changed or its bitmap proof is missing. Prepare the proof again before printing.',409);
