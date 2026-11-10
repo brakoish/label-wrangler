@@ -153,14 +153,16 @@ function placeBars(el: BarcodeElement, value: string, start: number): BarcodeEle
   return sideways ? { ...el, y: Math.round(el.y + start - box.y) } : { ...el, x: Math.round(el.x + start - box.x) };
 }
 
-/** What the fix is about: a barcode that won't print whole, or one that lands on something. */
-function problemOf(elements: ReadonlyArray<TemplateElement>, el: BarcodeElement, format: LabelFormat, values: Values, bitmap: boolean, opts: AutoFixOptions): 'fit' | 'overlap' | null {
+/** What the fix is about: a barcode that won't print whole, one that lands on something, or one hanging off an edge. */
+function problemOf(elements: ReadonlyArray<TemplateElement>, el: BarcodeElement, format: LabelFormat, values: Values, bitmap: boolean, opts: AutoFixOptions): 'fit' | 'overlap' | 'off' | null {
   const fit = barcodeFit(el, resolvedValue(el, values), format, bitmap);
   // A value the barcode type can't hold is fixed in the data, not the layout.
   if (fit.level === 'blocked' && fit.reason === 'characters') return null;
   if (fit.level === 'blocked') return 'fit';
   const problems = bitmap ? bitmapLayoutProblems(elements, format, values) : layoutProblems(elements, format, values, opts.measured);
-  return problems.some((p) => p.ids.includes(el.id) && p.kinds.some((k) => k === 'overlap' || k === 'off-label')) ? 'overlap' : null;
+  const own = problems.filter((p) => p.ids.includes(el.id));
+  if (own.some((p) => p.kinds.includes('overlap'))) return 'overlap';
+  return own.some((p) => p.ids[0] === el.id && p.kinds.includes('off-label')) ? 'off' : null;
 }
 
 /**
@@ -214,7 +216,7 @@ export function barcodeAutoFix(elements: ReadonlyArray<TemplateElement>, id: str
   }
 
   // Printer font (native): the bars are as long as the value needs, whatever the box.
-  if (problem === 'overlap') {
+  if (problem === 'overlap' || problem === 'off') {
     const next = tryPlaces(elements, id, el, format, values, false, opts);
     return next ? moved(next) : null;
   }
