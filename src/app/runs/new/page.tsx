@@ -1066,8 +1066,10 @@ function NewRunContent() {
     const before = template.elements;
     setRunFixBusy(true);
     try {
-      await updateTemplate(template.id, { elements: before.map((el) => (el.id === elementId ? changed : el)) });
-      setRunFixNote({ templateId: template.id, text: `${what} in the design “${template.name}”${fix.keptText ? ', with its number next to it' : ''}. Runs made from it from now on use this too.`, before, tone: 'ok' });
+      // The barcode swapped in place, plus anything the fix adds (a QR code's number).
+      const added = fix.elements.filter((el) => !before.some((b) => b.id === el.id));
+      await updateTemplate(template.id, { elements: [...before.map((el) => (el.id === elementId ? changed : el)), ...added] });
+      setRunFixNote({ templateId: template.id, text: `${what} in the design “${template.name}”${fix.keptText ? ', with its number next to it' : ''}. Runs made from it from now on use this too.${fix.qrInches !== undefined && fix.qrInches < QR_SCAN_INCHES ? ` The QR code prints ${fix.qrInches}" wide, small for some phones: test-scan one.` : ''}`, before, tone: 'ok' });
     } catch {
       setRunFixNote({ templateId: template.id, text: 'The design couldn’t be saved, so nothing changed. Check your connection and try again.', before, tone: 'error' });
     } finally {
