@@ -34,7 +34,16 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   useRegisterShell();
   const banners = useShellBanners();
   const navRef = useRef<HTMLElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  // Start the slide on the click itself, not once the next page has loaded.
+  const moveIndicatorTo = (href: string) => {
+    const link = Array.from(navRef.current?.querySelectorAll<HTMLElement>(':scope > a[href]') ?? []).find((a) => a.getAttribute('href') === href);
+    if (!link) return;
+    const next = { left: link.offsetLeft, width: link.offsetWidth };
+    lastNavIndicator = next;
+    setIndicator(next);
+  };
   useLayoutEffect(() => {
     const nav = navRef.current;
     const measure = () => {
@@ -51,14 +60,25 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
     } else setIndicator(next);
     const onResize = () => { const now = measure(); lastNavIndicator = now; setIndicator(now); };
     window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', onResize); };
+    const highlight = indicatorRef.current;
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', onResize);
+      // Leaving mid-slide: the next page's highlight carries on from where
+      // this one is now, so the move never jumps.
+      if (nav && highlight?.isConnected && lastNavIndicator) {
+        const box = highlight.getBoundingClientRect();
+        const navBox = nav.getBoundingClientRect();
+        if (box.width) lastNavIndicator = { left: box.left - navBox.left + nav.scrollLeft, width: box.width };
+      }
+    };
   }, [pathname]);
 
-  const navItems: Array<{ href: string; label: string; short?: string; active: boolean }> = [
+  const navItems: Array<{ href: string; label: string; active: boolean }> = [
     { href: '/runs', label: 'Runs', active: isRuns },
     { href: '/nabis', label: 'Nabis', active: isNabis },
     { href: '/designer', label: 'Designs', active: isDesigner },
-    { href: '/formats', label: 'Label sizes', short: 'Sizes', active: isFormats },
+    { href: '/formats', label: 'Label sizes', active: isFormats },
   ];
 
   const activeLabel = navItems.find(item => item.active)?.label ?? '';
@@ -100,11 +120,14 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         event.preventDefault();
         event.stopPropagation();
         const href = link.getAttribute('href')!;
-        if (!canLeaveLocalPrint(() => router.push(href))) return;
-        void (beforeLeave ? beforeLeave() : Promise.resolve(true)).then(ready => { if (ready) router.push(href); });
+        const go = () => { moveIndicatorTo(href); router.push(href); };
+        if (!canLeaveLocalPrint(go)) return;
+        if (!beforeLeave) { go(); return; }
+        void beforeLeave().then(ready => { if (ready) go(); });
       }}>
         <div className="max-w-[1600px] mx-auto h-14 px-2 sm:px-6 flex items-center gap-1 sm:gap-6">
-          <Link href="/runs" aria-label="Label Wrangler, go to print runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 sm:p-0">
+          {/* On the narrowest phones the nav needs the room; Runs is the home link there. */}
+          <Link href="/runs" aria-label="Label Wrangler, go to Runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 max-[399px]:hidden sm:p-0">
             <img
               src="/logo.png"
               alt=""
@@ -118,22 +141,19 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
 
           <nav ref={navRef} aria-label="Main" className="relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
             {/* One highlight that slides between links (shared layout), drawn under them. */}
-            {indicator && <span aria-hidden="true" className="nav-indicator pointer-events-none absolute left-0 top-1/2 h-control-sm rounded-lg bg-zinc-800" style={{ width: indicator.width, transform: `translate(${indicator.left}px, -50%)` }} />}
+            {indicator && <span ref={indicatorRef} aria-hidden="true" className="nav-indicator pointer-events-none absolute left-0 top-1/2 h-control-sm rounded-lg bg-zinc-800" style={{ width: indicator.width, transform: `translate(${indicator.left}px, -50%)` }} />}
             {navItems.map(item => (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
-                // One accessible name, not the short and long names run together.
-                aria-label={item.short ? item.label : undefined}
-                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
+                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg px-2 max-[339px]:px-1.5 min-[400px]:px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
                   item.active
                     ? `${indicator ? '' : 'bg-zinc-800 '}text-zinc-100`
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
                 }`}
               >
-                {/* Short names on phones so the whole nav fits at 360px. */}
-                {item.short ? <><span aria-hidden="true" className="sm:hidden">{item.short}</span><span aria-hidden="true" className="max-sm:hidden">{item.label}</span></> : item.label}
+                {item.label}
               </Link>
             ))}
           </nav>
