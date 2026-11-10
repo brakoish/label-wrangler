@@ -954,8 +954,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const ownBlocking=failedParts.find(p=>p.kind!=='print-again');
   const movingLine=moving && !ownBlocking && !series
     ?(status.stopped?`${capitalise(waitingWords)} wait until the office printer’s check is done.`
-      // The printer's own line already says it is paused: said once.
-      :status.paused?`${capitalise(waitingWords)} ${single(waiting)?'is':'are'} queued.`
+      // Paused: the printer's line says why and the progress line says how many wait, so nothing more here.
+      :status.paused?''
       :printer && !printer.online?`${capitalise(waitingWords)} wait for the office computer to reconnect.`
       :null)
     :null;
@@ -963,6 +963,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const markWords=spanWords(markRanges);
   // The queue's one-line summary: parts to check apart from parts to print again.
   const queueCounts=summary.failed.reduce((c,p)=>{const n=p.to-p.from+1;if(p.kind==='print-again')c.again+=n;else if(p.kind==='did-not-print')c.failed+=n;else c.check+=n;return c;},{check:0,again:0,failed:0});
+  // The same words as the progress line: "sent to the printer" is only what the office reported sent; labels it has but hasn't sent are "waiting".
+  const queueWords=[summary.sent?`${summary.sent.toLocaleString()} sent to the printer`:'',summary.onTheWay?`${summary.onTheWay.toLocaleString()} waiting`:'',queueCounts.failed?`${plural(queueCounts.failed)} didn’t print`:'',queueCounts.check?`${plural(queueCounts.check)} to check`:'',queueCounts.again?`${plural(queueCounts.again)} to print again`:''].filter(Boolean).join(' · ');
   // --- The "which labels?" box ------------------------------------------------
   // One box for every "print these again": the labels that didn't come out,
   // a finished run's reprint, or one send in the office queue. It takes
@@ -1083,11 +1085,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     </div>}
 
     {movingLine && <p role="status" className="text-sm text-amber-300">{movingLine}</p>}
-    {moving && !movingLine && !ownBlocking && !series && <p role="status" className="flex items-center gap-2 text-sm text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{capitalise(waitingWords || plural(summary.onTheWay))} on {summary.onTheWay===1?'its':'their'} way to the office printer</p>}
+    {moving && movingLine===null && !ownBlocking && !series && <p role="status" className="flex items-center gap-2 text-sm text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{capitalise(waitingWords || plural(summary.onTheWay))} on {summary.onTheWay===1?'its':'their'} way to the office printer</p>}
 
     {/* Sent isn't printed: one question, one answer. */}
     {markShown && <div className="space-y-2 text-sm">
-      <p className="text-zinc-100">Sent to the office printer: {markWords}. Did {single(markRanges)?'it':'they all'} come out?</p>
+      <p className="text-zinc-100">Did {markWords} {single(markRanges)?'':'all '}come out?</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} onClick={()=>void onMarkPrinted()} className={`btn ${owner==='mark'?'btn-primary':'btn-secondary btn-sm'}`}><CheckCircle2 className="size-4" aria-hidden="true" />Yes, mark printed</button>
         {canPrint && status.canSend && <button type="button" disabled={busy || !printer} onClick={()=>openAgain('missing')} className="btn btn-ghost btn-sm text-zinc-300">Some didn’t…</button>}
@@ -1115,7 +1117,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {showForm && !refusalOwnsSend && <>
     {(reprintOf || sendOther) && !pending && <div className="flex items-center justify-between gap-2 text-sm text-zinc-300"><span>{reprintOf?'Print these labels again.':'Choose which labels to send.'}</span><button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setReprintOf('');setSendOther(false);rangeEdited.current=false;}}>Cancel</button></div>}
     {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300">{capitalise(spanWords(heldUnsent))} {single(heldUnsent)?'was':'were'} held back so the reprint came out first.{sendingHeld?'':` Send ${range(heldOffer.from,heldOffer.to)} next.`}</p>}
-    {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(toGo && toGo.length>0 && (toGo.length>1 || toGo[0].from!==printedCount+1) && spanWords(toGo)===spanWords(unsentSpans)) && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
+    {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(unsentSpans.length===1 && rangeValid && unsentSpans[0].from===fromNumber && unsentSpans[0].to===toNumber) && !(toGo && toGo.length>0 && (toGo.length>1 || toGo[0].from!==printedCount+1) && spanWords(toGo)===spanWords(unsentSpans)) && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
     {/* "Send again" resends the saved request, so the range boxes step aside. */}
     {!pending && <div className="grid grid-cols-3 gap-2">
       <label className="text-xs font-medium text-zinc-400">From label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>
@@ -1150,7 +1152,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {/* The amber waiting line already says why queued labels aren't printing. */}
     {notice && !(notice.queued && (movingLine || (markShown && !moving))) && <p role="status" className={`text-sm ${notice.tone==='next'?'reveal text-zinc-200':'animate-enter text-emerald-400'}`}>{notice.text}</p>}
     {requests.length>0 && <div>
-      <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue <span className="tabular-nums">· {plural(summary.sent)} sent{queueCounts.failed?` · ${plural(queueCounts.failed)} didn’t print`:''}{queueCounts.check?` · ${plural(queueCounts.check)} to check`:''}{queueCounts.again?` · ${plural(queueCounts.again)} to print again`:''}</span></FoldToggle>
+      <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue{queueWords && <span className="tabular-nums"> · {queueWords}</span>}</FoldToggle>
       <Fold open={queueOpen} id={`${uid}-queue`}>
       {requestsTruncated && <p className="pt-2 text-sm text-zinc-400">Showing the latest 100 sends.</p>}
       <ul className="max-h-96 overflow-y-auto space-y-4 pt-2 text-sm">

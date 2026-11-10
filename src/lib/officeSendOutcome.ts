@@ -232,7 +232,7 @@ export function queuedNotice(range: string, one: boolean, status: { paused: bool
   // One blank label was asked for at the end of this send (never after each part).
   const blank = blankAfter ? ` One blank label comes out after label ${blankAfter.toLocaleString()}.` : '';
   if (status.stopped) return `${range} ${verb} queued.${blank} The office printer is stopped for a check, so ${one ? 'it prints' : 'they print'} once that’s done.`;
-  if (status.paused) return `${range} ${verb} queued.${blank} The printer is paused, so nothing prints until someone presses Resume.`;
+  if (status.paused) return `${range} ${verb} waiting at the office.${blank} The printer is paused, so nothing prints until someone presses Resume.`;
   return `${range} ${verb} queued for the office printer.${blank} You can leave this page; the office keeps going.`;
 }
 

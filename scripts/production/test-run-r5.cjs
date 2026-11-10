@@ -69,7 +69,7 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
 {
   const run=(status,printedCount,totalLabels=100)=>({status,printedCount,totalLabels});
   const words=new Set(Object.values(D.RUN_STATUS_WORDS));
-  assert.deepEqual([...words],['Needs you','Needs a check','Printing','Paused','Ready','Done','Cancelled']);
+  assert.deepEqual([...words],['Needs you','Needs a check','Sent','Printing','Paused','Ready','Done','Cancelled']);
   const cases=[
     [run('queued',0),null],[run('draft',0),null],[run('paused',40),null],[run('printing',10),null],[run('completed',100),null],[run('cancelled',3),null],
     [run('queued',0),{sent:0,onTheWay:20,failed:0}],[run('queued',0),{sent:0,onTheWay:20,failed:0,held:true}],[run('queued',0),{sent:100,onTheWay:0,failed:0}],[run('queued',0),{sent:20,onTheWay:0,failed:1}],
@@ -80,7 +80,7 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
   // Words never contradict: no "Ready · Draft", no "Printing" while the printer waits, "Needs you" always red.
   assert.deepEqual(D.runDisplayStatus(run('draft',0),null),{label:'Ready',tone:'idle',bucket:'ready',detail:''});
   assert.equal(D.runDisplayStatus(run('paused',0),null).detail,'','a paused run with nothing printed is plainly Ready');
-  for(const [r,o] of cases){const s=D.runDisplayStatus(r,o);if(s.bucket==='needs-you')assert.equal(s.tone,'attention',s.detail);if(s.bucket==='check')assert.equal(s.tone,'check',s.detail);if(s.bucket==='ready')assert.equal(s.tone,'idle',s.detail);}
+  for(const [r,o] of cases){const s=D.runDisplayStatus(r,o);if(s.bucket==='needs-you')assert.equal(s.tone,'attention',s.detail);if(s.bucket==='check')assert.equal(s.tone,'check',s.detail);if(s.bucket==='sent')assert.equal(s.tone,'confirm',s.detail);if(s.bucket==='ready')assert.equal(s.tone,'idle',s.detail);}
   const waiting=D.runDisplayStatus(run('printing',0),{sent:0,onTheWay:20,failed:0,held:true});
   assert.equal(waiting.label,'Paused');assert.equal(waiting.detail,'Waiting for the office printer');
   const stopped=D.runDisplayStatus(run('paused',40),null,true);

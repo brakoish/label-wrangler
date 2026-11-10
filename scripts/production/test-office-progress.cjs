@@ -238,7 +238,10 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
 {
   const run = (status, printedCount, totalLabels = 100) => ({ status, printedCount, totalLabels });
   { const s = runDisplayStatus(run('queued', 0), { sent: 0, onTheWay: 20, failed: 0 }); assert.equal(s.label, 'Printing', 'never "Ready" while printing'); assert.equal(s.detail, 'At the office printer'); }
-  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Needs a check', 'sent is not printed: someone confirms'); assert.equal(s.tone, 'check', 'a routine check is amber, never red'); assert.match(s.detail, /^Sent: check they came out/); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Sent', 'sent is not printed: someone confirms'); assert.equal(s.tone, 'confirm', 'a normal send asks calmly, never amber or red'); assert.equal(s.detail, 'Did they all come out?'); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0, unchecked: 20 }); assert.equal(s.label, 'Sent'); assert.equal(s.bucket, 'sent'); assert.equal(s.detail, 'Did all 20 come out?'); }
+  assert.equal(runDisplayStatus(run('queued', 0), { sent: 1, onTheWay: 0, failed: 0, unchecked: 1 }).detail, 'Did it come out?');
+  assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0, unchecked: 20, unsure: { from: 21, to: 40 } }).tone, 'check', 'a send nobody is sure arrived is amber');
   assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0 }).detail, 'Partly sent');
   { const s = runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 1 }); assert.equal(s.label, 'Needs you'); assert.equal(s.detail, 'Office print needs a check'); }
   assert.equal(runDisplayStatus(run('queued', 0), null).label, 'Ready');
