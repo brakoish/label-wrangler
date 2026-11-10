@@ -34,6 +34,7 @@ import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { safeNextPath } from '@/lib/safeRedirect';
 import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
+import { bitmapLayoutProblems } from '@/lib/bitmapLayout';
 import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
 import { barcodeFitFix } from '@/lib/barcodeFit';
@@ -385,28 +386,33 @@ function DesignerContent() {
     }
     return boxes;
   }, [currentTemplate, inks]);
-  const designProblems = useMemo(() => (
-    currentTemplate && currentFormat && !currentTemplate.summaryOnly && currentTemplate.thermalRenderMode !== 'bitmap-v1'
-      // Inside the designer the fix is a button here, not "go to the designer".
-      ? layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured).map((p) => (
-        p.barcodeFit ? { ...p, fix: barcodeFitFix(p.barcodeFit, 'designer') || p.fix } : p
-      ))
-      : []
-  ), [currentTemplate, currentFormat, previewValues, measured]);
+  const designProblems = useMemo(() => {
+    if (!currentTemplate || !currentFormat || currentTemplate.summaryOnly) return [];
+    // Exact picture designs: what the exact renderer refuses, and codes that land on something.
+    if (currentTemplate.thermalRenderMode === 'bitmap-v1') return bitmapLayoutProblems(currentTemplate.elements, currentFormat, previewValues);
+    // Inside the designer the fix is a button here, not "go to the designer".
+    return layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured).map((p) => (
+      p.barcodeFit ? { ...p, fix: barcodeFitFix(p.barcodeFit, 'designer') || p.fix } : p
+    ));
+  }, [currentTemplate, currentFormat, previewValues, measured]);
   // A barcode that only fits as an exact-print copy gets that action right in the notice.
   const canExactCopy = currentFormat?.type === 'thermal' && designProblems.some((p) => p.barcodeFit?.fixes.includes('exact-copy'));
   const [exactCopyRequest, setExactCopyRequest] = useState(0);
   // A barcode that won't print whole: a safe change to this design only
   // (move or turn it, or a QR code in its place), checked before it is offered.
-  const brokenBarcodeId = designProblems.find((p) => p.blocking && p.barcodeFit && p.barcodeFit.reason !== 'characters')?.ids[0];
+  // A barcode that lands on another item (or has one over it) gets the same offer.
+  const isBarcode = (id: string | undefined) => !!id && currentTemplate?.elements.some((e) => e.id === id && e.type === 'barcode');
+  const brokenBarcodeId = designProblems.find((p) => p.blocking && p.barcodeFit && p.barcodeFit.reason !== 'characters' && isBarcode(p.ids[0]))?.ids[0]
+    ?? designProblems.find((p) => p.kinds.includes('overlap') && isBarcode(p.ids[0]))?.ids[0]
+    ?? designProblems.find((p) => p.kinds.includes('overlap') && p.ids.slice(1).some(isBarcode))?.ids.slice(1).find(isBarcode);
   const autoFixes = useMemo(() => {
     if (!brokenBarcodeId || !currentTemplate || currentTemplate.summaryOnly) return { fix: null, qr: null };
     const bitmap = currentTemplate.thermalRenderMode === 'bitmap-v1';
-    return {
-      fix: barcodeAutoFix(currentTemplate.elements, brokenBarcodeId, currentFormat, previewValues, bitmap),
-      qr: barcodeToQr(currentTemplate.elements, brokenBarcodeId, currentFormat, previewValues, bitmap),
-    };
-  }, [brokenBarcodeId, currentTemplate, currentFormat, previewValues]);
+    const opts = bitmap ? {} : { measured };
+    const fix = barcodeAutoFix(currentTemplate.elements, brokenBarcodeId, currentFormat, previewValues, bitmap, opts);
+    // A QR code only where moving or widening can't do it.
+    return { fix, qr: fix ? null : barcodeToQr(currentTemplate.elements, brokenBarcodeId, currentFormat, previewValues, bitmap, opts) };
+  }, [brokenBarcodeId, currentTemplate, currentFormat, previewValues, measured]);
   // Characters the printer's own font can't print, outlined on the canvas too.
   const canvasProblems = useMemo<LayoutProblem[]>(() => {
     if (!currentTemplate || currentTemplate.summaryOnly || !usesPrinterFont(currentFormat, currentTemplate)) return designProblems;
@@ -946,8 +952,8 @@ function DesignerContent() {
           </div>
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (exactView && <>
-            {currentTemplate.thermalRenderMode !== 'bitmap-v1' && canvasProblems.length > 0 && <div className="px-3 pt-2 sm:px-6"><DesignNotice problems={canvasProblems} action={noticeAction} /></div>}
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} />
+            {canvasProblems.length > 0 && <div className="px-3 pt-2 sm:px-6"><DesignNotice problems={canvasProblems} action={noticeAction} /></div>}
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} problemsShown={canvasProblems.length > 0} />
           </>) : (
             <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}

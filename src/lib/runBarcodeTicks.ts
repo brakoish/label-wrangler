@@ -69,21 +69,24 @@ function listCount(names: string): number {
  */
 export function barcodePlainSentence(item: string): string {
   const text = item.trim();
-  const head = text.match(/^The (.+?) barcode(?: on (all [\d,]+ labels|both labels|the label|labels? .+?))? (?=prints |starts |needs |has |crosses |reaches |runs )/);
+  const head = text.match(/^The (?:(.+?) )?barcode(?: on (all [\d,]+ labels|both labels|the label|labels? .+?))? (?=prints |starts |needs |has |crosses |reaches |runs )/);
   if (!head) return firstSentence(text);
-  const name = head[1] === 'fixed' ? 'The barcode' : `The ${head[1]} barcode`;
+  const name = !head[1] || head[1] === 'fixed' ? 'The barcode' : `The ${head[1]} barcode`;
   const where = head[2] && !/^(all |both |the label)/.test(head[2]) ? ` on ${head[2].replace(/\s*\(rows? [^)]*\)/, '')}` : '';
   const subject = `${name}${where}`;
   // What else it prints over that won't scan either ("so that" names the one item it covers).
   const lost = text.match(/.*\bso (.+?) won’t scan either/);
-  const over = text.match(/(?:It also prints over|and prints over) (.+?)(?:, so|\.)/);
+  const over = text.match(/(?:It also prints over|and prints over|and is under) (.+?)(?:, so|\.)/);
   const covered = lost ? (lost[1] === 'that' ? over?.[1] ?? '' : lost[1]) : '';
   const both = covered ? (listCount(covered) > 1 ? 'none of them' : 'neither') : '';
   if (/neither label (?:would|will) scan/.test(text)) {
     return `${subject} is too wide and prints over the next label’s barcode, so neither label will scan${covered ? `, and ${covered} won’t either` : ''}.`;
   }
   if (/runs onto the next label/.test(text)) return covered ? `${subject} is too wide, runs onto the next label and covers ${covered}, so ${both} will scan.` : `${subject} is too wide and runs onto the next label, so it won’t scan.`;
-  if (/starts off the label/.test(text)) return `${subject} starts off the edge of the label, so it won’t scan.`;
+  const edge = text.match(/(?:starts|runs) off the (left|right|top|bottom) edge of the label/);
+  if (/starts off the (?:\w+ edge of the )?label/.test(text)) return `${subject} starts off the ${edge ? `${edge[1]} ` : ''}edge of the label, so it won’t scan.`;
+  if (edge && /can’t be drawn/.test(text)) return `${subject} runs off the ${edge[1]} edge of the label, so it can’t print${covered ? `, and overlaps ${covered}` : ''}.`;
+  if (edge) return covered ? `${subject} runs off the ${edge[1]} edge of the label and covers ${covered}, so ${both} will scan.` : `${subject} runs off the ${edge[1]} edge of the label, so it won’t scan.`;
   if (/cuts it off/.test(text)) return covered ? `${subject} is too wide for this label and covers ${covered}, so ${both} will scan.` : `${subject} is too wide for this label, so it won’t scan.`;
   if (/needs a box at least/.test(text)) return `${subject} doesn’t fit in its box, so it can’t print.`;
   if (/box too short/.test(text)) return `${subject} has a box too short for it, so it can’t print.`;

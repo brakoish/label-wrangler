@@ -18,9 +18,11 @@ interface ZPLPreviewProps {
   testData?: Record<string, string>;
   /** Draw only while this view is showing (the designer's "Exact print"). */
   active?: boolean;
+  /** The designer already names the problems above the preview: don't say them twice. */
+  problemsShown?: boolean;
 }
 
-export function ZPLPreview({ format, template, testData, active = true }: ZPLPreviewProps) {
+export function ZPLPreview({ format, template, testData, active = true, problemsShown = false }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +127,7 @@ export function ZPLPreview({ format, template, testData, active = true }: ZPLPre
       </div>
 
       <div className="flex min-h-[320px] flex-1 flex-col px-4 pb-4 pt-1 sm:px-6">
-        {error && previewUrl && <p role="status" className="mb-2 text-sm text-amber-300">Fix this before printing: {error}</p>}
+        {error && previewUrl && !problemsShown && <p role="status" className="mb-2 text-sm text-amber-300">Fix this before printing: {error}</p>}
         {/* Zoomed output scrolls inside this frame. */}
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
           {loading && !previewUrl ? (

@@ -50,9 +50,59 @@ assert.notEqual(barcodeFit(fixed, 'LCG1102', fmt, false).level, 'blocked', 'prin
 assert.equal(fixed.content, 'LCG1102');
 assert.equal(fixed.y, offEdge[0].y, 'moved along its length only');
 
-// Nothing is offered for exact (bitmap) designs, locked items or sheets.
-assert.equal(barcodeAutoFix(flower, 'bc', fmt, values, true), null);
-assert.equal(barcodeToQr(flower, 'bc', fmt, values, true), null);
+// A native QR code is drawn 10 dots below its origin and can be a version
+// bigger than estimated: the one offered fits even then.
+{
+  const { zplQrGeometry } = require('../../src/lib/zplGenerator.ts');
+  const q = qr.elements.find((e) => e.id === 'bc');
+  const g = zplQrGeometry(tag, 'M', q.width);
+  const top = q.y + Math.round((q.height - g.printedSize) / 2) + 10;
+  assert.ok(top + (g.modules + 4) * g.magnification <= 203, 'room for the printer’s QR offset and a bigger version');
+}
+
+// Exact picture (bitmap) designs, the default for new designs, get the same offers.
+{
+  const { bitmapLayoutProblems, bitmapFootprint } = require('../../src/lib/bitmapLayout.ts');
+  const exact = [
+    text('t', 6, 6, 244, 36, 'Blue Dream 3.5g', 10),
+    { ...base, id: 'b', type: 'barcode', x: 305, y: 48, width: 244, height: 51, zIndex: 2, content: '123456789', barcodeFormat: 'CODE128', showText: true },
+    { ...base, id: 'q', type: 'qr', x: 258, y: 6, width: 81, height: 81, zIndex: 3, content: 'https://example.com', errorCorrection: 'M' },
+  ];
+  // Off the right edge and under the QR code: one plain line that says both.
+  const problems = bitmapLayoutProblems(exact, fmt, {});
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].message, /runs off the right edge of the label/);
+  assert.match(problems[0].message, /QR code/);
+  assert.match(barcodePlainSentence(problems[0].message), /^The barcode runs off the right edge of the label, so it can’t print/);
+  const fix = barcodeAutoFix(exact, 'b', fmt, {}, true);
+  assert.equal(fix && fix.kind, 'move');
+  const box = bitmapFootprint(fix.elements.find((e) => e.id === 'b'), {});
+  assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 406 && box.y + box.height <= 203, 'inside the label');
+  assert.equal(bitmapLayoutProblems(fix.elements, fmt, {}).length, 0, 'lands on nothing');
+  assert.equal(barcodeFit(fix.elements.find((e) => e.id === 'b'), '123456789', fmt, true).level, 'ok', 'the renderer draws it');
+  assert.deepEqual(fix.elements.filter((e) => e.id !== 'b'), exact.filter((e) => e.id !== 'b'), 'nothing else moves');
+  // A 40-character value can't fit across 2" at whole dots: a QR code that fits, inside the label.
+  const long = 'ABCDEFGHIJ1234567890ABCDEFGHIJ1234567890';
+  const inside = exact.map((e) => (e.id === 'b' ? { ...e, x: 6, content: long } : e));
+  assert.equal(barcodeFit(inside[1], long, fmt, true).reason, 'box-too-small');
+  assert.equal(barcodeAutoFix(inside, 'b', fmt, {}, true), null);
+  const swap = barcodeToQr(inside, 'b', fmt, {}, true);
+  assert.equal(swap && swap.kind, 'qr');
+  const qbox = bitmapFootprint(swap.elements.find((e) => e.id === 'b'), {});
+  assert.ok(qbox && qbox.x >= 0 && qbox.y >= 0 && qbox.x + qbox.width <= 406 && qbox.y + qbox.height <= 203, 'the QR code never runs off the label');
+  assert.equal(bitmapLayoutProblems(swap.elements, fmt, {}).length, 0);
+  // A barcode that fits but sits on the QR code: moved off it.
+  const onQr = exact.map((e) => (e.id === 'b' ? { ...e, x: 150, y: 40, width: 150 } : e));
+  assert.equal(barcodeFit(onQr[1], '123456789', fmt, true).level, 'ok');
+  assert.ok(bitmapLayoutProblems(onQr, fmt, {}).some((p) => p.kinds.includes('overlap')));
+  const off = barcodeAutoFix(onQr, 'b', fmt, {}, true);
+  assert.equal(off && off.kind, 'move');
+  assert.equal(bitmapLayoutProblems(off.elements, fmt, {}).length, 0);
+  // Nothing to do: no offer.
+  assert.equal(barcodeAutoFix(exact.map((e) => (e.id === 'b' ? { ...e, x: 6 } : e)), 'b', fmt, {}, true), null);
+}
+
+// Nothing is offered for locked items or sheets.
 assert.equal(barcodeToQr(flower.map((e) => (e.id === 'bc' ? { ...e, locked: true } : e)), 'bc', fmt, values, false), null);
 assert.equal(barcodeToQr(flower, 'bc', { ...fmt, type: 'sheet' }, values, false), null);
 
@@ -73,4 +123,4 @@ assert.match(read('src/components/runs/RunBarcodeCheck.tsx'), /<BarcodeWarning/)
 assert.match(read('src/components/designer/DesignNotice.tsx'), /barcodePlainSentence/);
 assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
 
-console.log('PASS barcode autofix: QR swap or move only when it prints whole and lands on nothing; plain sentences, one Print anyway, one Fix in the designer');
+console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Fix in the designer');
