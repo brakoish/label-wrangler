@@ -483,6 +483,72 @@ textarea:focus-visible {
 }
 /* end area B */
 
+/* area B r3 ----------------------------------------------------------------
+ * Fold-out sections, press feedback and text greys for the run pages, the
+ * nav and shared menus. Folds open with ease-out (200ms) and close about 20%
+ * faster with ease-in (160ms); reduced motion turns both off (see below).
+ * Text greys are four tokens: zinc-100 titles and values, zinc-300 body,
+ * zinc-400 secondary, zinc-500 hints.
+ */
+@layer components {
+  .fold {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows var(--duration-layer-out) var(--ease-in), opacity var(--duration-layer-out) var(--ease-in);
+  }
+  .fold[data-open="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition-duration: var(--duration-layer-in);
+    transition-timing-function: var(--ease-out);
+  }
+  .fold > .fold-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .fold-chevron {
+    transition: transform var(--duration-layer-out) var(--ease-in);
+  }
+  .fold-chevron[data-open="true"] {
+    transform: rotate(180deg);
+    transition-duration: var(--duration-layer-in);
+    transition-timing-function: var(--ease-out);
+  }
+  /* One press scale everywhere: buttons (.btn), menu items, chips, segments. */
+  .press,
+  .segmented > button,
+  .segmented > a {
+    transition: transform 120ms var(--ease-out), color 150ms var(--ease-out), background-color 150ms var(--ease-out);
+  }
+  .press:active:not(:disabled),
+  .segmented > button:active:not(:disabled),
+  .segmented > a:active {
+    transform: scale(0.97);
+  }
+  .section-title {
+    color: var(--color-zinc-100);
+  }
+  .segmented > [aria-pressed="true"],
+  .segmented > [aria-selected="true"],
+  .segmented > [aria-current="page"],
+  .segmented > [data-active="true"] {
+    color: var(--color-zinc-100);
+  }
+  /* A card without its outline: the surface alone separates it. */
+  .card-flat {
+    border-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .press:active:not(:disabled),
+  .segmented > button:active:not(:disabled),
+  .segmented > a:active {
+    transform: none;
+  }
+}
+/* end area B r3 */
+
 /* Motion off for anyone who asks for less of it — spinners included. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -186,7 +186,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
               option.value === value
                 ? 'text-amber-300'
                 : 'text-zinc-300'
-            } ${index === active ? 'bg-zinc-800 text-zinc-50' : ''}`}
+            } ${index === active ? 'bg-zinc-800 text-zinc-100' : ''}`}
           >
             <span className="truncate flex-1 text-left">{option.label}</span>
             {option.value === value && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
@@ -226,7 +226,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
             option.value === value
               ? 'text-amber-300'
               : 'text-zinc-300'
-          } ${index === active ? 'bg-zinc-800 text-zinc-50' : ''}`}
+          } ${index === active ? 'bg-zinc-800 text-zinc-100' : ''}`}
         >
           {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
           <div className="flex-1 text-left truncate">

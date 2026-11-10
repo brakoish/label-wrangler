@@ -44,7 +44,7 @@ export function RunImagePicker({ template, selections, onChange, onBusyChange }:
     {slots.map((slot, index) => <div key={slot.id} className="flex items-center gap-3">
       <img src={selections[slot.id] ?? slot.src} alt={'Image slot ' + (index + 1) + ' preview'} className="size-20 shrink-0 bg-white rounded-md" style={{ objectFit: slot.objectFit }} />
       <div className="min-w-0 flex flex-wrap items-center gap-x-1 gap-y-1">
-        <p className="w-full text-sm font-medium text-zinc-200">{slot.fieldName || ('Image slot ' + (index + 1))}</p>
+        <p className="w-full text-sm font-medium text-zinc-100">{slot.fieldName || ('Image slot ' + (index + 1))}</p>
         <input ref={node => { inputs.current[slot.id] = node; }} type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} className="hidden" aria-label={'Choose image for ' + (slot.fieldName || ('slot ' + (index + 1)))} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(slot.id, file); }} />
         <button type="button" disabled={busy} className="btn btn-secondary btn-sm" onClick={() => inputs.current[slot.id]?.click()}>{Object.hasOwn(selections, slot.id) ? 'Replace image' : 'Choose image'}</button>
         <button type="button" disabled={busy} className="btn btn-ghost btn-sm" onClick={() => { setLibrarySlot(slot.id); if (!hydrated) void fetchGlobals(); }}>Choose from saved blocks</button>

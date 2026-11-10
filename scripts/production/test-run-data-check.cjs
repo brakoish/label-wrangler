@@ -94,12 +94,12 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   const { firstUnsentLabel, rangeOverlapsQueued, isValidOfficeRange, officeProofKey } = require('../../src/lib/officeRange.ts');
   const jobs = [{ from: 1, to: 50, state: 'sent_to_printer' }, { from: 51, to: 100, state: 'queued' }, { from: 150, to: 200, state: 'sent_to_printer' }];
   assert.equal(firstUnsentLabel(jobs, 300), 101, 'queued labels are not suggested again');
-  assert.equal(firstUnsentLabel([{ from: 1, to: 50, state: 'rejected' }], 300), 1, 'rejected work is suggested again');
+  assert.equal(firstUnsentLabel([{ from: 1, to: 50, state: 'rejected' }], 300), 51, 'rejected work goes again as a reprint (the server refuses a new send over it)');
   assert.equal(firstUnsentLabel([{ from: 1, to: 300, state: 'sent_to_printer' }], 300), null, 'nothing left to suggest');
   assert.equal(firstUnsentLabel([{ from: 1, to: 300, state: 'queued' }], 300), null);
   assert.equal(rangeOverlapsQueued(jobs, 90, 120), true);
   assert.equal(rangeOverlapsQueued(jobs, 101, 300), false);
-  assert.equal(rangeOverlapsQueued([{ from: 1, to: 10, state: 'needs_review' }], 1, 10), false);
+  assert.equal(rangeOverlapsQueued([{ from: 1, to: 10, state: 'needs_review' }], 1, 10), true, 'work waiting for a check blocks a reprint too');
   assert.equal(isValidOfficeRange('1', '20', 20), true);
   assert.equal(isValidOfficeRange('0', '20', 20), false);
   assert.equal(isValidOfficeRange('5', '4', 20), false);

@@ -134,7 +134,13 @@ export const useRunStore = create<RunStore>((set, get) => ({
   setRunStatus: async (id, status, printedCount, options) => {
     const body: Record<string, unknown> = { status };
     if (typeof printedCount === 'number') body.printedCount = printedCount;
-    if (options?.resetProgress && typeof printedCount === 'number') body.resetProgress = true;
+    if (options?.resetProgress && typeof printedCount === 'number') {
+      body.resetProgress = true;
+      // If this rewind only reaches the server later, it is not applied over
+      // progress another device made in the meantime.
+      const seen = get().runs.find((r) => r.id === id)?.printedCount;
+      if (typeof seen === 'number') body.expectedPrintedCount = seen;
+    }
     if (status === 'completed') body.completedAt = new Date().toISOString();
     const run=await updateRunWithQueue(id,body as Partial<Run>,options?.onSetAside);
     if(run) set(state=>({runs:state.runs.map(r=>r.id===id?{...r,...run}:r)}));
