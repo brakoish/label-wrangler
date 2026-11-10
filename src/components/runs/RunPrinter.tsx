@@ -1,7 +1,7 @@
 'use client';
 
 import { canLeaveLocalPrint, officeSeriesActive, setLocalPrintRunning, stopOfficeSeries } from '@/lib/printNavigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, SquareDashed, Pencil, PenTool, Copy, ScanBarcode, Download, FileText, FileCode2, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { OfficePiPrinter } from './OfficePiPrinter';
@@ -18,7 +18,7 @@ import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
-import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
+import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, runSendCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck } from './RunBarcodeCheck';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
 import { drawFailureWords, plainJobReason } from '@/lib/officeSendOutcome';
@@ -93,6 +93,18 @@ const SYNC_WAITS: ReadonlySet<string> = new Set([SYNC_WAIT_START, SYNC_WAIT_GO_B
 /** Another device printed on after a go-back this page asked for: one line, and the button to press. */
 function movedOnWords(goBackTo: number, serverCount: number, total: number): string {
   return `Another device printed up to label ${serverCount.toLocaleString('en-US')} after you went back to label ${(goBackTo + 1).toLocaleString('en-US')}, so nothing was printed here.${serverCount < total ? ` Press “Resume from label ${(serverCount + 1).toLocaleString('en-US')}” to carry on.` : ''}`;
+}
+
+/** "Label 37 can’t print, so these labels can’t go yet. Press “Send labels 21–36” to send the ones before it." */
+function sendStopWords(stopsHere: number[], before: { from: number; to: number } | null, verb: 'Send' | 'Print', after: { from: number; to: number } | null = null): string {
+  if (!stopsHere.length || stopsHere.includes(0)) return '';
+  const n = (x: number) => x.toLocaleString('en-US');
+  const which = stopsHere.length === 1 ? `Label ${n(stopsHere[0])} can’t print` : `Labels ${stopsHere.slice(0, 3).map(n).join(', ')}${stopsHere.length > 3 ? ' and more' : ''} can’t print`;
+  return before
+    ? `${which}, so these labels can’t go yet. Press “${verb} labels ${n(before.from)}–${n(before.to)}” to ${verb.toLowerCase()} the ones before it, or fix it first.`
+    : after
+      ? `${which}, so these labels can’t go yet. Press “${verb} labels ${n(after.from)}–${n(after.to)}” to ${verb.toLowerCase()} the ones after it, or fix it first.`
+      : `${which}, so these labels can’t go yet. Fix it first, or choose labels that leave it out.`;
 }
 
 function uiStatusForRunStatus(status: RunStatus): PrinterUiStatus {
@@ -358,6 +370,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null, held: null };
   // The labels the office panel's main button sends next (for "Print anyway" words).
   const [officeSend, setOfficeSend] = useState<OfficeSpan | null>(null);
+  // A range for the office panel's boxes (the barcode check's "Send labels A–B"), counted so the same range can be asked twice.
+  const [officeRangeAsk, setOfficeRangeAsk] = useState<{ from: number; to: number; n: number } | null>(null);
   const onOfficeRange = useCallback((span: OfficeSpan | null) => {
     setOfficeSend((prev) => (prev?.from === span?.from && prev?.to === span?.to ? prev : span));
   }, []);
@@ -420,21 +434,35 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [woken, setWoken] = useState(false);
   const [officeChooser, setOfficeChooser] = useState(0);
   useEffect(() => { setBarcodeTicks(readRunBarcodeTicks(typeof window !== 'undefined' ? window.localStorage : null, runId)); }, [runId]);
-  // A "neither label will scan" go-ahead never carries over from the wizard: ask again here.
-  const wizardBarcodeGoAhead = !!printCheck.blocking.length && printCheck.verdict.carriesOver && goAhead.barcode === printCheck.blockingKey;
-  const barcodeOk = barcodeTicksAllow(printCheck.blocking, barcodeTicks, wizardBarcodeGoAhead);
-  const tickBarcode = (item: string, value: boolean) => setBarcodeTicks((current) => {
-    // Once someone ticks here, every problem's tick is its own.
-    const explicit = printCheck.blocking.filter((problem) => problem === item ? value : barcodeItemTicked(problem, current, wizardBarcodeGoAhead));
-    saveRunBarcodeTicks(typeof window !== 'undefined' ? window.localStorage : null, runId, explicit);
-    chooseGoAhead('barcode', printCheck.blocking.every((problem) => explicit.includes(problem)) && printCheck.blockingKey);
-    return explicit;
-  });
-  const checksOk = printCheckAllows(printCheck, { ...goAhead, barcode: barcodeOk ? printCheck.blockingKey : undefined });
   // The labels the next print or send covers: the office panel's range, else the From/To boxes.
   const tickSend = transport === 'office' && !isSheetFormat ? officeSend : rangeValid ? { from: selectedFrom, to: selectedThrough } : null;
-  const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || !barcodeOk)
-    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : barcodeWaitWords(false, printCheck.blocking.length, barcodeSendTickLabel(printCheck.blocking[0], tickSend, total)))
+  // The check narrowed to those labels: a barcode the exact renderer refuses
+  // stops only the sends that include it, and a send past the first 2,000
+  // labels is checked itself. Deferred, so typing a range stays quick.
+  const checkFrom = useDeferredValue(tickSend?.from ?? 0);
+  const checkTo = useDeferredValue(tickSend?.to ?? 0);
+  const sendCheck = useMemo(
+    () => runSendCheck(printCheck, run, template, format, checkFrom && checkTo ? { from: checkFrom, to: checkTo } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [printCheck, checkFrom, checkTo, template, format],
+  );
+  const shownCheck = sendCheck.check;
+  // A "neither label will scan" go-ahead never carries over from the wizard: ask again here.
+  const wizardBarcodeGoAhead = !!shownCheck.blocking.length && shownCheck.verdict.carriesOver && goAhead.barcode === shownCheck.blockingKey;
+  const barcodeOk = barcodeTicksAllow(shownCheck.blocking, barcodeTicks, wizardBarcodeGoAhead);
+  const tickBarcode = (item: string, value: boolean) => setBarcodeTicks((current) => {
+    // Once someone ticks here, every problem's tick is its own.
+    const explicit = shownCheck.blocking.filter((problem) => problem === item ? value : barcodeItemTicked(problem, current, wizardBarcodeGoAhead));
+    saveRunBarcodeTicks(typeof window !== 'undefined' ? window.localStorage : null, runId, explicit);
+    chooseGoAhead('barcode', shownCheck.blocking.every((problem) => explicit.includes(problem)) && shownCheck.blockingKey);
+    return explicit;
+  });
+  // Until the deferred check has caught up with the range, nothing new goes.
+  const checkCurrent = (tickSend?.from ?? 0) === checkFrom && (tickSend?.to ?? 0) === checkTo;
+  const checksOk = checkCurrent && printCheckAllows(shownCheck, { ...goAhead, barcode: barcodeOk ? shownCheck.blockingKey : undefined });
+  const stopWords = sendStopWords(sendCheck.stopsHere, sendCheck.before, transport === 'office' && !isSheetFormat ? 'Send' : 'Print', sendCheck.after);
+  const checksReason = checksOk ? '' : !checkCurrent ? 'Checking these labels…' : shownCheck.blocking.length && (shownCheck.verdict.stops || !barcodeOk)
+    ? (shownCheck.verdict.stops ? (stopWords || shownCheck.verdict.waitReason) : barcodeWaitWords(false, shownCheck.blocking.length, barcodeSendTickLabel(shownCheck.blocking[0], tickSend, total)))
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.
@@ -1085,6 +1113,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
     const range = chosen ?? { from: reprintFrom, to: reprintTo };
+    // The check above covers the range boxes; these labels get their own look for a label that can't print.
+    const own = runSendCheck(printCheck, run, template, format, range);
+    if (own.stopsHere.length) { setErrorMsg(sendStopWords(own.stopsHere, own.before, 'Print', own.after) || own.check.verdict.waitReason); return; }
     const message = kind === 'only' ? 'Printed out of order (run progress unchanged)' : 'Reprint (run progress unchanged)';
     setErrorMsg(null);
     if (isSheetFormat) {
@@ -1528,13 +1559,31 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
   // With an office part that failed, its fix comes before the barcode list (phones see it first).
   const officeFixFirst = !isSheetFormat && transport === 'office' && (officeSummary?.failed ?? 0) > 0;
-  const designHref = `/designer?id=${template.id}${printCheck.barcodeElementIds[0] ? `&select=${encodeURIComponent(printCheck.barcodeElementIds[0])}` : ''}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`;
+  const designHref = `/designer?id=${template.id}${(shownCheck.barcodeElementIds[0] ?? printCheck.barcodeElementIds[0]) ? `&select=${encodeURIComponent(shownCheck.barcodeElementIds[0] ?? printCheck.barcodeElementIds[0])}` : ''}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`;
+  const sendVerb = transport === 'office' && !isSheetFormat ? 'Send' : 'Print';
+  // Send the labels before the first one that can't print: the range boxes change, the person still presses.
+  const leavePart = sendCheck.before ?? sendCheck.after;
+  const leaveOut = leavePart && checkCurrent ? (() => {
+    const part = leavePart;
+    return { label: `${sendVerb} labels ${part.from.toLocaleString('en-US')}–${part.to.toLocaleString('en-US')}`, pick: () => {
+      if (transport === 'office' && !isSheetFormat) setOfficeRangeAsk((n) => ({ from: part.from, to: part.to, n: (n?.n ?? 0) + 1 }));
+      else { setFromDraft(String(part.from)); setThroughDraft(String(part.to)); setCountDraft(null); }
+      setErrorMsg(null);
+    } };
+  })() : null;
+  const elsewhere = !shownCheck.verdict.stops && sendCheck.stopsElsewhere.length > 0 && !sendCheck.stopsElsewhere.includes(0)
+    ? `${sendCheck.stopsElsewhere.length === 1 ? `Label ${sendCheck.stopsElsewhere[0].toLocaleString('en-US')} can’t print` : `Labels ${sendCheck.stopsElsewhere.slice(0, 3).map((x) => x.toLocaleString('en-US')).join(', ')}${sendCheck.stopsElsewhere.length > 3 ? ' and more' : ''} can’t print`} until ${sendCheck.stopsElsewhere.length === 1 ? 'it’s' : 'they’re'} fixed.${tickSend ? ` Labels ${tickSend.from.toLocaleString('en-US')}–${tickSend.to.toLocaleString('en-US')} leave ${sendCheck.stopsElsewhere.length === 1 ? 'it' : 'them'} out, so they can go.` : ''}`
+    : '';
   const checkList = (
     <RunBarcodeCheck
       send={tickSend}
       total={total}
       characters={characterWarning}
-      check={printCheck}
+      check={shownCheck}
+      stopNote={shownCheck.verdict.stops && sendCheck.stopsHere.length && !sendCheck.stopsHere.includes(0) ? (leaveOut ? `${sendCheck.before ? 'Send the labels before it' : 'Send the labels after it'}, or fix it first.` : 'Fix it first, or choose labels that leave it out.') : ''}
+      leaveOut={leaveOut}
+      elsewhere={elsewhere}
+      checkedTo={sendCheck.checkedTo}
       ticks={barcodeTicks}
       wizardGoAhead={wizardBarcodeGoAhead}
       onTick={tickBarcode}
@@ -1957,7 +2006,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} rangeAsk={officeRangeAsk} />}
           {officeFixFirst && checkList}
           </>}
         </section>

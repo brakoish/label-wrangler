@@ -47,7 +47,7 @@ function RerunLink({ designHref }: { designHref: string }) {
  * that exact range and count ("Print labels 97–240 (144) anyway").
  * readOnly: a finished or cancelled run shows what was wrong, with no ticks.
  */
-export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters }: {
+export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, elsewhere = '', checkedTo = null }: {
   check: RunPrintCheck;
   ticks: ReadonlyArray<string>;
   wizardGoAhead: boolean;
@@ -60,10 +60,19 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
   readOnly?: boolean;
   /** Text the thermal printer can't print, already in plain words. */
   characters?: { heading: string; items: string[]; more: number } | null;
+  /** In place of "Nothing can print…" when only some labels can't: what this send can do. */
+  stopNote?: string;
+  /** Send the labels before the first one that can't print. */
+  leaveOut?: { label: string; pick: () => void } | null;
+  /** Labels that can't print but aren't in this send. */
+  elsewhere?: string;
+  /** Only part of a big send was checked: the last label checked. */
+  checkedTo?: number | null;
 }) {
   const uid = useId();
   const hasCharacters = !!characters && characters.items.length > 0;
-  if (!check.blocking.length && !check.tight.length && !check.layout.length && !hasCharacters) return null;
+  const extra = !readOnly && (!!elsewhere || !!checkedTo);
+  if (!check.blocking.length && !check.tight.length && !check.layout.length && !hasCharacters && !extra) return null;
   const fix = check.verdict.fixIn === 'data'
     ? <RerunLink designHref={designHref} />
     : <FixInDesignerLink href={rerunAfterFixHref(designHref)} label={OPEN_IN_DESIGNER} />;
@@ -112,9 +121,14 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
             </li>
           )}
         </ul>
-        {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopFixWords(check.verdict.fixIn)}</p>}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">{fix}</div>
+        {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopNote || stopFixWords(check.verdict.fixIn)}</p>}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
+          {check.verdict.stops && !readOnly && leaveOut && <button type="button" className="btn btn-secondary btn-sm" onClick={leaveOut.pick}>{leaveOut.label}</button>}
+          {fix}
+        </div>
       </div>}
+      {!readOnly && elsewhere && <p className="text-sm text-zinc-300">{elsewhere}</p>}
+      {!readOnly && checkedTo && <p className="text-sm text-zinc-400">Checked the first 2,000 labels of this send, up to label {checkedTo.toLocaleString('en-US')}.</p>}
       <ProblemList heading="Barcodes close to the edge" items={check.tight.slice(0, 3)} more={check.tight.length - Math.min(3, check.tight.length)} />
       <ProblemList
         heading="Some items overlap or run off the label"

@@ -217,6 +217,8 @@ export interface RunPrintCheck {
   layoutKey: string;
   /** The barcodes on the design behind `blocking` (to open the designer with one selected). */
   barcodeElementIds: string[];
+  /** Labels the exact renderer refuses (0: a fixed barcode, so every label). Only the ones listed. */
+  stopLabels?: number[];
 }
 
 /**
@@ -245,6 +247,72 @@ export function runPrintCheck(run: Run | null | undefined, template: LabelTempla
     blockingKey: blocking.join('\n'),
     layoutKey: layout.join('\n'),
     barcodeElementIds: Array.from(new Set(barcodes.issues.map((issue) => issue.elementId).filter((id): id is string => !!id))),
+    stopLabels: Array.from(new Set(barcodes.issues.filter((issue) => barcodeIssueStops(issue, format)).map((issue) => issue.label))).sort((a, b) => a - b),
+  };
+}
+
+/** The check for one send: what blocks these labels, and the part that can go. */
+export interface RunSendCheck {
+  check: RunPrintCheck;
+  /** Labels in this send the exact renderer refuses (0: every label). */
+  stopsHere: number[];
+  /** The labels before the first one that can't print, when there are any. */
+  before: { from: number; to: number } | null;
+  /** When the send starts with labels that can't print: the rest, if none of them can't. */
+  after: { from: number; to: number } | null;
+  /** Labels elsewhere in the run that can't print (not in this send). */
+  stopsElsewhere: number[];
+  /** Only the first `limit` labels of a bigger send were checked: the last one checked. */
+  checkedTo: number | null;
+}
+
+/**
+ * The whole-run check (`base`, the first 2,000 labels) narrowed to the labels
+ * a print or send really covers. A label the exact renderer refuses stops only
+ * the sends that include it, and labels past the first 2,000 are checked when
+ * they are the ones being sent. Everything the printer can produce still needs
+ * the same explicit go-ahead. When the whole-run list may be missing a stop
+ * (more problems than it lists), the whole-run stop stays.
+ */
+export function runSendCheck(base: RunPrintCheck, run: Run | null | undefined, template: LabelTemplate | null | undefined, format: LabelFormat | null | undefined, send: { from: number; to: number } | null | undefined, limit = 2000): RunSendCheck {
+  const plain: RunSendCheck = { check: base, stopsHere: [], before: null, after: null, stopsElsewhere: [], checkedTo: null };
+  if (!run || !template || !format || !send || !Number.isInteger(send.from) || !Number.isInteger(send.to) || send.from < 1 || send.to < send.from) return plain;
+  const runTotal = Math.max(1, run.totalLabels || run.sourceData.length || 1);
+  const baseChecked = Math.min(runTotal, limit);
+  const stopLabels = base.stopLabels ?? [];
+  if (!base.verdict.stops && send.to <= baseChecked) return plain;
+  if (stopLabels.includes(0)) return { ...plain, stopsHere: [0] };
+  const to = Math.min(send.to, runTotal, send.from + limit - 1);
+  const data = { sourceData: run.sourceData.slice(send.from - 1, to), fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField };
+  const found = checkRunBarcodes(template, data, format);
+  for (const issue of [...found.issues, ...found.warnings]) if (issue.label > 0) issue.label += send.from - 1;
+  // More bad labels than the list holds: a stop may be missing from it.
+  const listed = new Set(found.issues.map((issue) => issue.label)).size;
+  const complete = listed >= found.badLabels;
+  const stopsHere = Array.from(new Set(found.issues.filter((issue) => barcodeIssueStops(issue, format)).map((issue) => issue.label))).sort((a, b) => a - b);
+  if (!complete && !stopsHere.length && base.verdict.stops) return plain;
+  const sheet = run.dataSource === 'csv';
+  const fromSheet = (field: string) => sheet && run.fieldMappings?.[field]?.mode === 'column';
+  const blocking = describeBarcodeGroups(found.issues, found.checkedLabels, fromSheet, 50, found.fitCounts).items;
+  const check: RunPrintCheck = {
+    ...base,
+    blocking,
+    verdict: barcodeVerdict(found.issues, found.badLabels, format, fromSheet),
+    blockingKey: blocking.join('\n'),
+    barcodeElementIds: Array.from(new Set(found.issues.map((issue) => issue.elementId).filter((id): id is string => !!id))),
+    stopLabels: stopsHere,
+  };
+  const first = stopsHere[0];
+  let last = first ?? 0;
+  while (stopsHere.includes(last + 1)) last++;
+  const lastChecked = to;
+  return {
+    check,
+    stopsHere,
+    before: first !== undefined && first > send.from ? { from: send.from, to: first - 1 } : null,
+    after: first === send.from && complete && stopsHere.every((label) => label <= last) && last < lastChecked ? { from: last + 1, to: lastChecked } : null,
+    stopsElsewhere: stopLabels.filter((label) => label < send.from || label > send.to),
+    checkedTo: to < Math.min(send.to, runTotal) ? to : null,
   };
 }
 

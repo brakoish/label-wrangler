@@ -27,7 +27,7 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   const some='The barcode on labels 4, 9 and 12 runs off the label (rows 5, 10 and 13).';
   assert.equal(B.barcodeSendTickLabel(some,{from:1,to:5},240),B.barcodeTickLabel(some),'a problem on some labels keeps its own count');
   const page=read('src/components/runs/RunPrinter.tsx');
-  assert.match(page,/barcodeWaitWords\(false, printCheck\.blocking\.length, barcodeSendTickLabel\(printCheck\.blocking\[0\], tickSend, total\)\)/,'the wait line uses the same words as the tick');
+  assert.match(page,/barcodeWaitWords\(false, shownCheck\.blocking\.length, barcodeSendTickLabel\(shownCheck\.blocking\[0\], tickSend, total\)\)/,'the wait line uses the same words as the tick');
   assert.match(read('src/components/runs/RunBarcodeCheck.tsx'),/barcodeSendTickLabel\(item, send, total\)/,'each tick names the labels sent');
   console.log('PASS run b8: Print anyway names the exact range and count sent');
 }

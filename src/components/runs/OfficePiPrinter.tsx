@@ -183,7 +183,7 @@ function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadB
     </Fold>
   </div>;
 }
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,toGo,toGoShown=false,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,rangeAsk=null,toGo,toGoShown=false,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -215,6 +215,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   scannedLabels?:ReadonlyArray<number>;
   /** Goes up when the run page's "Print some labels again…" asks this panel to start choosing labels. */
   openChooser?:number;
+  /** A range to put in the boxes (the barcode check's "Send labels A–B"); n counts the asks. */
+  rangeAsk?:{from:number;to:number;n:number}|null;
   /** Labels not counted as printed yet (progress and print history). */
   toGo?:ReadonlyArray<OfficeSpan>;
   /** The progress line above already names what is still to go: not said again here. */
@@ -578,6 +580,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const openAgain=(mode:Again['mode'],requestId?:string)=>{setAgain({mode,text:'',queue:[],requestId,blank:false});setReprintOf('');setSendOther(false);setNotice(null);setError('');};
   useEffect(()=>{if(openChooser>0)openAgain('again');},
     [openChooser]);
+  // Only fills the boxes: the person still presses Send, and a saved send or a send on its way keeps its range.
+  const rangeAskN=rangeAsk?.n ?? 0;
+  useEffect(()=>{
+    if(!rangeAsk || pending || busy)return;
+    rangeEdited.current=true;setAgain(null);setReprintOf('');setSendOther(true);setFrom(String(rangeAsk.from));setTo(String(rangeAsk.to));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[rangeAskN]);
   // Held labels still to send (not printed, not on their way again).
   const heldUnsent=useMemo(()=>requestsEverLoaded?heldStillUnsent(heldSpans,jobs,printedCount,total):[],[requestsEverLoaded,heldSpans,jobs,printedCount,total]);
   // Held labels sent again and still on their way: the next send waits for

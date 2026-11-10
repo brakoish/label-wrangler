@@ -124,7 +124,7 @@ const page=read('src/components/runs/RunPrinter.tsx');
 assert.match(page,/confirmLabel: scanned\.keep\.length \? `Skip \$\{one \? 'it' : 'them'\}` : 'Don’t print',\s*altLabel: 'Print them again'/,'skipping scanned labels is the primary button');
 assert.match(page,/feedsDone >= feedEnds\.length \? printRange\.to/,'skipped labels at the end still count as printed when the batch finishes');
 assert.doesNotMatch(page,/<PrintCheckList/,'the run page has its own one-tick-per-problem check');
-assert.match(page,/barcodeTicksAllow\(printCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
+assert.match(page,/barcodeTicksAllow\(shownCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
 assert.match(page,/const calm = \(runFinished \|\| run\.status === 'cancelled' \|\| status === 'cancelled'\) && !woken && status !== 'running'/,'finished and cancelled runs are a calm summary');
 assert.match(page,/\{officeFixFirst && checkList\}/,'a failed office part comes before the barcode list');
 assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount: printedLabels, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it, and counts every printed label');
