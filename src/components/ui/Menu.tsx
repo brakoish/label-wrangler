@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { MoreHorizontal } from 'lucide-react';
 import { usePresence } from './usePresence';
+import { onDialogOpen } from './dialogStack';
 
 export interface MenuItem {
   label: string;
@@ -21,7 +22,9 @@ export interface MenuItem {
  * A quiet overflow menu ("More"). The trigger is a ghost button; the menu
  * grows out of it and shrinks back into it, and closing mid-way reverses.
  * Keyboard: Enter/Space/ArrowDown open it, arrows move, Escape closes and
- * returns focus to the trigger.
+ * returns focus to the trigger. On a phone it is a sheet at the bottom of the
+ * screen (always fully on screen, drag down to close); elsewhere it is kept
+ * inside the window.
  */
 export function Menu({ items, label = 'More', showLabel = true, className = '', align = 'end' }: { items: MenuItem[]; label?: string; showLabel?: boolean; className?: string; align?: 'start' | 'end' }) {
   const [open, setOpen] = useState(false);
@@ -30,15 +33,19 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const [pos, setPos] = useState<{ top: number; left?: number; right?: number; up: boolean } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left?: number; right?: number; up: boolean; sheet?: boolean } | null>(null);
+  // Drag distance of the phone sheet (down closes it; up stretches a little, then stops).
+  const [drag, setDrag] = useState<number | null>(null);
+  const dragStart = useRef<number | null>(null);
   const enabled = items.map((item, index) => (item.disabled ? -1 : index)).filter((index) => index >= 0);
 
   useLayoutEffect(() => {
     if (!present || !triggerRef.current) return;
     const place = () => {
       const r = triggerRef.current!.getBoundingClientRect();
+      if (window.matchMedia('(max-width: 639px)').matches) { setPos({ top: 0, up: false, sheet: true }); return; }
       const up = window.innerHeight - r.bottom < 260 && r.top > 260;
-      setPos({ top: up ? r.top - 4 : r.bottom + 4, up, ...(align === 'end' ? { right: window.innerWidth - r.right } : { left: r.left }) });
+      setPos({ top: up ? r.top - 4 : r.bottom + 4, up, ...(align === 'end' ? { right: Math.max(12, window.innerWidth - r.right) } : { left: Math.max(12, r.left) }) });
     };
     place();
     window.addEventListener('resize', place);
@@ -46,15 +53,24 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
     return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
   }, [present, align]);
 
+  // Never past the window's edge: a menu wider than the room beside its trigger moves in.
+  useLayoutEffect(() => {
+    if (!pos || pos.sheet || !menuRef.current) return;
+    const box = menuRef.current.getBoundingClientRect();
+    if (box.left < 12) setPos((p) => (p && !p.sheet ? { ...p, left: 12, right: undefined } : p));
+    else if (box.right > window.innerWidth - 12) setPos((p) => (p && !p.sheet ? { ...p, left: undefined, right: 12 } : p));
+  }, [pos]);
+
   useEffect(() => {
     if (!open) return;
-    const onDown = (event: MouseEvent) => {
+    const onDown = (event: Event) => {
       const target = event.target as Node;
       if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
       setOpen(false);
     };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    document.addEventListener('pointerdown', onDown, true);
+    const stop = onDialogOpen(() => setOpen(false));
+    return () => { document.removeEventListener('pointerdown', onDown, true); stop(); };
   }, [open]);
 
   useEffect(() => {
@@ -82,6 +98,16 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
     else if (event.key === 'Tab') close(false);
   };
 
+  // Rubber band: past the top the sheet follows a fraction of the finger, never far.
+  const sheetOffset = drag === null ? 0 : drag >= 0 ? drag : -Math.min(16, Math.sqrt(-drag) * 2);
+  const onSheetDown = (event: React.PointerEvent) => { dragStart.current = event.clientY; setDrag(0); (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId); };
+  const onSheetMove = (event: React.PointerEvent) => { if (dragStart.current !== null) setDrag(event.clientY - dragStart.current); };
+  const onSheetUp = () => {
+    const moved = drag ?? 0;
+    dragStart.current = null; setDrag(null);
+    if (moved > 72) close();
+  };
+
   const itemClass = (item: MenuItem) => `press flex w-full min-h-control items-center gap-2.5 rounded-md px-3 text-left text-sm outline-none focus-visible:bg-zinc-800 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500 ${item.danger ? 'text-red-400' : 'text-zinc-300 hover:text-zinc-100'}`;
   const firstDanger = items.findIndex((item) => item.danger);
 
@@ -102,6 +128,10 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         {showLabel && label}
       </button>
+      {present && pos?.sheet && typeof document !== 'undefined' && createPortal(
+        <div aria-hidden="true" data-state={state} className="menu-sheet-scrim" style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => close()} />,
+        document.body,
+      )}
       {present && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={menuRef}
@@ -109,8 +139,12 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
           role="menu"
           aria-label={label}
           data-state={state}
+          data-dragging={drag !== null ? '' : undefined}
           onKeyDown={onMenuKey}
-          style={{
+          style={pos.sheet ? {
+            position: 'fixed', zIndex: 1000, left: 0, right: 0, bottom: 0,
+            ['--sheet-y' as string]: `${sheetOffset}px`,
+          } : {
             position: 'fixed',
             zIndex: 1000,
             top: pos.up ? undefined : pos.top,
@@ -119,8 +153,13 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
             right: pos.right,
             ['--origin' as string]: `${pos.up ? 'bottom' : 'top'} ${align === 'end' ? 'right' : 'left'}`,
           }}
-          className="pop-layer min-w-[220px] max-w-[calc(100vw-1.5rem)] rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/50 ring-1 ring-zinc-700"
+          className={pos.sheet
+            ? 'menu-sheet rounded-t-2xl bg-zinc-900 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl shadow-black/50'
+            : 'pop-layer min-w-[220px] max-w-[calc(100vw-1.5rem)] rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/50 ring-1 ring-zinc-700'}
         >
+          {pos.sheet && <div className="flex h-6 touch-none cursor-grab items-center justify-center" onPointerDown={onSheetDown} onPointerMove={onSheetMove} onPointerUp={onSheetUp} onPointerCancel={onSheetUp}>
+            <span aria-hidden="true" className="h-1 w-10 rounded-full bg-zinc-700" />
+          </div>}
           {items.map((item, index) => {
             const common = {
               role: 'menuitem',

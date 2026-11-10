@@ -5,9 +5,16 @@
  * both. Only the top dialog may act on a key.
  */
 const stack: symbol[] = [];
+/** Open menus and dropdowns close when a dialog opens, so none is drawn over it. */
+const openListeners = new Set<() => void>();
+export function onDialogOpen(listener: () => void): () => void {
+  openListeners.add(listener);
+  return () => { openListeners.delete(listener); };
+}
 export function pushDialogLayer(): symbol {
   const layer = Symbol('dialog');
   stack.push(layer);
+  for (const listener of [...openListeners]) listener();
   return layer;
 }
 export function removeDialogLayer(layer: symbol) {
