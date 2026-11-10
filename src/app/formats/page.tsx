@@ -9,6 +9,7 @@ import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
+import { EmptyState } from '@/components/EmptyState';
 import { useRubberBand } from '@/components/motion/rubberBand';
 import { PlusIcon } from '../icons';
 import { alertDialog, confirmDialog } from '@/components/ui/feedback';
@@ -117,16 +118,16 @@ export default function Home() {
                 <span className="sr-only">Loading label sizes…</span>
               </div>
             ) : loadError && formats.length === 0 ? (
-              <div role="alert" className="py-16 text-center space-y-3">
-                <h2 className="text-zinc-100 font-semibold text-lg">We couldn’t load your label sizes</h2>
-                <p className="text-zinc-400 text-sm">{friendlyError(loadError, 'Something went wrong.')}</p>
-                <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-secondary">{loading ? 'Trying again…' : 'Try again'}</button>
-              </div>
+              <EmptyState
+                tone="error"
+                title="We couldn’t load your label sizes"
+                body={friendlyError(loadError, 'Something went wrong.')}
+                actions={<button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-secondary">{loading ? 'Trying again…' : 'Try again'}</button>}
+              />
             ) : filteredFormats.length === 0 ? (
-              <div className={hasFormats ? 'py-12' : 'py-16 text-center'}>
-                <h2 className={hasFormats ? 'text-zinc-100 text-sm font-medium' : 'text-zinc-100 font-semibold text-lg'}>{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</h2>
-                <p className="text-zinc-400 text-sm mt-1">{hasFormats ? 'Try another name, or show all types.' : 'Add the size of label you print on.'}</p>
-              </div>
+              hasFormats
+                ? <div className="py-12"><h2 className="text-sm font-medium text-zinc-100">No label sizes match</h2><p className="mt-1 text-sm text-zinc-400">Try another name, or show all types.</p></div>
+                : <EmptyState title="No label sizes yet" body="Add the size of label you print on." />
             ) : (
               filteredFormats.map((format) => (
                 <FormatCard

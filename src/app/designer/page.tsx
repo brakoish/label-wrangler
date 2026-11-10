@@ -347,7 +347,6 @@ function DesignerContent() {
 
   const [recovery, setRecovery] = useState<Array<TemplateDraft & {key:string}>>([]);
   const [isAdmin, setIsAdmin] = useState(false);
-  const templatesError = useTemplateStore((state) => state.error);
   useEffect(() => {
     let active = true;
     fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
@@ -446,11 +445,10 @@ function DesignerContent() {
             onDuplicateTemplate={async (t) => { await useTemplateStore.getState().fetchTemplate(t.id); const full=useTemplateStore.getState().getTemplateById(t.id); if(full && !full.summaryOnly) setDuplicateSource(full); }}
             onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
+            // Importing outside designs is an admin tool, not an everyday one.
+            extra={isAdmin ? <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /> : undefined}
           />
-          {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && !(templatesError && templates.length === 0) && <div className={`page-container pt-0 sm:pt-0 lg:pt-0 ${templates.length === 0 ? 'text-center [&_.flex-wrap]:justify-center' : ''}`}>
-          <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
-          </div>}
+
         </div>
 
         {/* New Template Dialog */}

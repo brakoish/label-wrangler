@@ -17,6 +17,7 @@ import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
 import { Menu } from '@/components/ui/Menu';
+import { EmptyState } from '@/components/EmptyState';
 import { FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
 import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
 
@@ -33,6 +34,8 @@ interface TemplateListProps {
   /** When the whole list failed while a design link was opening: one error, one Try again for both. */
   openingName?: string;
   onRetryOpen?: () => void;
+  /** Extra tools under the list (the admin import fold); centred inside the empty state. */
+  extra?: ReactNode;
 }
 
 export function TemplateList({
@@ -43,6 +46,7 @@ export function TemplateList({
   onDuplicateTemplate,
   onRenameTemplate,
   onNewTemplate,
+  extra,
   notice,
   openingName,
   onRetryOpen,
@@ -105,20 +109,17 @@ export function TemplateList({
           <span className="sr-only">Loading designs…</span>
         </div>
       ) : listError && templates.length === 0 ? (
-        <div role="alert" className="py-16 text-center space-y-3">
-          <h2 className="text-zinc-100 font-semibold text-lg">{openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}</h2>
-          <p className="text-zinc-400 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
-          <button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-secondary">{listLoading ? 'Trying again…' : 'Try again'}</button>
-        </div>
+        <EmptyState
+          tone="error"
+          title={openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}
+          body={friendlyError(listError, 'Something went wrong.')}
+          actions={<button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-secondary">{listLoading ? 'Trying again…' : 'Try again'}</button>}
+        />
       ) : visibleTemplates.length === 0 ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="text-center max-w-sm">
-            <h2 className="text-zinc-100 font-semibold text-lg">{isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}</h2>
-            <p className="text-zinc-400 text-sm mt-1">
-              {isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          title={isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}
+          body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
+        >{templates.length === 0 ? extra : null}</EmptyState>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
 
@@ -139,6 +140,7 @@ export function TemplateList({
           })}
         </div>
       )}
+      {extra && !(listError && templates.length === 0) && templates.length > 0 && <div className="pt-6">{extra}</div>}
     </div>
   );
 }
