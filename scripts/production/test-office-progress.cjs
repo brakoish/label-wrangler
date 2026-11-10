@@ -318,7 +318,7 @@ console.log('PASS field display names');
   assert.match(panel, /const outcome=await submit\(part\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
   assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
   // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
-  assert.match(panel, /if\(target && \(payload\.from!==target\.from \|\| payload\.to!==target\.to\)\)\{setError/, 'a part never sends another range\'s saved request');
+  assert.match(panel, /if\(direct \|\| payload\.from!==want\.from \|\| payload\.to!==want\.to\)\{/, 'a part, the form or a one-tap send never sends another range\'s saved request');
   assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
   assert.match(panel, /if\(pending && pendingInPlan && partsPlan\)\{void runSeries\(partsPlan\);return;\}/, '"Send again" on an unsure part carries on with the plan');
   // Fixing a part: later parts are held before the check lets the office carry on; a 409 means already checked.
@@ -329,7 +329,10 @@ console.log('PASS field display names');
   assert.match(save, /onRecordPrinted\?\.\(/, '"They printed" counts them only on that explicit choice');
   // "Print some labels again" starts empty.
   assert.match(panel, /Print some labels again…/);
-  assert.ok((panel.match(/setChooseAgain\(true\);setReprintOf\(''\);setFrom\(''\);setTo\(''\)/g) || []).length >= 3, 'choosing labels again starts with an empty range');
+  assert.match(panel, /const openAgain=\(mode:Again\['mode'\],requestId\?:string\)=>\{setAgain\(\{mode,text:'',queue:\[\],requestId\}\);/, 'choosing labels again starts with an empty box (never prefilled, also in a queue row)');
+  assert.ok((panel.match(/openAgain\('(again|missing)'/g) || []).length >= 4, 'every "print again" opens the same one box');
+  assert.match(panel, /const showForm=!!pending \|\| \(!again && /, 'only one range editor at a time');
+  assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true\);/, 'one press checks and sends one stretch');
 
   const page = read('src/components/runs/RunPrinter.tsx');
   assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: 'Skip and count as printed'/, 'the safe start is the primary button');
@@ -422,7 +425,24 @@ console.log('PASS field display names');
   assert.match(printer, /if \(nextStatus\) setStatus\(nextStatus\);/);
   assert.doesNotMatch(printer, /const nextStatus = through >= total \? 'completed' : 'paused'/);
   const list = read('src/app/runs/page.tsx');
-  assert.match(list, /await recordPrinted\(run\.id, through, statusAfterMarkPrinted\(run\.status, through, run\.totalLabels\),/);
+  // Bulk "mark printed" re-reads each run first and writes from that fresh copy.
+  assert.match(list, /await recordPrinted\(run\.id, through, statusAfterMarkPrinted\(fresh\.status, through, fresh\.totalLabels\),/);
+  assert.match(list, /fetch\(`\/api\/runs\/\$\{encodeURIComponent\(run\.id\)\}`, \{ cache: 'no-store' \}\)|fetch\('\/api\/runs\/' \+ encodeURIComponent\(run\.id\), \{ cache: 'no-store' \}\)/);
   assert.doesNotMatch(list, /through >= run\.totalLabels \? 'completed' : 'paused'/);
+}
+// --- "Which labels?" box: a list of labels, several stretches ---------------
+{
+  const L = (t, total = 100, cap) => R.parseLabelList(t, total, cap);
+  assert.deepEqual(L('5-8, 12').spans, [{ from: 5, to: 8 }, { from: 12, to: 12 }]);
+  assert.deepEqual(L('5–8 and 12 to 14').spans, [{ from: 5, to: 8 }, { from: 12, to: 14 }]);
+  assert.deepEqual(L('12, 5-8, 9').spans, [{ from: 5, to: 9 }, { from: 12, to: 12 }], 'sorted, touching stretches merged');
+  assert.deepEqual(L('1,000-1,002', 2000).spans, [{ from: 1000, to: 1002 }], 'thousands commas are numbers, not lists');
+  assert.deepEqual(L('1-10', 100, 4).spans, [{ from: 1, to: 4 }, { from: 5, to: 8 }, { from: 9, to: 10 }], 'split to the send size');
+  assert.equal(L('').spans.length, 0);
+  assert.equal(L('').error, '', 'empty is not an error');
+  assert.match(L('8-5').error, /smaller number first/);
+  assert.match(L('0-3').error, /from 1 to 100/);
+  assert.match(L('101').error, /from 1 to 100/);
+  assert.match(L('five').error, /label numbers only/);
 }
 console.log('PASS office r4: held labels named, print-again status, storage/send-again/meta/no-access rules, parts one by one, fix holds the rest first, safe primaries, guarded rewinds, quieter polling, plain delete');

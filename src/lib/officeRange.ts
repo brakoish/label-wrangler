@@ -443,3 +443,32 @@ export function heldStillUnsent(held: ReadonlyArray<OfficeSpan>, jobs: ReadonlyA
   const want = union(held.map(s => ({ from: Math.max(s.from, printed + 1), to: s.to })), total);
   return minus(want, covered).map(([from, to]) => ({ from, to }));
 }
+
+/**
+ * Label numbers a person typed in one box ("5–8, 12", "3 17", "5 to 8"):
+ * sorted, touching stretches joined, each stretch cut into pieces of at most
+ * `cap` labels (one send each). `error` says in plain words what to fix;
+ * an empty box is neither spans nor an error.
+ */
+export function parseLabelList(text: string, total: number, cap = Infinity): { spans: OfficeSpan[]; error: string } {
+  // "1,000" is a thousand; "3,17" and "3, 17" are two labels.
+  const cleaned = text.trim().replace(/(\d),(\d{3})(?!\d)/g, '$1$2').replace(/\s*(?:–|—|-|\bto\b|\bthrough\b|\.\.)\s*/gi, '-').replace(/\band\b|[,;&+]/gi, ' ');
+  if (!cleaned) return { spans: [], error: '' };
+  const raw: OfficeSpan[] = [];
+  for (const token of cleaned.split(/\s+/).filter(Boolean)) {
+    const match = /^(\d{1,7})(?:-(\d{1,7}))?$/.exec(token);
+    if (!match) return { spans: [], error: 'Type label numbers only, like 5–8, 12.' };
+    const from = Number(match[1]); const to = match[2] === undefined ? from : Number(match[2]);
+    if (from < 1 || to > total || from > to) return { spans: [], error: from > to ? `In ${from}–${to}, put the smaller number first.` : `Use label numbers from 1 to ${total.toLocaleString()}.` };
+    raw.push({ from, to });
+  }
+  const joined: OfficeSpan[] = [];
+  for (const s of raw.sort((a, b) => a.from - b.from)) {
+    const last = joined[joined.length - 1];
+    if (last && s.from <= last.to + 1) last.to = Math.max(last.to, s.to); else joined.push({ ...s });
+  }
+  const size = Math.max(1, Math.floor(cap) || 1);
+  const spans: OfficeSpan[] = [];
+  for (const s of joined) for (let a = s.from; a <= s.to; a += size) spans.push({ from: a, to: Math.min(s.to, a + size - 1) });
+  return { spans, error: '' };
+}
