@@ -14,7 +14,10 @@ const GAP_MS = 15 * 60 * 1000;
 
 export function groupPrintHistory<E extends HistoryEventLike>(events: ReadonlyArray<E>): Array<HistoryGroup<E>> {
   const groups: Array<HistoryGroup<E>> = [];
-  for (const event of events.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+  // By time, whatever the text shape ("2026-11-10 12:00:00+00" from the office, ISO elsewhere).
+  const at = (e: E) => Date.parse(e.createdAt);
+  const byTime = (a: E, b: E) => { const x = at(a), y = at(b); return Number.isFinite(x) && Number.isFinite(y) && x !== y ? x - y : a.createdAt.localeCompare(b.createdAt); };
+  for (const event of events.slice().sort(byTime)) {
     const last = groups[groups.length - 1];
     const joins = !!last && event.output === 'office-pi' && last.event.output === 'office-pi'
       && event.eventType === last.event.eventType && event.eventType === 'sent'

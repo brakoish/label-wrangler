@@ -21,6 +21,7 @@ import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtO
 import { scannedLabelNumbers } from '@/lib/scannedLabels';
 import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
+import { printedLabelCount } from '@/lib/runProgress';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
@@ -32,7 +33,10 @@ interface ListOffice {
   /** Labels after the progress that no office send covers yet (what a stopped series left). */
   unsent?: OfficeSpan[];
 }
-type ListRun = Run & { office?: ListOffice | null; hasPrintHistory?: boolean };
+/** countedSpans: stretches the print history counts as printed beyond printedCount (confirmed office ranges, scanned labels). */
+type ListRun = Run & { office?: ListOffice | null; hasPrintHistory?: boolean; countedSpans?: OfficeSpan[] };
+/** Labels counted as printed, the same way the run page counts them. */
+const printedShown = (run: ListRun) => Math.min(printedLabelCount(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels);
 
 type StatusFilter = 'all' | RunStatusBucket;
 
@@ -62,11 +66,12 @@ const spanCount = (spans: ReadonlyArray<OfficeSpan> | undefined) => (spans ?? []
  */
 function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null) {
   const heldBy = holdRun && holdRun.runId !== run.id && (run.office?.onTheWay ?? 0) > 0 ? holdRun : null;
-  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges) } : null;
+  // Labels still to send are said beside "Did they all come out?", like the run page.
+  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent) } : null;
 }
 
 function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null }) | null }) {
-  const display = runDisplayStatus(run, office);
+  const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : 'text-zinc-300'}`}>
       <span aria-hidden="true" className={`size-2 rounded-full transition-colors duration-200 ${TONE_DOT[display.tone]}`} />
@@ -96,7 +101,8 @@ function useLiveRunsList() {
             const fresh = byId.get(old.id);
             if (!fresh) return old;
             return { ...old, printedCount: fresh.printedCount, status: fresh.status, completedAt: fresh.completedAt,
-              ...('office' in fresh ? { office: fresh.office } : {}), ...('hasPrintHistory' in fresh ? { hasPrintHistory: fresh.hasPrintHistory } : {}) } as Run;
+              ...('office' in fresh ? { office: fresh.office } : {}), ...('hasPrintHistory' in fresh ? { hasPrintHistory: fresh.hasPrintHistory } : {}),
+              ...('countedSpans' in fresh ? { countedSpans: fresh.countedSpans } : {}) } as Run;
           }),
         }));
       } catch { /* the next try catches up */ }
@@ -107,7 +113,8 @@ function useLiveRunsList() {
       const moving = useRunStore.getState().runs.some((run) => ((run as ListRun).office?.onTheWay ?? 0) > 0);
       timer = setTimeout(() => { void update().finally(() => { if (active) schedule(); }); }, moving ? 5000 : 15000);
     };
-    schedule();
+    // Read once right away too: coming back from a run, its counts are current at once.
+    void update().finally(() => { if (active) schedule(); });
     const onVisible = () => { if (document.visibilityState === 'visible') void update(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
@@ -377,7 +384,7 @@ export default function RunsPage() {
     let completedThisMonth = 0;
     let totalLabelsPrinted = 0;
     for (const r of runs) {
-      totalLabelsPrinted += r.printedCount || 0;
+      totalLabelsPrinted += printedShown(r as ListRun);
       if (r.status === 'completed' && (r.printedCount || 0) >= r.totalLabels && r.completedAt) {
         try {
           if (new Date(r.completedAt) >= monthStart) completedThisMonth++;
@@ -423,7 +430,7 @@ export default function RunsPage() {
     const q = search.trim().toLowerCase();
     const matches = (r: Run) => {
       // The same five words as the rows and the run page.
-      if (statusFilter !== 'all' && runDisplayStatus(r, rowOffice(r as ListRun, printerHeld, holdRun)).bucket !== statusFilter) return false;
+      if (statusFilter !== 'all' && runDisplayStatus({ ...r, printedCount: printedShown(r as ListRun) }, rowOffice(r as ListRun, printerHeld, holdRun)).bucket !== statusFilter) return false;
       if (templateFilter !== 'all' && r.templateId !== templateFilter) return false;
       if (q) {
         const hay = [
@@ -473,7 +480,6 @@ export default function RunsPage() {
               <RunRow
                 run={r}
                 templateName={templateName(r.templateId)}
-                formatName={r.designSnapshot?.format?.name ?? formatName(r.templateId)}
                 onDelete={() => void requestDeleteRun(r)}
                 onTogglePin={() => void togglePin(r.id)}
                 printerHeld={printerHeld}
@@ -523,6 +529,21 @@ export default function RunsPage() {
 
           {/* The office printer can be paused even with no run open (once there are runs). */}
           {runs.length > 0 && <OfficePrinterBar onHeld={onPrinterHeld} runs={active as ListRun[]} />}
+
+          {/* Presets start a run, so they sit with "New run", above the lists:
+              full-width cards, each with its own menu inside. */}
+          {presets.length > 0 && (
+            <section>
+              <h2 className="section-title mb-3">Start from a preset</h2>
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {presets.map((p) => (
+                  <li key={p.id}>
+                    <PresetRow preset={p} templateName={templateName(p.templateId)} formatName={formatName(p.templateId)} onDelete={() => void requestDeletePreset(p)} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (
@@ -613,49 +634,6 @@ export default function RunsPage() {
             </section>
           )}
 
-          {/* Presets section. If the user has only a few we keep them as a
-              compact horizontal chip strip (always visible, one click to run).
-              Once they have many, fall back to the grid cards so names aren't
-              squished. Threshold is arbitrary but feels right. */}
-          {presets.length > 0 && presets.length <= 6 && (
-            <section>
-              <div className="flex items-baseline justify-between mb-3">
-                <h2 className="section-title">Saved presets</h2>
-                <span className="text-sm text-zinc-400">Choose one to start a run</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {presets.map((p) => (
-                  <PresetChip
-                    key={p.id}
-                    preset={p}
-                    templateName={templateName(p.templateId)}
-                    formatName={formatName(p.templateId)}
-                    onDelete={() => void requestDeletePreset(p)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-          {presets.length > 6 && (
-            <section>
-              <div className="flex items-baseline justify-between mb-3">
-                <h2 className="section-title">Saved presets</h2>
-                <span className="text-sm text-zinc-400">Choose one to start a run</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {presets.map((p) => (
-                  <PresetCard
-                    key={p.id}
-                    preset={p}
-                    templateName={templateName(p.templateId)}
-                    formatName={formatName(p.templateId)}
-                    onDelete={() => void requestDeletePreset(p)}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
           {/* History / filterable list */}
           {runs.length > 0 && (
             <section>
@@ -725,10 +703,8 @@ function RunsEmptyState({ hasTemplates }: { hasTemplates: boolean }) {
   );
 }
 
-/** Compact chip-sized preset — used when the user has a small number of
- *  presets and we can afford to show them all inline as quick-launch pills
- *  without eating vertical space. Click runs; Delete sits behind More. */
-function PresetChip({
+/** One preset: the card starts a run from it; its menu (delete) sits inside the card. */
+function PresetRow({
   preset,
   templateName,
   formatName,
@@ -740,66 +716,22 @@ function PresetChip({
   onDelete: () => void;
 }) {
   return (
-    <div className="group relative flex items-stretch">
+    <div className="flex items-center gap-1 rounded-xl bg-zinc-900 pr-1 transition-colors hover:bg-zinc-800">
       <Link
         href={`/runs/new?presetId=${preset.id}`}
-        className="flex min-h-control items-center gap-2.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-[background-color,transform] active:scale-[0.97]"
-        title={`${templateName}${formatName ? ' · ' + formatName : ''}`}
+        className="flex min-h-control min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-2 transition-transform active:scale-[0.97]"
       >
-        <Play className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-        <div className="flex flex-col leading-tight">
-          <span className="text-sm font-medium text-zinc-100">
-            {preset.name}
-          </span>
-          <span className="text-xs text-zinc-400 truncate max-w-[200px]">
-            {templateName}{formatName && <> · {formatName}</>}
-          </span>
-        </div>
+        <Play className="size-4 shrink-0 text-amber-400" aria-hidden="true" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-zinc-100">{preset.name}</span>
+          <span className="block truncate text-xs text-zinc-400">{templateName}{formatName ? ` · ${formatName}` : ''}</span>
+        </span>
       </Link>
       <Menu
         label={`More for ${preset.name}`}
         showLabel={false}
-        className="ml-1 self-center"
         items={[{ label: 'Delete preset…', icon: <Trash2 className="w-4 h-4" aria-hidden="true" />, danger: true, onSelect: onDelete }]}
       />
-    </div>
-  );
-}
-
-function PresetCard({
-  preset,
-  templateName,
-  formatName,
-  onDelete,
-}: {
-  preset: RunPreset;
-  templateName: string;
-  formatName: string;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="bg-zinc-900 rounded-xl p-4">
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-zinc-100 truncate">{preset.name}</h3>
-          <p className="text-xs text-zinc-400 mt-0.5 truncate">{templateName} {formatName && <span>· {formatName}</span>}</p>
-        </div>
-        <Menu
-          label={`More for ${preset.name}`}
-          showLabel={false}
-          items={[{ label: 'Delete preset…', icon: <Trash2 className="w-4 h-4" aria-hidden="true" />, danger: true, onSelect: onDelete }]}
-        />
-      </div>
-      <div className="flex items-center gap-3 text-xs text-zinc-400 mt-3">
-        {preset.useCount > 0 && <span>Used {preset.useCount}×</span>}
-        {preset.lastUsedAt && <span>Last used {formatDate(preset.lastUsedAt)}</span>}
-      </div>
-      <Link
-        href={`/runs/new?presetId=${preset.id}`}
-        className="mt-4 btn btn-secondary btn-sm w-full"
-      >
-        <Play className="w-3.5 h-3.5" aria-hidden="true" /> Use preset
-      </Link>
     </div>
   );
 }
@@ -807,7 +739,6 @@ function PresetCard({
 function RunRow({
   run,
   templateName,
-  formatName,
   onDelete,
   onTogglePin,
   printerHeld = false,
@@ -818,19 +749,20 @@ function RunRow({
   /** Another run whose part stops the shared printer. */
   holdRun?: { runId: string; runName: string } | null;
   templateName: string;
-  formatName: string;
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
   const office = rowOffice(run, printerHeld, holdRun);
   const { setRunStatus, createPrintEvent } = useRunStore();
-  const display = runDisplayStatus(run, office);
+  const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
   const waitingLine = office && office.onTheWay > 0 ? `${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way to the office printer'}` : '';
   const failed = office?.firstFailed ?? null;
+  // The run's progress (what a cancel keeps), and every label counted as printed (what the row shows, like the run page).
   const printed = Math.min(run.printedCount || 0, run.totalLabels);
-  const finished = run.totalLabels > 0 && printed >= run.totalLabels;
-  const pct = run.totalLabels > 0 ? Math.round((printed / run.totalLabels) * 100) : 0;
+  const shown = printedShown(run);
+  const finished = run.totalLabels > 0 && shown >= run.totalLabels;
+  const pct = run.totalLabels > 0 ? Math.round((shown / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
   const pinned = !!run.pinnedAt;
   // A "Send all … in N parts" that stopped early on this device.
@@ -885,9 +817,9 @@ function RunRow({
             <h3 className="line-clamp-2 min-w-0 break-words text-sm font-semibold text-zinc-100">{run.name}</h3>
             <RunStatusText run={run} office={office} />
           </div>
-          {/* Phones: the label size steps aside and the line may wrap, so the date (what tells runs apart) is never cut. */}
+          {/* The design and the date tell runs apart; the label size is on the run's own page. */}
           <p className="mt-0.5 text-xs text-zinc-400 max-sm:line-clamp-2 sm:truncate">
-            {display.detail && !failed ? `${display.detail} · ` : ''}{templateName}{formatName ? <span className="max-sm:hidden"> · {formatName}</span> : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
+            {display.detail && !failed ? `${display.detail} · ` : ''}{templateName} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
           </p>
           {failed && run.status !== 'cancelled' && (
             <p className={`mt-0.5 text-xs ${failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? 'text-red-400' : 'text-amber-300'}`}>
@@ -908,16 +840,13 @@ function RunRow({
           <p className="text-sm tabular-nums text-zinc-400">
             {finished
               ? <span className="font-medium text-emerald-400">All {run.totalLabels.toLocaleString()} printed</span>
-              : <><span className="font-medium text-zinc-100">{printed.toLocaleString()}</span> of {run.totalLabels.toLocaleString()} printed</>}
+              : <><span className="font-medium text-zinc-100">{shown.toLocaleString()}</span> of {run.totalLabels.toLocaleString()} printed</>}
           </p>
           <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
             <div className={`h-full rounded-full ${run.status === 'cancelled' ? 'bg-zinc-500' : finished ? 'bg-emerald-400' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
           </div>
           {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>
-        {/* The whole card opens the run; the button is only drawn on wider screens. */}
-        {/* Finished rows keep the button's room, so every row's bar lines up. */}
-        {unfinished ? <span className="btn btn-secondary btn-sm max-sm:hidden sm:w-24">Open</span> : <span aria-hidden="true" className="shrink-0 max-sm:hidden sm:w-24" />}
       </Link>
       <Menu
         label={`More for ${run.name}`}
