@@ -439,7 +439,7 @@ function DesignerContent() {
                 ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
                 : openState.status === 'missing'
                   ? <p role="alert" className="mb-4 text-sm text-amber-300">That design link doesn’t go to a design any more — it may have been deleted. Pick one below.</p>
-                  : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="link">Try again</button></p>
+                  : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="link -my-3 inline-block py-3">Try again</button></p>
             ) : null}
             templates={templates}
             onSelectTemplate={(id) => {
@@ -764,7 +764,8 @@ function DesignerContent() {
       <div className="lg:hidden px-4 py-2">
       <div role="tablist" aria-label="Designer panes" className="segmented">
         <SegmentedIndicator index={['label', 'layers', 'data', 'edit'].indexOf(phonePane)} count={4} />
-        {([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Edit']] as const).map(([pane, text]) => (
+        {/* "Change item", not a second "Edit" next to the Edit | Exact print toggle. */}
+        {([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Change item']] as const).map(([pane, text]) => (
           <button key={pane} type="button" role="tab" aria-selected={phonePane === pane} onClick={() => { setPhonePane(pane); if (pane === 'layers' || pane === 'data') setLeftPanel(pane); }} >{text}</button>
         ))}
       </div>
@@ -969,7 +970,6 @@ function DesignerContent() {
           onUpdateSelected={handleUpdateSelectedElements}
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
           allElements={currentTemplate.elements}
-          onPick={(id) => setSelectedIds(new Set([id]))}
           problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => (p.barcodeFit ? barcodePlainSentence(problemText(p)) : problemText(p))) : []}
           onArrange={(action: AlignAction) => {
             beginGesture();

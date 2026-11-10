@@ -24,7 +24,7 @@ import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/com
 import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
 import { barcodeTickLabel, barcodeWaitWords } from '@/lib/runBarcodeTicks';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
-import { stopFixWords, LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
+import { stopFixWords, LAYOUT_GO_AHEAD, barcodeIssueStops, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
 import { friendlyError, friendlyRenderError, isNetworkError, SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
@@ -537,7 +537,8 @@ function NewRunContent() {
       if (isZipFile(bytes)) {
         // An Excel workbook. Read its first sheet; if that fails, say how to
         // make a CSV instead of showing the zip's bytes as "columns".
-        try { parsed = await readXlsx(bytes, { headerRow, sheet }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
+        // With no sheet picked, the sheet whose headings match the design's fields.
+        try { parsed = await readXlsx(bytes, { headerRow, sheet, preferHeaders: sheet === undefined ? dynamicFields : undefined }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
         if (!parsed.headers.length && (parsed.sheetNames?.length ?? 1) > 1 && sheet !== undefined) {
           // A picked sheet with nothing on it: say so, and keep the sheet list to pick another.
           setFileInfo((info) => (info ? { ...info, sheetIndex: sheet } : info));
@@ -1021,13 +1022,23 @@ function NewRunContent() {
                 : inputMode === 'paste' && !pasteField
                   ? 'Choose which field the pasted values fill.'
                   : null;
+  // Spreadsheet rows and design problems counted apart, so the footer never
+  // blames the design for a value in the file.
+  const barcodeStopCounts = () => {
+    const stopping = barcodeCheck.issues.filter((issue) => barcodeIssueStops(issue, format));
+    const rows = new Set(stopping.filter((issue) => issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field)).map((issue) => issue.label)).size;
+    const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
+    return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
+  };
   const checkReasons = setupReason || !format ? [] : [
     !blanksOk && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.'
+      : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
+        : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
     !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, labelCount)}. Search again, or tick to print without them.`,
@@ -1335,10 +1346,9 @@ function NewRunContent() {
   const sheetNames = fileInfo?.sheetNames ?? [];
   const sheetPicker = sheetNames.length > 1 && lastFile.current ? (
     <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-300">
-      <span id={`${formId}-sheet`}>Sheet</span>
-      <div className="w-56 max-w-full">
+      <span id={`${formId}-sheet`}>Using sheet</span>
+      <div className="w-64 max-w-full">
         <CustomSelect
-          compact
           aria-labelledby={`${formId}-sheet`}
           value={String(fileInfo?.sheetIndex ?? 0)}
           onChange={(value) => { if (lastFile.current) void handleFile(lastFile.current, undefined, Number(value)); }}
@@ -1428,8 +1438,8 @@ function NewRunContent() {
                   <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
                 ) : templates.length === 0 ? (
                   <p className="text-sm text-zinc-400 py-2">
-                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="link disabled:opacity-40">Make one</button>
-                    {formats.length === 0 && <> (add a <Link href="/formats" className="link">label size</Link> first)</>}
+                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="link -my-3 inline-block py-3 disabled:opacity-40">Make one</button>
+                    {formats.length === 0 && <> (add a <Link href="/formats" className="link -my-3 inline-block py-3">label size</Link> first)</>}
                   </p>
                 ) : (
                   <CustomSelect

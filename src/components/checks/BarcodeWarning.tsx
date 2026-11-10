@@ -15,7 +15,7 @@ export function WhyToggle({ children, label = 'Why?' }: { children: ReactNode; l
   const id = useId();
   return (
     <>
-      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="link -my-3 py-3">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="link -mx-1.5 -my-3 px-1.5 py-3">
         {open ? 'Hide why' : label}
       </button>
       <div id={id} className="fold" data-open={open}>

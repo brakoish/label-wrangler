@@ -142,7 +142,21 @@ function sheetGrid(sheet: Document, shared: string[], formats: Array<string | un
 
 }
 
-export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOptions = {}): Promise<ParsedCsv> {
+const simpleName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** How many of a sheet's headings match the design's fields (capitals and spaces don't matter). */
+function headingScore(grid: string[][], wanted: ReadonlySet<string>): number {
+  if (!grid.length || !wanted.size) return 0;
+  const { headers } = gridToRows(grid, findHeaderRow(grid));
+  return new Set(headers.map(simpleName).filter((h) => wanted.has(h))).size;
+}
+
+/**
+ * `preferHeaders`: the design's field names. With no sheet asked for, the
+ * sheet whose headings match the most of them is read (a "Read me" first
+ * sheet is passed over); otherwise the first sheet with something on it.
+ */
+export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOptions & { preferHeaders?: ReadonlyArray<string> } = {}): Promise<ParsedCsv> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (!isZipFile(bytes)) throw new XlsxReadError('Not an Excel file');
   const entries = readEntries(bytes);
@@ -192,6 +206,16 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOpt
       if (i === sheetIndex) continue;
       const next = await readGrid(sheetPaths[i]);
       if (next && next.grid.length) { read = next; sheetIndex = i; }
+    }
+    const wanted = new Set((options.preferHeaders ?? []).map(simpleName).filter(Boolean));
+    if (wanted.size && sheetPaths.length > 1 && read) {
+      let best = headingScore(read.grid, wanted);
+      for (let i = 0; i < Math.min(sheetPaths.length, 20); i++) {
+        if (i === sheetIndex) continue;
+        const next = await readGrid(sheetPaths[i]);
+        const score = next ? headingScore(next.grid, wanted) : 0;
+        if (next && score > best) { best = score; read = next; sheetIndex = i; }
+      }
     }
   }
   if (!read) throw new XlsxReadError('No sheet found');

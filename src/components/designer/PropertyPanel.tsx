@@ -30,8 +30,6 @@ interface PropertyPanelProps {
   allElements?: TemplateElement[];
   /** Layout problems that involve the selected item, in plain words. */
   problems?: string[];
-  /** Select an item from the list shown when nothing is selected. */
-  onPick?: (id: string) => void;
 }
 
 /** Each kind of item's icon, the same as in the items list. */
@@ -44,20 +42,10 @@ const ITEM_ICONS: Record<string, React.ReactNode> = {
   image: <Image className="size-4" />,
 };
 
-/** "Package tag", "Net Wt 3.5g", "Box": what a person calls the item. */
-function itemLabel(el: TemplateElement): string {
-  if (!el.isStatic && el.fieldName) return friendlyFieldName(el.fieldName);
-  if ((el.type === 'text' || el.type === 'qr' || el.type === 'barcode') && el.content?.trim()) {
-    const text = el.content.trim();
-    return text.length > 28 ? `${text.slice(0, 27)}…` : text;
-  }
-  return elementTypeName(el.type);
-}
-
 /** The right-hand panel: a plain surface, no rules or borders. */
 const PANEL = 'w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 lg:bg-zinc-900 overflow-y-auto';
 
-export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange, allElements = [], problems = [], onPick }: PropertyPanelProps) {
+export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange, allElements = [], problems = [] }: PropertyPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   useRubberBand(panelRef);
   const [showManifest, setShowManifest] = useState(false);
@@ -108,24 +96,10 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   }
 
   if (!element) {
-    const items = [...allElements].sort((a, b) => b.zIndex - a.zIndex);
+    // One line, not a second copy of the Items list.
     return (
       <div className={`${PANEL} min-h-20 lg:min-h-0`}>
-        <h2 className="px-4 pt-3 text-sm font-semibold text-zinc-100">Pick an item to change it</h2>
-        {onPick && items.length > 0 ? (
-          <ul className="px-2 pt-1 pb-3">
-            {items.map((item) => (
-              <li key={item.id}>
-                <button type="button" onClick={() => onPick(item.id)} className="press flex min-h-control-sm w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
-                  <span className="flex size-4 shrink-0 items-center justify-center text-zinc-400" aria-hidden="true">{ITEM_ICONS[item.type]}</span>
-                  <span className="min-w-0 truncate">{itemLabel(item)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="px-4 pt-1 pb-4 text-sm text-zinc-400">{items.length ? 'Tap or click an item on the label.' : 'Add an item to the label first.'}</p>
-        )}
+        <p className="px-4 pt-3 pb-4 text-sm text-zinc-400">{allElements.length ? 'Tap an item on the label, or in Items, to change it.' : 'Add an item to the label first.'}</p>
       </div>
     );
   }

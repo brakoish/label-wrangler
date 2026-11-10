@@ -97,8 +97,8 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
         {failed.length > 0 && !pageOwnsError && <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
           <span>{anySignedOut ? `You’re signed out, so your ${named} couldn’t load.` : `Couldn’t load your ${named}. ${friendlyError(failed[0].store.error)}`}</span>
           {anySignedOut
-            ? <a className="font-medium underline underline-offset-2" href="/login">Sign in</a>
-            : <button type="button" className="font-medium underline underline-offset-2" onClick={()=>{ for (const {load} of failed) void load(); }}>Try again</button>}
+            ? <a className="inline-flex min-h-11 items-center font-medium underline underline-offset-2" href="/login">Sign in</a>
+            : <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={()=>{ for (const {load} of failed) void load(); }}>Try again</button>}
         </div>}
         {loadingMore.map(({name,store,load}) => <button type="button" key={name} className="block w-full px-4 py-1 text-left underline underline-offset-2" disabled={store.loading} onClick={()=>void load(true)}>{store.loading ? `Loading the rest of your ${name.toLowerCase()}…` : `Load more ${name.toLowerCase()}`}</button>)}
         {(sync.count > 0 || sync.error) && <div role="alert" className="px-4 py-2">{sync.error ? friendlyError(sync.error) : `${sync.count === 1 ? '1 print update hasn\u2019t' : `${sync.count} print updates haven\u2019t`} reached the server yet. They\u2019ll send when you\u2019re back online — don\u2019t clear this browser\u2019s data.`} <button type="button" className="font-medium underline underline-offset-2" onClick={()=>void flushOfflineQueue()}>Send now</button></div>}

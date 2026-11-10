@@ -316,7 +316,7 @@ function TemplateCard({
           {format && !formatName.includes(`${format.width}"`) ? `${formatName}, ${format.width}" × ${format.height}"` : formatName}
         </p>
         <p className="mt-0.5 text-xs text-zinc-400">
-          {partCount} {partCount === 1 ? 'item' : 'items'}{dynamicCount > 0 ? `, ${dynamicCount} change${dynamicCount === 1 ? 's' : ''} per label` : ''}
+          {partCount} {partCount === 1 ? 'item' : 'items'}{dynamicCount > 0 ? `, ${dynamicCount === partCount && partCount > 1 ? 'all' : dynamicCount} changing per label` : ''}
         </p>
       </div>
     </div>
