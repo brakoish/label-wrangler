@@ -1,5 +1,6 @@
 import { resolveRunImages } from '@/lib/runImages.server';
 import { captureDesign } from '@/lib/runDesign.server';
+import { leaveFieldsOff } from '@/lib/runLeaveOff';
 import { validatedBody, OfficeError } from '@/lib/validation';
 import { randomUUID } from 'node:crypto';
 import { withOfficeAuth, officeUserFor } from "@/lib/office/guard";
@@ -175,6 +176,8 @@ async function handlePOST(request: NextRequest) {
     const id = `run-${randomUUID()}`;
     const design = await captureDesign(String(body.templateId));
     if (body.imageSelections) design.template = await resolveRunImages(design.template, body.imageSelections);
+    // Parts the person left off this run print nothing: their items are not in the run's design.
+    if (body.leaveOff?.length) design.template = leaveFieldsOff(design.template, body.leaveOff);
     const newRun = {
       id,
       designSnapshot: design,

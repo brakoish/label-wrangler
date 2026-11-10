@@ -56,3 +56,27 @@ export function labelsWords(labels: ReadonlyArray<number>, total: number): strin
     ? `labels ${shown.join(', ')} and ${(labels.length - shown.length).toLocaleString()} more`
     : `labels ${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
 }
+
+/** The Nabis detail a column holds, when Metrc can leave it out. */
+function detailForColumn(column: string): NabisMissing | null {
+  if (column === 'retailId') return 'retailIds';
+  return LAB_COLUMN.test(column) ? 'labPotency' : null;
+}
+
+/**
+ * The parts of the label (field names) that are empty on some of `labels`
+ * (1-based) because Nabis didn't send that detail. Ticking "leave them off"
+ * leaves exactly these off the run, so nothing (not the design's sample)
+ * prints there.
+ */
+export function missingDetailFields(rows: ReadonlyArray<Record<string, string>>, mappings: Record<string, FieldMapping>, labels: ReadonlyArray<number>): string[] {
+  const out: string[] = [];
+  for (const [field, mapping] of Object.entries(mappings)) {
+    if (mapping.mode !== 'column' || !mapping.csvColumn) continue;
+    const column = mapping.csvColumn;
+    const detail = detailForColumn(column);
+    if (!detail) continue;
+    if (labels.some((n) => { const row = rows[n - 1]; return rowMissingDetails(row).includes(detail) && !String(row?.[column] ?? '').trim(); })) out.push(field);
+  }
+  return out;
+}
