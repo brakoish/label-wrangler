@@ -996,8 +996,8 @@ function DesignerContent() {
                   <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Print preview</button>
                 </div>
               )}
-              {/* Phone: the Label tab gets its own way to add (Items has one too). */}
-              {!exactView && <button type="button" onClick={() => setShowAddElementMenu(true)} className="btn btn-secondary btn-sm lg:hidden"><Plus className="size-4" aria-hidden="true" /> Add</button>}
+              {/* Phone: the Label tab gets its own way to add, named and styled as on Items. */}
+              {!exactView && <button type="button" onClick={() => setShowAddElementMenu(true)} className="btn btn-primary btn-sm lg:hidden"><Plus className="size-4" aria-hidden="true" /> Add an item</button>}
               <div className="ml-auto flex shrink-0 items-center gap-1">
               <button
                 onClick={handleUndo}

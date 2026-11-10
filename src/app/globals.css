@@ -382,6 +382,12 @@ textarea:focus-visible,
   .switch[aria-checked="true"]:active::after {
     transform: translateX(1.1rem);
   }
+  /* A 44px tall touch area around the 24px track (the knob uses ::after). */
+  .switch::before {
+    content: "";
+    position: absolute;
+    inset: -0.625rem 0;
+  }
 
   /* First-load list entrance: 30ms stagger, capped at the 10th item. */
   .stagger > * {

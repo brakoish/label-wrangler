@@ -79,7 +79,8 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
       ...(onShowCode ? [{ label: 'Show printer commands', onSelect: onShowCode }] : []),
     ] satisfies MenuItem[]} /> : <div className={inline ? 'contents' : 'flex flex-wrap gap-2'}>
       <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Load the sample design</button>
-      {admin && <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={() => file.current?.click()}>Import a design file</button>}
+      {/* In an empty state, importing is a quiet link on its own line, so the two buttons keep one row. */}
+      {admin && <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : inline ? 'link inline-flex min-h-control-sm basis-full items-center justify-center text-sm' : 'btn btn-secondary'} onClick={() => file.current?.click()}>{inline ? 'Or import a design file' : 'Import a design file'}</button>}
       {admin && <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />}
     </div>}
     {error && !draft && <p role="alert" className={`text-red-400 py-2 ${inline ? 'basis-full text-sm' : ''}`}>{friendlyError(error)}</p>}

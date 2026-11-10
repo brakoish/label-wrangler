@@ -318,8 +318,18 @@ function SpecCard({ label, hint, children }: { label: string; hint?: string; edi
 }
 
 function DetailRow({ label, hint, editing, children }: { label: string; hint?: string; editing: boolean; children: React.ReactNode }) {
+  // Read: the value sits right under its name, like the facts above it.
+  if (!editing) {
+    return (
+      <div className="py-1.5">
+        <span className="block text-zinc-400">{label}</span>
+        <span className="block">{children}</span>
+        {hint && <span className="block text-xs text-zinc-400">{hint}</span>}
+      </div>
+    );
+  }
   return (
-    <div className={`flex justify-between items-center gap-3 ${editing ? 'py-1' : 'py-1.5'}`}>
+    <div className="flex justify-between items-center gap-3 py-1">
       <span className="min-w-0">
         <span className="block text-zinc-400">{label}</span>
         {hint && <span className="block text-xs text-zinc-400">{hint}</span>}
