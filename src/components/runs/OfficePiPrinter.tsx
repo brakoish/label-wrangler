@@ -63,7 +63,7 @@ const tone={bad:'text-red-400',warn:'text-amber-300',ok:'text-emerald-400'} as c
 /** Runs with a "Send all in parts" series going in this tab: one series per run at a time. */
 const seriesLocks=new Set<string>();
 const dotTone={bad:'bg-red-400',warn:'bg-amber-300',ok:'bg-emerald-400'} as const;
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[]}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -88,7 +88,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   /** Tells the run header when the chosen office printer is paused or stopped, so it never says "Sending". */
   onHeldChange?:(held:boolean)=>void;
   /** Labels already printed by scanning (scan mode), so a send can leave them out. */
-  scannedLabels?:ReadonlyArray<number>}){
+  scannedLabels?:ReadonlyArray<number>;
+  /** Goes up when the run page's "Print some labels again…" asks this panel to start choosing labels. */
+  openChooser?:number}){
   const uid=useId();
   const [printers,setPrinters]=useState<Printer[]>([]);const [selected,setSelected]=useState('');
   const [stationsLoaded,setStationsLoaded]=useState(false);const [canPrint,setCanPrint]=useState(false);
@@ -256,6 +258,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   },[notice,requests,summary.failed.length]);
 
   const nothingLeft=firstUnsentLabel(jobs,total,printedCount)===null;
+  // "Print some labels again…" on the run's summary: start with an empty range.
+  useEffect(()=>{if(openChooser>0){rangeEdited.current=true;setChooseAgain(true);setReprintOf('');setFrom('');setTo('');setNotice(null);}},[openChooser]);
   // Held labels still to send (not printed, not on their way again).
   const heldUnsent=useMemo(()=>requestsEverLoaded?heldStillUnsent(heldSpans,jobs,printedCount,total):[],[requestsEverLoaded,heldSpans,jobs,printedCount,total]);
   useEffect(()=>{if(heldSpans.length && requestsEverLoaded && !busy && !heldUnsent.length)saveHeld([]);},

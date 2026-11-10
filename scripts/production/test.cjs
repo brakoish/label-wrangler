@@ -6,6 +6,7 @@ for(const file of [
  'scripts/production/test-run-progress.cjs',
  'scripts/production/test-build-check.cjs',
  'scripts/production/test-run-rewind.cjs',
+ 'scripts/production/test-run-r5.cjs',
  'scripts/production/test-permissions.cjs',
  'scripts/production/test-delete-conflicts.cjs',
  'scripts/production/test-login-throttle.cjs',
