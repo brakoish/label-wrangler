@@ -22,7 +22,7 @@ import { applyRunImages, validateRunImages, type RunImageSelections } from '@/li
 import { BlankValueCheck } from '@/components/runs/BlankValueCheck';
 import { blankCheckAllowsPrinting, checkRunData, describeBlankSummary, rememberBlankChoice } from '@/lib/runDataCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
-import { friendlyError, isNetworkError } from '@/lib/userMessages';
+import { friendlyError, isNetworkError, SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
@@ -433,6 +433,7 @@ function NewRunContent() {
       setPreviewIndex(0);
       applyAutoColumnMapping(MANIFEST_HEADERS, rows);
       if (data.error) setManifestError(data.error);
+      else if (data.detailsIncomplete) setManifestError(SEARCH_DETAILS_INCOMPLETE);
     } catch (error) {
       setManifestError(error instanceof Error ? error.message : 'Manifest search failed');
       setManifestRows([]);

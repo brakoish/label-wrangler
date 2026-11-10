@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ChevronDown, Circle, FlaskConical, Search, X } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 import { MANIFEST_FIELDS } from '@/lib/manifestFields';
+import { SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 
 interface TestDataPanelProps {
   elements: TemplateElement[];
@@ -100,6 +101,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
         }
       }
       if (data.error) setManifestError(data.error);
+      else if (data.detailsIncomplete) setManifestError(SEARCH_DETAILS_INCOMPLETE);
     } catch (error) {
       setManifestRows([]);
       setSelectedManifestKey(null);

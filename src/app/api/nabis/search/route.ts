@@ -414,8 +414,26 @@ function extractPotencyFromLabResults(results: unknown): LabPotency {
 /** Every Manifest/Metrc call gives up after this, so one slow upstream cannot
  * hang a search (and its serverless function) indefinitely. */
 const EXTERNAL_TIMEOUT_MS = 8000;
+/** The whole search, extra details included, stops waiting after this. Rows
+ * that are ready are returned; the rest come back without their extra
+ * details and the response says so (detailsIncomplete). */
+const SEARCH_BUDGET_MS = 20_000;
 /** Packages enriched at once; each one makes 2-3 upstream calls. */
-const ENRICH_CONCURRENCY = 4;
+const ENRICH_CONCURRENCY = 8;
+/** One upstream call: its own timeout, cut short when the search budget runs out. */
+function upstreamSignal(budget?: AbortSignal) {
+  const own = AbortSignal.timeout(EXTERNAL_TIMEOUT_MS);
+  return budget ? AbortSignal.any([own, budget]) : own;
+}
+/** Rejects (as a timeout) when the budget runs out first. */
+function withinBudget<T>(work: Promise<T>, budget: AbortSignal): Promise<T> {
+  if (budget.aborted) return Promise.reject(budget.reason);
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(budget.reason);
+    budget.addEventListener('abort', stop, { once: true });
+    work.then(resolve, reject).finally(() => budget.removeEventListener('abort', stop));
+  });
+}
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
@@ -426,7 +444,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
-async function fetchMetrcLabPotency(packageId: string): Promise<LabPotency> {
+async function fetchMetrcLabPotency(packageId: string, budget?: AbortSignal): Promise<LabPotency> {
   const baseUrl = process.env.METRC_BASE_URL;
   const license = process.env.METRC_LICENSE_DISTRIBUTOR;
   const integratorKey = process.env.METRC_INTEGRATOR_KEY;
@@ -444,7 +462,7 @@ async function fetchMetrcLabPotency(packageId: string): Promise<LabPotency> {
       Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
     },
     cache: 'no-store',
-    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+    signal: upstreamSignal(budget),
   });
 
   if (!response.ok) return empty;
@@ -543,7 +561,7 @@ function rowsFromLabelData(data: ManifestPackage) {
   }));
 }
 
-async function fetchMetrcRetailIdUnits(packageTag: string): Promise<ManifestLabelUnit[] | null> {
+async function fetchMetrcRetailIdUnits(packageTag: string, budget?: AbortSignal): Promise<ManifestLabelUnit[] | null> {
   const baseUrl = process.env.METRC_BASE_URL;
   const license = process.env.METRC_LICENSE_DISTRIBUTOR;
   const integratorKey = process.env.METRC_INTEGRATOR_KEY;
@@ -559,7 +577,7 @@ async function fetchMetrcRetailIdUnits(packageTag: string): Promise<ManifestLabe
       Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
     },
     cache: 'no-store',
-    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+    signal: upstreamSignal(budget),
   });
 
   if (!response.ok) return null;
@@ -574,11 +592,11 @@ async function fetchMetrcRetailIdUnits(packageTag: string): Promise<ManifestLabe
   }));
 }
 
-async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>) {
+async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>, budget?: AbortSignal) {
   const packageTag = pkg.packageTag || pkg.tag;
   if (!packageTag) return [pkg];
 
-  const units = await fetchMetrcRetailIdUnits(packageTag).catch(() => null);
+  const units = await fetchMetrcRetailIdUnits(packageTag, budget).catch(() => null);
   if (!units || units.length === 0) return [pkg];
 
   return rowsFromLabelData({
@@ -590,7 +608,7 @@ async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>) 
 
 async function rowWithMetrcLabFallback(
   pkg: ReturnType<typeof normalizePackage>,
-  options: { preferLabThc?: boolean } = {},
+  options: { preferLabThc?: boolean; budget?: AbortSignal } = {},
 ) {
   if (!pkg.metrcPackageId) return pkg;
   if (
@@ -605,7 +623,7 @@ async function rowWithMetrcLabFallback(
     return pkg;
   }
 
-  const potency = await fetchMetrcLabPotency(pkg.metrcPackageId).catch(() => ({
+  const potency = await fetchMetrcLabPotency(pkg.metrcPackageId, options.budget).catch(() => ({
     ...EMPTY_LAB_POTENCY,
   }));
   const thcPercent = options.preferLabThc ? potency.thcPercent || pkg.thcPercent : pkg.thcPercent || potency.thcPercent;
@@ -647,7 +665,7 @@ async function rowWithMetrcLabFallback(
   };
 }
 
-async function fetchManifestLabelRows(packageTag: string) {
+async function fetchManifestLabelRows(packageTag: string, budget?: AbortSignal) {
   const manifestBase = process.env.MANIFEST_API_BASE_URL ?? 'http://localhost:5000/api';
   const endpoint = new URL(`${manifestBase.replace(/\/$/, '')}/retail-labels/label-data/${encodeURIComponent(packageTag)}`);
   endpoint.searchParams.set('includeRetailIds', 'true');
@@ -658,7 +676,7 @@ async function fetchManifestLabelRows(packageTag: string) {
       ...(process.env.MANIFEST_COOKIE ? { Cookie: process.env.MANIFEST_COOKIE } : {}),
     },
     cache: 'no-store',
-    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+    signal: upstreamSignal(budget),
   });
 
   if (!response.ok) return null;
@@ -668,18 +686,28 @@ async function fetchManifestLabelRows(packageTag: string) {
 
 async function enrichWithManifestLabelData(
   packages: ReturnType<typeof normalizePackage>[],
-  options: { preferLabThc?: boolean } = {},
+  options: { preferLabThc?: boolean; budget?: AbortSignal } = {},
 ) {
+  // Rows whose extra details were cut short by the search budget. They are
+  // still returned (as the basic package row) so the search shows them.
+  let incomplete = 0;
   const enriched = await mapLimit(
     packages.slice(0, 25), ENRICH_CONCURRENCY, async (pkg) => {
-      const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
+      if (options.budget?.aborted) { incomplete++; return [pkg]; }
+      const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag, options.budget).catch(() => null);
       const labPkg = await rowWithMetrcLabFallback(pkg, options);
-      return rows && rows.length > 0
+      const result = await (rows && rows.length > 0
         ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row, options)))
-        : rowsWithMetrcRetailIds(labPkg);
+        : rowsWithMetrcRetailIds(labPkg, options.budget));
+      if (options.budget?.aborted) incomplete++;
+      return result;
     },
   );
-  return finalizeLabelRows(enriched.flat());
+  return { packages: finalizeLabelRows(enriched.flat()), detailsIncomplete: incomplete > 0 };
+}
+/** Response body; the flag is only present when some details were cut short. */
+function searchResult(result: { packages: unknown[]; detailsIncomplete: boolean }) {
+  return NextResponse.json({ packages: result.packages, ...(result.detailsIncomplete ? { detailsIncomplete: true } : {}) });
 }
 
 async function searchManifestDatabase(search: string) {
@@ -784,7 +812,7 @@ function normalizeMetrcPackage(pkg: MetrcPackage) {
   });
 }
 
-async function searchMetrcByExactTag(search: string) {
+async function searchMetrcByExactTag(search: string, budget?: AbortSignal) {
   if (!looksLikeMetrcPackageTag(search)) return null;
 
   const baseUrl = process.env.METRC_BASE_URL;
@@ -802,7 +830,7 @@ async function searchMetrcByExactTag(search: string) {
       Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
     },
     cache: 'no-store',
-    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+    signal: upstreamSignal(budget),
   });
 
   if (response.status === 404) return [];
@@ -823,27 +851,24 @@ async function handleGET(request: NextRequest) {
   const endpoint = new URL(`${manifestBase.replace(/\/$/, '')}/packages`);
   endpoint.searchParams.set('search', search);
   const isExactPackageSearch = looksLikeMetrcPackageTag(search);
+  // One shared deadline for every upstream call this search makes.
+  const budget = AbortSignal.timeout(SEARCH_BUDGET_MS);
 
   try {
-    const databasePackages = await searchManifestDatabase(search);
+    const databasePackages = await withinBudget(searchManifestDatabase(search), budget);
     if (databasePackages && databasePackages.length > 0) {
-      return NextResponse.json({
-        packages: await enrichWithManifestLabelData(databasePackages, { preferLabThc: isExactPackageSearch }),
-      });
+      return searchResult(await enrichWithManifestLabelData(databasePackages, { preferLabThc: isExactPackageSearch, budget }));
     }
 
-    const labelRows = isExactPackageSearch ? await fetchManifestLabelRows(search).catch(() => null) : null;
+    const labelRows = isExactPackageSearch ? await fetchManifestLabelRows(search, budget).catch(() => null) : null;
     if (labelRows && labelRows.length > 0) {
-      return NextResponse.json({
-        packages: finalizeLabelRows(await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true })))),
-      });
+      const packages = finalizeLabelRows(await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true, budget }))));
+      return searchResult({ packages, detailsIncomplete: budget.aborted });
     }
 
-    const metrcPackages = await searchMetrcByExactTag(search);
+    const metrcPackages = await searchMetrcByExactTag(search, budget);
     if (metrcPackages && metrcPackages.length > 0) {
-      return NextResponse.json({
-        packages: await enrichWithManifestLabelData(metrcPackages, { preferLabThc: isExactPackageSearch }),
-      });
+      return searchResult(await enrichWithManifestLabelData(metrcPackages, { preferLabThc: isExactPackageSearch, budget }));
     }
 
     const response = await fetch(endpoint, {
@@ -852,7 +877,7 @@ async function handleGET(request: NextRequest) {
         ...(process.env.MANIFEST_COOKIE ? { Cookie: process.env.MANIFEST_COOKIE } : {}),
       },
       cache: 'no-store',
-      signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+      signal: upstreamSignal(budget),
     });
 
     if (!response.ok) {
@@ -871,7 +896,7 @@ async function handleGET(request: NextRequest) {
       ? data.map(normalizePackage).filter((pkg) => pkg.tag && pkg.itemName)
       : [];
 
-    return NextResponse.json({ packages: await enrichWithManifestLabelData(packages) });
+    return searchResult(await enrichWithManifestLabelData(packages, { budget }));
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
     console.error('Package search failed:', error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error');
@@ -886,3 +911,5 @@ async function handleGET(request: NextRequest) {
 }
 
 export const GET = withOfficeAuth(handleGET);
+// Room for the 20 s search budget plus the response.
+export const maxDuration = 30;

@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 
 type PackageResult = {
   id: string;
@@ -350,6 +351,7 @@ export default function NabisPage() {
         const data = await response.json();
         setResults(Array.isArray(data.packages) ? data.packages : []);
         if (data.error) setError(data.error);
+        else if (data.detailsIncomplete) setError(SEARCH_DETAILS_INCOMPLETE);
       } catch (fetchError) {
         if (!controller.signal.aborted) {
           setError(fetchError instanceof Error ? fetchError.message : 'Search failed');

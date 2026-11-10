@@ -8,6 +8,10 @@ import type { RunPrintEvent, RunPrintOutput, RunStatus, TemplateElement } from '
 
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
+/** Package search returned in time but some rows are missing extra details
+ * (lab results, retail IDs) because Manifest or Metrc was slow. */
+export const SEARCH_DETAILS_INCOMPLETE = 'Some details are still loading. Search again in a moment to fill them in.';
+
 export const OFFLINE_MESSAGE = "Couldn't reach Label Wrangler — check your internet connection and try again.";
 
 export function isNetworkError(error: unknown): boolean {
