@@ -159,7 +159,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const disabled=busy || blockedByPrinter || !printAllowed || waitingOnQueue || (!pending && !rangeValid) || (!reprintOf && !pending && delivered >= total);
   const primaryLabel=busy
     ?(preparationProgress?'Checking labels…':'Sending to office printer…')
-    :pending?'Check again'
+    :pending?'Send again (safe)'
     :waitingOnQueue?'Waiting for office printer…'
     :(!reprintOf && delivered>=total)?'All labels sent'
     :!proofCurrent?`Check labels & send to office printer`
