@@ -36,6 +36,7 @@ PNG/JPEG/WebP and flattened SVG logos are rasterized server-side using Sharp (al
 - **Assigned to office**: claimed; the server cannot remotely cancel it.
 - **Queued at office**: CUPS accepted submission, not a physical print confirmation.
 - **Sent to printer**: CUPS backend reported delivery, still not proof that every label printed.
+- **Waiting for office (held)**: the station is online but the control gate is holding dispatch (a pause/resume command is pending, the printer is paused, or the Pi's printer-status reports are stale). `/api/office/stations` returns a read-only `dispatch_hold_reason` (`control_pending`, `printer_paused`, `control_stale` or null) and the run's Office Pi panel explains it in one sentence. Nothing the Pi receives changes.
 - **Check printer before retrying**: dispatch blocked. Verify the printer and resolve/cancel pending work locally in CUPS, then record the operator's resolution in the website.
 
 Office progress is displayed separately (queued and sent counts including reprints). A sent event adds one run-history entry, not a physical-printed confirmation and not an automatic increment of the legacy `printedCount`. Existing local-print progress is untouched. This avoids mixing remote delivery acknowledgements with physical print counts.

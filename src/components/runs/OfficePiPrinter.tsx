@@ -6,13 +6,18 @@ import { OfficePrinterControls } from './OfficePrinterControls';
 import { createPortal } from 'react-dom';
 import { Printer as PrinterIcon, Hash, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean }
+interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean; dispatch_hold_reason?:string|null }
 interface Job { id:string; from:number; to:number; count:number; state:string; review:boolean; reason:string|null; cupsJobId:number|null }
 interface PrintRequest { id:string; range_from:number; range_to:number; reprint_of:string|null; username:string; jobs:Job[] }
 async function api(path:string,init?:RequestInit){
   const response=await fetch(path,{...init,headers:{'Content-Type':'application/json',...init?.headers},cache:'no-store'});
   const result=await response.json();if(!response.ok)throw new Error(result.error || 'Request failed');return result;
 }
+const holdReasons:Record<string,string>={
+  control_pending:'Waiting for office: a pause/resume command is still being delivered to the printer.',
+  printer_paused:'Waiting for office: the printer is paused. Resume it to continue.',
+  control_stale:'Waiting for office: the Pi has not reported the printer status recently, so new labels are held until it does.',
+};
 const labels:Record<string,string>={queued:'Waiting for office',claimed:'Assigned to office',submitted:'Queued at office',sent_to_printer:'Sent to printer',rejected:'Rejected — check reason',needs_review:'Check printer before retrying',cancelled:'Cancelled before dispatch',resolved:'Reviewed by operator'};
 const inputClass='w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50';
 export function OfficePiPrinter({runId,total,connectionTarget,run,template,format}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat}){
@@ -114,6 +119,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       
       {!printer.dispatch_enabled && <p className="text-amber-400">Awaiting verified pairing and activation. Job creation is disabled.</p>}
       {printer.needs_review && <p className="text-red-400">Check printer before retrying. Dispatch is blocked until reviewed.</p>}
+      {printer.online && printer.dispatch_enabled && !printer.needs_review && printer.dispatch_hold_reason && holdReasons[printer.dispatch_hold_reason] && <p className="text-amber-400">{holdReasons[printer.dispatch_hold_reason]}</p>}
     </div>}
     <OfficePrinterControls />
     {printer && <details className="text-[11px] text-zinc-500"><summary className="cursor-pointer hover:text-zinc-300">Connection details</summary><p className="mt-2">Last contact: {printer.last_seen?new Date(printer.last_seen).toLocaleString():'not paired yet'} · {printer.dpi} DPI</p></details>}
