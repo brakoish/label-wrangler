@@ -11,12 +11,14 @@ const MAX_LINES = 5;
  * Blocks by default; offers a deliberate "leave blank" choice only when the
  * generator would really print blank (never when it would print the sample).
  */
-export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhenOk = true, compact = false }: {
+export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhenOk = true, compact = false, remedy }: {
   check: RunDataCheck;
   leaveBlank: boolean;
   onLeaveBlankChange: (value: boolean) => void;
   showWhenOk?: boolean;
   compact?: boolean;
+  /** Replaces the default "fix your spreadsheet" advice where that doesn't apply (scan mode). */
+  remedy?: string;
 }) {
   const checkboxId = useId();
   if (!check.issues.length) {
@@ -40,7 +42,7 @@ export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhe
         {lines.map((line) => <li key={line}>{line}</li>)}
         {hiddenCount > 0 && <li>…and {hiddenCount} more field{hiddenCount === 1 ? '' : 's'}.</li>}
       </ul>
-      <p className="text-amber-100/80">{blankRemedy(check)}</p>
+      <p className="text-amber-100/80">{remedy ?? blankRemedy(check)}</p>
       {check.canLeaveBlank && (
         <label htmlFor={checkboxId} className="flex items-start gap-2 rounded-md bg-zinc-950/40 p-2 text-amber-50">
           <input id={checkboxId} type="checkbox" className="mt-0.5 accent-amber-500" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />

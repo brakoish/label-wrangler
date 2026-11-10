@@ -297,7 +297,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             onSubmit={(e) => { e.preventDefault(); void handleSubmit(value); }}
             className="mb-4"
           >
-            {blankCheck && blankCheck.issues.length > 0 && <div className="mb-3"><BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact /></div>}
+            {blankCheck && blankCheck.issues.length > 0 && <div className="mb-3"><BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact remedy={`Each scan only fills ${targetField}. To scan with this design, open it and set the other field${blankCheck.issues.length === 1 ? '' : 's'} to "Same on every label", or print this run from the run page instead.`} /></div>}
             <label htmlFor="scan-input" className="text-xs text-zinc-500 uppercase tracking-wider font-semibold mb-2 block">
               Scan or type, then press Enter
             </label>
