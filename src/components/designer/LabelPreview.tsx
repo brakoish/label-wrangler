@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useId, useMemo, type ReactNode } from 'react';
 import { LabelFormat, TemplateElement, TextElement, QRElement, ImageElement } from '@/lib/types';
 import { getBitmapProof, type EditorLayer } from '@/lib/thermal/client';
 import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorGeometry';
@@ -31,12 +31,14 @@ interface LabelPreviewProps {
   onGestureCancel?: () => void;
   /** Items that overlap or run off the label (native thermal): outlined in red and listed. */
   layoutProblems?: LayoutProblem[];
+  /** A button that fixes the first problem (Make an exact-print copy), shown right under it. */
+  noticeAction?: ReactNode;
 }
 
 /** An item's printed ink relative to its x/y, in label units. */
 export interface InkOffset { dx: number; dy: number; width: number; height: number }
 
-export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', uprightTurn = 'ccw', onInkChange, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [] }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', uprightTurn = 'ccw', onInkChange, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [], noticeAction }: LabelPreviewProps) {
   const problemIdSet = useMemo(() => new Set(layoutProblems.flatMap(p => p.ids)), [layoutProblems]);
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
   const [bitmapProof, setBitmapProof] = useState<{ advisories: Array<{ elementId: string; message: string }>; key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
@@ -521,7 +523,8 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
             {problemText(shownProblems[0])}
             {shownProblems.length > 1 && <> <button type="button" aria-expanded={showAllProblems} onClick={() => setShowAllProblems((v) => !v)} className="font-medium underline underline-offset-2">{showAllProblems ? 'Show less' : `and ${shownProblems.length - 1} more`}</button></>}
           </p>
-          {showAllProblems && <ul className="mt-1 list-disc space-y-1 pl-5">{shownProblems.slice(1).map((problem) => <li key={problem.ids.join(',') + problem.kind} className={problem.blocking ? 'text-red-400' : 'text-amber-300'}>{problemText(problem)}</li>)}</ul>}
+          {showAllProblems && <ul className="fold-reveal mt-1 list-disc space-y-1 pl-5">{shownProblems.slice(1).map((problem) => <li key={problem.ids.join(',') + problem.kind} className={problem.blocking ? 'text-red-400' : 'text-amber-300'}>{problemText(problem)}</li>)}</ul>}
+          {noticeAction && <div className="pt-1.5">{noticeAction}</div>}
         </div>
       )}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button type="button" className="btn btn-secondary btn-sm" onClick={() => {

@@ -28,6 +28,9 @@ interface TemplateListProps {
   onNewTemplate: () => void;
   /** Shown above the list, e.g. when a design link couldn't open. */
   notice?: ReactNode;
+  /** When the whole list failed while a design link was opening: one error, one Try again for both. */
+  openingName?: string;
+  onRetryOpen?: () => void;
 }
 
 export function TemplateList({
@@ -39,6 +42,8 @@ export function TemplateList({
   onRenameTemplate,
   onNewTemplate,
   notice,
+  openingName,
+  onRetryOpen,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
   const listHydrated = useTemplateStore((state) => state.hydrated);
@@ -67,7 +72,7 @@ export function TemplateList({
 
   return (
     <div className="page-container">
-      {notice}
+      {!(listError && templates.length === 0) && notice}
       <div className="mb-5 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>
         <button type="button" onClick={onNewTemplate} className={`btn ${listError && templates.length === 0 ? 'btn-secondary' : 'btn-primary'}`}>
@@ -99,9 +104,9 @@ export function TemplateList({
         </div>
       ) : listError && templates.length === 0 ? (
         <div role="alert" className="py-16 text-center space-y-3">
-          <h2 className="text-zinc-100 font-semibold text-lg">We couldn’t load your designs</h2>
+          <h2 className="text-zinc-100 font-semibold text-lg">{openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}</h2>
           <p className="text-zinc-400 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
-          <button type="button" disabled={listLoading} onClick={() => void useTemplateStore.getState().fetchTemplates()} className="btn btn-primary">{listLoading ? 'Trying again…' : 'Try again'}</button>
+          <button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-primary">{listLoading ? 'Trying again…' : 'Try again'}</button>
         </div>
       ) : visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
