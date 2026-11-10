@@ -77,6 +77,8 @@ assert.equal(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU', 
 assert.equal(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU', { barcodeFormat: 'CODE128' })], 1, { SKU: 'Café' }), "The SKU barcode has characters a barcode can't hold (é).");
 assert.doesNotMatch(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU')], 1, { SKU: '123' }), /Artwork|Lane/);
 assert.doesNotMatch(friendlyRenderError('Lane 1, 087b8c70-1234-4abc-8def-0123456789ab: Weird failure', []), /087b8c70/);
+assert.equal(printEventLabel({ eventType: 'sent', output: 'scan', rangeFrom: 6, rangeTo: 6, message: 'Scan' }), 'Printed label 6 by scanning');
+assert.equal(printEventLabel({ eventType: 'sent', output: 'scan', rangeFrom: 6, rangeTo: 6, message: 'Scan (printed again, 2nd time)' }), 'Printed label 6 again by scanning');
 assert.equal(runStatusLabel('queued'), 'Ready to print');
 assert.equal(runStatusLabel('completed'), 'Done');
 assert.equal(printOutputLabel('roll-zpl'), 'thermal printer');

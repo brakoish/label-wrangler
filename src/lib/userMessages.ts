@@ -127,6 +127,7 @@ export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output
   const range = event.rangeFrom === event.rangeTo ? `label ${event.rangeFrom}` : `labels ${event.rangeFrom}–${event.rangeTo}`;
   const where = printOutputLabel(event.output);
   const reprint = /^Reprint/i.test(event.message || '');
+  if (event.output === 'scan' && event.eventType === 'sent') return /again/i.test(event.message || '') ? `Printed ${range} again by scanning` : `Printed ${range} by scanning`;
   if (event.eventType === 'opened') return reprint ? `Opened a reprint of ${range} for the ${where}` : `Opened ${range} for the ${where}`;
   if (event.eventType === 'confirmed') return `Printed ${range} on the ${where}`;
   if (event.eventType === 'failed') return reprint ? `Reprint of ${range} failed on the ${where}` : `Printing ${range} failed on the ${where}`;

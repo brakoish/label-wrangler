@@ -38,6 +38,18 @@ interface ScanEntry {
   at: number;
   status: ScanStatus;
   message?: string;
+  /** Label number in the run, when the scan found its row. */
+  label?: number | null;
+  /** A few words naming the label, e.g. the product. */
+  what?: string;
+  /** How many times this label has now been printed by scanning. */
+  times?: number;
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }
 
 /**
@@ -68,7 +80,13 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   const template = run?.designSnapshot?.template ?? null;
   const format = run?.designSnapshot?.format ?? null;
 
-  useEffect(() => { void useRunStore.getState().fetchRun(id); }, [id]);
+  useEffect(() => { void useRunStore.getState().fetchRun(id); void useRunStore.getState().fetchPrintEvents(id); }, [id]);
+  // The run page remembers the printer last used; the office printer can't
+  // take scans, so say so plainly instead of leaving a disabled box.
+  const [usesOfficePrinter, setUsesOfficePrinter] = useState(false);
+  useEffect(() => {
+    try { setUsesOfficePrinter(localStorage.getItem('lw:last-transport') === 'office'); } catch { /* unknown: assume a local printer */ }
+  }, []);
 
   // Which field each scan fills: the person picks it (remembered per run),
   // defaulting to the barcode or tag field.
@@ -168,6 +186,16 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     }
   }, [transport, dazzleSelected, usbPrinter]);
 
+  const connectUsb = async () => {
+    try {
+      const device = await requestPrinter();
+      setUsbPrinter(await openPrinter(device));
+      setTransport('webusb');
+    } catch (err) {
+      if ((err as Error).name !== 'NotFoundError') setTransportError('Couldn’t connect to the USB printer. Check the cable, then try again.');
+    }
+  };
+
   const handleSubmit = useCallback(async (raw: string) => {
     const v = raw.trim();
     if (!v || !run || !template || !format || !targetField) return;
@@ -188,7 +216,21 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       }
       const zpl = await generateZPLWithImages(template, format, label.values);
       await sendLabel(zpl);
-      setHistory((h) => [{ id: entryId, value: v, at: Date.now(), status: 'ok' as ScanStatus }, ...h].slice(0, 10));
+      // Name the label ("Label 6 · Purple Punch 3.5g") and count repeats.
+      const nameField = template.elements
+        .filter((el) => el.type === 'text' && !el.isStatic && el.fieldName && el.fieldName !== targetField && (label.values[el.fieldName] ?? '').trim())
+        .sort((a, b) => a.y - b.y || a.x - b.x)[0]?.fieldName;
+      const what = nameField ? label.values[nameField] : '';
+      const labelNumber = label.matchedLabel;
+      const earlier = labelNumber
+        ? useRunStore.getState().printEvents.filter((e) => e.runId === run.id && e.output === 'scan' && e.rangeFrom === labelNumber).length
+        : history.filter((entry) => entry.status === 'ok' && entry.value === v).length;
+      setHistory((h) => [{ id: entryId, value: v, at: Date.now(), status: 'ok' as ScanStatus, label: labelNumber, what, times: earlier + 1 }, ...h].slice(0, 20));
+      // Leave a record in the run's print history.
+      if (labelNumber) {
+        const printerName = transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null;
+        void useRunStore.getState().createPrintEvent(run.id, { eventType: 'sent', output: 'scan', rangeFrom: labelNumber, rangeTo: labelNumber, labelCount: 1, printedCountAfter: null, printerName: printerName ?? null, message: earlier ? `Scan (printed again, ${ordinal(earlier + 1)} time)` : 'Scan' }).catch(() => {});
+      }
       setFlash('ok');
       setTimeout(() => setFlash(null), 600);
     } catch (err) {
@@ -198,7 +240,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
         at: Date.now(),
         status: 'error' as ScanStatus,
         message: friendlyRenderError(friendlyError(err, 'Printing failed.'), template.elements, format.labelsAcross || 1),
-      }, ...h].slice(0, 10));
+      }, ...h].slice(0, 20));
       setFlash('error');
       setTimeout(() => setFlash(null), 1200);
     } finally {
@@ -207,7 +249,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       // Re-focus happens automatically via the refocus listener but be explicit.
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [run, template, format, targetField, sendLabel, fields, lookUp]);
+  }, [run, template, format, targetField, sendLabel, fields, lookUp, history, transport, dazzleSelected, usbPrinter]);
 
   // Guard: run / template / format missing.
   if (!run && loadError) {
@@ -248,7 +290,24 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     );
   }
 
+  // A finished or cancelled run has nothing left to scan.
+  if (run.status === 'completed' || run.status === 'cancelled') {
+    return (
+      <AppShell>
+        <PageTitle title={`Scan to print · ${run.name}`} />
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-sm space-y-3 text-center">
+            <h1 className="text-lg font-semibold text-zinc-100">{run.status === 'completed' ? 'This run is done' : 'This run was cancelled'}</h1>
+            <p className="text-sm text-zinc-400">Scan mode is only for runs that still have labels to print. To print labels again, use the run page.</p>
+            <Link href={`/runs/${run.id}`} className="btn btn-primary">Back to the run</Link>
+          </div>
+        </main>
+      </AppShell>
+    );
+  }
+
   const printerReady = (transport === 'dazzle' && !!dazzleSelected) || (transport === 'webusb' && !!usbPrinter);
+  const officeOnly = usesOfficePrinter && !printerReady;
   const canPrint = !!targetField && blanksOk && printerReady;
   const waitingFor = !targetField
     ? 'Nothing on this design changes per label'
@@ -269,12 +328,26 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             <Link href={`/runs/${run.id}`} className="btn btn-ghost btn-sm -ml-3">
               <ArrowLeft className="size-4" aria-hidden="true" /> Back to run
             </Link>
-            <h1 className="text-2xl font-semibold text-zinc-50">Scan to print</h1>
+            <h1 className="text-2xl font-semibold text-zinc-100">Scan to print</h1>
             <p className="truncate text-sm text-zinc-400">{run.name} · {template.name}</p>
           </div>
 
+          {officeOnly && (
+            <section role="status" className="space-y-3" aria-label="Office printer">
+              <p className="text-sm text-zinc-300">This run prints on the office printer, which can’t take scans. Scan mode prints one label at a time on a printer plugged into this computer.</p>
+              <div className="flex flex-wrap gap-2">
+                <Link href={`/runs/${run.id}`} className="btn btn-primary">Print on the office printer</Link>
+                {transport === 'webusb' && (
+                  <button type="button" onClick={() => void connectUsb()} className="btn btn-secondary">
+                    <Plug className="size-4" aria-hidden="true" /> Use a USB printer here
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Printer */}
-          <section className="card p-4 space-y-2" aria-label="Printer">
+          {!officeOnly && <section className="space-y-2" aria-label="Printer">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
               <ScanBarcode className={`size-5 shrink-0 ${printerReady ? 'text-emerald-400' : 'text-zinc-500'}`} aria-hidden="true" />
               <div className="min-w-0 flex-1">
@@ -293,15 +366,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
               {transport === 'webusb' && !usbPrinter && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    try {
-                      const d = await requestPrinter();
-                      const o = await openPrinter(d);
-                      setUsbPrinter(o);
-                    } catch (err) {
-                      if ((err as Error).name !== 'NotFoundError') setTransportError('Couldn’t connect to the USB printer. Check the cable, then try again.');
-                    }
-                  }}
+                  onClick={() => void connectUsb()}
                   className="btn btn-secondary btn-sm"
                 >
                   <Plug className="size-4" aria-hidden="true" /> Connect USB printer
@@ -310,11 +375,11 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             </div>
             {!printerReady && (
               <p className="text-sm text-zinc-400">
-                Scan mode prints on a printer connected to this computer. To use the office printer, <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">print from the run page</Link>.
+                Scan mode prints on a printer plugged into this computer. <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">Print from the run page</Link> to use the office printer.
               </p>
             )}
             {transportError && transport && <p role="alert" className="text-sm text-red-400">{transportError}</p>}
-          </section>
+          </section>}
 
           {/* What a scan fills */}
           {targetField && (
@@ -350,7 +415,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           )}
 
           {/* The big input. Autofocus + keep-focused. Submit on Enter. */}
-          <form onSubmit={(e) => { e.preventDefault(); void handleSubmit(value); }}>
+          {!officeOnly && <form onSubmit={(e) => { e.preventDefault(); void handleSubmit(value); }}>
             <label htmlFor="scan-input" className="field-label mb-1.5">
               Scan or type, then press Enter
             </label>
@@ -392,7 +457,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 Nothing on this design changes per label, so there&apos;s nowhere for a scan to go. Open the design and set one part to &ldquo;Changes per label&rdquo;.
               </p>
             )}
-          </form>
+          </form>}
 
           {/* History, newest first, 10 entries. */}
           {history.length > 0 && (
@@ -402,14 +467,18 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 <div
                   key={h.id}
                   className={`flex items-start gap-3 px-3 py-2 rounded-lg text-sm ${
-                    h.status === 'ok' ? 'bg-zinc-900 text-zinc-200' : 'bg-red-500/10 text-red-300'
+                    h.status === 'ok' ? 'bg-zinc-900 text-zinc-100' : 'bg-red-500/10 text-red-300'
                   }`}
                 >
                   {h.status === 'ok'
                     ? <CheckCircle2 className="mt-0.5 size-4 text-emerald-400 shrink-0" aria-hidden="true" />
                     : <AlertCircle className="mt-0.5 size-4 text-red-400 shrink-0" aria-hidden="true" />}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate tabular-nums">{h.value}</span>
+                    {h.status === 'ok' && (h.label || h.what) ? (
+                      <span className="block truncate text-zinc-100">{[h.label ? `Label ${h.label.toLocaleString()}` : '', h.what].filter(Boolean).join(' · ')}</span>
+                    ) : null}
+                    <span className={`block truncate tabular-nums ${h.status === 'ok' && (h.label || h.what) ? 'text-zinc-400' : ''}`}>{h.value}</span>
+                    {h.status === 'ok' && (h.times ?? 1) > 1 && <span className="block text-amber-300">Printed again ({ordinal(h.times ?? 2)} time)</span>}
                     {h.message && <span className="block text-red-300">{h.message}</span>}
                   </span>
                   <span className="text-zinc-400 tabular-nums shrink-0">
