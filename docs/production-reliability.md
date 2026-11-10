@@ -25,6 +25,17 @@
 - `node scripts/production/migrate.cjs` adds nullable `runs.design_snapshot` and captures CURRENT designs for unsnapshotted existing runs. Idempotent; no progress/template updates and no removed columns. Run before deploying code that reads that column.
 - Rollback can restore the previous application deployment without removing the additive column. Older code does not enforce snapshots/revision checks, so rollback weakens those guarantees. Do not drop the snapshot column.
 
+## Rollback procedure
+1. In Vercel, promote the previous production deployment `dpl_8jXofwmB9VdFPqYaRiQPsH4XaMPv` (main, `ffda577`). No database step: this branch has no schema change or migration, and the Pi API and printed bytes are the same, so office stations keep polling and printing.
+2. Reload every open Label Wrangler tab (shop tablets, office computers, phones) so each runs main's page code. Do not clear browser storage on any device.
+
+What happens to work still queued on a device:
+- Ordinary progress and print events saved offline stay in main's outbox keys (`lw:run-op:`), so main's code sends them after the reload; progress is still a high-water mark, so nothing moves backwards.
+- A "Go back to label N" still waiting on a device is stored apart (`lw:run-op-v2:`), with its print-history entry. Main never reads or sends it, so it cannot stall main's outbox or hold up new batches. If you need that go-back on main, do it again there (Reprint from). If the deployment is later rolled forward, that device sends it then; it is applied only if the run's progress hasn't moved since, otherwise it is set aside with a plain "wasn't applied" notice.
+- A tab that was not reloaded keeps working against main's server: a go-back is retried once as main's own exact write, and its print-history entry (which main refuses) is dropped quietly. Updates set aside earlier stay in Export/Discard.
+- Office sends waiting for an answer (`lw:office-pending:<run>`) carry over unchanged: same key, same payload, same idempotency key, so a retry from main can't print twice. A printer control (pause/resume) waiting for an answer stays readable by main too: this build keeps the old device-wide key until that control is answered.
+- Print history keeps any "Went back to label N" entries; main lists them as plain history lines and otherwise ignores them.
+
 ## Browser hardening
 - `next.config.ts` sends nosniff, Referrer-Policy, X-Frame-Options DENY, a Permissions-Policy that keeps WebUSB (`usb=(self)`), and a report-only CSP on every path except `/api/print-stations/*` (Pi responses are unchanged). The CSP is not enforced because the app uses WASM, a pdf.js worker, inline scripts in the sheet print tab and the Dazzle localhost bridge.
 - The pdf.js worker in `public/` is copied from the installed `pdfjs-dist` by `scripts/copy-pdf-worker.cjs` (run by `npm run dev`/`npm run build`); `npm test` fails if they differ. Keep pdf.js on v4.

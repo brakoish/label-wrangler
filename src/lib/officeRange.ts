@@ -227,6 +227,18 @@ export function officeMarkPlan(printedCount: number, jobs: ReadonlyArray<OfficeJ
 }
 
 /**
+ * The run status after a person marks office labels printed: completed once
+ * every label is counted, otherwise paused, except while the run is printing
+ * (on this or another device): then the status is left alone (null) and only
+ * the progress moves, so the Runs list doesn't flip to "paused" and nobody
+ * resumes a run that is still printing.
+ */
+export function statusAfterMarkPrinted(runStatus: string | null | undefined, through: number, total: number): 'completed' | 'paused' | null {
+  if (through >= total) return 'completed';
+  return runStatus === 'printing' ? null : 'paused';
+}
+
+/**
  * One explicit "Send all N in K parts": consecutive ranges of at most `cap`
  * labels. Every boundary after the first falls on a whole feed of a
  * multi-across roll (a multiple of `across`), so no part starts mid-row and

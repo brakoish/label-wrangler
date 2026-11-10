@@ -8,10 +8,14 @@ let cached: string | null | undefined;
  * One short, stable id for the deployed build, the same on every server of
  * that deployment. It is hashed, so no commit or deployment name is shown.
  * Null when it can't tell (local development): then no page ever asks for a
- * reload.
+ * reload. A deployed build uses the stamp built in by next.config, which the
+ * page carries too (see NewVersionNotice).
  */
 export function buildStamp(): string | null {
   if (cached !== undefined) return cached;
+  // Built in by next.config (`env`), the same value the page carries.
+  const built = process.env.LW_BUILD_STAMP;
+  if (built) { cached = built; return cached; }
   let raw = process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_DEPLOYMENT_ID || '';
   if (!raw) {
     try { raw = readFileSync(path.join(process.cwd(), '.next', 'BUILD_ID'), 'utf8').trim(); } catch { raw = ''; }

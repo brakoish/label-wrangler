@@ -16,7 +16,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError } from '@/lib/userMessages';
 import { moreNeedAttention, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
 import { officeStatusLine, plainJobReason, type OfficeReviewHold } from '@/lib/officeSendOutcome';
-import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
+import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
@@ -148,7 +148,7 @@ function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
  * through its unbroken sent stretches, and each range is kept as confirmed.
  */
 function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolean; onClose: () => void }) {
-  const { setRunStatus, createPrintEvent } = useRunStore();
+  const { recordPrinted, createPrintEvent } = useRunStore();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
@@ -170,7 +170,8 @@ function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolea
       const refused = { reason: '' };
       try {
         if (through > printed) {
-          await setRunStatus(run.id, through >= run.totalLabels ? 'completed' : 'paused', through, { onSetAside: (reason) => { refused.reason = reason; } });
+          // Never "paused" under a device that is printing this run: progress only.
+          await recordPrinted(run.id, through, statusAfterMarkPrinted(run.status, through, run.totalLabels), { onSetAside: (reason) => { refused.reason = reason; } });
           if (refused.reason) { failed.push(run.name); continue; }
         }
         for (const r of plan.ranges) {

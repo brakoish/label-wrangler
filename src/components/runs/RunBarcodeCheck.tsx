@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { AlertCircle, PenTool } from 'lucide-react';
 import { useId } from 'react';
 import { ProblemList } from '@/components/checks/RunChecks';
-import { LAYOUT_GO_AHEAD, type RunPrintCheck } from '@/lib/runLayoutCheck';
+import { LAYOUT_GO_AHEAD, stopFixWords, type RunPrintCheck } from '@/lib/runLayoutCheck';
 import { barcodeDamage, barcodeItemTicked, barcodeProblemSevere, barcodeTickLabel, runPageProblemText } from '@/lib/runBarcodeTicks';
 
 const MAX_ITEMS = 6;
@@ -66,7 +66,7 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
               </li>
             )}
           </ul>
-          {check.verdict.stops && <p className="pl-5.5 text-zinc-300">Nothing can print until the design is fixed.</p>}
+          {check.verdict.stops && <p className="pl-5.5 text-zinc-300">{stopFixWords(check.verdict.fixIn)}</p>}
           <div className="space-y-1 pl-5.5">
             <Link href={designHref} className="btn btn-secondary btn-sm"><PenTool className="size-4" aria-hidden="true" />Fix the design</Link>
             <p className="text-zinc-400">This run keeps the design it started with. After fixing it, use Re-run with the same data (More menu) to print with the fix.</p>

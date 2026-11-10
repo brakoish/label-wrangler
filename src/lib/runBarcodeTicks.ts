@@ -12,10 +12,20 @@ export function barcodeProblemSevere(item: string): boolean {
   return /neither label would scan/i.test(item);
 }
 
+/** An exact design's value that prints, but scans differently (the words barcodeValue's drawnValueNote writes). */
+function drawnAs(item: string): 'uppercase' | 'not-as-written' | null {
+  if (/will scan as UPPERCASE/.test(item)) return 'uppercase';
+  if (/scan as a Tab key press|scan as an Enter key press|so the scan won’t match the text you see|printed as (a )?special scanner codes?/.test(item)) return 'not-as-written';
+  return null;
+}
+
 /** What printing it anyway really costs, in one sentence. */
 export function barcodeDamage(item: string): string {
   if (barcodeProblemSevere(item)) return 'Printing anyway spoils two labels each time: this one, and the next one on the roll.';
   if (/cuts it off/i.test(item)) return 'Printing anyway gives labels whose barcode won’t scan.';
+  const drawn = drawnAs(item);
+  if (drawn === 'uppercase') return 'Printing anyway gives labels whose barcode scans in UPPERCASE.';
+  if (drawn) return 'Printing anyway gives labels whose barcode won’t scan exactly as written.';
   return 'Printing anyway gives labels whose barcode may not scan.';
 }
 
@@ -26,7 +36,11 @@ export function runPageProblemText(item: string): string {
 
 /** The tick's words for one problem. */
 export function barcodeTickLabel(item: string): string {
-  return barcodeProblemSevere(item) ? 'Print anyway — I accept that both labels won’t scan' : 'Print anyway — I accept this barcode may not scan';
+  if (barcodeProblemSevere(item)) return 'Print anyway — I accept that both labels won’t scan';
+  const drawn = drawnAs(item);
+  if (drawn === 'uppercase') return 'Print anyway — I accept it scans as UPPERCASE';
+  if (drawn) return 'Print anyway — I accept it won’t scan exactly as written';
+  return 'Print anyway — I accept this barcode may not scan';
 }
 
 export function readRunBarcodeTicks(storage: Pick<Storage, 'getItem'> | null | undefined, runId: string): string[] {

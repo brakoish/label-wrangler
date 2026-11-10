@@ -407,7 +407,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           setBusy(true);
           const checked=await drawProof(part,(completed,count)=>setSeries(s=>s?{...s,progress:{completed,total:count}}:s));
           setBusy(false);
-          if(!checked)break;
+          // Never a silent stop: unless the check already said what went
+          // wrong, say why the parts stopped and what to do.
+          if(!checked){setError(e=>e || `Stopped before part ${i+1} of ${current.parts.length}: the labels changed while sending. Check the preview, then send the remaining parts.`);break;}
           setSeries(s=>s?{...s,phase:'sending',progress:undefined}:s);
         }
         const outcome=await submit(part);
@@ -455,8 +457,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const partsAfterPending=pendingInPlan?leftParts.filter(p=>!(p.from===pending?.from && p.to===pending?.to)):[];
 
   const startOver=async()=>{
-    const ok=await confirmDialog({title:'Start over?',body:'Check the office queue below first. The office may already have these labels, and starting over doesn’t cancel anything.',confirmLabel:'Start over'});
+    const ok=await confirmDialog({title:'Start over?',body:`Check the office queue below first. The office may already have these labels, and starting over doesn’t cancel anything.${pendingInPlan?' This part is taken out of the remaining parts, so it is never sent a second time; if the office doesn’t have it, it shows as not sent yet.':''}`,confirmLabel:'Start over'});
     if(!ok)return;
+    // The unsure part of a saved plan is dropped from it, so "Send the
+    // remaining parts" can't send it again with a new key.
+    if(pendingInPlan && partsPlan)savePartsPlan({...partsPlan,next:partsPlan.next+1});
     try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);setError('');
   };
   const act=async(action:()=>Promise<void>)=>{setBusy(true);setError('');try{await action();await refresh();}catch(err){setError(officeMessage(err,'That didn’t save. Try again in a moment.'));}finally{setBusy(false);}};

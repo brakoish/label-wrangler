@@ -4,7 +4,7 @@ import { useId, type ReactNode } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { describeRowList, type BlankFieldIssue, type RunDataCheck } from '@/lib/runDataCheck';
 import { friendlyFieldName, spreadsheetRow } from '@/lib/fieldLabels';
-import { LAYOUT_GO_AHEAD, type RunPrintCheck } from '@/lib/runLayoutCheck';
+import { LAYOUT_GO_AHEAD, stopFixWords, type RunPrintCheck } from '@/lib/runLayoutCheck';
 
 /** Where the run's values come from: decides which advice fits. */
 export type CheckMode = 'manual' | 'paste' | 'csv' | 'manifest' | 'scan';
@@ -213,7 +213,7 @@ export function PrintCheckList({ check, barcodeGoAhead, layoutGoAhead, onBarcode
         confirmed={barcodeGoAhead}
         onConfirmedChange={onBarcodeGoAhead}
       />
-      {check.blocking.length > 0 && check.verdict.stops && <p className="pl-5.5 text-sm text-zinc-300">Nothing can print until the design is fixed.</p>}
+      {check.blocking.length > 0 && check.verdict.stops && <p className="pl-5.5 text-sm text-zinc-300">{stopFixWords(check.verdict.fixIn)}</p>}
       <ProblemList heading="Barcodes close to the edge" items={check.tight.slice(0, 3)} more={check.tight.length - Math.min(3, check.tight.length)} />
       <ProblemList
         heading="Some items overlap or run off the label"

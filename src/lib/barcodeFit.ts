@@ -1,6 +1,6 @@
 import JsBarcode from 'jsbarcode';
 import type { BarcodeElement, LabelFormat } from './types';
-import { barcodeValueProblem } from './barcodeValue';
+import { barcodeValueProblem, drawnValueNote, exactRendererRefusesValue } from './barcodeValue';
 
 /**
  * One verdict for "will this barcode print?", shared by the designer, the
@@ -24,10 +24,15 @@ import { barcodeValueProblem } from './barcodeValue';
  *   renderer refuses a box narrower than that at 1 dot a module, or one that
  *   crosses the label edge.
  *
- * Only what the printer can't produce blocks: a value the barcode type can't
- * hold, an exact box the renderer refuses, bars cut off at the label edge,
- * or bars printed onto the next label. Bars that fit with little clear
- * margin are a warning. The data is never the thing to change for a fit
+ * 'blocked' means the printer can't produce it as designed: a value the
+ * barcode type can't hold, an exact box the renderer refuses, bars cut off
+ * at the label edge, or bars printed onto the next label. Only what the
+ * exact renderer refuses stops a run (`printable` unset on an exact design);
+ * everything the printer still produces needs an explicit go-ahead. On an
+ * exact design that means a value JsBarcode still encodes (Code 39 lowercase
+ * is drawn as UPPERCASE, a Code 128 tab or DEL is drawn as that character)
+ * is 'blocked' with `printable: true` and says what will scan. Bars that fit
+ * with little clear margin are a warning. The data is never the thing to change for a fit
  * problem: package tags are state tracking IDs.
  */
 
@@ -56,6 +61,12 @@ export interface BarcodeFit {
   reason: BarcodeFitReason;
   /** For 'characters': what is wrong with the value, in plain words. */
   problem?: string;
+  /**
+   * Exact designs, 'characters': the renderer still draws the value, so a
+   * go-ahead is enough (no stop). `note` says what will scan, in one sentence.
+   */
+  printable?: boolean;
+  note?: string;
   bitmap: boolean;
   dpi: number;
   /** Length of the bars as printed (native) or the box needed at 1 dot a module (exact), in dots. */
@@ -148,11 +159,30 @@ export function barcodeFit(el: FitElement, value: string, format: FitFormat | nu
   const dpi = format?.dpi || 203;
   if (!value) return OK(bitmap, dpi);
   const problem = barcodeValueProblem(el.barcodeFormat, value);
+  const thermal = !!format && format.type === 'thermal';
+  if (bitmap && thermal) {
+    // The exact renderer decides: it stops only on what it refuses to draw.
+    const labelW = Math.round(format.width * dpi);
+    const labelH = Math.round(format.height * dpi);
+    const drawable = !exactRendererRefusesValue(value, !!el.showText) && !!bitmapBits(el.barcodeFormat, value);
+    if (problem && !drawable) return { ...OK(true, dpi), level: 'blocked', reason: 'characters', problem: refusedValueProblem(el.barcodeFormat, value, problem, !!el.showText) };
+    const fit = bitmapFit(el, value, labelW, labelH, dpi);
+    if (fit.level === 'blocked' || !problem) return fit;
+    const drawn = drawnValueNote(el.barcodeFormat, value);
+    return { ...fit, level: 'blocked', reason: 'characters', printable: true, problem: drawn?.problem ?? problem, note: drawn?.note ?? 'The barcode won’t scan exactly as written' };
+  }
   if (problem) return { ...OK(bitmap, dpi), level: 'blocked', reason: 'characters', problem };
-  if (!format || format.type !== 'thermal') return OK(bitmap, dpi);
+  if (!thermal) return OK(bitmap, dpi);
   const labelW = Math.round(format.width * dpi);
   const labelH = Math.round(format.height * dpi);
   return bitmap ? bitmapFit(el, value, labelW, labelH, dpi) : nativeFit(el, value, format, labelW, labelH, dpi);
+}
+
+/** Why the exact renderer refuses a value: Code 39 lowercase is not the reason (it is drawn as UPPERCASE). */
+function refusedValueProblem(format: BarcodeElement['barcodeFormat'] | undefined, value: string, problem: string, showText: boolean): string {
+  if (showText && value.includes('\x7f') && !exactRendererRefusesValue(value) && bitmapBits(format, value)) return 'has a hidden character (DEL) that can’t be printed in the number under the bars. Remove it, or turn off the number under the barcode in the design';
+  if ((format ?? 'CODE128') === 'CODE39') return barcodeValueProblem('CODE39', value.toUpperCase()) ?? problem;
+  return problem;
 }
 
 function bitmapFit(el: FitElement, value: string, labelW: number, labelH: number, dpi: number): BarcodeFit {

@@ -27,13 +27,24 @@ export function useOfficeRequests(runId: string, fast: boolean, total: number, d
   const [loaded, setLoaded] = useState(false);
   const [everLoaded, setEverLoaded] = useState(false);
   const [failed, setFailed] = useState<{ status: number; message: string } | null>(null);
-  const active = useRef(true);
-  const denied = useRef(false);
+  // Another run on the same page (Next.js may keep this component): start
+  // empty, so nothing of the last run shows and nothing is sent before this
+  // run's first read (React's reset-on-prop-change pattern).
+  const [shownRun, setShownRun] = useState(runId);
+  if (shownRun !== runId) {
+    setShownRun(runId);
+    setRequests([]); setAllJobs(null); setTruncated(false); setLoaded(false); setEverLoaded(false); setFailed(null);
+  }
+  /** The run this page shows now (null once it has left): a late answer for any other run is dropped. */
+  const currentRun = useRef<string | null>(runId);
+  useEffect(() => { currentRun.current = runId; return () => { currentRun.current = null; }; }, [runId]);
+  /** The run whose read was refused (no office access). */
+  const denied = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     const response = await fetch('/api/office/jobs?runId=' + encodeURIComponent(runId), { cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
-    if (!active.current) return;
-    denied.current = response.status === 401 || response.status === 403;
+    if (currentRun.current !== runId) return;
+    denied.current = response.status === 401 || response.status === 403 ? runId : null;
     if (!response.ok) { setFailed({ status: response.status, message: typeof data.error === 'string' ? data.error : '' }); setLoaded(true); throw Object.assign(new Error(data.error || 'Request failed'), { status: response.status }); }
     setRequests(Array.isArray(data.requests) ? data.requests : []);
     setTruncated(data.truncated === true);
@@ -44,20 +55,19 @@ export function useOfficeRequests(runId: string, fast: boolean, total: number, d
   const jobs: Array<OfficeJobBrief & { count?: number; cupsJobId?: number | null }> = allJobs ?? listed;
   const moving = jobs.some((job) => OFFICE_IN_PROGRESS.includes(job.state));
   useEffect(() => {
-    active.current = true;
     // An account without office printer access stops asking until the office
     // printer is chosen on this page.
     const update = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      if (!fast && denied.current) return;
+      if (!fast && denied.current === runId) return;
       void refresh().catch(() => { /* shown by the panel */ });
     };
     update();
     const timer = setInterval(update, fast || moving ? 5000 : 30000);
     const onVisible = () => { if (document.visibilityState === 'visible') update(); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { active.current = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [refresh, fast, moving]);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [refresh, fast, moving, runId]);
   const printedCount = done?.printedCount ?? 0;
   const printedSpans = done?.printedSpans;
   const summary: OfficeDeliverySummary = useMemo(() => officeDeliverySummary(jobs, total, { printedCount, printedSpans }), [jobs, total, printedCount, printedSpans]);

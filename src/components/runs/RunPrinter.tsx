@@ -9,8 +9,8 @@ import { BlankValueCheck } from './BlankValueCheck';
 import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
-import { lastRewindAt, rewindEvent, REWIND_EVENT } from '@/lib/runRewind';
-import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
+import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
+import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { useOfficeRequests } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
@@ -26,13 +26,13 @@ import { blankCheckAllowsPrinting, checkRunData, hasBlankChoice, rememberBlankCh
 import { friendlyError, friendlyRenderError, printEventLabel } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import type { LabelTemplate, LabelFormat, Run, RunStatus } from '@/lib/types';
+import type { LabelTemplate, LabelFormat, Run, RunPrintEvent, RunStatus } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange, planRunStart } from '@/lib/runRanges';
 import { openInNewTab } from '@/lib/openTab';
-import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount } from '@/lib/offlineQueue';
+import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount, rewindPending, QUEUE_EVENT } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import {
@@ -126,7 +126,7 @@ const TRANSPORT_LABELS: Record<Transport, { label: string; unavailable: string }
  * batches with a live progress bar, pause/resume, and cancel.
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
-  const { runs, fetchRun, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent, runLoadErrors } = useRunStore();
+  const { runs, fetchRun, updateRun, setRunStatus, recordPrinted, printEvents, fetchPrintEvents, createPrintEvent, runLoadErrors } = useRunStore();
   const loadError = runLoadErrors[runId] ?? null;
 
   const run = runs.find((r) => r.id === runId) ?? null;
@@ -245,32 +245,30 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // A deliberate "Go back" that the server accepted: office work from before
   // it is no longer offered as "mark printed", so the offer can't undo the
   // rewind. Each accepted rewind is kept in the print history (a 'rewind'
-  // event), so every device and the Runs list respect it too; this device
-  // also remembers its own, for the moment before that event is read back.
-  const rewindKey = `lw:run-rewound:${runId}`;
-  const [localRewoundAt, setLocalRewoundAt] = useState(0);
-  useEffect(() => { try { setLocalRewoundAt(Number(localStorage.getItem(rewindKey)) || 0); } catch { setLocalRewoundAt(0); } }, [rewindKey]);
-  const serverRewoundAt = useMemo(() => lastRewindAt(eventsForRun), [eventsForRun]);
-  const rewoundAt = Math.max(localRewoundAt, serverRewoundAt);
-  /** Only after the server accepted the rewind (never before, never when it was refused). */
-  const recordRewind = (goBackTo: number, before: number) => {
-    const at = Date.now(); setLocalRewoundAt(at);
-    try { localStorage.setItem(rewindKey, String(at)); } catch { /* the print history still says it */ }
-    void createPrintEvent(runId, rewindEvent(goBackTo, before));
-  };
-  // A rewind saved while offline counts once the server takes it.
-  const pendingRewind = useRef<{ goBackTo: number; before: number } | null>(null);
+  // event), so every device and the Runs list respect it too. That event
+  // travels in the outbox with the go-back itself (setRunStatus), so it is
+  // recorded even if this tab closes before sync, and only the server's
+  // time is compared with the server's other times (never this device's
+  // clock). While a go-back is still in this device's outbox, nothing from
+  // the office is offered as "mark printed" at all.
+  const [rewindWaiting, setRewindWaiting] = useState(false);
   useEffect(() => {
-    const onSynced = (event: Event) => {
-      const run = (event as CustomEvent<{ id?: string; printedCount?: number }>).detail;
-      const waiting = pendingRewind.current;
-      if (!waiting || run?.id !== runId || run.printedCount !== waiting.goBackTo - 1) return;
-      pendingRewind.current = null;
-      recordRewind(waiting.goBackTo, waiting.before);
+    // Earlier builds kept a stamp from this device's clock here.
+    try { localStorage.removeItem(`lw:run-rewound:${runId}`); } catch { /* nothing to tidy */ }
+    const check = () => setRewindWaiting(rewindPending(runId));
+    const onEvent = (event: Event) => {
+      const saved = (event as CustomEvent<RunPrintEvent | undefined>).detail;
+      if (saved?.runId !== runId || saved.eventType !== REWIND_EVENT) return;
+      // In the history before the outbox says it is done, so there is no gap.
+      useRunStore.setState((state) => ({ printEvents: [saved, ...state.printEvents.filter((old) => old.id !== saved.id)] }));
     };
-    window.addEventListener('lw:run-synced', onSynced);
-    return () => window.removeEventListener('lw:run-synced', onSynced);
-  });
+    check();
+    window.addEventListener(QUEUE_EVENT, check);
+    window.addEventListener('lw:event-synced', onEvent);
+    return () => { window.removeEventListener(QUEUE_EVENT, check); window.removeEventListener('lw:event-synced', onEvent); };
+  }, [runId]);
+  const serverRewoundAt = useMemo(() => lastRewindAt(eventsForRun), [eventsForRun]);
+  const rewoundAt = rewindWaiting ? Number.POSITIVE_INFINITY : serverRewoundAt;
   // Ranges people confirmed came out of the office printer (print history).
   const officeConfirmed = useMemo<OfficeSpan[]>(() => eventsForRun
     .filter((event) => event.eventType === 'confirmed' && event.output === 'office-pi' && Date.parse(event.createdAt) > rewoundAt)
@@ -737,8 +735,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try { await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
-    if (pendingPatchCount(run.id)) { if (plan.rewind) pendingRewind.current = { goBackTo: selectedFrom, before: printedCount }; setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
-    if (plan.rewind) recordRewind(selectedFrom, printedCount);
+    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
     if (!mounted.current || controller.signal.aborted) return;
 
     const sender = makeSender(controller);
@@ -953,11 +950,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       return;
     }
     if (pendingPatchCount(run.id)) {
-      pendingRewind.current = { goBackTo: n, before };
       setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
       return;
     }
-    recordRewind(n, before);
   };
 
   const normalizeSheetRange = (range?: { from?: number; to?: number }) => normalizeLabelRange({
@@ -1336,13 +1331,15 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setMarkNotice(null);
     const through = extendThrough(printedCount, [...officeConfirmed, ...ranges], total);
     if (through > printedCount) {
-      const nextStatus = through >= total ? 'completed' : 'paused';
+      // Progress always moves (high-water). The status changes only when no
+      // device is printing this run: never "paused" under someone printing.
+      const nextStatus = statusAfterMarkPrinted(statusRef.current === 'running' ? 'printing' : run.status, through, total);
       const refused = { reason: '' };
-      try { await setRunStatus(run.id, nextStatus, through, { onSetAside: (reason) => { refused.reason = reason; } }); }
+      try { await recordPrinted(run.id, through, nextStatus, { onSetAside: (reason) => { refused.reason = reason; } }); }
       catch { setMarkNotice({ tone: 'bad', text: 'That didn’t save. Try again in a moment.' }); return false; }
       if (refused.reason) { setMarkNotice({ tone: 'bad', text: `That didn’t save. ${refused.reason}` }); return false; }
       setPrintedCount((count) => Math.max(count, through));
-      setStatus(nextStatus);
+      if (nextStatus) setStatus(nextStatus);
     }
     for (const r of ranges) {
       await createPrintEvent(run.id, {

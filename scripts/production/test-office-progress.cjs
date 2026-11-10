@@ -359,7 +359,42 @@ console.log('PASS field display names');
   const controls = read('src/components/runs/OfficePrinterControls.tsx');
   assert.match(controls, /setInterval\(update,pending\|\|busy\?2000:15000\)/, 'controls read fast only while a pause or resume is on its way');
   assert.match(controls, /controlFailure\(r\.status,typeof answer\.code==='string'\?answer\.code:undefined,resend\)/, 'a resend keeps its key when signed out or refused');
-  assert.match(controls, /`\$\{LEGACY_KEY\}:\$\{userId\}`/, 'the saved pause/resume is per account');
+  assert.match(controls, /readSavedControl\(/, 'the saved pause/resume is per account');
+  {
+    // A main tab may still be retrying the device-wide request with its key:
+    // it is copied to the account's key, and removed only once that same request settles.
+    const P = require('../../src/lib/officeControlPending.ts');
+    assert.equal(P.controlPendingKey('u1'), 'lw:office-control-pending:u1');
+    const mem = new Map();
+    const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    const old = JSON.stringify({ action: 'pause', idempotencyKey: 'k-old' });
+    mem.set(P.LEGACY_KEY, old);
+    assert.equal(P.readSavedControl(store, 'u1'), old);
+    assert.equal(mem.get(P.LEGACY_KEY), old, 'the old build still finds its request');
+    assert.equal(mem.get('lw:office-control-pending:u1'), old);
+    P.clearSavedControl(store, 'u1');
+    assert.equal(mem.size, 0, 'settled: both copies go');
+    // A different request saved later by an old tab is left alone.
+    mem.set(P.LEGACY_KEY, JSON.stringify({ action: 'resume', idempotencyKey: 'k-main' }));
+    mem.set('lw:office-control-pending:u1', JSON.stringify({ action: 'pause', idempotencyKey: 'k-new' }));
+    P.clearSavedControl(store, 'u1');
+    assert.deepEqual([...mem.keys()], [P.LEGACY_KEY]);
+    assert.equal(controls.indexOf("localStorage.setItem(key,JSON.stringify(payload))") < controls.indexOf("fetch('/api/office/controls',{method:'POST'"), true, 'saved before the POST');
+  }
+
+  // A parts series never stops silently, and Start over drops the unsure part from a saved plan.
+  {
+    const pi = read('src/components/runs/OfficePiPrinter.tsx');
+    assert.match(pi, /if\(!checked\)\{setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
+    const over = pi.slice(pi.indexOf('const startOver=async'), pi.indexOf('const act=async'));
+    assert.match(over, /if\(pendingInPlan && partsPlan\)savePartsPlan\(\{\.\.\.partsPlan,next:partsPlan\.next\+1\}\);/);
+    assert.ok(over.indexOf('confirmDialog') < over.indexOf('savePartsPlan'), 'only after the person confirms');
+  }
+  // Another run on the same page starts empty, and a late answer for the last run is dropped.
+  const officeHook = read('src/components/runs/useOfficeRequests.ts');
+  assert.match(officeHook, /if \(shownRun !== runId\) \{\n\s+setShownRun\(runId\);\n\s+setRequests\(\[\]\); setAllJobs\(null\); setTruncated\(false\); setLoaded\(false\); setEverLoaded\(false\); setFailed\(null\);/);
+  assert.match(officeHook, /if \(currentRun\.current !== runId\) return;/);
+  assert.doesNotMatch(officeHook, /active\.current = true/, 'no shared flag that a new run turns back on');
 
   const list = read('src/app/runs/page.tsx');
   assert.doesNotMatch(list, /Otherwise it’s deleted for good/, 'the delete dialog says the one case that applies');
@@ -367,5 +402,27 @@ console.log('PASS field display names');
   assert.match(list, /Mark sent labels as printed/, 'bulk mark printed on the Runs list');
   const feedback = read('src/components/ui/feedback.tsx');
   assert.match(feedback, /resolve\(outcome === 'dismiss' \? null : outcome\)/, 'closing a choice dialog picks neither choice');
+}
+// --- Finding 9: marking office labels printed never pauses a run another device is printing ---
+{
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8');
+  assert.equal(R.statusAfterMarkPrinted('printing', 10, 100), null, 'printing elsewhere: status left alone, progress only');
+  assert.equal(R.statusAfterMarkPrinted('paused', 10, 100), 'paused');
+  assert.equal(R.statusAfterMarkPrinted('pending', 10, 100), 'paused');
+  assert.equal(R.statusAfterMarkPrinted(undefined, 10, 100), 'paused');
+  assert.equal(R.statusAfterMarkPrinted('printing', 100, 100), 'completed', 'every label counted completes the run');
+  assert.equal(R.statusAfterMarkPrinted('paused', 120, 100), 'completed');
+  const store = read('src/lib/runStore.ts');
+  assert.match(store, /recordPrinted: async \(id, printedCount, status, options\) => \{\n\s+if \(status\) return get\(\)\.setRunStatus\(id, status, printedCount, options\);\n\s+const run = await updateRunWithQueue\(id, \{ printedCount \}, options\?\.onSetAside\);/, 'no status: a progress-only (high-water) write');
+  const queue = read('src/lib/offlineQueue.ts');
+  assert.match(queue, /progressOnly: !patch\.status && patch\.printedCount !== undefined/, 'a patch without a status is sent as a high-water write');
+  const printer = read('src/components/runs/RunPrinter.tsx');
+  assert.match(printer, /statusAfterMarkPrinted\(statusRef\.current === 'running' \? 'printing' : run\.status, through, total\)/);
+  assert.match(printer, /await recordPrinted\(run\.id, through, nextStatus,/);
+  assert.match(printer, /if \(nextStatus\) setStatus\(nextStatus\);/);
+  assert.doesNotMatch(printer, /const nextStatus = through >= total \? 'completed' : 'paused'/);
+  const list = read('src/app/runs/page.tsx');
+  assert.match(list, /await recordPrinted\(run\.id, through, statusAfterMarkPrinted\(run\.status, through, run\.totalLabels\),/);
+  assert.doesNotMatch(list, /through >= run\.totalLabels \? 'completed' : 'paused'/);
 }
 console.log('PASS office r4: held labels named, print-again status, storage/send-again/meta/no-access rules, parts one by one, fix holds the rest first, safe primaries, guarded rewinds, quieter polling, plain delete');

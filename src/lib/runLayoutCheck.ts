@@ -3,6 +3,7 @@ import { layoutProblems, type LayoutProblem } from './designerLayout';
 import { previewLabelValues } from './runBuilder';
 import { checkRunBarcodes, describeBarcodeGroups, type BarcodeIssue } from './barcodeCheck';
 import { friendlyFieldName } from './fieldLabels';
+import { NOT_AS_WRITTEN_NOTE } from './barcodeValue';
 
 /** The run data the checks read (a Run, or the new-run wizard's data before the run exists). */
 export interface RunCheckData {
@@ -64,11 +65,18 @@ type VerdictFormat = Pick<LabelFormat, 'type'> | null | undefined;
 
 /**
  * A barcode the exact (bitmap) renderer refuses: that renderer stops and
- * nothing prints, so it stays a stop. Every other "blocked" verdict comes
- * from emulating the printer and needs an explicit go-ahead instead.
+ * nothing prints, so it stays a stop. A print the printer can produce is
+ * never a stop: an exact design's value the renderer still draws
+ * (`printable`), and every native verdict (emulated), need an explicit
+ * go-ahead instead.
  */
 export function barcodeIssueStops(issue: VerdictIssue, format: VerdictFormat): boolean {
-  return format?.type === 'thermal' && !!issue.fit?.bitmap && issue.fit.level === 'blocked';
+  return format?.type === 'thermal' && !!issue.fit?.bitmap && issue.fit.level === 'blocked' && !issue.fit.printable;
+}
+
+/** "Lowercase letters will scan as UPPERCASE" -> "lowercase letters will scan as UPPERCASE". */
+function lowerFirst(text: string): string {
+  return /^[A-Z][a-z]/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
 }
 
 /**
@@ -77,7 +85,8 @@ export function barcodeIssueStops(issue: VerdictIssue, format: VerdictFormat): b
  * - 'neither-scans': the bars print over the next label's barcode (two
  *   across), so both labels of every pair are ruined.
  * - 'damage': the bars are cut off (and may print over other items).
- * - 'value': a value the barcode type can't hold (native printers still print something).
+ * - 'value': a value the barcode type can't hold (native printers still print
+ *   something; the exact renderer draws it, for example lowercase as UPPERCASE).
  */
 export type BarcodeSeverity = 'none' | 'stop' | 'neither-scans' | 'damage' | 'value';
 
@@ -131,17 +140,25 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
   const isData = (issue: VerdictIssue) => issue.kind === 'characters' && !!issue.label && !!issue.field && !!fromSheet?.(issue.field);
   const toFix = stops ? stopping : issues;
   const fixIn: BarcodeVerdict['fixIn'] = !toFix.length ? 'none' : toFix.every(isData) ? 'data' : toFix.some(isData) ? 'both' : 'design';
+  // Exact designs whose values are drawn anyway: say what will scan.
+  const drawnNotes = valuesOnly && issues.every((issue) => issue.fit?.printable && issue.fit.note)
+    ? Array.from(new Set(issues.map((issue) => issue.fit!.note!)))
+    : [];
   const heading = stops
     ? stopping.every((issue) => issue.kind === 'characters')
       ? `${labels} ${has} a barcode value it can’t print`
       : `${labels} ${has} a barcode that can’t be drawn`
-    : valuesOnly
+    : drawnNotes.length
+      ? `${labels} ${has} a barcode value that won’t scan exactly as written`
+      : valuesOnly
       ? `${labels} ${has} a barcode value its barcode type can’t hold`
       : severity === 'neither-scans'
         ? `${labels} ${has} a barcode that prints over the next label’s`
         : `${labels} ${has} a barcode that won’t print whole`;
   let goAheadLabel = BARCODE_VALUE_GO_AHEAD;
-  if (severity === 'neither-scans') {
+  if (severity === 'value' && drawnNotes.length) {
+    goAheadLabel = `Print anyway — ${lowerFirst(drawnNotes.length === 1 ? drawnNotes[0] : NOT_AS_WRITTEN_NOTE)}`;
+  } else if (severity === 'neither-scans') {
     goAheadLabel = `Print anyway — ${codeNames(pairs)} print${codeNames(pairs).endsWith('s') ? '' : 's'} over the next label’s, so neither label will scan`;
   } else if (severity === 'damage') {
     const covered = fits.find((issue) => issue.overprints?.length);
@@ -159,6 +176,13 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
     ? `${heading}, so nothing can print. ${fixWords}`
     : `${heading}. Fix it, or tick the box under the list above.`;
   return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: severity !== 'neither-scans', fixIn };
+}
+
+/** The line under a stop: what has to change before anything prints. */
+export function stopFixWords(fixIn: BarcodeVerdict['fixIn']): string {
+  if (fixIn === 'data') return 'Nothing can print until the spreadsheet rows are fixed.';
+  if (fixIn === 'both') return 'Nothing can print until the items above are fixed.';
+  return 'Nothing can print until the design is fixed.';
 }
 
 export interface RunPrintCheck {

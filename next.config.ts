@@ -1,4 +1,13 @@
 import type { NextConfig } from "next";
+import { createHash } from "node:crypto";
+
+// The deployed build's id, hashed (no commit or deployment name is shown),
+// built into the page and the server alike, so a page can tell a deploy that
+// landed before its first version check. Empty when the build can't tell
+// (local builds): the server then falls back to .next/BUILD_ID and the page
+// to its first check. Same inputs and order as src/lib/buildStamp.server.ts.
+const buildRaw = process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_DEPLOYMENT_ID || '';
+const buildStamp = buildRaw ? createHash('sha256').update(buildRaw).digest('hex').slice(0, 16) : '';
 
 // Conservative browser hardening for the website. The Pi station endpoints
 // (/api/print-stations/*) are excluded so their responses stay byte-for-byte
@@ -32,6 +41,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  env: { LW_BUILD_STAMP: buildStamp },
   outputFileTracingIncludes: { '/api/**': ['./assets/thermal-fonts/*.ttf', './scripts/thermal/fixtures/Lemon-Cherry-Gelato-Your-Edits.label.json'] },
   transpilePackages: ['pdfjs-dist'],
   async headers() {
