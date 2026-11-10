@@ -445,4 +445,30 @@ console.log('PASS field display names');
   assert.match(L('101').error, /from 1 to 100/);
   assert.match(L('five').error, /label numbers only/);
 }
+// --- Cancelling a run: the history says only what is true ------------------
+{
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8');
+  const job = (id, from, to, state, requestId = 'r-' + id) => ({ id, requestId, from, to, state, review: false, reason: null });
+  // Printed 1–40; 41–60 already sent to the printer (not marked); 61–80 waiting; 81–100 never sent.
+  const jobs = [job('a', 41, 60, 'sent_to_printer'), job('b', 61, 80, 'queued')];
+  assert.deepEqual(R.officeQueuedRequestIds(jobs), ['r-b']);
+  assert.deepEqual(R.officeQueuedSpans(jobs, 100), [{ from: 61, to: 80 }]);
+  // Let them print: 41–80 may print, so only 81–100 is "not printed".
+  let plan = R.officeCancelHistory(40, 100, jobs, new Set());
+  assert.deepEqual(plan, { stopped: [], notPrinted: [{ from: 81, to: 100 }] });
+  // Stopped at the office: 61–80 is now cancelled there, and not printed.
+  plan = R.officeCancelHistory(40, 100, [job('a', 41, 60, 'sent_to_printer'), job('b', 61, 80, 'cancelled')], new Set(['b']));
+  assert.deepEqual(plan, { stopped: [{ from: 61, to: 80 }], notPrinted: [{ from: 61, to: 100 }] });
+  // A part picked up just before the stop isn't called stopped or not printed.
+  plan = R.officeCancelHistory(40, 100, [job('a', 41, 60, 'sent_to_printer'), job('b', 61, 80, 'claimed')], new Set(['b']));
+  assert.deepEqual(plan, { stopped: [], notPrinted: [{ from: 81, to: 100 }] });
+  // Scanned or confirmed labels are never "not printed"; everything waiting at the office: nothing is.
+  assert.deepEqual(R.officeCancelHistory(0, 10, [], new Set(), [3, 4], [{ from: 8, to: 10 }]).notPrinted, [{ from: 1, to: 2 }, { from: 5, to: 7 }]);
+  assert.deepEqual(R.officeCancelHistory(0, 10, [job('c', 1, 10, 'queued')], new Set()).notPrinted, []);
+  const cancel = read('src/components/runs/officeCancel.ts');
+  assert.match(cancel, /fetch\('\/api\/office\/jobs\/' \+ encodeURIComponent\(requestId\), \{ method: 'DELETE'/, 'stopping uses the office queue\'s existing cancel call');
+  assert.doesNotMatch(cancel, /method: 'POST'|method: 'PUT'|method: 'PATCH'/, 'cancelling sends nothing new to the office');
+  assert.match(read('src/components/runs/RunPrinter.tsx'), /const choice = await askCancelRun\(/);
+  assert.match(read('src/app/runs/page.tsx'), /const choice = await askCancelRun\(/, 'the Runs list offers the same choice');
+}
 console.log('PASS office r4: held labels named, print-again status, storage/send-again/meta/no-access rules, parts one by one, fix holds the rest first, safe primaries, guarded rewinds, quieter polling, plain delete');

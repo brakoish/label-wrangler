@@ -10,11 +10,12 @@ import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
+import { askCancelRun, cancelEvents, stopProblem, stopWaitingAtOffice } from './officeCancel';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeWaitingSpans, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { RunProgress } from './RunProgress';
 import { printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
-import { useOfficeRequests } from './useOfficeRequests';
+import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
@@ -835,37 +836,36 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   const requestCancel = async () => {
-    // Cancelling the run never touches what the office already has: say so,
-    // and where to stop it, instead of cancelling it silently.
-    const waiting = office.loaded ? officeWaitingSpans(office.jobs, total) : [];
-    const waitingWords = waiting.length ? spanWords(waiting) : '';
-    const one = waiting.length === 1 && waiting[0].from === waiting[0].to;
-    const ok = await confirmDialog({
-      title: 'Cancel this run?',
-      body: `Labels already printed stay printed and the print history is kept.${waitingWords ? ` ${waitingWords.charAt(0).toUpperCase()}${waitingWords.slice(1)} ${one ? 'is' : 'are'} still waiting at the office and ${one ? 'prints' : 'print'} anyway, unless you tap “Cancel what hasn’t been picked up” in the office queue.` : ''} You can start a new run from the same data with Re-run.`,
-      confirmLabel: 'Cancel run',
-      cancelLabel: 'Keep run',
-      danger: true,
-    });
-    if (ok) await handleCancel();
+    // Labels still waiting at the office can be stopped with the run, or left
+    // to print: the person chooses, and the history says what really happened.
+    const jobs = office.loaded ? office.jobs : [];
+    const choice = await askCancelRun({ title: 'Cancel this run?', jobs, total, after: 'You can start a new run from the same data with Re-run.' });
+    if (choice) await handleCancel(choice === 'stop');
   };
 
-  const handleCancel = async () => {
+  const handleCancel = async (stopAtOffice = false) => {
     preparation.current?.abort();
     queueRef.current?.cancel();
     setStatus('cancelled');
     if (run) {
       await setRunStatus(run.id, 'cancelled', printedCount);
-      await createPrintEvent(run.id, {
-        eventType: 'cancelled',
+      let jobs: OfficeJobBrief[] = office.loaded ? office.jobs : [];
+      let stoppedJobIds = new Set<string>();
+      if (stopAtOffice) {
+        const result = await stopWaitingAtOffice(run.id, jobs);
+        stoppedJobIds = result.stoppedJobIds;
+        if (result.jobs) jobs = result.jobs;
+        const problem = stopProblem(result);
+        if (problem) setErrorMsg(problem);
+        void office.refresh().catch(() => { /* shown by the panel */ });
+      }
+      const end = stopAt > 0 ? Math.min(stopAt, total) : total;
+      const events = cancelEvents({
+        printedCount, end, jobs, stoppedJobIds, scanned: scannedLabels, confirmed: officeConfirmed,
         output: isSheetFormat ? 'sheet-pdf' : transport === 'office' ? 'office-pi' : 'roll-zpl',
-        rangeFrom: Math.min(total, printedCount + 1),
-        rangeTo: stopAt > 0 ? Math.min(stopAt, total) : total,
-        labelCount: Math.max(0, (stopAt > 0 ? Math.min(stopAt, total) : total) - printedCount),
-        printedCountAfter: printedCount,
         printerName: transport === 'dazzle' ? dazzleSelected : transport === 'office' ? 'Office printer' : usbPrinter?.productName ?? null,
-        message: 'Run cancelled',
       });
+      for (const event of events) await createPrintEvent(run.id, event);
     }
   };
 
@@ -1060,8 +1060,22 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   // --- Edit handlers ---
-  const openEdit = () => {
+  const openEdit = async () => {
     if (!run) return;
+    // Labels already at the office were made with the current values: an edit
+    // changes only labels sent after it, so say that before editing.
+    const atOffice = office.loaded ? officeWaitingSpans(office.jobs, total) : [];
+    if (atOffice.length) {
+      const words = spanWords(atOffice);
+      const one = atOffice.length === 1 && atOffice[0].from === atOffice[0].to;
+      const ok = await confirmDialog({
+        title: 'Labels are at the office printer',
+        body: `${words.charAt(0).toUpperCase()}${words.slice(1)} ${one ? 'is' : 'are'} already at the office with the current values and ${one ? 'prints' : 'print'} as ${one ? 'it is' : 'they are'}. Changes apply only to labels sent after you save.`,
+        confirmLabel: 'Edit anyway',
+        cancelLabel: 'Not now',
+      });
+      if (!ok) return;
+    }
     const rowIndex = Math.min(Math.max(0, previewIndex), Math.max(0, run.sourceData.length - 1));
     const row = run.sourceData[rowIndex];
     const nextSourceValues: Record<string, string> = {};
@@ -1367,7 +1381,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
   const moreItems: MenuItem[] = [
     { label: 'Re-run with the same data', icon: <Copy className="h-4 w-4 text-zinc-400" aria-hidden="true" />, href: `/runs/new?duplicateFrom=${run.id}` },
-    { label: 'Edit run', icon: <Pencil className="h-4 w-4 text-zinc-400" aria-hidden="true" />, onSelect: openEdit },
+    { label: 'Edit run', icon: <Pencil className="h-4 w-4 text-zinc-400" aria-hidden="true" />, onSelect: () => void openEdit() },
     { label: 'Edit design for next time', icon: <PenTool className="h-4 w-4 text-zinc-400" aria-hidden="true" />, href: `/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}` },
     { label: 'Save labels as a file…', icon: <Download className="h-4 w-4 text-zinc-400" aria-hidden="true" />, onSelect: () => { setExportFrom(1); setExportTo(total); setShowExport(true); } },
     // Any run that isn't finished can be cancelled: office and sheet runs too.

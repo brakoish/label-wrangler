@@ -17,6 +17,8 @@ import { friendlyError } from '@/lib/userMessages';
 import { moreNeedAttention, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
 import { officeStatusLine, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { officeProblemWords } from '@/lib/officeProblem';
+import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from '@/components/runs/officeCancel';
+import { scannedLabelNumbers } from '@/lib/scannedLabels';
 import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
@@ -848,19 +850,47 @@ function RunRow({
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);
   useEffect(() => { try { setPartsLeft(remainingParts(readPartsPlan(localStorage.getItem(`lw:office-parts:${run.id}`)))); } catch { setPartsLeft([]); } }, [run.id, office?.sent, office?.onTheWay]);
 
-  // Cancelling keeps the history and never touches what the office already has.
+  // Same choice as the run page: labels nobody at the office has picked up
+  // yet can be stopped with the run or left to print, and the history says
+  // only what is true.
   const cancelRun = async () => {
-    const waiting = run.office?.onTheWay ?? 0;
-    const ok = await confirmDialog({
-      title: `Cancel “${run.name}”?`,
-      body: `Labels already printed stay printed and the print history is kept.${waiting ? ` ${waiting === 1 ? '1 label is' : `${waiting.toLocaleString()} labels are`} still waiting at the office and ${waiting === 1 ? 'prints' : 'print'} anyway, unless you open the run and tap “Cancel what hasn’t been picked up” in its office queue.` : ''}`,
-      confirmLabel: 'Cancel run', cancelLabel: 'Keep run', danger: true,
-    });
-    if (!ok) return;
+    const mayHaveOffice = !!run.office;
+    const jobs = mayHaveOffice ? await readOfficeJobs(run.id) : [];
+    if (jobs === null) {
+      void alertDialog('Open the run to cancel it', 'The office queue for this run couldn’t be read just now, so it isn’t clear which labels are still at the office. Open the run to cancel it there, or try again in a moment.');
+      return;
+    }
+    const choice = await askCancelRun({ title: `Cancel “${run.name}”?`, jobs, total: run.totalLabels });
+    if (!choice) return;
     try {
       await setRunStatus(run.id, 'cancelled', printed);
-      if (printed < run.totalLabels) await createPrintEvent(run.id, { eventType: 'cancelled', output: run.office ? 'office-pi' : 'roll-zpl', rangeFrom: printed + 1, rangeTo: run.totalLabels, labelCount: run.totalLabels - printed, printedCountAfter: printed, printerName: null, message: 'Run cancelled' });
-      toast('Run cancelled');
+      let after = jobs;
+      let stoppedJobIds = new Set<string>();
+      let problem: string | null = null;
+      if (choice === 'stop') {
+        const result = await stopWaitingAtOffice(run.id, jobs);
+        stoppedJobIds = result.stoppedJobIds;
+        if (result.jobs) after = result.jobs;
+        problem = stopProblem(result);
+      }
+      // Labels printed by scanning are never called "not printed".
+      let scanned: number[] = [];
+      let confirmed: OfficeSpan[] = [];
+      let historyRead = false;
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(run.id)}/print-events`, { cache: 'no-store' });
+        const events = response.ok ? await response.json() : [];
+        if (Array.isArray(events)) {
+          scanned = scannedLabelNumbers(events, run.totalLabels);
+          confirmed = events.filter((event) => event?.eventType === 'confirmed' && event?.output === 'office-pi').map((event) => ({ from: event.rangeFrom, to: event.rangeTo }));
+          historyRead = true;
+        }
+      } catch { /* below: nothing is called "not printed" without the history */ }
+      const events = cancelEvents({ printedCount: printed, end: run.totalLabels, jobs: after, stoppedJobIds, scanned, confirmed, output: run.office ? 'office-pi' : 'roll-zpl', printerName: null });
+      // Without the history, scanned labels can't be told apart: name only what was stopped.
+      for (const event of events) if (historyRead || event.message !== 'Run cancelled') await createPrintEvent(run.id, event);
+      if (problem) void alertDialog('Some labels may still print', problem);
+      else toast('Run cancelled');
     } catch (error) { void alertDialog('The run wasn’t cancelled', friendlyError(error, 'Try again in a moment.')); }
   };
   return (

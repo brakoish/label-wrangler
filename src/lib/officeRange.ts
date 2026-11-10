@@ -472,3 +472,62 @@ export function parseLabelList(text: string, total: number, cap = Infinity): { s
   for (const s of joined) for (let a = s.from; a <= s.to; a += size) spans.push({ from: a, to: Math.min(s.to, a + size - 1) });
   return { spans, error: '' };
 }
+
+/** Job states whose labels may still print, or may have printed: never called "not printed". */
+const MIGHT_PRINT = new Set(['queued', 'claimed', 'submitted', 'sent_to_printer', 'needs_review', 'resolved']);
+
+/** Merged spans of the given label numbers (sorted or not). */
+function spansOf(numbers: Iterable<number>): OfficeSpan[] {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const spans: OfficeSpan[] = [];
+  for (const n of sorted) {
+    const last = spans[spans.length - 1];
+    if (last && n === last.to + 1) last.to = n; else spans.push({ from: n, to: n });
+  }
+  return spans;
+}
+
+/** The sends of this run that still have a part waiting to be picked up (only those can be stopped). */
+export function officeQueuedRequestIds(jobs: ReadonlyArray<OfficeJobLike & { requestId?: string }>): string[] {
+  return [...new Set(jobs.filter((job) => job.state === 'queued' && job.requestId).map((job) => job.requestId as string))];
+}
+
+/** Labels waiting to be picked up at the office, merged (the labels a cancel can still stop). */
+export function officeQueuedSpans(jobs: ReadonlyArray<OfficeJobLike>, total: number): OfficeSpan[] {
+  const numbers: number[] = [];
+  for (const job of jobs) if (job.state === 'queued') for (let n = Math.max(1, job.from); n <= Math.min(total, job.to); n++) numbers.push(n);
+  return spansOf(numbers);
+}
+
+/**
+ * What a run's history says when it is cancelled, so it never records
+ * something false:
+ *  - stopped: labels whose office parts were waiting and are now cancelled
+ *    (they were stopped at the office);
+ *  - notPrinted: labels after the run's progress that didn't print and won't:
+ *    never labels still at the office or sent to the printer, and never
+ *    labels printed by scanning or confirmed at the office.
+ * `stoppedJobIds` are the jobs that were waiting when the person chose to stop them.
+ */
+export function officeCancelHistory(
+  printedCount: number,
+  end: number,
+  jobs: ReadonlyArray<OfficeJobLike & { id?: string }>,
+  stoppedJobIds: ReadonlySet<string>,
+  done: ReadonlyArray<number> = [],
+  confirmed: ReadonlyArray<OfficeSpan> = [],
+): { stopped: OfficeSpan[]; notPrinted: OfficeSpan[] } {
+  const from = Math.max(1, printedCount + 1);
+  const stoppedNumbers: number[] = [];
+  const mightPrint = new Set<number>(done);
+  for (const span of confirmed) for (let n = Math.max(from, span.from); n <= Math.min(end, span.to); n++) mightPrint.add(n);
+  for (const job of jobs) {
+    const stopped = job.state === 'cancelled' && !!job.id && stoppedJobIds.has(job.id);
+    if (stopped) { for (let n = Math.max(1, job.from); n <= job.to && n - job.from < OFFICE_MAX_LABELS; n++) stoppedNumbers.push(n); continue; }
+    if (!MIGHT_PRINT.has(job.state)) continue;
+    for (let n = Math.max(from, job.from); n <= Math.min(end, job.to); n++) mightPrint.add(n);
+  }
+  const notPrinted: number[] = [];
+  for (let n = from; n <= end; n++) if (!mightPrint.has(n)) notPrinted.push(n);
+  return { stopped: spansOf(stoppedNumbers), notPrinted: spansOf(notPrinted) };
+}
