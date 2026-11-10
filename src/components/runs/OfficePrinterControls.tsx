@@ -4,6 +4,7 @@ import { useCallback,useEffect,useState,useRef } from 'react';
 import { confirmDialog } from '@/components/ui/feedback';
 import { controlFailure } from '@/lib/officeSendOutcome';
 import { clearSavedControl, controlPendingKey as keyFor, readSavedControl } from '@/lib/officeControlPending';
+import { IconSwap } from '@/components/ui/IconSwap';
 type Control={id:string;action:string;result:{state:string;reason:string}|null};
 type State={canControl:boolean;status:{paused:boolean|null;fresh:boolean}|null;controls:Control[];userId?:string};
 const resultWords:Record<string,string>={failed:'didn’t go through',rejected:'was refused',expired:'timed out',succeeded:'worked'};
@@ -18,7 +19,11 @@ const clearSaved=(userId?:string)=>clearSavedControl(typeof window!=='undefined'
  * Reads every 2 s while a pause or resume is on its way, every 15 s otherwise,
  * and not at all while the page is hidden.
  */
-export function OfficePrinterControls({attention=false,showStatus=false,onUnavailable,onChange}:{attention?:boolean;showStatus?:boolean;
+export function OfficePrinterControls({attention=false,showStatus=false,onUnavailable,onChange,onPausedChange,primaryResume=false}:{attention?:boolean;showStatus?:boolean;
+ /** Called with the printer's own pause state whenever it changes (null: not known). */
+ onPausedChange?:(paused:boolean|null)=>void;
+ /** Draw "Resume printer" as the page's main action (the page has nothing more urgent). */
+ primaryResume?:boolean;
  /** Called once when this account can't see the office printer at all (401/403 on read). */
  onUnavailable?:()=>void;
  /** Called after a pause or resume is confirmed or settles, so the page re-reads the printer. */
@@ -71,11 +76,14 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
   clearSaved(userId);await refresh().catch(()=>{});onChange?.();
  }finally{sending.current=false;setBusy(false);}};
  const requestPause=async()=>{
-  const ok=await confirmDialog({title:'Pause the office printer?',body:'It pauses for everyone, after the label printing now. Waiting labels stay in line until someone taps Resume.',confirmLabel:'Pause printer',danger:true});
+  // Pausing is reversible, so it is not drawn as a destructive act.
+  const ok=await confirmDialog({title:'Pause the office printer?',body:'It pauses for everyone, after the label printing now. Waiting labels stay in line until someone taps Resume.',confirmLabel:'Pause printer'});
   if(ok)void send('pause');
  };
  useEffect(()=>{if(readSaved(userId))setCanRetry(true);},[userId]);
  const fresh=data?.status?.fresh;const paused=data?.status?.paused;
+ const reportPaused=data && fresh && !pending?(paused ?? null):null;
+ useEffect(()=>{onPausedChange?.(reportPaused);},[reportPaused,onPausedChange]);
  const disabled=busy || pending || !data?.canControl || !fresh;
  const actions=paused===true?['resume']:paused===false?['pause']:['pause','resume'];
  const last=data?.controls[0];
@@ -83,7 +91,7 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
  const ok=!!data && !pending && fresh && paused===false && !attention;
  const tone=!data||pending?'text-zinc-400':ok?'text-emerald-400':'text-amber-300';
  const dot=!data||pending?'bg-zinc-500':ok?'bg-emerald-400':'bg-amber-300';
- const buttons=data?.canControl && <div className="flex shrink-0 gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className="btn btn-secondary btn-sm">{busy?<Loader2 className="size-4 animate-spin" aria-hidden="true" />:action==='pause'?<Pause className="size-4 animate-icon" aria-hidden="true" />:<Play className="size-4 animate-icon" aria-hidden="true" />}{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>;
+ const buttons=data?.canControl && <div className="flex shrink-0 gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className={`btn btn-sm ${action==='resume' && primaryResume?'btn-primary':'btn-secondary'}`}><IconSwap className="size-4" active={busy?'busy':action==='pause'?'pause':'resume'} icons={{busy:<Loader2 className="size-4 animate-spin" />,pause:<Pause className="size-4" />,resume:<Play className="size-4" />}} />{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>;
  const notes=<>
   {data?.canControl && !fresh && !pending && <p className="text-zinc-400">Pause and Resume work again once the office computer reports in.</p>}
   {last?.result && last.result.state!=='succeeded' && !pending && <p role="status" className="text-amber-300">The last {last.action==='pause'?'Pause':'Resume'} {resultWords[last.result.state] ?? 'didn’t finish'}. Check the status before trying again.</p>}

@@ -1,4 +1,5 @@
 import type { RunStatus } from './types';
+import { officeProblemWords } from './officeProblem';
 
 /** What the office printer has done for a run (display only; never progress). */
 export interface RunOfficeSummary {
@@ -8,9 +9,11 @@ export interface RunOfficeSummary {
   /** Labels in those parts. */
   failedLabels?: number;
   /** The first such part: did-not-print and needs-check stop the shared printer; print-again doesn't. */
-  firstFailed?: { kind?: 'did-not-print' | 'needs-check' | 'print-again' } | null;
+  firstFailed?: { kind?: 'did-not-print' | 'needs-check' | 'print-again'; from?: number; to?: number; reason?: string | null } | null;
   /** The shared printer is paused or stopped for a check, so queued labels wait. */
   held?: boolean;
+  /** Another run's part stops the shared printer, so this run can't send or print yet. */
+  heldBy?: { runId: string; runName: string } | null;
 }
 
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'paused' | 'cancelled' | 'idle';
@@ -39,7 +42,13 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (run.status === 'cancelled') return out('cancelled', 'cancelled');
   if (total > 0 && printed >= total) return out('done', 'done');
   if (localProblem) return out('needs-you', 'attention', 'Stopped: printer problem');
-  if (office && office.failed > 0) return out('needs-you', 'attention', office.firstFailed?.kind === 'print-again' ? 'Labels to print again' : 'Office print needs a check');
+  if (office && office.failed > 0) {
+    const first = office.firstFailed;
+    // A known cause ("Out of labels") is named; otherwise the plain kind.
+    if (first && first.reason && first.from !== undefined && first.to !== undefined) return out('needs-you', 'attention', officeProblemWords({ from: first.from, to: first.to, kind: first.kind, reason: first.reason }).short);
+    return out('needs-you', 'attention', first?.kind === 'print-again' ? 'Labels to print again' : 'Office print needs a check');
+  }
+  if (office?.heldBy && run.status !== 'draft') return { label: 'Waiting on another run', tone: 'paused', bucket: 'printing', detail: `“${office.heldBy.runName || 'Another run'}” needs a check first` };
   if (office && office.onTheWay > 0) return office.held ? out('printing', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'Sending to the office printer');
   if (run.status === 'printing') return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');

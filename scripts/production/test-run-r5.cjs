@@ -3,6 +3,7 @@
 // barcode problem (never carried over from the wizard for a barcode that
 // spoils the next label), five status words, plain printer words.
 const assert=require('node:assert/strict');
+require('../thermal/register.cjs');
 const fs=require('node:fs');const path=require('node:path');
 const R=require('../../src/lib/officeRange.ts');
 const S=require('../../src/lib/scannedLabels.ts');
@@ -101,12 +102,12 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   assert.match(panel,/:sendingHeld\?`Send \$\{range\(fromNumber,toNumber\)\} now`/,'after the reprint: "Send labels 76–150 now"');
   assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
-  assert.match(panel,/setOfficeSeriesRunning\(true\)/,'in-app links ask too');
+  assert.match(panel,/setOfficeSeriesRunning\(true,\(\)=>\{stopSeries\.current=true;\}\)/,'in-app links ask too, and can stop after this part');
   assert.match(panel,/const ok=await confirmDialog\(\{title:`Send \$\{plural\(sendCount\)\} in \$\{parts\.length\} parts\?`/,'one confirm before a multi-part send');
   assert.match(panel,/if\(!resend\)\{\s*const after=partsAfterPrinted\(\[part\],printedRef\.current\);/,'a new part leaves out labels printed meanwhile; an unsure part resends exactly what it saved');
   assert.match(panel,/seriesLocks\.has\(runId\)/,'one series per run');
   assert.match(panel,/void runSeries\(\{\.\.\.partsPlan,parts:leftParts,next:0\}\)/,'"Send the remaining parts" sends only what is left');
-  assert.match(panel,/This plan is saved on this device only\./);
+  assert.doesNotMatch(panel,/This plan is saved on this device only/,'no storage jargon');
   assert.match(panel,/const scanned=scannedSkipPlan\(fromNumber,toNumber,scannedLabels\);/,'scanned labels are offered to leave out');
   assert.equal((panel.match(/method:'POST',body:JSON\.stringify\(payload\)/g)||[]).length,1,'one POST site for jobs');
   assert.ok(panel.indexOf('try{localStorage.setItem(storageKey,JSON.stringify(payload));}')<panel.indexOf("api('/api/office/jobs',{method:'POST'"),'the key is saved before the POST');
@@ -119,8 +120,81 @@ assert.doesNotMatch(page,/<PrintCheckList/,'the run page has its own one-tick-pe
 assert.match(page,/barcodeTicksAllow\(printCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
 assert.match(page,/const calm = \(runFinished \|\| run\.status === 'cancelled' \|\| status === 'cancelled'\) && !woken && status !== 'running'/,'finished and cancelled runs are a calm summary');
 assert.match(page,/\{officeFixFirst && checkList\}/,'a failed office part comes before the barcode list');
-assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it');
+assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount: printedLabels, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it, and counts every printed label');
 assert.doesNotMatch(page,/remaining in printer batch/);
 const nav=read('src/lib/printNavigation.ts');
 assert.match(nav,/if \(officeSeries\) \{/);
 console.log('PASS run r5: held labels offered on their own, parts trimmed by progress, scanned labels left out, one tick per barcode problem, five status words, plain printer words');
+
+// --- Round 6: one set of words for office problems, refusals with a next step, held by another run ---
+{
+  const { officeProblemWords } = require('../../src/lib/officeProblem.ts');
+  const out = officeProblemWords({ from: 51, to: 100, kind: 'did-not-print', reason: 'media out' });
+  assert.equal(out.title, 'Out of labels');
+  assert.equal(out.action, 'Load a new roll, then print labels 51–100 again.');
+  assert.doesNotMatch(out.title, /\.$/, 'titles have no final period');
+  assert.equal(officeProblemWords({ from: 101, to: 150, kind: 'needs-check', reason: 'station_outcome_timeout' }).action, 'Check whether labels 101–150 came out at the office.');
+  assert.equal(officeProblemWords({ from: 7, to: 7, kind: 'print-again' }).action, 'Print label 7 again.');
+  const O = require('../../src/lib/officeSendOutcome.ts');
+  const offline = O.plainOfficeRefusal('Office printer is offline', 409);
+  assert.equal(offline.reason, 'printer-offline');
+  assert.match(offline.message, /offline/);
+  assert.match(offline.message, /Office Pi/);
+  assert.equal(O.refusalNextStep('printer-offline'), 'resend', 'an offline refusal offers a real resend');
+  assert.equal(O.refusalNextStep('no-access'), 'none');
+  assert.equal(O.refusalNextStep('already-queued'), 'queue');
+  assert.doesNotMatch(O.plainOfficeRefusal('weird', 409).message, /Try again/);
+  const paused = O.officeStatusLine({ online: true, dispatch_enabled: true, paired_at: 'x', needs_review: false, dispatch_hold_reason: 'printer_paused' });
+  assert.match(paused.text, /^Paused/);
+  const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
+  const held = D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
+  assert.equal(held.label, 'Waiting on another run');
+  assert.equal(held.detail, '“Run A” needs a check first');
+  assert.notEqual(D.runDisplayStatus({ ...run, status: 'draft' }, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } }).label, 'Waiting on another run', 'drafts are not "waiting"');
+  assert.equal(D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print', from: 51, to: 100, reason: 'media out' } }).detail, 'Out of labels', 'the header names a known cause');
+  // The fix dialog asks what came out, never for a tick the person can't verify; Pause is not red.
+  assert.doesNotMatch(panel, /I checked: nothing for/);
+  assert.match(panel, /Did any of \{range\(part\.from,part\.to\)\} come out\?/);
+  assert.doesNotMatch(panel, /Try again<\/button>/, 'no "Try again" that only clears the message');
+  assert.doesNotMatch(panel, /onClick=\{\(\)=>\{rangeEdited\.current=true;setReprintOf\(r\.id\)/, 'a queue row never takes over the main button');
+  const controls = read('src/components/runs/OfficePrinterControls.tsx');
+  assert.doesNotMatch(controls, /confirmLabel:'Pause printer',danger:true/);
+  // Progress counts every printed label, wherever it sits.
+  const { printedSpans, stillToGo } = require('../../src/lib/runProgress.ts');
+  const spans = printedSpans(0, [{ from: 5, to: 10 }], 20);
+  assert.deepEqual(spans, [{ from: 5, to: 10 }]);
+  assert.deepEqual(stillToGo(spans, 20), [{ from: 1, to: 4 }, { from: 11, to: 20 }]);
+  assert.deepEqual(printedSpans(4, [{ from: 5, to: 10 }], 20), [{ from: 1, to: 10 }]);
+  const pageNow = read('src/components/runs/RunPrinter.tsx');
+  assert.match(pageNow, /label: 'Cancel run…'/);
+  assert.doesNotMatch(pageNow, /!isSheetFormat && transport !== 'office' && status !== 'completed'/, 'office and sheet runs can be cancelled');
+  console.log('PASS run r6: shared problem words, refusal next step, paused in words, waiting on another run, fix asks what came out, progress counts every printed label, office runs cancel');
+}
+{
+  const { groupPrintHistory } = require('../../src/lib/printHistoryGroups.ts');
+  const at = (m) => new Date(Date.UTC(2026, 0, 1, 10, m)).toISOString();
+  const parts = Array.from({ length: 80 }, (_, i) => ({ id: `e${i}`, eventType: 'sent', output: 'office-pi', rangeFrom: i * 25 + 1, rangeTo: i * 25 + 25, message: null, createdAt: at(Math.floor(i / 10)) }));
+  const grouped = groupPrintHistory([...parts, { id: 'c', eventType: 'confirmed', output: 'office-pi', rangeFrom: 1, rangeTo: 50, message: null, createdAt: at(30) }]);
+  assert.equal(grouped.length, 2, 'one line for 80 parts, one for the confirmation');
+  assert.equal(grouped[1].parts, 80);
+  assert.equal(grouped[1].event.rangeFrom, 1);
+  assert.equal(grouped[1].event.rangeTo, 2000);
+  assert.equal(grouped[0].event.eventType, 'confirmed', 'newest first');
+  console.log('PASS run r6: print history groups the parts of one big office send');
+}
+{
+  // The fix dialog's reprint plans from a queue that already knows the check
+  // was recorded, so the one press really sends; the list and run page share
+  // one "waiting on another run" rule; one primary button after a reprint.
+  const office = read('src/components/runs/OfficePiPrinter.tsx');
+  const saveFix = office.slice(office.indexOf('const saveFix='), office.indexOf('const pendingWords='));
+  assert.ok(saveFix.indexOf('jobsRef.current=jobsRef.current.map(') > saveFix.indexOf("api('/api/office/review'"), 'queue copy updated after the check is recorded');
+  assert.ok(saveFix.indexOf('jobsRef.current=jobsRef.current.map(') < saveFix.indexOf('await sendNow(again'), 'and before the reprint is planned');
+  assert.match(office, /:markShown && !moving\?'mark'/, 'the mark answer owns the primary only when it is on screen');
+  assert.match(office, /\{markShown && <div/);
+  const list = read('src/app/runs/page.tsx');
+  assert.match(list, /localStorage\.getItem\('lw:last-transport'\)/, 'the list reads the same printer choice as the run page');
+  assert.match(list, /officeDefault && leftToSend/);
+  assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
+  console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');
+}

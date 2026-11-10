@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useLayoutEffect, useId } from 'react';
+import { onDialogOpen } from './dialogStack';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { usePresence } from './usePresence';
@@ -74,14 +75,17 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   // Close on click outside (allow clicks inside the portaled menu too).
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    const handler = (e: Event) => {
       const t = e.target as Node;
       if (ref.current?.contains(t)) return;
       if (menuRef.current?.contains(t)) return;
       setOpenState(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    // Pointer down (mouse, touch or pen) outside closes it before any click
+    // runs, and a dialog opening by any route closes it too.
+    document.addEventListener('pointerdown', handler, true);
+    const stop = onDialogOpen(() => setOpenState(false));
+    return () => { document.removeEventListener('pointerdown', handler, true); stop(); };
   }, [open]);
 
   // Keep the active option scrolled into view while moving with the keyboard.
