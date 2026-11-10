@@ -1,5 +1,5 @@
 import type { LabelFormat, LabelTemplate, Run } from './types';
-import { layoutProblems, type LayoutProblem } from './designerLayout';
+import { layoutProblems, withAllEdges, type LayoutProblem } from './designerLayout';
 import { previewLabelValues } from './runBuilder';
 import { checkRunBarcodes, describeBarcodeGroups, type BarcodeIssue } from './barcodeCheck';
 import { fieldItemWords, friendlyFieldName, placeholderDescription } from './fieldLabels';
@@ -46,9 +46,9 @@ export function runLayoutIssues(data: RunCheckData, template: Pick<LabelTemplate
       // edge" (with its fix): here only what it prints over, said once.
       const fit = problem.barcodeFit;
       const edgeWords = fit && fit.level === 'tight' ? ` ${barcodeFitProblem(fit, '')}, and ` : '';
-      const message = edgeWords && problem.message.includes(edgeWords)
+      const message = withAllEdges(edgeWords && problem.message.includes(edgeWords)
         ? problem.message.replace(edgeWords, ' ')
-        : problem.fix ? `${problem.message} ${problem.fix.replace(/\.$/, '')}.` : problem.message;
+        : problem.fix ? `${problem.message} ${problem.fix.replace(/\.$/, '')}.` : problem.message, problem.edges);
       const entry = found.get(key) ?? { message, labels: [], count: 0 };
       entry.count++;
       if (entry.labels.length < 3) entry.labels.push(index + 1);

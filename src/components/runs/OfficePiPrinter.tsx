@@ -171,14 +171,14 @@ function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadB
   const [open,setOpen]=useState(false);
   const where=after?`after label ${after.toLocaleString()}`:'after the last one';
   if(firstHadBlank)return <label className="flex cursor-pointer items-start gap-3 text-sm text-zinc-100">
-    <input type="checkbox" aria-describedby={`${id}-help`} className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
+    <input type="checkbox" aria-describedby={`${id}-help`} className="check shrink-0" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
     <span>Feed one blank label {where}<span id={`${id}-help`} className="block text-zinc-400">Your first send ended with one.</span></span>
   </label>;
   return <div className="-mt-1">
     <FoldToggle open={open} onToggle={()=>setOpen(v=>!v)} controls={`${id}-more`}>{checked && !open?<>More options<span className="text-zinc-300"> · one blank label {where}</span></>:'More options'}</FoldToggle>
     <Fold open={open} id={`${id}-more`}>
       <label className="flex cursor-pointer items-start gap-3 pb-1 text-sm text-zinc-100">
-        <input type="checkbox" aria-describedby={`${id}-help`} className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
+        <input type="checkbox" aria-describedby={`${id}-help`} className="check shrink-0" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
         <span>Feed one blank label {where}<span id={`${id}-help`} className="block text-zinc-400">Useful for tearing off.{inParts?' Only after the last part.':''} Counts don’t change.</span></span>
       </label>
     </Fold>

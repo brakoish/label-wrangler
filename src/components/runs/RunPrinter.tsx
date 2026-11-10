@@ -22,7 +22,7 @@ import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhe
 import { RunBarcodeCheck } from './RunBarcodeCheck';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
 import { drawFailureWords, plainJobReason } from '@/lib/officeSendOutcome';
-import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
+import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/lib/printerCharacters';
 import { labelListWords, scannedLabelNumbers, scannedSkipPlan, type LabelSpan } from '@/lib/scannedLabels';
 import { plainPrinterProblem } from '@/lib/printerWords';
 import { fieldDisplayName } from '@/lib/fieldDisplayName';
@@ -416,8 +416,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const result = checkRunPrinterCharacters(template, format, { sourceData: run.sourceData ?? [], fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField });
     if (!result.issues.length) return null;
     const fromSheet = (field: string) => run.fieldMappings?.[field]?.mode === 'column' || (!!run.mappedField && run.mappedField === field);
-    const items = result.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fromSheet(issue.field)));
-    return { heading: `${result.badLabels.toLocaleString()} label${result.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`, items, more: result.issues.length - items.length };
+    const { items, more } = summarizePrinterCharacterIssues(result.issues, fromSheet);
+    return { heading: `${result.badLabels.toLocaleString()} label${result.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`, items, more };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, template, format]);
   const [goAhead, setGoAhead] = useState<PrintGoAhead>({});

@@ -99,7 +99,7 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
                 </div>
                 {canTick && (
                   <label htmlFor={`${uid}-${i}`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-                    <input id={`${uid}-${i}`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={ticked(item)} onChange={(e) => onTick(item, e.target.checked)} />
+                    <input id={`${uid}-${i}`} type="checkbox" className="check shrink-0" checked={ticked(item)} onChange={(e) => onTick(item, e.target.checked)} />
                     <span>{barcodeSendTickLabel(item, send, total)}</span>
                   </label>
                 )}
@@ -114,7 +114,7 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
               </p>
               {canTick && (
                 <label htmlFor={`${uid}-more`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-                  <input id={`${uid}-more`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={rest.every(ticked)} onChange={(e) => { for (const item of rest) onTick(item, e.target.checked); }} />
+                  <input id={`${uid}-more`} type="checkbox" className="check shrink-0" checked={rest.every(ticked)} onChange={(e) => { for (const item of rest) onTick(item, e.target.checked); }} />
                   <span>{rest.length === 1 ? 'Print that one anyway' : `Print those ${rest.length.toLocaleString()} anyway`}</span>
                 </label>
               )}
