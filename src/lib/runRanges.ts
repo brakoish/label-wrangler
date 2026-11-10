@@ -36,3 +36,15 @@ export function feedRangeForLabels(range: LabelRange, labelsAcross: number): { s
     stopFeed: Math.ceil(range.to / across),
   };
 }
+
+/**
+ * What Start/Resume does with the chosen "From" label. The server keeps the
+ * highest printed count it has seen, so a From at or below the printed count
+ * is a deliberate rewind: it needs the same confirmation as "Go back to label
+ * N" and must be saved with resetProgress. Otherwise the server would keep the
+ * higher count and the labels in between would be skipped after a pause.
+ * `startCount` is the progress to save when printing starts.
+ */
+export function planRunStart(printedCount: number, from: number): { rewind: boolean; startCount: number } {
+  return from <= printedCount ? { rewind: true, startCount: Math.max(0, from - 1) } : { rewind: false, startCount: printedCount };
+}

@@ -16,7 +16,7 @@ import type { LabelTemplate, LabelFormat, Run, RunStatus } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
-import { feedRangeForLabels, labelRangeCount, normalizeLabelRange } from '@/lib/runRanges';
+import { feedRangeForLabels, labelRangeCount, normalizeLabelRange, planRunStart } from '@/lib/runRanges';
 import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
@@ -519,11 +519,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
     setErrorMsg(null);
     if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg('Sync pending print progress for this run before starting another batch. Use Retry sync above.'); return; } }
+    // A From at or below what is already printed moves the run back, the same
+    // as "Go back to label N". Without the explicit rewind the server would
+    // keep the higher count and the next Resume would skip labels.
+    const plan = planRunStart(printedCount, selectedFrom);
+    if (plan.rewind) {
+      const ok = await confirmDialog({
+        title: `Go back to label ${selectedFrom} and continue?`,
+        body: `Labels up to ${printedCount} are already printed. The run's progress goes back to ${plan.startCount} of ${total}, and labels ${selectedFrom} to ${selectedThrough} print now. To print a few labels again without changing progress, use "Reprint some labels" instead.`,
+        confirmLabel: `Go back to label ${selectedFrom}`,
+      });
+      if (!ok) { setFromDraft(null); setCountDraft(null); return; }
+      setPrintedCount(plan.startCount);
+    }
+    const startCount = plan.startCount;
     setStatus('running');
     const controller = new AbortController();
     preparation.current = controller;
     const refusedStart = { reason: '' };
-    try { await setRunStatus(run.id, 'printing', printedCount, { onSetAside: (reason) => { refusedStart.reason = reason; } }); }
+    try { await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); return; }
     if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
@@ -544,7 +558,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     void stopFeed;
     let labelsToSend: string[];
     try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange, { signal: controller.signal }); }
-    catch (error) { if (controller.signal.aborted) return; setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', printedCount); return; }
+    catch (error) { if (controller.signal.aborted) return; setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', startCount); return; }
     if (!mounted.current || controller.signal.aborted) return;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
@@ -1402,7 +1416,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 className="btn btn-primary flex-1"
               >
                 {status === 'paused' ? <Play className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
-                {status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
+                {rangeValid && selectedFrom <= printedCount ? `Go back to label ${selectedFrom}` : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
               </button>
             )}
             {status === 'running' && transport === 'dazzle' && (
