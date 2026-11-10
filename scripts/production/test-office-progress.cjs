@@ -403,4 +403,26 @@ console.log('PASS field display names');
   const feedback = read('src/components/ui/feedback.tsx');
   assert.match(feedback, /resolve\(outcome === 'dismiss' \? null : outcome\)/, 'closing a choice dialog picks neither choice');
 }
+// --- Finding 9: marking office labels printed never pauses a run another device is printing ---
+{
+  const read = (f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8');
+  assert.equal(R.statusAfterMarkPrinted('printing', 10, 100), null, 'printing elsewhere: status left alone, progress only');
+  assert.equal(R.statusAfterMarkPrinted('paused', 10, 100), 'paused');
+  assert.equal(R.statusAfterMarkPrinted('pending', 10, 100), 'paused');
+  assert.equal(R.statusAfterMarkPrinted(undefined, 10, 100), 'paused');
+  assert.equal(R.statusAfterMarkPrinted('printing', 100, 100), 'completed', 'every label counted completes the run');
+  assert.equal(R.statusAfterMarkPrinted('paused', 120, 100), 'completed');
+  const store = read('src/lib/runStore.ts');
+  assert.match(store, /recordPrinted: async \(id, printedCount, status, options\) => \{\n\s+if \(status\) return get\(\)\.setRunStatus\(id, status, printedCount, options\);\n\s+const run = await updateRunWithQueue\(id, \{ printedCount \}, options\?\.onSetAside\);/, 'no status: a progress-only (high-water) write');
+  const queue = read('src/lib/offlineQueue.ts');
+  assert.match(queue, /progressOnly: !patch\.status && patch\.printedCount !== undefined/, 'a patch without a status is sent as a high-water write');
+  const printer = read('src/components/runs/RunPrinter.tsx');
+  assert.match(printer, /statusAfterMarkPrinted\(statusRef\.current === 'running' \? 'printing' : run\.status, through, total\)/);
+  assert.match(printer, /await recordPrinted\(run\.id, through, nextStatus,/);
+  assert.match(printer, /if \(nextStatus\) setStatus\(nextStatus\);/);
+  assert.doesNotMatch(printer, /const nextStatus = through >= total \? 'completed' : 'paused'/);
+  const list = read('src/app/runs/page.tsx');
+  assert.match(list, /await recordPrinted\(run\.id, through, statusAfterMarkPrinted\(run\.status, through, run\.totalLabels\),/);
+  assert.doesNotMatch(list, /through >= run\.totalLabels \? 'completed' : 'paused'/);
+}
 console.log('PASS office r4: held labels named, print-again status, storage/send-again/meta/no-access rules, parts one by one, fix holds the rest first, safe primaries, guarded rewinds, quieter polling, plain delete');

@@ -10,7 +10,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
-import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
+import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { useOfficeRequests } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
@@ -126,7 +126,7 @@ const TRANSPORT_LABELS: Record<Transport, { label: string; unavailable: string }
  * batches with a live progress bar, pause/resume, and cancel.
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
-  const { runs, fetchRun, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent, runLoadErrors } = useRunStore();
+  const { runs, fetchRun, updateRun, setRunStatus, recordPrinted, printEvents, fetchPrintEvents, createPrintEvent, runLoadErrors } = useRunStore();
   const loadError = runLoadErrors[runId] ?? null;
 
   const run = runs.find((r) => r.id === runId) ?? null;
@@ -1331,13 +1331,15 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setMarkNotice(null);
     const through = extendThrough(printedCount, [...officeConfirmed, ...ranges], total);
     if (through > printedCount) {
-      const nextStatus = through >= total ? 'completed' : 'paused';
+      // Progress always moves (high-water). The status changes only when no
+      // device is printing this run: never "paused" under someone printing.
+      const nextStatus = statusAfterMarkPrinted(statusRef.current === 'running' ? 'printing' : run.status, through, total);
       const refused = { reason: '' };
-      try { await setRunStatus(run.id, nextStatus, through, { onSetAside: (reason) => { refused.reason = reason; } }); }
+      try { await recordPrinted(run.id, through, nextStatus, { onSetAside: (reason) => { refused.reason = reason; } }); }
       catch { setMarkNotice({ tone: 'bad', text: 'That didn’t save. Try again in a moment.' }); return false; }
       if (refused.reason) { setMarkNotice({ tone: 'bad', text: `That didn’t save. ${refused.reason}` }); return false; }
       setPrintedCount((count) => Math.max(count, through));
-      setStatus(nextStatus);
+      if (nextStatus) setStatus(nextStatus);
     }
     for (const r of ranges) {
       await createPrintEvent(run.id, {
