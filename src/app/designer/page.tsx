@@ -32,7 +32,7 @@ import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type Layou
 import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
 import { elementTypeName } from '@/lib/fieldLabels';
-import { friendlyError } from '@/lib/userMessages';
+import { friendlySaveError } from '@/lib/userMessages';
 
 type NewTemplateElement = TemplateElement extends infer T
   ? T extends TemplateElement
@@ -679,7 +679,7 @@ function DesignerContent() {
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title={`${currentTemplate.name} · Designer`} />
-      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlySaveError(saveError, currentTemplate.elements, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}

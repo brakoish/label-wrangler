@@ -187,3 +187,27 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   assert.doesNotMatch(small, /shorten/i);
   console.log('PASS render failures name the item and the box width');
 }
+
+// Size boxes: normal typing is read as people mean it, nonsense is refused by name.
+{
+  const { parseSizeInput, sizeProblem } = require('../../src/lib/sizeInput.ts');
+  const read = (t) => { const p = parseSizeInput(t); return p.ok ? p.value : null; };
+  assert.equal(read('1 1/2'), 1.5);
+  assert.equal(read('1-1/2'), 1.5);
+  assert.equal(read('3/4'), 0.75);
+  assert.equal(read('1,5'), 1.5);
+  assert.equal(read('1.5in'), 1.5);
+  assert.equal(read('1.5"'), 1.5);
+  assert.equal(read('.5'), 0.5);
+  assert.equal(read('abc'), null);
+  assert.equal(read(''), null);
+  assert.equal(read('1/0'), null);
+  assert.equal(sizeProblem('abc', parseSizeInput('abc'), { min: 0.01, max: 2, unit: '"', what: 'Barcode 1’s width' }), '“abc” isn’t a size. Type a number like 1.5 or 1 1/2.');
+  assert.equal(sizeProblem('15', parseSizeInput('15'), { min: 0.01, max: 2, unit: '"', what: 'Barcode 1’s width' }), 'Barcode 1’s width must be between 0.01" and 2".');
+  assert.equal(sizeProblem('1.5', parseSizeInput('1.5'), { min: 0.01, max: 2 }), null);
+  const els = [{ id: 'a', type: 'barcode', isStatic: false, fieldName: 'Barcode 1', width: 0, height: 50 }];
+  assert.equal(friendlyRenderError('Invalid element width', els), 'Barcode 1 has no width. Open the design and set its width.');
+  const { friendlySaveError } = require('../../src/lib/userMessages.ts');
+  assert.match(friendlySaveError('Invalid width', [{ ...els[0], width: Infinity }], 'x'), /^Barcode 1’s width can’t be used/);
+  console.log('PASS size boxes read 1 1/2, 1,5 and 1.5in; refuse abc by name; render and save errors name the item');
+}

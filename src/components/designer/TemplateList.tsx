@@ -16,7 +16,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
-import { friendlyError } from '@/lib/userMessages';
+import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -205,7 +205,8 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       : generateZPLWithImages(template, format, sampleData).then(zpl => renderZplToDataUrl(zpl, format));
     preview
       .then((url) => { if (active) setThermalUrl(url); })
-      .catch(() => { if (active) setPreviewError('The preview could not be drawn.'); });
+      // A box the renderer refuses is named ("Barcode 1 has no width…").
+      .catch((error) => { if (active) setPreviewError(friendlyRenderFailure(error, 'The preview could not be drawn.', template.elements, format.labelsAcross || 1, sampleData, format)); });
 
     return () => { active = false; };
   }, [format, sampleData, template, attempt]);
