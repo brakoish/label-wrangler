@@ -352,7 +352,7 @@ console.log('PASS field display names');
     assert.equal(officePrinterHeld([{ ...base, needs_review: true, review_holds: [{ run_id: 'x', from: 1, to: 2 }] }]), true, 'stopped for a check');
     assert.equal(officePrinterHeld([base]), false, 'ready');
     assert.equal(officePrinterHeld([]), false, 'no printer');
-    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld \}/, 'the run header gets the station status');
+    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld,\s*unchecked: uncheckedLabels, unsure: panel\.unsure, refused: panel\.refused, printerPaused: panel\.paused \}/, 'the run header gets the station status and what the panel says');
     assert.match(page, /onHeldChange=\{setPanelHeld\}/, 'lifted from the office panel');
     assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld,heldById\?\{runId:heldById,runName:heldByName\}:null\);\}/, 'the header also learns which other run holds the printer');
   }
