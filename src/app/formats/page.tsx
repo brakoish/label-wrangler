@@ -73,14 +73,14 @@ export default function Home() {
       <div className="page-container flex-1 flex flex-col min-h-0 pb-0 sm:pb-0 lg:pb-0">
         <div className={`flex items-center justify-between gap-3 pb-4 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
           <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
-          <button type="button" onClick={() => setIsAddModalOpen(true)} className={`btn ${selectedFormat ? "btn-secondary" : "btn-primary"}`}>
+          <button type="button" onClick={() => setIsAddModalOpen(true)} className={`btn ${selectedFormat || (loadError && formats.length === 0) ? "btn-secondary" : "btn-primary"}`}>
             <PlusIcon className="w-4 h-4" />
             New label size
           </button>
         </div>
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 overflow-auto xl:overflow-hidden">
         {/* List */}
-        <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full xl:w-[360px] xl:shrink-0 flex-col min-h-0`}>
+        <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full ${hydrated && formats.length === 0 ? '' : 'xl:w-[360px]'} xl:shrink-0 flex-col min-h-0`}>
           {hasFormats && (
             <div className="pb-3 space-y-3">
               <div className="relative">
@@ -112,14 +112,14 @@ export default function Home() {
                 <span className="sr-only">Loading label sizes…</span>
               </div>
             ) : loadError && formats.length === 0 ? (
-              <div role="alert" className="py-12 space-y-3">
-                <p className="text-zinc-100 text-sm font-medium">We couldn&apos;t load your label sizes</p>
+              <div role="alert" className="py-16 text-center space-y-3">
+                <h2 className="text-zinc-100 font-semibold text-lg">We couldn’t load your label sizes</h2>
                 <p className="text-zinc-400 text-sm">{friendlyError(loadError, 'Something went wrong.')}</p>
                 <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>
               </div>
             ) : filteredFormats.length === 0 ? (
-              <div className="py-12">
-                <p className="text-zinc-100 text-sm font-medium">{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</p>
+              <div className={hasFormats ? 'py-12' : 'py-16 text-center'}>
+                <h2 className={hasFormats ? 'text-zinc-100 text-sm font-medium' : 'text-zinc-100 font-semibold text-lg'}>{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</h2>
                 <p className="text-zinc-400 text-sm mt-1">{hasFormats ? 'Try another name, or show all types.' : 'Add the size of label you print on.'}</p>
               </div>
             ) : (
