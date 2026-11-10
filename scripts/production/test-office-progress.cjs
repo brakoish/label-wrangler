@@ -359,7 +359,28 @@ console.log('PASS field display names');
   const controls = read('src/components/runs/OfficePrinterControls.tsx');
   assert.match(controls, /setInterval\(update,pending\|\|busy\?2000:15000\)/, 'controls read fast only while a pause or resume is on its way');
   assert.match(controls, /controlFailure\(r\.status,typeof answer\.code==='string'\?answer\.code:undefined,resend\)/, 'a resend keeps its key when signed out or refused');
-  assert.match(controls, /`\$\{LEGACY_KEY\}:\$\{userId\}`/, 'the saved pause/resume is per account');
+  assert.match(controls, /readSavedControl\(/, 'the saved pause/resume is per account');
+  {
+    // A main tab may still be retrying the device-wide request with its key:
+    // it is copied to the account's key, and removed only once that same request settles.
+    const P = require('../../src/lib/officeControlPending.ts');
+    assert.equal(P.controlPendingKey('u1'), 'lw:office-control-pending:u1');
+    const mem = new Map();
+    const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    const old = JSON.stringify({ action: 'pause', idempotencyKey: 'k-old' });
+    mem.set(P.LEGACY_KEY, old);
+    assert.equal(P.readSavedControl(store, 'u1'), old);
+    assert.equal(mem.get(P.LEGACY_KEY), old, 'the old build still finds its request');
+    assert.equal(mem.get('lw:office-control-pending:u1'), old);
+    P.clearSavedControl(store, 'u1');
+    assert.equal(mem.size, 0, 'settled: both copies go');
+    // A different request saved later by an old tab is left alone.
+    mem.set(P.LEGACY_KEY, JSON.stringify({ action: 'resume', idempotencyKey: 'k-main' }));
+    mem.set('lw:office-control-pending:u1', JSON.stringify({ action: 'pause', idempotencyKey: 'k-new' }));
+    P.clearSavedControl(store, 'u1');
+    assert.deepEqual([...mem.keys()], [P.LEGACY_KEY]);
+    assert.equal(controls.indexOf("localStorage.setItem(key,JSON.stringify(payload))") < controls.indexOf("fetch('/api/office/controls',{method:'POST'"), true, 'saved before the POST');
+  }
 
   const list = read('src/app/runs/page.tsx');
   assert.doesNotMatch(list, /Otherwise it’s deleted for good/, 'the delete dialog says the one case that applies');

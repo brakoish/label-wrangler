@@ -3,22 +3,13 @@ import { Loader2, Pause, Play } from 'lucide-react';
 import { useCallback,useEffect,useState,useRef } from 'react';
 import { confirmDialog } from '@/components/ui/feedback';
 import { controlFailure } from '@/lib/officeSendOutcome';
+import { clearSavedControl, controlPendingKey as keyFor, readSavedControl } from '@/lib/officeControlPending';
 type Control={id:string;action:string;result:{state:string;reason:string}|null};
 type State={canControl:boolean;status:{paused:boolean|null;fresh:boolean}|null;controls:Control[];userId?:string};
 const resultWords:Record<string,string>={failed:'didn’t go through',rejected:'was refused',expired:'timed out',succeeded:'worked'};
 class ControlError extends Error{constructor(message:string,public status:number){super(message);}}
-/** The saved pause/resume request, per account (older builds kept one per device). */
-const LEGACY_KEY='lw:office-control-pending';
-const keyFor=(userId?:string)=>userId?`${LEGACY_KEY}:${userId}`:LEGACY_KEY;
-function readSaved(userId?:string){
- try{
-  const own=localStorage.getItem(keyFor(userId));if(own)return own;
-  // Carry an older device-wide request over to this account once.
-  const legacy=userId?localStorage.getItem(LEGACY_KEY):null;
-  if(legacy && userId){localStorage.setItem(keyFor(userId),legacy);localStorage.removeItem(LEGACY_KEY);}
-  return legacy;
- }catch{return null;}
-}
+const readSaved=(userId?:string)=>readSavedControl(typeof window!=='undefined'?window.localStorage:null,userId);
+const clearSaved=(userId?:string)=>clearSavedControl(typeof window!=='undefined'?window.localStorage:null,userId);
 /**
  * Pause and Resume for the shared office printer, from any page (run page,
  * Runs list). Same endpoint, payload and saved idempotency key as before.
@@ -60,7 +51,7 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
  const send=async(action:string)=>{if(sending.current)return;sending.current=true;setBusy(true);setError('');setCanRetry(false);try{
   const saved=readSaved(userId);
   let payload:{action:string;idempotencyKey:string};
-  try{payload=saved?JSON.parse(saved):{action,idempotencyKey:crypto.randomUUID()};}catch{try{localStorage.removeItem(key);}catch{/* nothing saved */}payload={action,idempotencyKey:crypto.randomUUID()};}
+  try{payload=saved?JSON.parse(saved):{action,idempotencyKey:crypto.randomUUID()};}catch{clearSaved(userId);payload={action,idempotencyKey:crypto.randomUUID()};}
   const resend=!!saved;
   if(saved && payload.action!==action){setError(`An earlier “${payload.action==='pause'?'Pause':'Resume'}” hasn’t been confirmed yet. Tap “Try again” to finish it first.`);setCanRetry(true);return;}
   // Saved before the request, so a lost answer is retried with the same key.
@@ -74,10 +65,10 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
    // or refused access, because the first try may already have arrived.
    const answer=await r.json().catch(()=>({}));
    const outcome=controlFailure(r.status,typeof answer.code==='string'?answer.code:undefined,resend);
-   if(!outcome.keep){try{localStorage.removeItem(key);}catch{/* nothing saved */}}
+   if(!outcome.keep){clearSaved(userId);}
    setError(outcome.message);setCanRetry(outcome.keep);await refresh().catch(()=>{});return;
   }
-  try{localStorage.removeItem(key);}catch{/* nothing saved */}await refresh().catch(()=>{});onChange?.();
+  clearSaved(userId);await refresh().catch(()=>{});onChange?.();
  }finally{sending.current=false;setBusy(false);}};
  const requestPause=async()=>{
   const ok=await confirmDialog({title:'Pause the office printer?',body:'It pauses for everyone, after the label printing now. Waiting labels stay in line until someone taps Resume.',confirmLabel:'Pause printer',danger:true});
@@ -96,7 +87,7 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
  const notes=<>
   {data?.canControl && !fresh && !pending && <p className="text-zinc-400">Pause and Resume work again once the office computer reports in.</p>}
   {last?.result && last.result.state!=='succeeded' && !pending && <p role="status" className="text-amber-300">The last {last.action==='pause'?'Pause':'Resume'} {resultWords[last.result.state] ?? 'didn’t finish'}. Check the status before trying again.</p>}
-  {error && <div role="alert" className="space-y-1 text-red-400"><p>{error}</p>{canRetry && <button type="button" disabled={busy} onClick={()=>{const saved=readSaved(userId);if(saved){try{void send(JSON.parse(saved).action);}catch{try{localStorage.removeItem(key);}catch{/* nothing saved */}setCanRetry(false);}}}} className="btn btn-ghost btn-sm -ml-2 text-red-400">Try again</button>}</div>}
+  {error && <div role="alert" className="space-y-1 text-red-400"><p>{error}</p>{canRetry && <button type="button" disabled={busy} onClick={()=>{const saved=readSaved(userId);if(saved){try{void send(JSON.parse(saved).action);}catch{clearSaved(userId);setCanRetry(false);}}}} className="btn btn-ghost btn-sm -ml-2 text-red-400">Try again</button>}</div>}
  </>;
  if(!showStatus){
   if(!buttons && !error)return null;
