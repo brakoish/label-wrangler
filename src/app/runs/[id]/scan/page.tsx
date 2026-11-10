@@ -6,6 +6,7 @@ import { ArrowLeft, AlertCircle, CheckCircle2, Loader2, Plug, ScanBarcode } from
 import { AppShell } from '@/components/AppShell';
 import { IconSwap } from '@/components/ui/IconSwap';
 import { PageTitle } from '@/components/PageTitle';
+import { EmptyState, ErrorState } from '@/components/EmptyState';
 import { useRunStore } from '@/lib/runStore';
 import { BlankSummary } from '@/components/checks/RunChecks';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -29,7 +30,6 @@ import {
   isDazzleRunning,
   listDazzlePrinters,
   printViaDazzle,
-  type DazzlePrinter,
 } from '@/lib/dazzlePrinter';
 
 type Transport = 'dazzle' | 'webusb';
@@ -121,7 +121,6 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   // Transport wiring (mirrors RunPrinter).
   const [transport, setTransport] = useState<Transport | null>(null);
   const [usbPrinter, setUsbPrinter] = useState<ConnectedPrinter | null>(null);
-  const [dazzlePrinters, setDazzlePrinters] = useState<DazzlePrinter[]>([]);
   const [dazzleSelected, setDazzleSelected] = useState<string | null>(null);
   const [transportError, setTransportError] = useState<string | null>(null);
   const webUsbSupported = typeof window !== 'undefined' && isWebUsbSupported();
@@ -130,16 +129,16 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     (async () => {
       const dz = await isDazzleRunning();
       if (dz) {
-        setTransport('dazzle');
         try {
           const ps = await listDazzlePrinters();
-          setDazzlePrinters(ps);
           const saved = typeof window !== 'undefined' ? localStorage.getItem('lw:dazzle-printer') : null;
           const match = saved ? ps.find((p) => p.name === saved) : undefined;
           setDazzleSelected(match?.name ?? ps.find((p) => p.is_default)?.name ?? ps[0]?.name ?? null);
         } catch {
-          setTransportError('Couldn\u2019t get the printer list from the label printer app on this computer. Check it\u2019s open, then reload this page.');
+          setTransportError('Couldn’t get the printer list from the label printer app on this computer. Check it’s open, then reload this page.');
         }
+        // Set once the list is in, so "no printers" never flashes while it loads.
+        setTransport('dazzle');
       } else if (webUsbSupported) {
         setTransport('webusb');
         try {
@@ -286,40 +285,43 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     }
   }, [run, template, format, targetField, sendLabel, fields, lookUp, history, transport, dazzleSelected, usbPrinter]);
 
-  // Guard: run / template / format missing.
+  // Guard: run / template / format missing. Every state sits where the
+  // other pages put theirs: under the header, centred.
+  const state = (title: string, node: React.ReactNode) => (
+    <AppShell>
+      <PageTitle title={title} />
+      <div className="flex-1 overflow-auto"><div className="page-container">{node}</div></div>
+    </AppShell>
+  );
   if (!run && loadError) {
-    return (
-      <AppShell>
-        <PageTitle title="Scan to print" />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div role="alert" className="max-w-sm text-center space-y-3">
-            <h1 className="text-lg font-semibold text-zinc-100">{loadError.status === 404 ? 'We couldn\u2019t find that run' : 'We couldn\u2019t load that run'}</h1>
-            <p className="text-sm text-zinc-400">{loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}</p>
-            <div className="flex justify-center gap-2">
-              {loadError.status !== 404 && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="btn btn-primary" data-x="text-black">Try again</button>}
-              <Link href="/runs" className="btn btn-secondary">Back to runs</Link>
-            </div>
-          </div>
-        </div>
-      </AppShell>
-    );
+    return state('Scan to print', (
+      <ErrorState
+        as="h1"
+        title={loadError.status === 404 ? 'We couldn’t find that run' : 'We couldn’t load that run'}
+        body={loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}
+        actions={<>
+          {loadError.status !== 404 && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="btn btn-primary">Try again</button>}
+          <Link href="/runs" className={loadError.status === 404 ? 'btn btn-primary' : 'btn btn-secondary'}>Go to Runs</Link>
+        </>}
+      />
+    ));
   }
   if (run && (!template || !format)) {
-    return (
-      <AppShell>
-        <PageTitle title="Scan to print" />
-        <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <div className="max-w-sm space-y-3"><p className="text-sm text-zinc-300">This run has no saved design, so it can&apos;t print from scans.</p><Link href={`/runs/${run.id}`} className="link">Back to run</Link></div>
-        </div>
-      </AppShell>
-    );
+    return state('Scan to print', (
+      <EmptyState
+        as="h1"
+        title="This run can’t print from scans"
+        body="It has no saved design."
+        actions={<Link href={`/runs/${run.id}`} className="btn btn-primary">Go to the run</Link>}
+      />
+    ));
   }
   if (!run || !template || !format) {
     return (
       <AppShell>
         <PageTitle title="Scan to print" />
-        <div className="flex-1 flex items-center justify-center text-zinc-500">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run…
+        <div role="status" className="flex-1 flex items-center justify-center text-zinc-500">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" aria-hidden="true" /> Loading run…
         </div>
       </AppShell>
     );
@@ -327,29 +329,27 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
 
   // A finished or cancelled run has nothing left to scan.
   if (run.status === 'completed' || run.status === 'cancelled') {
-    return (
-      <AppShell>
-        <PageTitle title={`Scan to print · ${run.name}`} />
-        <main className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-sm space-y-3 text-center">
-            <h1 className="text-lg font-semibold text-zinc-100">{run.status === 'completed' ? 'This run is done' : 'This run was cancelled'}</h1>
-            <p className="text-sm text-zinc-400">Scan mode is only for runs that still have labels to print. To print labels again, use the run page.</p>
-            <Link href={`/runs/${run.id}`} className="btn btn-primary">Back to the run</Link>
-          </div>
-        </main>
-      </AppShell>
-    );
+    return state(`Scan to print · ${run.name}`, (
+      <EmptyState
+        as="h1"
+        title={run.status === 'completed' ? 'This run is done' : 'This run was cancelled'}
+        body="Scanning is only for runs with labels still to print. To print labels again, use the run page."
+        actions={<Link href={`/runs/${run.id}`} className="btn btn-primary">Go to the run</Link>}
+      />
+    ));
   }
 
   const printerReady = (transport === 'dazzle' && !!dazzleSelected) || (transport === 'webusb' && !!usbPrinter);
   const officeOnly = usesOfficePrinter && !printerReady;
+  // Done looking and there is no printer to use here (the office printer has its own note).
+  const noPrinter = !printerReady && !officeOnly && (!!transport || !!transportError);
   const canPrint = !!targetField && blanksOk && printerReady;
   const waitingFor = !targetField
     ? 'Nothing on this design changes per label'
     : !blanksOk
       ? 'Some fields have no value. See above.'
       : !printerReady
-        ? 'Connect a printer first'
+        ? 'Looking for a printer…'
         : 'Waiting for a scan…';
 
   return (
@@ -381,39 +381,46 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             </section>
           )}
 
+          {/* No printer here: say why, and give a way forward. */}
+          {noPrinter && (
+            <section role="status" className="space-y-3" aria-label="Printer">
+              <h2 className="text-base font-semibold text-zinc-100">No label printer on this computer</h2>
+              <p className="text-sm text-zinc-300">
+                {transport === 'webusb'
+                  ? 'Plug a label printer into this computer, then connect it.'
+                  : transport === 'dazzle' && transportError
+                    ? transportError
+                    : transport === 'dazzle'
+                      ? 'The printer app on this computer shows no printers. Turn the printer on and check it’s set up there.'
+                      : 'Open the label printer app on this computer, or use Chrome or Edge to connect a USB printer.'}
+                {' '}To print on the office printer, go to the run.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Link href={`/runs/${run.id}`} className="btn btn-primary">Go to the run</Link>
+                {transport === 'webusb' && (
+                  <button type="button" onClick={() => void connectUsb()} className="btn btn-secondary">
+                    <Plug className="size-4" aria-hidden="true" /> Connect USB printer
+                  </button>
+                )}
+              </div>
+              {transportError && transport === 'webusb' && <p role="alert" className="text-sm text-red-400">{transportError}</p>}
+            </section>
+          )}
+
           {/* Printer */}
-          {!officeOnly && <section className="space-y-2" aria-label="Printer">
+          {!officeOnly && !noPrinter && <section className="space-y-2" aria-label="Printer">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
               <ScanBarcode className={`size-5 shrink-0 ${printerReady ? 'text-emerald-400' : 'text-zinc-500'}`} aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                {transport === 'dazzle' && dazzlePrinters.length > 0 && (
+                {transport === 'dazzle' && dazzleSelected && (
                   <span className="text-zinc-300">Prints on <span className="text-zinc-100">{dazzleSelected}</span> (through the printer app on this computer)</span>
-                )}
-                {transport === 'dazzle' && dazzlePrinters.length === 0 && (
-                  <span className="text-zinc-300">The printer app on this computer shows no printers. Turn the printer on and check it’s set up there.</span>
                 )}
                 {transport === 'webusb' && usbPrinter && (
                   <span className="text-zinc-300">Prints on <span className="text-zinc-100">{usbPrinter.productName}</span> (USB)</span>
                 )}
-                {transport === 'webusb' && !usbPrinter && <span className="text-zinc-300">Plug a label printer into this computer and connect it, or <Link href={`/runs/${run.id}`} className="link">use the office printer</Link> from the run page.</span>}
-                {!transport && <span className="text-zinc-300">{transportError || 'Looking for a printer…'}</span>}
+                {!printerReady && <span className="text-zinc-300">Looking for a printer…</span>}
               </div>
-              {transport === 'webusb' && !usbPrinter && (
-                <button
-                  type="button"
-                  onClick={() => void connectUsb()}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Plug className="size-4" aria-hidden="true" /> Connect USB printer
-                </button>
-              )}
             </div>
-            {!printerReady && transport !== 'webusb' && (
-              <p className="text-sm text-zinc-400">
-                Or <Link href={`/runs/${run.id}`} className="link">use the office printer</Link> from the run page.
-              </p>
-            )}
-            {transportError && transport && <p role="alert" className="text-sm text-red-400">{transportError}</p>}
           </section>}
 
           {/* What a scan fills */}
@@ -450,7 +457,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           )}
 
           {/* The big input. Autofocus + keep-focused. Submit on Enter. */}
-          {!officeOnly && <form onSubmit={(e) => {
+          {!officeOnly && !noPrinter && <form onSubmit={(e) => {
             e.preventDefault();
             if (repeat) {
               const next = value.trim();
@@ -480,7 +487,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 placeholder={repeat ? 'Press Enter to print it again' : waitingFor}
                 autoFocus
                 disabled={!canPrint || busy}
-                className="w-full bg-zinc-900 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
+                className="w-full bg-zinc-900 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-50"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-5">
                 <IconSwap className={`size-6 ${flash === 'ok' && !busy ? 'animate-success' : ''}`} active={busy ? 'busy' : flash === 'ok' ? 'ok' : flash === 'error' ? 'error' : 'idle'} icons={{
@@ -504,7 +511,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             {!targetField && (
               <p className="mt-2 text-sm text-red-400 flex items-start gap-1.5">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                Nothing on this design changes per label, so there&apos;s nowhere for a scan to go. Open the design and set one part to &ldquo;Changes per label&rdquo;.
+                Nothing on this design changes per label, so there’s nowhere for a scan to go. Open the design and set one part to &ldquo;Changes per label&rdquo;.
               </p>
             )}
           </form>}

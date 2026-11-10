@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 /**
  * Empty, error and not-found states, drawn one way everywhere: centred, the
  * same distance below the page header, a heading (no period), one plain
- * sentence, then the actions centred under it.
+ * sentence, then the actions centred under it (the main one first).
  */
 export function EmptyState({ title, body, actions, children, tone = 'empty', as: Heading = 'h2' }: {
   title: string;
@@ -23,4 +23,9 @@ export function EmptyState({ title, body, actions, children, tone = 'empty', as:
       {children && <div className="mt-4 flex flex-col items-center">{children}</div>}
     </div>
   );
+}
+
+/** The same state for something that went wrong: announced, same place, same look. */
+export function ErrorState(props: Omit<Parameters<typeof EmptyState>[0], 'tone'>) {
+  return <EmptyState {...props} tone="error" />;
 }

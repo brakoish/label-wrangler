@@ -14,8 +14,8 @@ export default function NotFound() {
             title="This page doesn’t exist"
             body="The link may be old, or the page was moved."
             actions={<>
-              <Link href="/runs" className="btn btn-primary">Go to print runs</Link>
-              <Link href="/designer" className="btn btn-secondary">Designs</Link>
+              <Link href="/runs" className="btn btn-primary">Go to Runs</Link>
+              <Link href="/designer" className="btn btn-secondary">Go to Designs</Link>
             </>}
           />
         </div>

@@ -9,7 +9,7 @@ import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
-import { EmptyState } from '@/components/EmptyState';
+import { EmptyState, ErrorState } from '@/components/EmptyState';
 import { useRubberBand } from '@/components/motion/rubberBand';
 import { PlusIcon } from '../icons';
 import { alertDialog, confirmDialog } from '@/components/ui/feedback';
@@ -79,10 +79,11 @@ export default function Home() {
       <div className="page-container flex-1 flex flex-col min-h-0 pb-0 sm:pb-0 lg:pb-0">
         <div className={`flex items-center justify-between gap-3 pb-4 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
           <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
-          <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+          {/* With none yet, the one "New label size" button is the empty state's. */}
+          {!(hydrated && !loadError && formats.length === 0) && <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
             <PlusIcon className="w-4 h-4" />
             New label size
-          </button>
+          </button>}
         </div>
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 overflow-auto xl:overflow-hidden">
         {/* List */}
@@ -118,16 +119,23 @@ export default function Home() {
                 <span className="sr-only">Loading label sizes…</span>
               </div>
             ) : loadError && formats.length === 0 ? (
-              <EmptyState
-                tone="error"
+              <ErrorState
                 title="We couldn’t load your label sizes"
                 body={friendlyError(loadError, 'Something went wrong.')}
-                actions={<button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-secondary">{loading ? 'Trying again…' : 'Try again'}</button>}
+                actions={<button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>}
               />
             ) : filteredFormats.length === 0 ? (
               hasFormats
-                ? <div className="py-12"><h2 className="text-sm font-medium text-zinc-100">No label sizes match</h2><p className="mt-1 text-sm text-zinc-400">Try another name, or show all types.</p></div>
-                : <EmptyState title="No label sizes yet" body="Add the size of label you print on." />
+                ? <EmptyState
+                    title="No label sizes match"
+                    body="Try another name, or show all types."
+                    actions={<button type="button" onClick={() => { setSearchQuery(''); setActiveTab('all'); }} className="btn btn-secondary">Show all label sizes</button>}
+                  />
+                : <EmptyState
+                    title="No label sizes yet"
+                    body="Add the size of label you print on."
+                    actions={<button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary"><PlusIcon className="w-4 h-4" />New label size</button>}
+                  />
             ) : (
               filteredFormats.map((format) => (
                 <FormatCard

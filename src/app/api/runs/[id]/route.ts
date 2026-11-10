@@ -89,7 +89,7 @@ async function handleDELETE(_req: NextRequest, { params }: { params: Promise<{ i
       const [events] = await db.select({ count: sql<number>`count(*)::int` }).from(runPrintEvents).where(eq(runPrintEvents.runId, id));
       const [office] = await db.select({ count: sql<number>`count(*)::int` }).from(officeRequests).where(eq(officeRequests.runId, id));
       const count = Number(events?.count ?? 0) + Number(office?.count ?? 0);
-      throw new OfficeError(`This run has print history (${count ? plural(count, 'print record') : 'saved print records'}), so it can't be deleted. It stays in your list so that history is kept.`, 409);
+      throw new OfficeError(`This run has print history (${count ? plural(count, 'print record') : 'saved print records'}), so it can’t be deleted. It stays in your list so that history is kept.`, 409);
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
