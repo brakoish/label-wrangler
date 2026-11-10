@@ -64,5 +64,21 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
  // Start reads the count the server saved: another device ahead pauses with a word, nothing prints twice.
  const runPage=fs.readFileSync(path.join(__dirname,'../../src/components/runs/RunPrinter.tsx'),'utf8');
  assert.match(runPage,/if \(!plan\.rewind && Number\.isFinite\(serverCount\) && serverCount > startCount\) \{\s*setStatus\('paused'\); setPrintedCount\(serverCount\);\s*setErrorMsg\(`Another device already printed up to label/);
+ // Pause/resume on a shared device: an older build's device-wide request is never taken over silently.
+ {
+  const P=require('../../src/lib/officeControlPending.ts');
+  const mem=new Map();const st={getItem:(k)=>(mem.has(k)?mem.get(k):null),setItem:(k,v)=>mem.set(k,String(v)),removeItem:(k)=>mem.delete(k)};
+  const old=JSON.stringify({action:'pause',idempotencyKey:'k-old'});
+  mem.set(P.LEGACY_KEY,old);
+  assert.equal(P.readOwnControl(st,'u2'),null,'not this account’s');
+  assert.equal(mem.has('lw:office-control-pending:u2'),false,'and not copied by reading');
+  assert.equal(P.readLegacyControl(st,'u2'),old,'offered only as a question');
+  mem.set('lw:office-control-pending:u2',JSON.stringify({action:'resume',idempotencyKey:'k-own'}));
+  assert.equal(P.readLegacyControl(st,'u2'),null,'an account with its own request is not asked');
+  const controls=fs.readFileSync(path.join(__dirname,'../../src/components/runs/OfficePrinterControls.tsx'),'utf8');
+  assert.match(controls,/const readSaved=\(userId\?:string\)=>readOwnControl\(store\(\),userId\);/);
+  assert.match(controls,/const again=await confirmDialog\(\{title:`Send the earlier \$\{word\} from your account\?`/);
+  assert.match(controls,/if\(again\)saved=adoptLegacy\(userId\);/);
+ }
  console.log('PASS office B11: key lookup before “not sure”, no false “connection dropped”, other tabs told, one header status while sending');
 })().catch((error)=>{console.error(error);process.exit(1);});
