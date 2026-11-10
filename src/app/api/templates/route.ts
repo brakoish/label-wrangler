@@ -9,7 +9,16 @@ import { desc, eq, sql } from "drizzle-orm";
 async function handleGET(request: NextRequest) {
   try {
     const offset = Math.max(0, Math.min(100000, Math.floor(Number(new URL(request.url).searchParams.get('offset'))) || 0));
-    const allTemplates = await db.select({id:templates.id,name:templates.name,description:templates.description,formatId:templates.formatId,thermalRenderMode:templates.thermalRenderMode,archivedAt:templates.archivedAt,createdAt:templates.createdAt,updatedAt:templates.updatedAt,elements:sql`'[]'::jsonb`,summaryOnly:sql`true`,elementCount:sql`jsonb_array_length(${templates.elements})`,dynamicCount:sql`(select count(*)::int from jsonb_array_elements(${templates.elements}) e where e->>'isStatic' = 'false')`}).from(templates).orderBy(desc(templates.createdAt)).limit(50).offset(offset);
+    // Summary rows never return artwork. Both counts come from ONE pass over
+    // the elements array (one detoast per row instead of two); exact counts
+    // would need stored count columns, which is a schema change.
+    const rows = await db.select({id:templates.id,name:templates.name,description:templates.description,formatId:templates.formatId,thermalRenderMode:templates.thermalRenderMode,archivedAt:templates.archivedAt,createdAt:templates.createdAt,updatedAt:templates.updatedAt,
+      counts:sql<{n:number;d:number} | null>`(select json_build_object('n', count(*)::int, 'd', (count(*) filter (where e->>'isStatic' = 'false'))::int) from jsonb_array_elements(${templates.elements}) e)`})
+      .from(templates).orderBy(desc(templates.createdAt)).limit(50).offset(offset);
+    const allTemplates = rows.map(({ counts: raw, ...row }) => {
+      const counts = typeof raw === 'string' ? JSON.parse(raw) as { n: number; d: number } : raw;
+      return { ...row, elements: [], summaryOnly: true, elementCount: Number(counts?.n ?? 0), dynamicCount: Number(counts?.d ?? 0) };
+    });
     return NextResponse.json(allTemplates);
   } catch (error) {
     if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
