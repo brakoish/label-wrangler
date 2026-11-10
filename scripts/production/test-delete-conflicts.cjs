@@ -18,7 +18,9 @@ const fk=()=>Object.assign(new Error('wrapped'),{cause:Object.assign(new Error('
  assert.equal(res.status,409);assert.match(body.error,/6 print records/);
  // Unrelated database failures stay a generic 500.
  h.reset();h.results.push(new Error('connection reset'));
- res=await runRoute.DELETE(h.request('DELETE'),h.params('r'));assert.equal(res.status,500);
+ const quiet=console.error;console.error=()=>{};
+ try{res=await runRoute.DELETE(h.request('DELETE'),h.params('r'));}finally{console.error=quiet;}
+ assert.equal(res.status,500);
  // Unreferenced deletes still succeed.
  h.reset();res=await formatRoute.DELETE(h.request('DELETE'),h.params('f'));assert.equal(res.status,200);
  // A print event for a deleted run is a 404 (the outbox sets it aside) rather than a retried 500.

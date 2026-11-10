@@ -2,7 +2,10 @@
 
 ## Operator behavior
 - Local printing: pause/cancel before in-app navigation. Back/route teardown cancels future sends. A batch already handed to Dazzle/WebUSB may still print; this is not a hardware emergency stop.
-- Progress uses a durable browser outbox. Pending sync/storage problems remain visible. Do not clear browser storage with pending updates. New local batches wait for previously pending progress to sync.
+- Progress uses a durable browser outbox. Pending sync/storage problems remain visible. Do not clear browser storage with pending updates. A new local batch waits only for that run's pending progress to sync; other runs are not blocked.
+- Network errors, 401 (sign in again), 408, 429 and 5xx keep retrying in order per run. Permanent refusals (400, 403, 404, 409, 410, 422, e.g. the run was deleted elsewhere) are set aside with a plain-language reason and Export/Discard buttons; they never block printing.
+- Run progress is a high-water mark: the server keeps the highest `printedCount` it has seen, so a late or stale update cannot move the resume position back. Only Reprint from / Reprint all rewind it (explicit `resetProgress`).
+- Deleting a run with print history, a preset used by runs, or a format used by designs is refused with a 409 and an explanation; the item is kept. Templates are archived rather than deleted.
 - Runs retain an immutable template/format snapshot. Template edits affect new runs, not reprints of existing runs. Pre-release runs are marked as captured from the design available during this update; this cannot reconstruct original artwork that was already overwritten.
 - Template saves require their loaded revision. Conflicts leave the local draft intact; recover/save as a separate template instead of silently replacing someone else's edits. Failed saves stay in the tab, and recoverable drafts are offered when reopening a template. Recovery copies do not overwrite the saved design.
 - Old tabs without revision support receive a refresh-required error. Duplicate unsaved work before refreshing; do not discard unsaved edits.
@@ -21,6 +24,10 @@
 - Run `node scripts/production/backup-verify.cjs /absolute/private/backup/directory` before migration. Backups are confidential, mode 0600, outside the repository. This script reads six application-data tables under a consistent snapshot, then rehearses exact restore into transaction-local temporary tables. It does not back up office credentials, printer-pairing state, or the entire provider instance.
 - `node scripts/production/migrate.cjs` adds nullable `runs.design_snapshot` and captures CURRENT designs for unsnapshotted existing runs. Idempotent; no progress/template updates and no removed columns. Run before deploying code that reads that column.
 - Rollback can restore the previous application deployment without removing the additive column. Older code does not enforce snapshots/revision checks, so rollback weakens those guarantees. Do not drop the snapshot column.
+
+## Browser hardening
+- `next.config.ts` sends nosniff, Referrer-Policy, X-Frame-Options DENY, a Permissions-Policy that keeps WebUSB (`usb=(self)`), and a report-only CSP on every path except `/api/print-stations/*` (Pi responses are unchanged). The CSP is not enforced because the app uses WASM, a pdf.js worker, inline scripts in the sheet print tab and the Dazzle localhost bridge.
+- The pdf.js worker in `public/` is copied from the installed `pdfjs-dist` by `scripts/copy-pdf-worker.cjs` (run by `npm run dev`/`npm run build`); `npm test` fails if they differ. Keep pdf.js on v4.
 
 ## Monitoring / operational boundaries
 - Client JavaScript failures and >500ms main-thread tasks emit bounded, authenticated structured Vercel logs (at most 10 reports per document). No label values, package tags, query strings or stack traces are transmitted by this instrumentation.
