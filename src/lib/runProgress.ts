@@ -23,6 +23,13 @@ export function stillToGo(spans: ReadonlyArray<OfficeSpan>, total: number): Offi
   return out;
 }
 
+/** Labels in both lists of spans, merged and sorted. */
+export function intersectSpans(a: ReadonlyArray<OfficeSpan>, b: ReadonlyArray<OfficeSpan>): OfficeSpan[] {
+  const out: OfficeSpan[] = [];
+  for (const x of a) for (const y of b) { const from = Math.max(x.from, y.from), to = Math.min(x.to, y.to); if (from <= to) out.push({ from, to }); }
+  return printedSpans(0, out, Infinity);
+}
+
 
 /** A print-history entry, as far as counting printed labels goes. */
 export interface CountedEventLike { eventType: string; output: string; rangeFrom: number; rangeTo: number; createdAt?: string | null }

@@ -191,5 +191,73 @@ const keys=()=>[...values.keys()];
   assert.equal(calls.length,1);assert.equal(db.h,70);assert.equal(queue.pendingPatchCount(),0);
   values.clear();
  }
+ // --- 6. This build's server writes the go-back's entry with it (one statement, database time). ---
+ {
+  // Fake of the route's rule: with X-LW-Rewind-Key the go-back and its entry
+  // are written together; a bare rewind entry is refused unless it repeats one.
+  function serverWithEntry(db,calls,entries,clock){
+   return async(url,init)=>{
+    const body=JSON.parse(init.body);const headers=init.headers||{};calls.push([init.method,url,body,headers]);
+    const m=/^\/api\/runs\/([^/]+)(\/print-events)?$/.exec(url);const id=m[1];
+    if(m[2]){
+     if(body.eventType==='rewind'){const saved=entries.get(`print-event-${body.idempotencyKey}`);return saved?Response.json(saved,{status:201}):Response.json({error:'x',code:'rewind_not_applied'},{status:409});}
+     return Response.json({id:`print-event-${body.idempotencyKey}`,runId:id,...body,createdAt:clock()},{status:201});
+    }
+    const key=headers['X-LW-Rewind-Key'];
+    const applies=!(body.resetProgress&&typeof body.expectedPrintedCount==='number'&&db[id]!==body.expectedPrintedCount);
+    if(applies&&body.printedCount!==undefined)db[id]=body.resetProgress||body.progressOnly===false?body.printedCount:Math.max(db[id]??0,body.printedCount);
+    let h={};
+    if(key&&body.resetProgress){
+     const eid=`print-event-${key}`;
+     if(applies&&!entries.has(eid))entries.set(eid,{id:eid,runId:id,...rewindEvent(body.printedCount+1,body.expectedPrintedCount),createdAt:clock()});
+     h=entries.has(eid)?{'X-LW-Rewind-Event':'written','X-LW-Rewind-At':entries.get(eid).createdAt}:{'X-LW-Rewind-Event':'none'};
+    }
+    if(!applies)return Response.json({error:'changed',code:'progress_changed',printedCount:db[id]},{status:409,headers:h});
+    return Response.json({id,printedCount:db[id]},{headers:h});
+   };
+  }
+  values.clear();dispatched.length=0;
+  const queue=loadNew();
+  const db={k:50};const calls=[];const entries=new Map();
+  global.fetch=serverWithEntry(db,calls,entries,()=>'2026-11-10T17:00:00.000Z');
+  await queue.updateRunWithQueue('k',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},undefined,rewindEvent(10,50));
+  assert.equal(db.k,9);
+  assert.equal(calls.length,1,'one request: the go-back; no separate entry');
+  assert.match(calls[0][3]['X-LW-Rewind-Key'],/^[0-9a-f-]{36}$/,'the go-back names its entry’s key');
+  assert.equal(entries.size,1);
+  const synced=dispatched.find(e=>e.type==='lw:event-synced');
+  assert.equal(synced.detail.createdAt,'2026-11-10T17:00:00.000Z','the page gets the entry with the database’s time at once');
+  assert.equal(synced.detail.id,[...entries.keys()][0]);assert.equal(synced.detail.eventType,'rewind');
+  assert.equal(queue.rewindPending('k'),false);assert.equal(queue.pendingPatchCount(),0);
+  // Answer lost after the server applied it; another device then printed on to 70.
+  values.clear();calls.length=0;dispatched.length=0;
+  db.m=50;let first=true;const server=serverWithEntry(db,calls,entries,()=>'2026-11-10T18:00:00.000Z');
+  global.fetch=async(url,init)=>{const r=await server(url,init);if(first){first=false;throw new TypeError('network lost after the server applied it');}return r;};
+  await queue.updateRunWithQueue('m',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},()=>{},rewindEvent(10,50));
+  assert.equal(db.m,9);assert.equal(queue.pendingPatchCount('m'),1);
+  db.m=70;
+  await queue.flushOfflineQueue();
+  assert.equal(queue.pendingPatchCount(),0);
+  assert.equal(queue.deadLetteredOps().length,0,'its entry is written, so it was applied: not reported as a dropped go-back');
+  assert.ok(!calls.some(c=>c[2].eventType==='rewind'),'no separate entry, and no second one');
+  assert.equal([...entries.values()].filter(e=>e.runId==='m').length,1);
+  // A go-back that didn't apply (another device moved first): set aside, no entry anywhere.
+  values.clear();calls.length=0;db.n=70;
+  await queue.updateRunWithQueue('n',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},()=>{},rewindEvent(10,50));
+  assert.equal(db.n,70);assert.equal(calls.length,1);
+  assert.ok(![...entries.values()].some(e=>e.runId==='n'),'no entry for a go-back that wasn’t applied');
+  // Same go-back on main's server after a rollback: the header changes nothing there.
+  values.clear();calls.length=0;
+  const mdb={p:50};global.fetch=mainServer(mdb,calls);
+  await queue.updateRunWithQueue('p',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},()=>{},rewindEvent(10,50));
+  assert.equal(mdb.p,50);assert.equal(calls.length,1,'set aside, nothing sent after it');
+  assert.equal(queue.deadLetteredOps().length,0,'told on the page (onSetAside) as before');
+  // An older entry left in an outbox (sent on its own) is dropped quietly by this server.
+  values.clear();calls.length=0;
+  global.fetch=serverWithEntry(db,calls,entries,()=>'x');
+  await queue.savePrintEvent('q',rewindEvent(10,50));
+  assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.deadLetteredOps().length,0,'no notice for it');
+  values.clear();
+ }
  console.log('PASS rollback: on main’s server a go-back is never resent unguarded: it is set aside with “reload, then go back again”, and its rewind event is never sent; main’s outbox code never reads (or stalls on) a go-back, and still sends every ordinary update; previous-build go-backs are moved aside; one order per run; the rewind event is durable and carries the server’s time');
 })().catch(e=>{console.error(e);process.exitCode=1;});

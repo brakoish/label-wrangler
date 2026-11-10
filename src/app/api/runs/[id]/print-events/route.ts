@@ -8,6 +8,7 @@ import { desc, eq, and, sql } from "drizzle-orm";
 import { isForeignKeyViolation } from "@/lib/dbErrors";
 // An accepted "Go back to label N" (additive: older pages never send it).
 import { REWIND_EVENT } from "@/lib/runRewind";
+import { REWIND_NOT_APPLIED } from "@/lib/errorCodes";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -35,6 +36,19 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: 
     if(body.printedCountAfter!=null && (!Number.isInteger(body.printedCountAfter)||Number(body.printedCountAfter)<0||Number(body.printedCountAfter)>100000)) throw new OfficeError('Invalid print count');
     for(const key of ['printerName','message']) if(body[key]!=null && (typeof body[key]!=='string'||String(body[key]).length>2000)) throw new OfficeError('Invalid print event text');
     if(body.idempotencyKey!==undefined && !uuid(body.idempotencyKey)) throw new OfficeError('Invalid print event key');
+    // A "Go back to label N" entry is written by the go-back itself (PUT
+    // /api/runs/[id] with X-LW-Rewind-Key), in the same statement and at the
+    // same database time. One sent on its own is only accepted as a repeat of
+    // that entry (same key, same content); anything else would move the
+    // cutoff that decides which office work and confirmations still count,
+    // without a go-back behind it. Main's pages never send this type.
+    if (body.eventType === REWIND_EVENT) {
+      const [written] = body.idempotencyKey ? await db.select().from(runPrintEvents).where(and(eq(runPrintEvents.id, `print-event-${body.idempotencyKey}`), eq(runPrintEvents.runId, id))) : [];
+      if (!written) return NextResponse.json({ error: 'A go-back is recorded with the go-back itself.', code: REWIND_NOT_APPLIED }, { status: 409 });
+      const same = written.eventType === REWIND_EVENT && written.output === body.output && written.rangeFrom === body.rangeFrom && written.rangeTo === body.rangeTo && written.labelCount === body.labelCount && (written.printedCountAfter ?? null) === (body.printedCountAfter ?? null);
+      if (!same) throw new OfficeError('Print event key already used for another event', 409);
+      return NextResponse.json(written, { status: 201 });
+    }
     // Stamped with the database's clock, as office requests and jobs are, so
     // a "Go back to label N" cutoff and the office work it is compared with
     // use one clock (same ISO text shape as before).

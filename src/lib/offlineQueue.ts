@@ -1,8 +1,8 @@
 /** Durable, append-only progress outbox. Each acknowledgement removes only its
  * own operation; a reconnect can never erase a newer pending update. */
 import type { Run, RunStatus, RunPrintEvent } from './types';
-import { ORIGIN_NOT_ALLOWED } from './errorCodes';
-import { RUN_CLIENT_HEADER, RUN_CLIENT_VERSION } from './runClientVersion';
+import { ORIGIN_NOT_ALLOWED, REWIND_NOT_APPLIED } from './errorCodes';
+import { RUN_CLIENT_HEADER, RUN_CLIENT_VERSION, REWIND_KEY_HEADER, REWIND_EVENT_HEADER, REWIND_AT_HEADER } from './runClientVersion';
 
 /**
  * Two namespaces, so a rollback to the previous build (main, 50ea233; same queue as ffda577) is
@@ -236,7 +236,10 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
         attemptedOps.add(op.id);
         if (attemptedOps.size > 512) attemptedOps.delete(attemptedOps.values().next().value!);
         const send = (body: unknown) => fetch(`/api/runs/${runId}${op.event ? '/print-events' : ''}`, {
-          method: op.event ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json', ...((op.v ?? 0) >= RUN_CLIENT_VERSION ? { [RUN_CLIENT_HEADER]: String(RUN_CLIENT_VERSION) } : {}) },
+          method: op.event ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json', ...((op.v ?? 0) >= RUN_CLIENT_VERSION ? { [RUN_CLIENT_HEADER]: String(RUN_CLIENT_VERSION) } : {}),
+            // A go-back names its print-history entry's key, so the server can
+            // write it with the go-back (same statement, database time).
+            ...(op.then && !op.event && patch.resetProgress ? { [REWIND_KEY_HEADER]: op.id } : {}) },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(15000),
         });
@@ -264,15 +267,18 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
           announce(pendingError);
           continue;
         }
-        // Main refuses the informational 'rewind' event: drop it quietly.
-        if (op.event && op.event.eventType === 'rewind' && response.status === 400) {
+        // Main refuses the informational 'rewind' event, and this build refuses
+        // one no go-back wrote (the go-back records its own now): drop it quietly.
+        if (op.event && op.event.eventType === 'rewind' && (response.status === 400 || (response.status === 409 && refused.code === REWIND_NOT_APPLIED))) {
           window.localStorage.removeItem(op.key);
           announce(pendingError);
           continue;
         }
         // The rewind was applied, but its answer was lost (tab closed, timeout):
         // the server is already at the count asked for, so it counts as done.
-        const alreadyApplied = !op.event && response.status === 409 && refused.code === 'progress_changed' && !!patch.resetProgress && refused.printedCount === patch.printedCount;
+        // Also when the server says this go-back's own entry is written: it
+        // was applied then (in the same statement), even if progress has moved on since.
+        const alreadyApplied = !op.event && response.status === 409 && refused.code === 'progress_changed' && !!patch.resetProgress && (refused.printedCount === patch.printedCount || (!!op.then && response.headers?.get?.(REWIND_EVENT_HEADER) === 'written'));
         if (!response.ok && !alreadyApplied) {
           // A guarded rewind the server didn't apply because progress moved
           // on another device since: set aside, with plain words.
@@ -314,7 +320,19 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
         if (op.event && run?.id) { syncedEvents.set(op.id,run); if(syncedEvents.size>128) syncedEvents.delete(syncedEvents.keys().next().value!); window.dispatchEvent(new CustomEvent('lw:event-synced',{detail:run})); }
         else if (run?.id) { syncedRuns.set(run.id,run); window.dispatchEvent(new CustomEvent('lw:run-synced',{detail:run})); }
         else if (alreadyApplied) syncedRuns.delete(runId);
-        if (op.then && !op.event) {
+        // The server wrote the go-back's entry with it ('written'), or knows how
+        // and found none to write ('none', a go-back that was already there):
+        // either way the page doesn't send it. A server that doesn't answer
+        // this header gets the entry sent after the go-back, as before.
+        const recorded = !op.event && op.then ? response.headers?.get?.(REWIND_EVENT_HEADER) ?? '' : '';
+        const serverRecorded = recorded === 'written' || recorded === 'none';
+        const writtenAt = recorded === 'written' ? response.headers?.get?.(REWIND_AT_HEADER) ?? '' : '';
+        if (op.then && writtenAt) {
+          // In the page's history before the outbox says the go-back is done, so there is no gap.
+          const saved = { ...op.then, id: `print-event-${op.id}`, runId, createdAt: writtenAt } as RunPrintEvent;
+          window.dispatchEvent(new CustomEvent('lw:event-synced', { detail: saved }));
+        }
+        if (op.then && !op.event && !serverRecorded) {
           // The update is accepted: its print event takes its place, first in
           // this run's order, under the same id (its idempotency key).
           const next: Operation = { id: op.id, createdAt: op.createdAt, patch: { runId }, event: op.then, ...(op.v !== undefined ? { v: op.v } : {}) };

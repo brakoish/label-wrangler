@@ -12,7 +12,7 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
 import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from './officeCancel';
 import { extendThrough, parseLabelList, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeUnsentSpans, officeWaitingSpans, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
-import { RunProgress } from './RunProgress';
+import { RunProgress, progressParts } from './RunProgress';
 import { countedEventSpans, printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
@@ -306,12 +306,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const officeHeldBy = transport === 'office' ? panelHold.by : null;
   // What the office panel says (a send it isn't sure arrived, a refused send,
   // a paused printer), so the header and the panel never disagree.
-  type PanelState = { unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean; sending: string | null };
-  const [panelState, setPanelState] = useState<PanelState>({ unsure: null, refused: null, paused: false, sending: null });
+  type PanelState = { unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean; sending: string | null; held?: OfficeSpan | null };
+  const [panelState, setPanelState] = useState<PanelState>({ unsure: null, refused: null, paused: false, sending: null, held: null });
   const onPanelState = useCallback((next: PanelState) => {
-    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to ? prev : next));
+    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to && prev.held?.from === next.held?.from && prev.held?.to === next.held?.to ? prev : next));
   }, []);
-  const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null };
+  const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null, held: null };
   // The labels the office panel's main button sends next (for "Print anyway" words).
   const [officeSend, setOfficeSend] = useState<OfficeSpan | null>(null);
   const onOfficeRange = useCallback((span: OfficeSpan | null) => {
@@ -327,9 +327,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const uncheckedLabels = officeMark.ranges.reduce((n, r) => n + r.to - r.from + 1, 0);
   // Labels after progress that no office send covers: what is still to send (the same rule as the Runs list).
   const stillToSend = office.loaded && office.jobs.length > 0 ? officeUnsentSpans(office.jobs, total, printedCount).reduce((n, s) => n + s.to - s.from + 1, 0) : 0;
-  const officeSummary = (office.loaded && office.jobs.length > 0) || officeHeldBy || panel.unsure || panel.refused || panel.paused || panel.sending
+  const officeSummary = (office.loaded && office.jobs.length > 0) || officeHeldBy || panel.unsure || panel.refused || panel.paused || panel.sending || panel.held
     ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld,
-      unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused, sending: panel.sending, stillToSend }
+      unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused, sending: panel.sending, stillToSend, heldBack: panel.held ?? null }
     : null;
   // Labels at or sent to the office printer that nobody counted yet: the lighter part of the progress bar,
   // named apart ("sent to the printer", "waiting at the office") like the office panel names them.
@@ -1448,6 +1448,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const printedSpanList = printedSpans(printedCount, countedSpans, total);
   const printedLabels = printedSpanList.reduce((n, s) => n + s.to - s.from + 1, 0);
   const toGo = stillToGo(printedSpanList, total);
+  // Whether the progress line spells out what is still to go (then the office panel doesn't say it again).
+  const toGoShown = progressParts(printedCount, total, countedSpans, officeMark.ranges, waitingSpans).shown;
   const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
@@ -1476,11 +1478,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       designHref={designHref}
     />
   );
-  // A finished or cancelled run still says what was wrong with its design (no ticks).
-  const calmCheckList = (
-    <RunBarcodeCheck readOnly total={total} characters={characterWarning} check={printCheck} ticks={[]} wizardGoAhead={false}
-      onTick={() => {}} layoutGoAhead={false} onLayoutGoAhead={() => {}} designHref={designHref} />
-  );
+  // A finished or cancelled run doesn't lead with its design's problems: one
+  // calm note below, and the full list (with its ticks) once someone prints again.
+  const calmProblems = printCheck.blocking.length + printCheck.tight.length + printCheck.layout.length + (characterWarning?.items.length ?? 0) > 0;
+  const calmCheckList = calmProblems
+    ? <p className="text-sm text-zinc-400">This design has some barcode or layout problems. They’re listed if you print again.</p>
+    : null;
   const sentLine = officeSentLine(officeSummary, total);
   // Print history, with what the office queue knows and the office's own
   // history lines don't say: a send that was a reprint reads "Reprinted …",
@@ -1889,7 +1892,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
           {officeFixFirst && checkList}
           </>}
         </section>

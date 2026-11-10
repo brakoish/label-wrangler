@@ -7,7 +7,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
 const officeRows=[];
 const officeCalls=[];
-{const file=path.resolve('src/lib/office/db.ts');require.cache[file]={id:file,filename:file,loaded:true,exports:{officeSql:()=>async(strings,...values)=>{officeCalls.push([strings.join('?'),values]);return officeRows;}},children:[],paths:[]};}
+const historyRows=[];
+{const file=path.resolve('src/lib/office/db.ts');require.cache[file]={id:file,filename:file,loaded:true,exports:{officeSql:()=>async(strings,...values)=>{const text=strings.join('?');officeCalls.push([text,values]);return text.includes('FROM run_print_events e')?historyRows:officeRows;}},children:[],paths:[]};}
 const {lastRewindAt,afterRewind,rewindEvent,REWIND_EVENT}=require('../../src/lib/runRewind.ts');
 const R=require('../../src/lib/officeRange.ts');
 (async()=>{
@@ -20,11 +21,29 @@ const R=require('../../src/lib/officeRange.ts');
  const ev=rewindEvent(120,400);
  assert.deepEqual([ev.eventType,ev.output,ev.rangeFrom,ev.rangeTo,ev.labelCount,ev.printedCountAfter],['rewind','roll-zpl',120,400,281,119]);
  assert.deepEqual([rewindEvent(1,0).rangeFrom,rewindEvent(1,0).rangeTo,rewindEvent(1,0).labelCount],[1,1,0],'a valid range even from nothing printed');
- // --- The print-events route takes it (additive) ---
+ // --- The print-events route: a rewind entry comes with the go-back itself ---
  const events=require('../../src/app/api/runs/[id]/print-events/route.ts');
- h.reset();h.results.push([],[{id:'print-event-x',runId:'r',...ev,createdAt:'now'}]);
- const saved=await events.POST(h.request('POST',ev),h.params('r'));
- assert.equal(saved.status,201,'a rewind event is accepted');
+ const key='11111111-1111-4111-8111-111111111111';
+ h.reset();
+ {
+  const bare=await events.POST(h.request('POST',ev),h.params('r'));
+  assert.equal(bare.status,409,'a rewind entry sent on its own, with no go-back behind it, is refused');
+  assert.equal((await bare.json()).code,'rewind_not_applied');
+  assert.equal(h.log.flat().some((call)=>Array.isArray(call)&&call[0]==='values'),false,'nothing is written');
+ }
+ h.reset();h.results.push([]);
+ assert.equal((await events.POST(h.request('POST',{...ev,idempotencyKey:key}),h.params('r'))).status,409,'a key no go-back wrote is refused too');
+ h.reset();h.results.push([{id:`print-event-${key}`,runId:'r',...ev,createdAt:'2026-11-10T12:00:00.000Z'}]);
+ {
+  const again=await events.POST(h.request('POST',{...ev,idempotencyKey:key}),h.params('r'));
+  assert.equal(again.status,201,'the same entry sent again (an older page, a retry) is answered with the saved one');
+  assert.equal((await again.json()).createdAt,'2026-11-10T12:00:00.000Z','with the go-back’s own time');
+  assert.equal(h.log.flat().some((call)=>Array.isArray(call)&&call[0]==='values'),false,'and nothing new is written');
+ }
+ h.reset();h.results.push([{id:`print-event-${key}`,runId:'r',...ev,rangeFrom:5,createdAt:'2026-11-10T12:00:00.000Z'}]);
+ assert.equal((await events.POST(h.request('POST',{...ev,idempotencyKey:key}),h.params('r'))).status,409,'a different entry under that key is refused');
+ h.reset();h.results.push([],[{id:'print-event-x',runId:'r',eventType:'confirmed',output:'office-pi',rangeFrom:1,rangeTo:10,labelCount:10,printedCountAfter:null,printerName:null,message:null,createdAt:'now'}]);
+ assert.equal((await events.POST(h.request('POST',{eventType:'confirmed',output:'office-pi',rangeFrom:1,rangeTo:10,labelCount:10}),h.params('r'))).status,201,'other events are written as before');
  {
   // Stamped with the database clock (like office requests), not this server's.
   const values=h.log.flat().find((call)=>Array.isArray(call)&&call[0]==='values')?.[1]?.[0];
@@ -35,6 +54,53 @@ const R=require('../../src/lib/officeRange.ts');
  }
  h.reset();
  assert.equal((await events.POST(h.request('POST',{...ev,eventType:'rewound'}),h.params('r'))).status,400,'unknown event types are still refused');
+ // --- The go-back writes its entry in the same statement (database time) ---
+ {
+  const runRoute=require('../../src/app/api/runs/[id]/route.ts');
+  const put=(body,headers={})=>runRoute.PUT(new Request('https://example.test/api/runs/r',{method:'PUT',headers:{'content-type':'application/json','x-lw-client':'2',...headers},body:JSON.stringify(body)}),h.params('r'));
+  const goBack={status:'paused',printedCount:39,resetProgress:true,expectedPrintedCount:120};
+  h.reset();
+  h.results.push([{totalLabels:200,printedCount:120}],{rows:[{updated:1,written_at:'2026-11-10T12:34:56.789Z'}]},[{id:'r',printedCount:39,status:'paused'}]);
+  let res=await put(goBack,{'x-lw-rewind-key':key});
+  assert.equal(res.status,200);
+  assert.equal(res.headers.get('x-lw-rewind-event'),'written','the answer says the entry is written');
+  assert.equal(res.headers.get('x-lw-rewind-at'),'2026-11-10T12:34:56.789Z','with its database time');
+  {
+   const exec=h.log.find((calls)=>calls[0][0]==='execute');
+   assert.ok(exec,'one statement for the go-back and its entry');
+   // The statement's own text (the update inside it is drizzle's builder; the
+   // PGlite check in the review notes runs the whole statement for real).
+   const stmt=exec[0][1][0];
+   const text=stmt.queryChunks.filter((c)=>c&&Array.isArray(c.value)).map((c)=>c.value.join('')).join('?');
+   const params=stmt.queryChunks.filter((c)=>typeof c!=='function'&&!(c&&Array.isArray(c.value)));
+   assert.match(text,/^WITH upd AS \(\?\), ev AS \(\s*INSERT INTO run_print_events/,'the go-back’s update and the insert are one statement');
+   assert.match(text,/FROM upd ON CONFLICT \(id\) DO NOTHING/,'the entry is written only if the go-back applied');
+   assert.match(text,/to_char\(now\(\) at time zone 'UTC'/,'stamped with the statement’s database time');
+   const update=h.log.find((calls)=>calls[0][0]==='update');
+   assert.deepEqual(update.slice(1).map((c)=>c[0]),['set','where','returning','getSQL'],'the guarded update, returning the run id');
+   assert.equal(update[1][1][0].printedCount,39,'an exact rewind, not a high-water write');
+   assert.ok(params.includes(`print-event-${key}`),'under the page’s key');
+   assert.ok(params.includes('Went back to label 40')&&params.includes(40)&&params.includes(120)&&params.includes(81),'the same entry the page would have sent (labels 40–120)');
+  }
+  // Guard failed (another device moved progress): 409, no entry under this key.
+  h.reset();
+  h.results.push([{totalLabels:200,printedCount:250}],{rows:[{updated:0,written_at:null}]},[{printedCount:250}]);
+  res=await put(goBack,{'x-lw-rewind-key':key});
+  assert.equal(res.status,409);assert.equal((await res.json()).code,'progress_changed');
+  assert.equal(res.headers.get('x-lw-rewind-event'),'none','nothing written, and the page shouldn’t send it either');
+  // Without the header (an older page of this build): as before, no entry written here.
+  h.reset();
+  h.results.push([{totalLabels:200,printedCount:120}],[{id:'r',printedCount:39}]);
+  res=await put(goBack);
+  assert.equal(res.status,200);assert.equal(res.headers.get('x-lw-rewind-event'),null);
+  assert.ok(!h.log.some((calls)=>calls[0][0]==='execute'),'no entry written without the header');
+  // A key that isn't a UUID is ignored.
+  h.reset();
+  h.results.push([{totalLabels:200,printedCount:120}],[{id:'r',printedCount:39}]);
+  res=await put(goBack,{'x-lw-rewind-key':'nope'});
+  assert.equal(res.headers.get('x-lw-rewind-event'),null);
+ }
+ console.log('PASS rewind: the go-back writes its own history entry in the same statement (database time); a bare rewind entry is refused unless it repeats one a go-back wrote');
  // --- Runs list: sent work from before the rewind is not markable ---
  const list=require('../../src/app/api/runs/route.ts');
  const rewindAt='2026-11-10T12:00:00.000Z';
@@ -50,9 +116,11 @@ const R=require('../../src/lib/officeRange.ts');
  const answer=(calls)=>{
   const fields=Object.keys(calls[0][1][0]||{});
   if(fields.includes('name'))return [{id:'r1',name:'R1',status:'paused',totalLabels:2000,printedCount:39}];
-  if(fields.includes('type'))return [{runId:'r1',type:'confirmed',from:1,to:100,createdAt:'2026-11-10T11:30:00.000Z'},{runId:'r1',type:REWIND_EVENT,from:40,to:100,createdAt:rewindAt}];
   return [{runId:'r1'}];
  };
+ // The history summary as the database returns it: the latest go-back's time,
+ // and no confirmed stretch (the confirmation of 1–100 at 11:30 came before it).
+ historyRows.length=0;historyRows.push({run_id:'r1',kind:'r',range_from:null,range_to:null,cutoff_ms:String(Date.parse(rewindAt))});
  h.results.push(answer,answer,answer,answer);
  const res=await list.GET(new Request('https://example.test/api/runs?offset=0'));
  const rows=await res.json();
@@ -65,6 +133,7 @@ const R=require('../../src/lib/officeRange.ts');
  // The query gets each run's latest rewind (server time), summed up in SQL rather than a row per job.
  const [text,values]=officeCalls[officeCalls.length-1];
  assert.match(text,/GROUP BY run_id, state, after_rewind, island/,'office jobs are aggregated in the database');
+ assert.match(officeCalls[officeCalls.length-2][0],/GROUP BY run_id, kind, island/,'print history is aggregated in the database too (stretches, not a row per label)');
  assert.deepEqual(values.slice(1,3),[['r1'],[rewindAt]],'the rewind cutoff is passed per run');
  console.log('PASS rewind: kept as a print event once accepted; the Runs list offers only office work sent after it');
 

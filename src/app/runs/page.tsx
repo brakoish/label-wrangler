@@ -19,9 +19,10 @@ import { officeStatusLine, type OfficeReviewHold } from '@/lib/officeSendOutcome
 import { officeProblemWords } from '@/lib/officeProblem';
 import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from '@/components/runs/officeCancel';
 import { scannedLabelNumbers } from '@/lib/scannedLabels';
-import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
+import { readHeldSpans, readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
-import { printedLabelCount } from '@/lib/runProgress';
+import { intersectSpans, printedLabelCount, printedSpans, stillToGo } from '@/lib/runProgress';
+import { spanNumbers } from '@/components/runs/RunProgress';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
@@ -65,12 +66,32 @@ const spanCount = (spans: ReadonlyArray<OfficeSpan> | undefined) => (spans ?? []
  * nobody checked yet read "N labels sent, not checked yet".
  */
 function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null) {
-  const heldBy = holdRun && holdRun.runId !== run.id && (run.office?.onTheWay ?? 0) > 0 ? holdRun : null;
+  // Another run's check holds the shared printer: an unfinished run that uses
+  // the office waits for it, the same rule as the run page's header.
+  const unfinished = run.status !== 'cancelled' && run.status !== 'completed' && printedShown(run) < run.totalLabels;
+  const heldBy = holdRun && holdRun.runId !== run.id && unfinished ? holdRun : null;
   // Labels still to send are said beside "Did they all come out?", like the run page.
-  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent) } : null;
+  if (run.office) return { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) };
+  // Nothing sent to the office yet: the run page (office printer by default) still says it waits, so the row does too.
+  return heldBy && run.status !== 'draft' ? { sent: 0, onTheWay: 0, failed: 0, firstFailed: null, unsent: undefined as OfficeSpan[] | undefined, held: printerHeld, heldBy, unchecked: 0, stillToSend: 0, heldBack: null } : null;
 }
 
-function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null }) | null }) {
+/**
+ * Labels a "Print in order" fix on this device held back and nothing has
+ * sent or printed since (the run page's panel saves them), so the row says
+ * what the run page's header says.
+ */
+function heldBackOnThisDevice(run: ListRun): OfficeSpan | null {
+  if (!run.office?.unsent?.length) return null;
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(`lw:office-held:${run.id}`); } catch { raw = null; }
+  const held = readHeldSpans(raw, run.totalLabels);
+  if (!held.length) return null;
+  const left = intersectSpans(held, intersectSpans(run.office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)));
+  return left[0] ?? null;
+}
+
+function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null; heldBack?: OfficeSpan | null }) | null }) {
   const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : 'text-zinc-300'}`}>
@@ -88,10 +109,18 @@ function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { 
 function useLiveRunsList() {
   useEffect(() => {
     let active = true;
-    const update = async () => {
+    // Most polls are live reads: the server reads history and office work
+    // only for runs being printed, changed lately, or with office work moving
+    // (named here); the rest keep what they have. A full read every minute,
+    // and on coming back to the page, catches up everything else.
+    let lastFull = 0;
+    const update = async (forceFull = false) => {
       if (document.visibilityState === 'hidden' || !useRunStore.getState().hydrated) return;
       try {
-        const response = await fetch('/api/runs?offset=0', { cache: 'no-store' });
+        const full = forceFull || Date.now() - lastFull >= 60000;
+        const watch = full ? [] : useRunStore.getState().runs.filter((run) => ((run as ListRun).office?.onTheWay ?? 0) > 0 || ((run as ListRun).office?.failed ?? 0) > 0).map((run) => run.id).slice(0, 50);
+        const response = await fetch(full ? '/api/runs?offset=0' : `/api/runs?offset=0&live=1${watch.length ? `&watch=${watch.map(encodeURIComponent).join(',')}` : ''}`, { cache: 'no-store' });
+        if (full && response.ok) lastFull = Date.now();
         if (!response.ok || !active) return;
         const rows = await response.json() as ListRun[];
         if (!Array.isArray(rows) || !active) return;
@@ -114,8 +143,8 @@ function useLiveRunsList() {
       timer = setTimeout(() => { void update().finally(() => { if (active) schedule(); }); }, moving ? 5000 : 15000);
     };
     // Read once right away too: coming back from a run, its counts are current at once.
-    void update().finally(() => { if (active) schedule(); });
-    const onVisible = () => { if (document.visibilityState === 'visible') void update(); };
+    void update(true).finally(() => { if (active) schedule(); });
+    const onVisible = () => { if (document.visibilityState === 'visible') void update(true); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
@@ -764,6 +793,8 @@ function RunRow({
   const finished = run.totalLabels > 0 && shown >= run.totalLabels;
   const pct = run.totalLabels > 0 ? Math.round((shown / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
+  // Labels no office send covers and nothing counts as printed: the run page's "Still to go" line, in the same words.
+  const stillToSend = office?.unsent?.length ? intersectSpans(office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)) : [];
   const pinned = !!run.pinnedAt;
   // A "Send all … in N parts" that stopped early on this device.
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);
@@ -832,8 +863,8 @@ function RunRow({
           {!failed && partsLeft.length > 0 && unfinished && (
             <p className="mt-0.5 text-xs text-amber-300">{partsLeft.length === 1 ? 'The last part wasn’t' : `${partsLeft.length} parts weren’t`} sent yet. Open this run to send {partsLeft.length === 1 ? 'it' : 'them'}.</p>
           )}
-          {!failed && !partsLeft.length && unfinished && office && office.onTheWay === 0 && (office.unsent?.length ?? 0) > 0 && (
-            <p className="mt-0.5 text-xs text-zinc-400">{spanWords(office.unsent!).replace(/^l/, 'L')} {office.unsent!.length === 1 && office.unsent![0].from === office.unsent![0].to ? 'hasn’t' : 'haven’t'} gone to the office printer yet.</p>
+          {!failed && !partsLeft.length && unfinished && office && office.onTheWay === 0 && stillToSend.length > 0 && (
+            <p className="mt-0.5 text-xs text-zinc-400 tabular-nums">Still to go: {spanNumbers(stillToSend)}</p>
           )}
         </div>
         <div className="w-full shrink-0 sm:w-36 sm:text-right">
