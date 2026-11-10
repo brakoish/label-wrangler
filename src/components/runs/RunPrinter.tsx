@@ -1316,7 +1316,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         <section className="card p-4 sm:p-5 space-y-4">
           {blankCheck && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact />}
           {(isSheetFormat || transport !== 'office') && <>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h2 className="section-title">Progress</h2>
             <span className="text-sm font-medium text-zinc-100 tabular-nums">
               {progressLabel} {printedCount.toLocaleString()} of {total.toLocaleString()} · {pct}%

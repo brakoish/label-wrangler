@@ -182,7 +182,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   </div>;
   return <div className="space-y-4">
     {connectionTarget && createPortal(connection,connectionTarget)}
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <h2 className="section-title">Progress</h2>
       <span className="text-sm font-medium text-zinc-100 tabular-nums">Sent to office printer: {delivered.toLocaleString()} of {total.toLocaleString()} · {pct}%</span>
     </div>
