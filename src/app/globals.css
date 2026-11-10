@@ -240,8 +240,9 @@ textarea:focus-visible {
   .field:focus {
     border-color: var(--color-amber-500);
   }
+  /* Disabled is one look everywhere: half strength (buttons too). */
   .field:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
   }
   .field-sm {
