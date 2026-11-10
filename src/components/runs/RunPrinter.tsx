@@ -684,9 +684,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       // they did print.
       const one = skipped.from === skipped.to;
       const gap = one ? `label ${skipped.from}` : `labels ${skipped.from}–${skipped.to}`;
-      const only = selectedFrom === selectedThrough ? `${selectedFrom}` : `${selectedFrom}–${selectedThrough}`;
+      const only = selectedFrom === selectedThrough ? `${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`;
       const choice = await choiceDialog({
-        title: `${gap.charAt(0).toUpperCase()}${gap.slice(1)} ${one ? 'hasn’t' : 'haven’t'} printed yet`,
+        title: `${gap.charAt(0).toUpperCase()}${gap.slice(1)} ${one ? 'isn’t' : 'aren’t'} counted as printed yet`,
         body: `The next label to print is ${skipped.from}. Start there, or print only ${selectedFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
         confirmLabel: `Start at ${skipped.from} instead`,
         altLabel: `Print only ${only}`,
