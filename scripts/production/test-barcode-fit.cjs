@@ -117,10 +117,10 @@ async function renderNative(template, format, values) {
     assert.equal(decodeRow(ink), null, 'and what is left does not scan');
     const message = `${barcodeFitProblem(fit, T24)}. ${barcodeFitFix(fit)}.`;
     assert.match(message, /prints 2\.95" wide for 24 characters but only 1\.93" fits/);
-    assert.match(message, /exact-print copy of the design in the designer/);
+    assert.match(message, /picture copy of the design in the designer/);
     assert.doesNotMatch(message, /More menu/, 'no directions to a menu');
     const inDesigner = barcodeFitFix(fit, 'designer');
-    assert.match(inDesigner, /make an exact-print copy/i);
+    assert.match(inDesigner, /make a picture copy/i);
     assert.doesNotMatch(inDesigner, /designer|More menu/, 'inside the designer, never "go to the designer"');
     assert.doesNotMatch(message, /shorten/i, 'never tell anyone to shorten a package tag');
     // The designer, the wizard and the run page say the same thing.

@@ -107,7 +107,7 @@ assert.equal(barcodeToQr(flower.map((e) => (e.id === 'bc' ? { ...e, locked: true
 assert.equal(barcodeToQr(flower, 'bc', { ...fmt, type: 'sheet' }, values, false), null);
 
 // Plain sentences: one per problem, the measurements kept for Why?.
-const full = 'The Package tag barcode prints 2.95" wide for 24 characters but only 1.93" fits, so the printer cuts it off and it won’t scan, and prints over the COA link QR code and the Batch text, so the COA link QR code won’t scan either. Make an exact-print copy, which draws thinner bars that fit.';
+const full = 'The Package tag barcode prints 2.95" wide for 24 characters but only 1.93" fits, so the printer cuts it off and it won’t scan, and prints over the COA link QR code and the Batch text, so the COA link QR code won’t scan either. Make a picture copy, which draws thinner bars that fit.';
 assert.equal(barcodePlainSentence(full), 'The Package tag barcode is too wide for this label and covers the COA link QR code, so neither will scan.');
 assert.ok(!/\d"/.test(barcodePlainSentence(full)), 'no measurements in the sentence');
 assert.equal(PRINT_ANYWAY, 'Print anyway');

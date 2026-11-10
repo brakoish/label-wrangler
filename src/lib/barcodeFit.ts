@@ -286,8 +286,8 @@ export function barcodeFitProblem(fit: BarcodeFit, value: string): string {
 }
 
 /**
- * Where the fix is read: inside the designer, the notice carries a "Make an
- * exact-print copy" button, so the words point at it rather than at a menu;
+ * Where the fix is read: inside the designer, the notice carries a "Make a
+ * picture copy" button, so the words point at it rather than at a menu;
  * elsewhere (new run, run page) they say it is done in the designer.
  */
 export type BarcodeFixPlace = 'designer' | 'elsewhere';
@@ -305,7 +305,7 @@ export function barcodeFitFix(fit: BarcodeFit, place: BarcodeFixPlace = 'elsewhe
     if (fix === 'move-inside') options.push('move the barcode box fully onto the label in the design');
     if (fix === 'move') options.push(fit.reason === 'quiet-zone' ? 'move it in from the edge a little in the design' : `move it in the design so the ${width} of bars fit on the ${label} label`);
     if (fix === 'turn') options.push('turn it sideways in the design');
-    if (fix === 'exact-copy') options.push(place === 'designer' ? 'make an exact-print copy, which draws thinner bars that fit' : 'make an exact-print copy of the design in the designer, which draws thinner bars that fit');
+    if (fix === 'exact-copy') options.push(place === 'designer' ? 'make a picture copy, which draws thinner bars that fit' : 'make a picture copy of the design in the designer, which draws thinner bars that fit');
   }
   if (!options.length) return '';
   const joined = options.length === 1 ? options[0] : `${options.slice(0, -1).join(', ')} or ${options[options.length - 1]}`;
