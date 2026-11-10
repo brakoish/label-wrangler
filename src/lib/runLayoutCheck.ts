@@ -4,6 +4,7 @@ import { previewLabelValues } from './runBuilder';
 import { checkRunBarcodes, describeBarcodeGroups, type BarcodeIssue } from './barcodeCheck';
 import { fieldItemWords, friendlyFieldName, placeholderDescription } from './fieldLabels';
 import { NOT_AS_WRITTEN_NOTE } from './barcodeValue';
+import { barcodeFitProblem } from './barcodeFit';
 
 /** The run data the checks read (a Run, or the new-run wizard's data before the run exists). */
 export interface RunCheckData {
@@ -41,7 +42,13 @@ export function runLayoutIssues(data: RunCheckData, template: Pick<LabelTemplate
     for (const problem of layoutProblems(template.elements, format, values)) {
       if (!isSeparateLayoutProblem(problem)) continue;
       const key = `${problem.kinds.join('+')}:${problem.ids.join(',')}`;
-      const message = problem.fix ? `${problem.message} ${problem.fix.replace(/\.$/, '')}.` : problem.message;
+      // A barcode close to the edge is already in "Barcodes close to the
+      // edge" (with its fix): here only what it prints over, said once.
+      const fit = problem.barcodeFit;
+      const edgeWords = fit && fit.level === 'tight' ? ` ${barcodeFitProblem(fit, '')}, and ` : '';
+      const message = edgeWords && problem.message.includes(edgeWords)
+        ? problem.message.replace(edgeWords, ' ')
+        : problem.fix ? `${problem.message} ${problem.fix.replace(/\.$/, '')}.` : problem.message;
       const entry = found.get(key) ?? { message, labels: [], count: 0 };
       entry.count++;
       if (entry.labels.length < 3) entry.labels.push(index + 1);

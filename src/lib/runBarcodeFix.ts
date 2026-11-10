@@ -2,7 +2,7 @@ import type { LabelFormat, LabelTemplate } from './types';
 import { checkRunBarcodes, valuesFor, type BarcodeIssue } from './barcodeCheck';
 import { barcodeAutoFix, barcodeToQr, type BarcodeAutoFix } from './barcodeAutoFix';
 import { bitmapLayoutProblems } from './bitmapLayout';
-import { runLayoutIssues } from './runLayoutCheck';
+import { barcodeIssueStops, runLayoutIssues } from './runLayoutCheck';
 
 type RunData = Parameters<typeof checkRunBarcodes>[1];
 type Template = Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>;
@@ -36,8 +36,12 @@ function longestValues(run: RunData, field: string | undefined, rows: number): R
  */
 export function runBarcodeFixes(template: Template | null | undefined, run: RunData, format: LabelFormat | null | undefined, issues: ReadonlyArray<BarcodeIssue>, limit = 2000): RunBarcodeFixes | null {
   if (!template || !format || format.type !== 'thermal') return null;
-  const target = issues.find((issue) => issue.kind === 'too-long' && issue.elementId && issue.fit);
+  // A value the exact renderer can't draw at all (é in a Code 128): only a
+  // QR code, which holds any text, is offered.
+  const refused = issues.find((issue) => issue.kind === 'characters' && issue.elementId && issue.label > 0 && barcodeIssueStops(issue, format));
+  const target = issues.find((issue) => issue.kind === 'too-long' && issue.elementId && issue.fit) ?? refused;
   if (!target?.elementId) return null;
+  const forValue = target === refused;
   const el = template.elements.find((e) => e.id === target.elementId);
   if (!el || el.type !== 'barcode' || el.locked) return null;
   const bitmap = template.thermalRenderMode === 'bitmap-v1';
@@ -45,7 +49,7 @@ export function runBarcodeFixes(template: Template | null | undefined, run: RunD
   // Fix for the widest value the check found.
   const widest = issues.filter((i) => i.elementId === el.id && i.fit && i.kind !== 'characters').reduce((a, b) => ((b.fit?.barsDots ?? 0) > (a.fit?.barsDots ?? 0) ? b : a), target);
   const widestValues = valuesFor(run, Math.max(0, (widest.label || 1) - 1));
-  const valueProblems = issues.filter((i) => i.kind === 'characters').length;
+  const valueProblems = issues.filter((i) => i.kind === 'characters' && !(forValue && i.elementId === el.id)).length;
   const layoutBefore = runLayoutIssues(run, template, format, rows).length;
   const holds = (fix: BarcodeAutoFix | null, sized: Record<string, string>): BarcodeAutoFix | null => {
     if (!fix) return null;
@@ -57,9 +61,9 @@ export function runBarcodeFixes(template: Template | null | undefined, run: RunD
     if (bitmap && bitmapLayoutProblems(fix.elements, format, sized).some((p) => p.ids.includes(el.id))) return null;
     return fix;
   };
-  const fix = holds(barcodeAutoFix(template.elements, el.id, format, widestValues, bitmap), widestValues);
+  const fix = forValue ? null : holds(barcodeAutoFix(template.elements, el.id, format, widestValues, bitmap), widestValues);
   const longest = longestValues(run, el.fieldName, rows);
-  const qr = fix ? null : holds(barcodeToQr(template.elements, el.id, format, longest, bitmap), longest);
+  const qr = fix ? null : holds(barcodeToQr(template.elements, el.id, format, longest, bitmap, {}, forValue), longest);
   if (!fix && !qr) return null;
   return { elementId: el.id, fix, qr };
 }
