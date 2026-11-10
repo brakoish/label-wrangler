@@ -102,7 +102,7 @@ export function officeSendPlan(jobs: ReadonlyArray<OfficeJobLike>, from: number,
 
 type Span = [number, number];
 /** Sorted, merged spans within 1..total. */
-function union(jobs: ReadonlyArray<OfficeJobLike>, total: number): Span[] {
+function union(jobs: ReadonlyArray<{ from: number; to: number }>, total: number): Span[] {
   const spans = jobs.map((j) => [Math.max(1, j.from), Math.min(total, j.to)] as Span).filter(([a, b]) => b >= a).sort((a, b) => a[0] - b[0]);
   const out: Span[] = [];
   for (const [a, b] of spans) {
@@ -118,31 +118,152 @@ function minus(spans: Span[], cut: Span[]): Span[] {
   return out;
 }
 
-/** didNotPrint: the office said these didn't print (rejected). Otherwise they may or may not have printed and need a look. */
-export interface OfficeFailedPart { from: number; to: number; reason: string | null; requestId: string | null; jobIds: string[]; didNotPrint: boolean }
+/**
+ * A part of the run the office could not print, or that someone must look at.
+ * - did-not-print: the office said these didn't print (rejected, e.g. out of labels).
+ * - needs-check:   the office never confirmed them; they may or may not have printed.
+ * - print-again:   someone checked them at the office, but they were neither
+ *                  printed again nor counted as printed, so they would be lost.
+ * didNotPrint is kept for older callers: true only for did-not-print.
+ */
+export type OfficeFailedKind = 'did-not-print' | 'needs-check' | 'print-again';
+export interface OfficeFailedPart { from: number; to: number; reason: string | null; requestId: string | null; jobIds: string[]; didNotPrint: boolean; kind: OfficeFailedKind }
 export interface OfficeDeliverySummary {
   /** Distinct labels the office reported "sent to printer" (CUPS delivery, not proof of printing). */
   sent: number;
   /** Distinct labels still on their way (not yet sent). */
   onTheWay: number;
-  /** Parts the office couldn't print or that need someone to check, merged per request. */
+  /** Parts that didn't print, need a check, or need printing again; one per request, kind and reason. */
   failed: OfficeFailedPart[];
+  /** Labels in those parts (counted once), so counts read in labels, never in requests. */
+  failedLabels: number;
 }
+export interface OfficeSpan { from: number; to: number }
 
-export function officeDeliverySummary(jobs: ReadonlyArray<OfficeJobLike>, total: number): OfficeDeliverySummary {
+const kindOf = (job: OfficeJobLike): OfficeFailedKind => (job.state === 'rejected' ? 'did-not-print' : 'needs-check');
+
+/**
+ * What the office did for a run. `printedCount` and `printedSpans` (ranges a
+ * person confirmed as printed) only decide which checked-off labels still
+ * need printing again; they never change what counts as sent.
+ */
+export function officeDeliverySummary(jobs: ReadonlyArray<OfficeJobLike>, total: number, done?: { printedCount?: number; printedSpans?: ReadonlyArray<OfficeSpan> }): OfficeDeliverySummary {
   const sentSpans = union(jobs.filter((j) => j.state === 'sent_to_printer' && !j.review), total);
   const moving = minus(union(jobs.filter((j) => OFFICE_IN_PROGRESS.includes(j.state) && !j.review), total), sentSpans);
   const failed: OfficeFailedPart[] = [];
   for (const job of jobs.filter(jobNeedsCheck).slice().sort((a, b) => a.from - b.from)) {
     const last = failed[failed.length - 1];
-    if (last && last.requestId === (job.requestId ?? null) && job.from <= last.to + 1) {
+    const kind = kindOf(job);
+    // Two parts merge only when they are one send, one kind and one cause, so
+    // "51–100 didn't print (out of labels)" never swallows "101–150 need a check".
+    if (last && last.requestId === (job.requestId ?? null) && last.kind === kind && (last.reason ?? null) === (job.reason ?? null) && job.from <= last.to + 1) {
       last.to = Math.max(last.to, job.to);
-      if (!last.reason && job.reason) last.reason = job.reason;
       if (job.id) last.jobIds.push(job.id);
-      if (job.state !== 'rejected') last.didNotPrint = false;
-    } else failed.push({ from: job.from, to: job.to, reason: job.reason ?? null, requestId: job.requestId ?? null, jobIds: job.id ? [job.id] : [], didNotPrint: job.state === 'rejected' });
+    } else failed.push({ from: job.from, to: job.to, reason: job.reason ?? null, requestId: job.requestId ?? null, jobIds: job.id ? [job.id] : [], didNotPrint: kind === 'did-not-print', kind });
   }
-  return { sent: size(sentSpans), onTheWay: size(moving), failed };
+  // Checked off at the office but not printed again (or counted) yet.
+  const printedThrough = Math.max(0, Math.floor(done?.printedCount ?? 0) || 0);
+  const stillCovered = union(jobs.filter((j) => j.state === 'sent_to_printer' || OFFICE_IN_PROGRESS.includes(j.state) || jobNeedsCheck(j)), total);
+  const confirmed = union(done?.printedSpans ?? [], total);
+  let again = minus(union(jobs.filter((j) => j.state === 'resolved'), total), stillCovered);
+  again = minus(again, [...confirmed, ...(printedThrough > 0 ? [[1, printedThrough] as Span] : [])]);
+  for (const [a, b] of again) {
+    const source = jobs.find((j) => j.state === 'resolved' && j.from <= b && j.to >= a);
+    failed.push({ from: a, to: b, reason: null, requestId: source?.requestId ?? null, jobIds: [], didNotPrint: false, kind: 'print-again' });
+  }
+  failed.sort((x, y) => x.from - y.from);
+  return { sent: size(sentSpans), onTheWay: size(moving), failed, failedLabels: size(union(failed, total)) };
+}
+
+/** Labels still waiting at the office (queued or picked up, not reported sent), as merged spans. */
+export function officeWaitingSpans(jobs: ReadonlyArray<OfficeJobLike>, total: number): OfficeSpan[] {
+  const sent = union(jobs.filter((j) => j.state === 'sent_to_printer' && !j.review), total);
+  return minus(union(jobs.filter((j) => OFFICE_IN_PROGRESS.includes(j.state) && !j.review), total), sent).map(([from, to]) => ({ from, to }));
+}
+
+/** Labels from..to as merged spans, for messages like "labels 1–50 and 101–150". */
+export function spanWords(input: ReadonlyArray<OfficeSpan>): string {
+  // Touching parts read as one stretch: "labels 76–150", not "76–100, 101–125 and 126–150".
+  const spans: OfficeSpan[] = [];
+  for (const s of input.slice().sort((a, b) => a.from - b.from)) {
+    const last = spans[spans.length - 1];
+    if (last && s.from <= last.to + 1) last.to = Math.max(last.to, s.to); else spans.push({ from: s.from, to: s.to });
+  }
+  const parts = spans.map((s) => (s.from === s.to ? `${s.from.toLocaleString()}` : `${s.from.toLocaleString()}–${s.to.toLocaleString()}`));
+  const one = spans.length === 1 && spans[0].from === spans[0].to;
+  const list = parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `${one ? 'label' : 'labels'} ${list}`;
+}
+
+/**
+ * Highest label N such that every label 1..N is counted as printed
+ * (printedCount) or lies in one of `spans`. Gaps stop it.
+ */
+export function extendThrough(printedCount: number, spans: ReadonlyArray<OfficeSpan>, total = Infinity): number {
+  let through = Math.max(0, Math.floor(printedCount) || 0);
+  for (const s of spans.slice().sort((a, b) => a.from - b.from)) {
+    if (s.from > through + 1) break;
+    through = Math.max(through, s.to);
+  }
+  return Math.min(through, total);
+}
+
+/**
+ * What "Mark sent labels as printed" offers: every stretch the office
+ * reported sent that isn't counted as printed yet (not just the first one),
+ * and where progress ends up once a person confirms them. Progress is
+ * "printed up to label N", so it only moves through an unbroken stretch;
+ * ranges after a gap are recorded as confirmed and counted once the gap is
+ * printed. `confirmedSpans`: ranges people already confirmed at the office.
+ */
+export function officeMarkPlan(printedCount: number, jobs: ReadonlyArray<OfficeJobLike>, confirmedSpans: ReadonlyArray<OfficeSpan>, total: number): { ranges: OfficeSpan[]; through: number } {
+  const printed = Math.max(0, Math.min(total, Math.floor(printedCount) || 0));
+  const confirmed = union(confirmedSpans, total);
+  let sent = union(jobs.filter((j) => j.state === 'sent_to_printer' && !j.review), total);
+  sent = minus(sent, [...confirmed, ...(printed > 0 ? [[1, printed] as Span] : [])]);
+  const ranges = sent.map(([from, to]) => ({ from, to }));
+  const through = extendThrough(printed, [...ranges, ...confirmed.map(([from, to]) => ({ from, to }))], total);
+  return { ranges, through };
+}
+
+/**
+ * One explicit "Send all N in K parts": consecutive ranges of at most `cap`
+ * labels. Every boundary after the first falls on a whole feed of a
+ * multi-across roll (a multiple of `across`), so no part starts mid-row and
+ * leaves blank labels.
+ */
+export function officeSendParts(from: number, to: number, cap: number, across = 1): OfficeSpan[] {
+  const lanes = Math.max(1, Math.floor(across) || 1);
+  const step = Math.max(lanes, Math.floor(Math.max(1, Math.floor(cap) || 1) / lanes) * lanes);
+  const parts: OfficeSpan[] = [];
+  let start = Math.max(1, Math.floor(from));
+  const end = Math.floor(to);
+  while (start <= end && parts.length < 1000) {
+    let stop = Math.min(end, start + step - 1);
+    // End on a feed boundary unless this is the last part.
+    if (stop < end) stop = Math.max(start, Math.floor(stop / lanes) * lanes);
+    if (stop < start) stop = Math.min(end, start + lanes - 1);
+    parts.push({ from: start, to: stop });
+    start = stop + 1;
+  }
+  return parts;
+}
+
+/** A multi-part send saved on this device so a closed page can finish it later. */
+export interface OfficePartsPlan { stationId: string; printerId: string; parts: OfficeSpan[]; next: number; at: string }
+export function readPartsPlan(raw: string | null): OfficePartsPlan | null {
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as Partial<OfficePartsPlan>;
+    if (typeof data.stationId !== 'string' || typeof data.printerId !== 'string' || !Array.isArray(data.parts) || !Number.isInteger(data.next)) return null;
+    const parts = data.parts.filter((p): p is OfficeSpan => !!p && Number.isInteger(p.from) && Number.isInteger(p.to) && p.from >= 1 && p.to >= p.from);
+    if (parts.length !== data.parts.length || data.next! < 0 || data.next! > parts.length) return null;
+    return { stationId: data.stationId, printerId: data.printerId, parts, next: data.next!, at: typeof data.at === 'string' ? data.at : '' };
+  } catch { return null; }
+}
+/** Parts still to send, or none. */
+export function remainingParts(plan: OfficePartsPlan | null): OfficeSpan[] {
+  return plan ? plan.parts.slice(plan.next) : [];
 }
 
 /** Valid office range: whole numbers, 1 <= from <= to <= total. */
@@ -219,6 +340,9 @@ export function officeSendCap(sampleFeedBytes: ReadonlyArray<number>, across = 1
   cap = Math.min(cap, OFFICE_MAX_LABELS, bitmap ? OFFICE_BITMAP_LABELS_PER_SEND : Infinity);
   if (cap >= 1000) cap = Math.floor(cap / 100) * 100;
   else if (cap >= 100) cap = Math.floor(cap / 50) * 50;
+  // Whole feeds last: on a 3-across roll 500 becomes 498, so the next send
+  // starts on a new row instead of leaving blank labels at every boundary.
+  cap = Math.floor(cap / lanes) * lanes;
   return Math.max(lanes, cap);
 }
 
@@ -226,12 +350,13 @@ export function officeSendCap(sampleFeedBytes: ReadonlyArray<number>, across = 1
  * After the label check stopped at a size limit ("Labels 1601–1608: …
  * exceeds 32 MiB"), a smaller cap that fits: 90% of what was checked.
  */
-export function capAfterSizeError(message: string, from: number): number | null {
+export function capAfterSizeError(message: string, from: number, across = 1): number | null {
   if (!/exceeds 32 MiB|exceeds the 2 MiB|up to 10,000|time limit/i.test(message)) return null;
   const at = message.match(/Labels?\s+(\d+)/i);
   const failedAt = at ? Number(at[1]) : NaN;
   if (!Number.isFinite(failedAt) || failedAt <= from) return null;
-  return Math.max(1, Math.floor((failedAt - from) * 0.9));
+  const lanes = Math.max(1, Math.floor(across) || 1);
+  return Math.max(lanes, Math.floor(Math.floor((failedAt - from) * 0.9) / lanes) * lanes);
 }
 
 /**

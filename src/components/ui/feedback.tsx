@@ -19,9 +19,15 @@ export interface ConfirmOptions {
   danger?: boolean;
   /** Hide Cancel: the dialog becomes an acknowledgement (alert). */
   acknowledgeOnly?: boolean;
+  /**
+   * A second, quieter choice in place of Cancel (choiceDialog only). Closing
+   * the dialog picks neither, so the primary button can be the safe choice.
+   */
+  altLabel?: string;
 }
+type Outcome = 'confirm' | 'alt' | 'dismiss';
 type Toast = { id: number; message: string; tone: 'success' | 'error' | 'info'; closing?: boolean };
-type State = { confirm: (ConfirmOptions & { resolve: (ok: boolean) => void }) | null; toasts: Toast[] };
+type State = { confirm: (ConfirmOptions & { resolve: (outcome: Outcome) => void }) | null; toasts: Toast[] };
 
 let state: State = { confirm: null, toasts: [] };
 const listeners = new Set<() => void>();
@@ -33,8 +39,19 @@ let nextToastId = 1;
 
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
-    state.confirm?.resolve(false);
-    emit({ ...state, confirm: { ...options, resolve } });
+    state.confirm?.resolve('dismiss');
+    emit({ ...state, confirm: { ...options, altLabel: undefined, resolve: (outcome) => resolve(outcome === 'confirm') } });
+  });
+}
+
+/**
+ * Two real choices, with the safe one as the primary button. Resolves
+ * 'confirm' (primary), 'alt' (the quieter choice) or null when closed.
+ */
+export function choiceDialog(options: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | null> {
+  return new Promise((resolve) => {
+    state.confirm?.resolve('dismiss');
+    emit({ ...state, confirm: { ...options, resolve: (outcome) => resolve(outcome === 'dismiss' ? null : outcome) } });
   });
 }
 
@@ -60,11 +77,11 @@ export function toast(message: string, tone: Toast['tone'] = 'success') {
   setTimeout(() => dismissToast(id), tone === 'error' ? 7000 : 4000);
 }
 
-function settle(ok: boolean) {
+function settle(outcome: Outcome) {
   const current = state.confirm;
   if (!current) return;
   emit({ ...state, confirm: null });
-  current.resolve(ok);
+  current.resolve(outcome);
 }
 
 export function FeedbackHost() {
@@ -73,22 +90,26 @@ export function FeedbackHost() {
   return <>
     <Dialog
       open={!!confirm}
-      onClose={() => settle(false)}
+      onClose={() => settle('dismiss')}
       title={confirm?.title ?? ''}
       role="alertdialog"
       hideClose
     >
       {confirm?.body && <div className="text-sm text-zinc-300 leading-relaxed">{confirm.body}</div>}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        {!confirm?.acknowledgeOnly && (
-          <button type="button" onClick={() => settle(false)} className="btn btn-secondary">
+        {confirm?.altLabel ? (
+          <button type="button" onClick={() => settle('alt')} className="btn btn-secondary">
+            {confirm.altLabel}
+          </button>
+        ) : !confirm?.acknowledgeOnly && (
+          <button type="button" onClick={() => settle('dismiss')} className="btn btn-secondary">
             {confirm?.cancelLabel ?? 'Cancel'}
           </button>
         )}
         <button
           type="button"
           data-autofocus={confirm?.danger ? undefined : true}
-          onClick={() => settle(true)}
+          onClick={() => settle('confirm')}
           className={`btn ${confirm?.danger ? 'btn-danger' : 'btn-primary'}`}
         >
           {confirm?.confirmLabel ?? 'OK'}

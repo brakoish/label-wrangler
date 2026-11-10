@@ -82,7 +82,7 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
     else if (event.key === 'Tab') close(false);
   };
 
-  const itemClass = (item: MenuItem) => `press flex w-full min-h-control items-center gap-2.5 rounded-md px-3 text-left text-sm outline-none focus-visible:bg-zinc-800 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 ${item.danger ? 'text-red-400' : 'text-zinc-300 hover:text-zinc-100'}`;
+  const itemClass = (item: MenuItem) => `press flex w-full min-h-control items-center gap-2.5 rounded-md px-3 text-left text-sm outline-none focus-visible:bg-zinc-800 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500 ${item.danger ? 'text-red-400' : 'text-zinc-300 hover:text-zinc-100'}`;
   const firstDanger = items.findIndex((item) => item.danger);
 
   return (

@@ -4,14 +4,23 @@ import { validatedBody, OfficeError } from '@/lib/validation';
 import { randomUUID } from 'node:crypto';
 import { withOfficeAuth, officeUserFor } from "@/lib/office/guard";
 import { officeSql } from "@/lib/office/db";
-import { officeDeliverySummary, type OfficeJobLike } from "@/lib/officeRange";
+import { officeDeliverySummary, officeMarkPlan, type OfficeJobLike, type OfficeSpan, type OfficeFailedKind } from "@/lib/officeRange";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runs, runPrintEvents, officeRequests } from "@/lib/db/schema";
-import { desc, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 /** What the office printer did for each run, for display only (read-only). */
-interface RunListOffice { sent: number; onTheWay: number; failed: number; firstFailed: { from: number; to: number; reason: string | null; didNotPrint: boolean } | null }
+interface RunListOffice {
+  sent: number; onTheWay: number;
+  /** Parts that didn't print, need a check, or need printing again. */
+  failed: number;
+  /** Labels in those parts. */
+  failedLabels: number;
+  firstFailed: { from: number; to: number; reason: string | null; didNotPrint: boolean; kind: OfficeFailedKind } | null;
+  /** Sent stretches not counted as printed yet, and where progress lands once a person confirms them (for "Mark sent labels as printed"). */
+  markable: { ranges: OfficeSpan[]; through: number };
+}
 
 /**
  * Additive, read-only fields for the Runs list: `office` (labels the office
@@ -19,7 +28,7 @@ interface RunListOffice { sent: number; onTheWay: number; failed: number; firstF
  * printers this account can use) and `hasPrintHistory` (whether delete would
  * be refused). Each is left out if its query fails, so the list still loads.
  */
-async function listExtras(request: NextRequest, rows: Array<{ id: string; totalLabels: number }>) {
+async function listExtras(request: NextRequest, rows: Array<{ id: string; totalLabels: number; printedCount: number | null }>) {
   const ids = rows.map((row) => row.id);
   const office = new Map<string, RunListOffice>();
   const history = new Set<string>();
@@ -37,6 +46,13 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
           JOIN office_printer_access a ON a.station_id=r.station_id AND a.printer_id=r.printer_id AND a.user_id=${user.id}
           JOIN office_jobs j ON j.request_id=r.id
           WHERE r.run_id = ANY(${ids}::text[])`;
+        // Ranges a person already confirmed as printed after the office sent
+        // them (read-only), so checked-off parts and "mark printed" agree
+        // with the run page.
+        const confirmedRows = await db.select({ runId: runPrintEvents.runId, from: runPrintEvents.rangeFrom, to: runPrintEvents.rangeTo })
+          .from(runPrintEvents).where(and(inArray(runPrintEvents.runId, ids), eq(runPrintEvents.eventType, 'confirmed'), eq(runPrintEvents.output, 'office-pi')));
+        const confirmed = new Map<string, OfficeSpan[]>();
+        for (const row of confirmedRows) { const list = confirmed.get(row.runId) ?? []; list.push({ from: Number(row.from), to: Number(row.to) }); confirmed.set(row.runId, list); }
         const byRun = new Map<string, OfficeJobLike[]>();
         for (const job of found as Array<Record<string, unknown>>) {
           const list = byRun.get(String(job.run_id)) ?? [];
@@ -46,9 +62,12 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
         for (const row of rows) {
           const jobs = byRun.get(row.id);
           if (!jobs?.length) continue;
-          const summary = officeDeliverySummary(jobs, row.totalLabels);
+          const printedSpans = confirmed.get(row.id) ?? [];
+          const summary = officeDeliverySummary(jobs, row.totalLabels, { printedCount: row.printedCount ?? 0, printedSpans });
           const first = summary.failed[0];
-          office.set(row.id, { sent: summary.sent, onTheWay: summary.onTheWay, failed: summary.failed.length, firstFailed: first ? { from: first.from, to: first.to, reason: first.reason, didNotPrint: first.didNotPrint } : null });
+          office.set(row.id, { sent: summary.sent, onTheWay: summary.onTheWay, failed: summary.failed.length, failedLabels: summary.failedLabels,
+            firstFailed: first ? { from: first.from, to: first.to, reason: first.reason, didNotPrint: first.didNotPrint, kind: first.kind } : null,
+            markable: officeMarkPlan(row.printedCount ?? 0, jobs, printedSpans, row.totalLabels) });
         }
         officeOk = true;
       } catch (error) { console.error('Runs list: office summary skipped:', error instanceof Error ? error.message : 'unknown'); }

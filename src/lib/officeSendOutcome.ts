@@ -105,6 +105,17 @@ export function keepPendingAfter(kind: OfficeFailureKind): boolean {
   return kind !== 'refused';
 }
 
+/**
+ * Whether a failed send keeps its saved request for "Send again". A first try
+ * refused as signed out or without print access queued nothing (the server
+ * checks the account first), so it is a plain refusal. A resend keeps the
+ * request on those answers too, because an earlier try may have arrived.
+ */
+export function sendKeepsRequest(status: number | undefined, code: string | undefined, resend: boolean): boolean {
+  if (!resend && (status === 401 || (status === 403 && code !== 'origin_not_allowed'))) return false;
+  return keepPendingAfter(officeFailureKind(status));
+}
+
 /** How long a remembered refusal is shown before live status takes over again. */
 export const REFUSAL_TTL_MS = 30 * 60 * 1000;
 
@@ -141,6 +152,70 @@ export function officePrinterReadiness(
   return { tone: 'ok', text: 'Office printer ready', canSend: true };
 }
 
+/** A part on the shared office printer that stops it for everyone (from GET /api/office/stations). */
+export interface OfficeReviewHold { run_id: string; run_name: string; from: number; to: number; did_not_print?: boolean }
+
+export type OfficeStatusTone = 'ok' | 'warn' | 'bad';
+/**
+ * One status line for the shared office printer, from the live stations list
+ * only. Never "Ready" while the printer is stopped for a check, paused, or
+ * holding work for another reason. `review_holds` names the parts that stop
+ * it; `thisRunId` lets a run page say "this run" instead of naming itself.
+ * canSend: the server takes new work now (it may still wait to print).
+ */
+export function officeStatusLine(
+  printer: { online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at?: string | null; needs_review: boolean; dispatch_hold_reason?: string | null; review_holds?: OfficeReviewHold[] | null } | undefined,
+  thisRunId?: string,
+): { tone: OfficeStatusTone; text: string; canSend: boolean; paused: boolean; stopped: boolean; hold: OfficeReviewHold | null; otherHolds: number } {
+  const base = { paused: false, stopped: false, hold: null as OfficeReviewHold | null, otherHolds: 0 };
+  if (!printer) return { ...base, tone: 'warn', text: 'No office printer is set up for your account.', canSend: false };
+  if (!printer.dispatch_enabled || !printer.paired_at) return { ...base, tone: 'warn', text: 'Not set up yet: the office printer is waiting to be paired.', canSend: false };
+  if (printer.needs_review) {
+    const holds = printer.review_holds ?? [];
+    const hold = holds.find((h) => h.run_id !== thisRunId) ?? holds[0] ?? null;
+    const mine = !!hold && hold.run_id === thisRunId;
+    const others = new Set(holds.filter((h) => h.run_id !== thisRunId).map((h) => h.run_id)).size;
+    const one = !!hold && hold.from === hold.to;
+    const labels = hold ? (one ? `label ${hold.from.toLocaleString('en-US')}` : `labels ${hold.from.toLocaleString('en-US')}–${hold.to.toLocaleString('en-US')}`) : '';
+    const text = !hold ? 'Stopped: a print on the office printer needs a check.'
+      : mine ? `Stopped until ${labels} of this run ${one ? 'is' : 'are'} checked.`
+      : `Stopped: ${labels} of “${hold.run_name || 'another run'}” need${one ? 's' : ''} a check.${others > 1 ? ` ${others} runs need a check.` : ''}`;
+    return { ...base, stopped: true, hold, otherHolds: others, tone: 'bad', text, canSend: false };
+  }
+  if (!printer.online) return { ...base, tone: 'warn', text: 'The office is offline. Anything you send waits until it reconnects.', canSend: true };
+  if (printer.dispatch_hold_reason === 'printer_paused') return { ...base, paused: true, tone: 'warn', text: 'Paused. Nothing prints until someone taps Resume.', canSend: true };
+  if (printer.dispatch_hold_reason === 'control_pending') return { ...base, tone: 'warn', text: 'Waiting for the printer to confirm a pause or resume…', canSend: true };
+  if (printer.dispatch_hold_reason === 'control_stale') return { ...base, tone: 'warn', text: 'The office computer hasn’t reported in lately, so labels wait until it does.', canSend: true };
+  if (printer.available === false) return { ...base, tone: 'warn', text: 'The office is online, but the printer isn’t available.', canSend: true };
+  return { ...base, tone: 'ok', text: 'Ready', canSend: true };
+}
+
+/**
+ * The words after a successful send. Never "the office keeps going" when the
+ * printer is paused or stopped: say when it will print instead.
+ */
+export function queuedNotice(range: string, one: boolean, status: { paused: boolean; stopped: boolean }): string {
+  const verb = one ? 'is' : 'are';
+  if (status.stopped) return `${range} ${verb} queued. The office printer is stopped for a check, so ${one ? 'it prints' : 'they print'} once that’s done.`;
+  if (status.paused) return `${range} ${verb} queued. The printer is paused, so nothing prints until someone taps Resume.`;
+  return `${range} ${verb} queued for the office printer. You can leave this page; the office keeps going.`;
+}
+
+/** A refusal that only someone else can fix: no "Try again" button for it. */
+export function refusalNeedsSomeoneElse(reason: OfficeRefusalReason): boolean {
+  return reason === 'no-access' || reason === 'not-paired';
+}
+
+/** Why the last try of a saved request was "not sure", kept beside it so a refresh says the same thing. */
+export interface OfficePendingMeta { status?: number; code?: string }
+export function readPendingMeta(raw: string | null): OfficePendingMeta {
+  if (!raw) return {};
+  try {
+    const data = JSON.parse(raw) as OfficePendingMeta;
+    return { ...(Number.isInteger(data.status) ? { status: data.status } : {}), ...(typeof data.code === 'string' ? { code: data.code } : {}) };
+  } catch { return {}; }
+}
+
 /** What the office computer said about a part it couldn't print, in plain words. */
 export function plainJobReason(reason: string | null | undefined): string {
   const r = (reason ?? '').toLowerCase();
@@ -160,14 +235,19 @@ export function plainJobReason(reason: string | null | undefined): string {
 
 /**
  * A Pause/Resume POST that failed. Every 4xx the controls route returns
- * (bad request, signed out, no access, no permission) happens before the
- * control is created, so the saved request is cleared. Anything else
+ * (bad request, signed out, no access, no permission, and the 409 refusals:
+ * another pause or resume still pending, office computer not reporting, key
+ * already used) happens before a new control is created, so a first try's
+ * saved request is cleared. A resend of a saved request keeps it on 401/403,
+ * because the first try may already have created the control. Anything else
  * (offline, busy, 5xx) might have arrived, so the same request is kept and
  * "Try again" reuses its key.
  */
-export function controlFailure(status: number | undefined): { keep: boolean; message: string } {
-  if (status === 401) return { keep: false, message: 'You’re signed out. Sign in again, then pause or resume the printer.' };
-  if (status === 403) return { keep: false, message: 'Your account can’t pause or resume the office printer. Ask your admin.' };
+export function controlFailure(status: number | undefined, code?: string, resend = false): { keep: boolean; message: string } {
+  if (status === 401) return { keep: resend, message: resend ? 'You’re signed out. Sign in again, then tap “Try again”. It’s the same request, so it won’t happen twice.' : 'You’re signed out. Sign in again, then pause or resume the printer.' };
+  if (status === 403) return { keep: resend, message: 'Your account can’t pause or resume the office printer. Ask your admin.' };
+  if (status === 409 && code === 'control_pending') return { keep: false, message: 'Another pause or resume is still on its way to the printer. Wait for it, then try again.' };
+  if (status === 409 && code === 'worker_offline') return { keep: false, message: 'The office computer isn’t reporting right now, so the printer can’t be paused or resumed. Try again once it reports in.' };
   if (status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429) return { keep: false, message: 'The printer didn’t take that request. Check its status above, then try again.' };
   return { keep: true, message: 'We’re not sure the printer got that. Tap “Try again”. It’s the same request, so it won’t happen twice.' };
 }

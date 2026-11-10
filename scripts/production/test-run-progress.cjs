@@ -21,6 +21,32 @@ const route=require('../../src/app/api/runs/[id]/route.ts');
  ({set}=await put({status:'queued',printedCount:0,resetProgress:true}));assert.equal(set.printedCount,0);
  // Updates without printedCount leave it alone.
  ({set}=await put({status:'paused'}));assert.equal('printedCount' in set,false);
+ // Guarded rewind (compare-and-set): applied only while the stored count is
+ // still the one the device saw; otherwise a plain 409 with the current count.
+ {
+  const {PgDialect}=require('drizzle-orm/pg-core');const dialect=new PgDialect();
+  h.reset();h.results.push([{totalLabels:100,printedCount:60}],[{id:'r',printedCount:39}]);
+  let ok=await route.PUT(h.request('PUT',{status:'paused',printedCount:39,resetProgress:true,expectedPrintedCount:60}),h.params('r'));
+  assert.equal(ok.status,200);assert.equal(setArgs().printedCount,39);
+  const update=h.log.find(c=>c[0][0]==='update');const where=update.find(([k])=>k==='where')[1][0];
+  const rendered=dialect.sqlToQuery(where);
+  assert.match(rendered.sql,/"printed_count" = \$\d/,'the rewind is conditional on the stored count');assert.ok(rendered.params.includes(60));
+  h.reset();h.results.push([{totalLabels:100,printedCount:60}],[],[{printedCount:250}]);
+  const refused=await route.PUT(h.request('PUT',{status:'paused',printedCount:39,resetProgress:true,expectedPrintedCount:60}),h.params('r'));
+  assert.equal(refused.status,409);const body=await refused.json();
+  assert.equal(body.code,'progress_changed');assert.equal(body.printedCount,250);assert.match(body.error,/changed on another device \(now 250 printed\)/);
+  // An unguarded update keeps its plain id filter.
+  h.reset();h.results.push([{totalLabels:100,printedCount:60}],[{id:'r',printedCount:9}]);
+  await route.PUT(h.request('PUT',{status:'paused',printedCount:9,resetProgress:true}),h.params('r'));
+  const plain=dialect.sqlToQuery(h.log.find(c=>c[0][0]==='update').find(([k])=>k==='where')[1][0]);
+  assert.doesNotMatch(plain.sql,/printed_count/);
+  // expectedPrintedCount only with a rewind, and only a whole number.
+  h.reset();h.results.push([{totalLabels:100,printedCount:60}]);
+  assert.equal((await route.PUT(h.request('PUT',{printedCount:70,expectedPrintedCount:60}),h.params('r'))).status,400);
+  h.reset();h.results.push([{totalLabels:100,printedCount:60}]);
+  assert.equal((await route.PUT(h.request('PUT',{printedCount:9,resetProgress:true,expectedPrintedCount:'60'}),h.params('r'))).status,400);
+  console.log('PASS run progress: guarded rewind applies only while progress matches (409 with the current count otherwise)');
+ }
  // Validation: resetProgress must be boolean.
  h.reset();h.results.push([{totalLabels:100,printedCount:60}]);
  res=await route.PUT(h.request('PUT',{printedCount:1,resetProgress:'yes'}),h.params('r'));assert.equal(res.status,400);

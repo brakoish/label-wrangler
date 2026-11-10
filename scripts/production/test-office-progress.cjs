@@ -32,12 +32,76 @@ assert.equal(R.officePrintedThrough(0, [sent(1, 500)], 400), 400, 'clamped to th
   assert.equal(s.sent, 60, 'overlapping (reprinted) ranges count once');
   assert.equal(s.onTheWay, 20);
   assert.equal(s.failed.length, 1, 'touching failed parts of one send merge');
-  assert.deepEqual(s.failed[0], { from: 81, to: 120, reason: 'media out', requestId: 'req-bad', jobIds: ['job-81', 'job-101'], didNotPrint: true });
+  assert.deepEqual(s.failed[0], { from: 81, to: 120, reason: 'media out', requestId: 'req-bad', jobIds: ['job-81', 'job-101'], didNotPrint: true, kind: 'did-not-print' });
+  assert.equal(s.failedLabels, 40, 'counted in labels');
   const unsure = R.officeDeliverySummary([{ from: 1, to: 10, state: 'claimed', review: true, requestId: 'r', id: 'j' }], 10);
   assert.equal(unsure.failed[0].didNotPrint, false, 'a part the office never confirmed may have printed');
   assert.equal(unsure.onTheWay, 0, 'and is not "on the way" any more');
   assert.equal(R.officeDeliverySummary([queued(1, 10), sent(1, 10)], 10).onTheWay, 0, 'a reprint of sent labels is not counted twice');
-  assert.equal(R.officeDeliverySummary([{ from: 1, to: 10, state: 'resolved', requestId: 'r' }], 10).failed.length, 0, 'a checked part is no longer failed');
+  assert.deepEqual(R.officeDeliverySummary([{ from: 1, to: 10, state: 'resolved', requestId: 'r' }], 10).failed.map((f) => f.kind), ['print-again'], 'a checked part no longer needs a check, but still needs printing (or counting)');
+}
+
+// --- Failed parts: one line per state, counted in labels ---------------------
+{
+  // 51–100 rejected (out of labels), 101–150 never confirmed: two parts, not one.
+  const jobs = [sent(1, 50), rejected(51, 75), rejected(76, 100, { id: 'job-76' }), { from: 101, to: 125, state: 'submitted', review: true, reason: 'station_outcome_timeout', requestId: 'req-bad', id: 'job-101' }, { from: 126, to: 150, state: 'claimed', review: true, reason: 'station_outcome_timeout', requestId: 'req-bad', id: 'job-126' }];
+  const s = R.officeDeliverySummary(jobs, 200);
+  assert.deepEqual(s.failed.map((f) => [f.from, f.to, f.kind]), [[51, 100, 'did-not-print'], [101, 150, 'needs-check']], 'each part separately and correctly');
+  assert.equal(s.failedLabels, 100, 'labels, not requests');
+  assert.deepEqual(s.failed[1].jobIds, ['job-101', 'job-126']);
+  // Different causes stay apart even in one send.
+  const two = R.officeDeliverySummary([rejected(1, 25), rejected(26, 50, { reason: 'ribbon out', id: 'j2' })], 50);
+  assert.equal(two.failed.length, 2);
+}
+// --- Checked off but not printed again: shown, never "all sent" (code #2) ---
+{
+  const resolved = (from, to) => ({ from, to, state: 'resolved', requestId: 'req-a', id: 'res-' + from });
+  const s = R.officeDeliverySummary([sent(1, 25), resolved(26, 50), sent(51, 300)], 300);
+  assert.deepEqual(s.failed.map((f) => [f.from, f.to, f.kind, f.requestId]), [[26, 50, 'print-again', 'req-a']]);
+  assert.equal(R.officeDeliverySummary([sent(1, 25), resolved(26, 50), { from: 26, to: 50, state: 'sent_to_printer', requestId: 'r2' }], 50).failed.length, 0, 'printed again: done');
+  assert.equal(R.officeDeliverySummary([sent(1, 25), resolved(26, 50), { from: 26, to: 50, state: 'queued', requestId: 'r2' }], 50).failed.length, 0, 'reprint on its way');
+  assert.equal(R.officeDeliverySummary([sent(1, 25), resolved(26, 50)], 50, { printedSpans: [{ from: 26, to: 50 }] }).failed.length, 0, 'a person said they printed');
+  assert.equal(R.officeDeliverySummary([resolved(26, 50)], 50, { printedCount: 50 }).failed.length, 0, 'already counted as printed');
+  assert.deepEqual(R.officeDeliverySummary([resolved(26, 50)], 50, { printedCount: 30 }).failed.map((f) => [f.from, f.to]), [[31, 50]]);
+  assert.equal(R.officeDeliverySummary([{ from: 1, to: 50, state: 'cancelled' }], 50).failed.length, 0, 'cancelled before sending is just unsent');
+}
+// --- Mark every sent stretch, not just the first (B3) -----------------------
+{
+  const plan = R.officeMarkPlan(0, [sent(1, 50), rejected(51, 100), sent(101, 150)], [], 2000);
+  assert.deepEqual(plan.ranges, [{ from: 1, to: 50 }, { from: 101, to: 150 }]);
+  assert.equal(plan.through, 50, 'progress only moves through an unbroken stretch');
+  // Once 51–100 is confirmed (they printed, or reprinted and marked), progress reaches 150.
+  assert.equal(R.officeMarkPlan(50, [sent(1, 50), sent(101, 150)], [{ from: 51, to: 100 }, { from: 101, to: 150 }], 2000).through, 150);
+  assert.deepEqual(R.officeMarkPlan(50, [sent(1, 50), sent(101, 150)], [{ from: 51, to: 100 }, { from: 101, to: 150 }], 2000).ranges, [], 'confirmed stretches are not offered again');
+  assert.deepEqual(R.officeMarkPlan(20, [sent(1, 50)], [], 50), { ranges: [{ from: 21, to: 50 }], through: 50 });
+  assert.deepEqual(R.officeMarkPlan(0, [sent(1, 10, { review: true })], [], 50).ranges, [], 'a part that needs a check is not offered');
+  assert.equal(R.extendThrough(10, [{ from: 12, to: 20 }]), 10);
+  assert.equal(R.extendThrough(10, [{ from: 11, to: 20 }, { from: 21, to: 30 }]), 30);
+  assert.equal(R.spanWords([{ from: 1, to: 50 }, { from: 101, to: 150 }]), 'labels 1–50 and 101–150');
+  assert.equal(R.spanWords([{ from: 7, to: 7 }]), 'label 7');
+  assert.equal(R.spanWords([{ from: 101, to: 125 }, { from: 76, to: 100 }, { from: 126, to: 150 }]), 'labels 76–150');
+}
+// --- Big runs: one explicit multi-part send, whole feeds at every boundary --
+{
+  assert.deepEqual(R.officeSendParts(1, 2000, 500, 1).map((p) => [p.from, p.to]), [[1, 500], [501, 1000], [1001, 1500], [1501, 2000]]);
+  const three = R.officeSendParts(1, 2000, R.officeSendCap([300], 3, true), 3);
+  assert.ok(three.slice(0, -1).every((p) => p.to % 3 === 0), '3-across: every part ends on a whole row');
+  assert.ok(three.every((p) => p.to - p.from + 1 <= 500));
+  assert.equal(three[three.length - 1].to, 2000);
+  const mid = R.officeSendParts(5, 2000, 498, 3);
+  assert.equal(mid[0].to % 3, 0, 'a start mid-row ends its first part on a row boundary');
+  assert.equal(mid[1].from % 3, 1, 'later parts start a new row');
+  assert.deepEqual(R.officeSendParts(1, 10, 500, 1), [{ from: 1, to: 10 }]);
+  assert.equal(R.officeSendCap([300], 3, true) % 3, 0, 'send size is whole rows (code #7)');
+  assert.equal(R.officeSendCap([300], 3, true), 498);
+  assert.equal(R.capAfterSizeError('Labels 1601–1608: Selected range exceeds 32 MiB; select a smaller range', 1, 3) % 3, 0);
+  const plan = { stationId: 's', printerId: 'p', parts: [{ from: 1, to: 500 }, { from: 501, to: 1000 }], next: 1, at: 't' };
+  assert.deepEqual(R.readPartsPlan(JSON.stringify(plan)), plan);
+  assert.deepEqual(R.remainingParts(R.readPartsPlan(JSON.stringify(plan))), [{ from: 501, to: 1000 }], 'reopening offers the remaining parts');
+  assert.equal(R.readPartsPlan('{bad'), null);
+  assert.equal(R.readPartsPlan(JSON.stringify({ ...plan, next: 9 })), null);
+  assert.equal(R.readPartsPlan(JSON.stringify({ ...plan, parts: [{ from: 5, to: 1 }] })), null);
+  assert.deepEqual(R.remainingParts(null), []);
 }
 
 // --- Suggestions never run into work the server would refuse ----------------
@@ -83,6 +147,12 @@ for (const status of [400, 404, 409, 413]) assert.equal(O.officeFailureKind(stat
 for (const status of [401, 403, 408, 429, 500, 502, 503, undefined]) assert.equal(O.officeFailureKind(status), 'uncertain', `${status} keeps the saved request`);
 assert.equal(O.keepPendingAfter('refused'), false, 'a refused request is not offered for resend');
 assert.equal(O.keepPendingAfter('uncertain'), true, 'an unknown outcome keeps the same request and key');
+assert.equal(O.sendKeepsRequest(403, undefined, false), false, 'a first try refused for print access queued nothing');
+assert.equal(O.sendKeepsRequest(401, undefined, false), false, 'a first try while signed out queued nothing');
+assert.equal(O.sendKeepsRequest(403, undefined, true), true, 'a resend refused for access keeps the request: an earlier try may have arrived');
+assert.equal(O.sendKeepsRequest(403, 'origin_not_allowed', false), true, 'the wrong address keeps the request and its own words');
+assert.equal(O.sendKeepsRequest(undefined, undefined, false), true, 'no answer keeps the request');
+assert.equal(O.sendKeepsRequest(409, undefined, true), false, 'a definite refusal clears it');
 assert.equal(O.uncertainSendWords(401).cause, 'signed-out');
 assert.equal(O.uncertainSendWords(403, 'origin_not_allowed').cause, 'address');
 assert.equal(O.uncertainSendWords(403).cause, 'no-access');
@@ -138,6 +208,32 @@ for (const status of [408, 429, 500, 503, undefined]) assert.equal(O.controlFail
 assert.match(O.controlFailure(403).message, /Ask your admin/);
 assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
 
+// --- One printer status line: never "Ready" while stopped or paused ---------
+{
+  const p = { online: true, available: true, dispatch_enabled: true, paired_at: 't', needs_review: false, dispatch_hold_reason: null, review_holds: [] };
+  assert.equal(O.officeStatusLine(p).text, 'Ready');
+  const paused = O.officeStatusLine({ ...p, dispatch_hold_reason: 'printer_paused' });
+  assert.equal(paused.paused, true);assert.equal(paused.tone, 'warn');assert.match(paused.text, /Paused/);assert.doesNotMatch(paused.text, /Ready/);assert.equal(paused.canSend, true, 'sends still queue');
+  const held = O.officeStatusLine({ ...p, needs_review: true, review_holds: [{ run_id: 'run-a', run_name: 'Run A stalls', from: 26, to: 50 }] }, 'run-b');
+  assert.equal(held.stopped, true);assert.equal(held.canSend, false);assert.equal(held.tone, 'bad');
+  assert.equal(held.text, 'Stopped: labels 26–50 of “Run A stalls” need a check.');assert.equal(held.hold.run_id, 'run-a');
+  const mine = O.officeStatusLine({ ...p, needs_review: true, review_holds: [{ run_id: 'run-a', run_name: 'Run A', from: 26, to: 50 }] }, 'run-a');
+  assert.match(mine.text, /of this run/);
+  assert.match(O.officeStatusLine({ ...p, needs_review: true }).text, /needs a check/, 'names the problem even without details');
+  assert.match(O.officeStatusLine({ ...p, dispatch_hold_reason: 'control_pending' }).text, /confirm/);
+  assert.match(O.officeStatusLine({ ...p, online: false }).text, /offline/);
+  // After a send: never "the office keeps going" while paused or stopped.
+  assert.match(O.queuedNotice('Labels 1–20', false, paused), /paused, so nothing prints until someone taps Resume/);
+  assert.doesNotMatch(O.queuedNotice('Labels 1–20', false, paused), /keeps going/);
+  assert.doesNotMatch(O.queuedNotice('Labels 1–20', false, held), /keeps going/);
+  assert.match(O.queuedNotice('Labels 1–20', false, O.officeStatusLine(p)), /keeps going/);
+  assert.equal(O.refusalNeedsSomeoneElse('no-access'), true, 'no "Try again" for a refusal only an admin can fix');
+  assert.equal(O.refusalNeedsSomeoneElse('already-queued'), false);
+  assert.deepEqual(O.readPendingMeta(JSON.stringify({ status: 503 })), { status: 503 }, 'the "not sure" cause survives a refresh');
+  assert.equal(O.uncertainSendWords(O.readPendingMeta(JSON.stringify({ status: 503 })).status).message, O.uncertainSendWords(503).message);
+  assert.deepEqual(O.readPendingMeta('nope'), {});
+}
+
 // --- Header and list wording --------------------------------------------------
 {
   const run = (status, printedCount, totalLabels = 100) => ({ status, printedCount, totalLabels });
@@ -150,6 +246,9 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
   assert.equal(runDisplayStatus(run('paused', 100), { sent: 100, onTheWay: 0, failed: 0 }).label, 'Done');
   assert.equal(runDisplayStatus(run('cancelled', 10), { sent: 0, onTheWay: 5, failed: 0 }).label, 'Cancelled');
   assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 0 }, 100), 'Sent to office printer: 20 of 100 · 30 on the way');
+  assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 1 }, 100), 'Sent to office printer: 20 of 100 · 30 waiting', 'held labels are not on their way');
+  assert.equal(officeSentLine({ sent: 0, onTheWay: 20, failed: 0, held: true }, 20), 'Sent to office printer: 0 of 20 · 20 waiting', 'paused printer: waiting');
+  assert.equal(runDisplayStatus({ status: 'printing', printedCount: 0, totalLabels: 20 }, { sent: 0, onTheWay: 20, failed: 0, held: true }).label, 'Waiting for office printer');
   assert.equal(officeSentLine({ sent: 0, onTheWay: 0, failed: 0 }, 100), null);
   assert.equal(officeSentLine(null, 100), null);
 }
@@ -184,3 +283,72 @@ assert.equal(fieldDisplayName('Product Name'), 'Product Name', 'spreadsheet head
 assert.equal(fieldDisplayName('SKU'), 'SKU');
 assert.equal(fieldDisplayName('url'), 'Link');
 console.log('PASS field display names');
+
+// --- Round 4: the office panel, run page and Runs list follow the rules ------
+{
+  // Labels still at the office (queued or picked up), merged, minus sent ones.
+  const jobs = [
+    { from: 1, to: 50, state: 'sent_to_printer' }, { from: 51, to: 75, state: 'rejected', review: true },
+    { from: 76, to: 100, state: 'queued' }, { from: 101, to: 150, state: 'queued' }, { from: 151, to: 160, state: 'claimed', review: true },
+  ];
+  assert.deepEqual(R.officeWaitingSpans(jobs, 200), [{ from: 76, to: 150 }], 'held labels are named as one stretch; a part that needs a check is not "waiting"');
+  assert.equal(R.spanWords(R.officeWaitingSpans(jobs, 200)), 'labels 76–150');
+
+  const { runDisplayStatus } = require('../../src/lib/runDisplayStatus.ts');
+  const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
+  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'print-again' } }).label, 'Labels to print again', 'a checked-off part that never printed again is named');
+  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print' } }).label, 'Office print needs a check');
+
+  const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+  const panel = read('src/components/runs/OfficePiPrinter.tsx');
+  // A failed storage write is said, not silent, and nothing is sent.
+  assert.match(panel, /try\{localStorage\.setItem\(storageKey,JSON\.stringify\(payload\)\);\}\s*catch\{setError\('This device can’t save the request, so it wasn’t sent/, 'a failed save stops the send and says so');
+  // "Send again" reuses the saved key whatever the printer says (the server answers a saved key first).
+  assert.match(panel, /const disabled=pending\?busy:/, '"Send again" is only disabled while busy');
+  // The reason for "not sure" is kept beside the saved request, so a refresh says the same.
+  assert.match(panel, /localStorage\.setItem\(metaKey,JSON\.stringify\(meta\)\)/);
+  assert.match(panel, /readPendingMeta\(meta\)/);
+  // No "Try again" after a refusal only someone else can fix.
+  assert.match(panel, /noAccess\?'Ask your admin for print access\.'/);
+  assert.match(panel, /:shownRefusal && !noAccess\?'refusal'/, 'no primary button after a no-access refusal');
+  // Nothing new is sent before one read of the office queue succeeded.
+  assert.match(panel, /if\(!printAllowed \|\| !requestsEverLoaded\)return;/);
+  // A multi-part send is one explicit tap, and each part goes through the one POST site with its own saved key.
+  assert.match(panel, /`Send all \$\{sendCount\.toLocaleString\(\)\} in \$\{parts\.length\} parts`/);
+  assert.match(panel, /const outcome=await submit\(part\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
+  assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
+  // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
+  assert.match(panel, /if\(target && \(payload\.from!==target\.from \|\| payload\.to!==target\.to\)\)\{setError/, 'a part never sends another range\'s saved request');
+  assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
+  assert.match(panel, /if\(pending && pendingInPlan && partsPlan\)\{void runSeries\(partsPlan\);return;\}/, '"Send again" on an unsure part carries on with the plan');
+  // Fixing a part: later parts are held before the check lets the office carry on; a 409 means already checked.
+  const save = panel.slice(panel.indexOf('const saveFix='), panel.indexOf('const pendingWords='));
+  assert.ok(save.indexOf("method:'DELETE'") > 0 && save.indexOf("method:'DELETE'") < save.indexOf("'/api/office/review'"), 'hold the rest before recording the check');
+  assert.match(save, /err\.status===409/, 'already checked counts as done');
+  assert.match(save, /\['resolved','cancelled','sent_to_printer'\]\.includes\(job\.state\)\)continue;/, 'a fresh read skips parts already checked');
+  assert.match(save, /onRecordPrinted\?\.\(/, '"They printed" counts them only on that explicit choice');
+  // "Print some labels again" starts empty.
+  assert.match(panel, /Print some labels again…/);
+  assert.ok((panel.match(/setChooseAgain\(true\);setReprintOf\(''\);setFrom\(''\);setTo\(''\)/g) || []).length >= 3, 'choosing labels again starts with an empty range');
+
+  const page = read('src/components/runs/RunPrinter.tsx');
+  assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: 'Skip and count as printed'/, 'the safe start is the primary button');
+  assert.match(page, /confirmLabel: `Keep progress at \$\{printedCount\}`,\s*altLabel: 'Count them too'/, 'keeping progress honest is the primary button');
+  assert.match(page, /resetProgress: true, expectedPrintedCount: before/, 'a rewind says which count it expects');
+  assert.match(page, /\.\.\.\(plan\.rewind \? \{ expectedPrintedCount: printedCount \} : \{\}\)/);
+  assert.doesNotMatch(page, /label: 'Scan mode'/, 'scan mode is not offered in the menu where it cannot work');
+  assert.match(page, /officeMarkPlan\(/, 'mark printed offers every sent stretch');
+
+  const controls = read('src/components/runs/OfficePrinterControls.tsx');
+  assert.match(controls, /setInterval\(update,pending\|\|busy\?2000:15000\)/, 'controls read fast only while a pause or resume is on its way');
+  assert.match(controls, /controlFailure\(r\.status,typeof answer\.code==='string'\?answer\.code:undefined,resend\)/, 'a resend keeps its key when signed out or refused');
+  assert.match(controls, /`\$\{LEGACY_KEY\}:\$\{userId\}`/, 'the saved pause/resume is per account');
+
+  const list = read('src/app/runs/page.tsx');
+  assert.doesNotMatch(list, /Otherwise it’s deleted for good/, 'the delete dialog says the one case that applies');
+  assert.match(list, /moving \? 5000 : 15000/, 'the Runs list reads faster only while labels are on their way');
+  assert.match(list, /Mark sent labels as printed/, 'bulk mark printed on the Runs list');
+  const feedback = read('src/components/ui/feedback.tsx');
+  assert.match(feedback, /resolve\(outcome === 'dismiss' \? null : outcome\)/, 'closing a choice dialog picks neither choice');
+}
+console.log('PASS office r4: held labels named, print-again status, storage/send-again/meta/no-access rules, parts one by one, fix holds the rest first, safe primaries, guarded rewinds, quieter polling, plain delete');

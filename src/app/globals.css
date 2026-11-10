@@ -549,6 +549,22 @@ textarea:focus-visible {
 }
 /* end area B r3 */
 
+/* area B r4 ----------------------------------------------------------------
+ * One page frame for the Runs list and a run's page: the same width, left
+ * gutter and top space, so the title sits in the same place on both.
+ */
+@layer components {
+  .page-frame {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding: 1rem;
+  }
+  @media (min-width: 640px) { .page-frame { padding: 1.5rem 2rem; } }
+  @media (min-width: 1024px) { .page-frame { padding-block: 2rem; } }
+}
+/* end area B r4 */
+
 /* Motion off for anyone who asks for less of it — spinners included. */
 @media (prefers-reduced-motion: reduce) {
   *,
