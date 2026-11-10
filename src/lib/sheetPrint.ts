@@ -81,10 +81,10 @@ export async function buildSheetPrintHtml(
   format: LabelFormat,
   options: SheetPrintOptions,
 ): Promise<string> {
-  const sheetW = format.sheetWidth || 8.5;
-  const sheetH = format.sheetHeight || 11;
-  const labelW = format.width;
-  const labelH = format.height;
+  const sheetW = num(format.sheetWidth, 8.5) || 8.5;
+  const sheetH = num(format.sheetHeight, 11) || 11;
+  const labelW = num(format.width);
+  const labelH = num(format.height);
   const positions = getSheetPositions(format);
   if (positions.length === 0) {
     throw new Error('This sheet format has no printable label positions.');
@@ -104,7 +104,7 @@ export async function buildSheetPrintHtml(
       const values = previewLabelValues(run, runIndex);
       const labelSvg = await renderLabelSvg(sorted, format, values);
       cells.push(`
-        <div class="label-cell" style="left:${pos.x}in;top:${pos.y}in;width:${labelW}in;height:${labelH}in">
+        <div class="label-cell" style="left:${num(pos.x)}in;top:${num(pos.y)}in;width:${labelW}in;height:${labelH}in">
           ${labelSvg}
         </div>
       `);
@@ -352,10 +352,10 @@ export async function buildSheetPrintPdf(
 function getSheetPositions(format: LabelFormat): SheetPosition[] {
   const cols = format.columns || 1;
   const rows = format.rows || 1;
-  const sheetW = format.sheetWidth || 8.5;
-  const sheetH = format.sheetHeight || 11;
-  const labelW = format.width;
-  const labelH = format.height;
+  const sheetW = num(format.sheetWidth, 8.5) || 8.5;
+  const sheetH = num(format.sheetHeight, 11) || 11;
+  const labelW = num(format.width);
+  const labelH = num(format.height);
   const sideM = format.sideMargin || 0;
   const topM = format.topMargin || 0;
   const gapX = format.horizontalGap || 0;
@@ -382,8 +382,9 @@ async function renderSheetPageSvg(
   labelIndex: number,
   to: number,
 ): Promise<string> {
-  const sheetW = format.sheetWidth || 8.5;
-  const sheetH = format.sheetHeight || 11;
+  const sheetW = num(format.sheetWidth, 8.5) || 8.5;
+  const sheetH = num(format.sheetHeight, 11) || 11;
+  const fw = num(format.width), fh = num(format.height);
   const cells: string[] = [];
 
   for (let slot = 0; slot < positions.length; slot++) {
@@ -393,7 +394,7 @@ async function renderSheetPageSvg(
     const pos = positions[slot];
     const values = previewLabelValues(run, runIndex);
     const labelSvg = await renderLabelSvg(elements, format, values);
-    cells.push(`<svg x="${pos.x}" y="${pos.y}" width="${format.width}" height="${format.height}" viewBox="0 0 ${format.width} ${format.height}" preserveAspectRatio="none">${extractSvgBody(labelSvg)}</svg>`);
+    cells.push(`<svg x="${num(pos.x)}" y="${num(pos.y)}" width="${fw}" height="${fh}" viewBox="0 0 ${fw} ${fh}" preserveAspectRatio="none">${extractSvgBody(labelSvg)}</svg>`);
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${sheetW}in" height="${sheetH}in" viewBox="0 0 ${sheetW} ${sheetH}"><rect width="${sheetW}" height="${sheetH}" fill="#ffffff"/>${cells.join('')}</svg>`;
@@ -464,7 +465,7 @@ async function renderLabelSvg(
     body.push(await renderElement(element, format, values));
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${format.width} ${format.height}" preserveAspectRatio="none">${body.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${num(format.width)} ${num(format.height)}" preserveAspectRatio="none">${body.join('')}</svg>`;
 }
 
 async function renderElement(
@@ -472,6 +473,9 @@ async function renderElement(
   format: LabelFormat,
   values: Record<string, string>,
 ): Promise<string> {
+  // Every number that reaches markup goes through num(); every string through
+  // escapeAttr()/escapeHtml(). Stored designs are untrusted input here.
+  element = { ...element, x: num(element.x), y: num(element.y), width: num(element.width), height: num(element.height), rotation: num(element.rotation) } as TemplateElement;
   const rotation = element.rotation
     ? ` transform="rotate(${element.rotation} ${element.x} ${element.y})"`
     : '';
@@ -511,8 +515,8 @@ function renderText(element: TextElement, values: Record<string, string>, rotati
   const content = resolveContent(element, values);
   if (!content) return '';
 
-  const fontSize = element.fontSize / 72;
-  const lineHeight = fontSize * (element.lineHeight || 1.2);
+  const fontSize = num(element.fontSize, 10) / 72;
+  const lineHeight = fontSize * (num(element.lineHeight) || 1.2);
   const charW = fontSize * 0.5;
   const maxCharsPerLine = Math.max(1, Math.floor(element.width / charW));
   const lines = wrapText(content, maxCharsPerLine);
@@ -528,14 +532,14 @@ function renderText(element: TextElement, values: Record<string, string>, rotati
     `<tspan x="${x}" y="${y + i * lineHeight}">${escapeHtml(line)}</tspan>`
   )).join('');
 
-  return `<text font-family="${escapeAttr(element.fontFamily || 'Arial')}" font-size="${fontSize}" font-weight="${element.fontWeight}" text-anchor="${anchor}" fill="${escapeAttr(element.color || '#000000')}"${rotation}>${tspans}</text>`;
+  return `<text font-family="${escapeAttr(element.fontFamily || 'Arial')}" font-size="${fontSize}" font-weight="${escapeAttr(element.fontWeight || 'normal')}" text-anchor="${anchor}" fill="${escapeAttr(element.color || '#000000')}"${rotation}>${tspans}</text>`;
 }
 
 async function renderQr(element: QRElement, values: Record<string, string>, rotation: string): Promise<string> {
   const content = resolveContent(element, values);
   if (!content) return '';
   const dataUrl = await QRCode.toDataURL(content, {
-    errorCorrectionLevel: element.errorCorrection,
+    errorCorrectionLevel: ['L', 'M', 'Q', 'H'].includes(element.errorCorrection) ? element.errorCorrection : 'M',
     width: 512,
     margin: 0,
     color: { dark: '#000000', light: '#ffffff' },
@@ -565,13 +569,13 @@ function renderBarcode(element: BarcodeElement, values: Record<string, string>, 
 }
 
 function renderLine(element: LineElement, format: LabelFormat, rotation: string): string {
-  const sw = element.strokeWidth / 72;
+  const sw = num(element.strokeWidth) / 72;
   return `<line x1="${element.x}" y1="${element.y}" x2="${element.x + element.width}" y2="${element.y + element.height}" stroke="${escapeAttr(element.color || '#000000')}" stroke-width="${sw}"${element.lineStyle === 'dotted' ? ` stroke-dasharray="0 ${sw * 3}" stroke-linecap="round"` : element.lineStyle === 'dashed' ? ` stroke-dasharray="${sw * 4} ${sw * 2}"` : ''}${rotation} />`;
 }
 
 function renderRectangle(element: RectangleElement, format: LabelFormat, rotation: string): string {
-  const sw = element.strokeWidth / 72;
-  const radius = element.borderRadius / 72;
+  const sw = num(element.strokeWidth) / 72;
+  const radius = num(element.borderRadius) / 72;
   const fill = element.fillColor || 'none';
   return `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" rx="${radius}" ry="${radius}" fill="${escapeAttr(fill)}" stroke="${escapeAttr(element.strokeColor || '#000000')}" stroke-width="${sw}"${rotation} />`;
 }
@@ -613,6 +617,13 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
+function escapeAttr(value: unknown): string {
+  return escapeHtml(String(value ?? ''));
+}
+
+/** Numbers interpolated into SVG/HTML/CSS. Anything that is not a finite
+ * number (bad stored data) becomes 0 instead of reaching the markup. */
+function num(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }

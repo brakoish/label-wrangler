@@ -19,6 +19,19 @@ function strings(value: unknown, field: string) {
   if (Object.keys(record).length > 500) invalid(field);
   for (const [k,v] of Object.entries(record)) { text(k, field, 200); text(v, field, 20000); }
 }
+const ENUMS: Record<string, readonly string[]> = {
+  fontWeight: ['normal','bold','100','200','300','400','500','600','700','800','900'],
+  fontStyle: ['normal','italic'],
+  textAlign: ['left','center','right'],
+  verticalAlign: ['top','middle','bottom'],
+  objectFit: ['contain','cover','fill'],
+  barcodeFormat: ['CODE128','CODE39','UPC','EAN13','EAN8','ITF14'],
+  errorCorrection: ['L','M','Q','H'],
+};
+/** Hex, named, rgb()/hsl() colors, 'none'/'transparent' or empty (no fill). No quotes or markup. */
+const COLOR = /^[#a-zA-Z0-9(),.%\s-]{0,64}$/;
+/** Font names, including PDF-embedded ones like "ABCDEF+Arial-BoldMT". No quotes or markup. */
+const FONT_FAMILY = /^[a-zA-Z0-9 _.,'+-]{0,200}$/;
 function elements(value: unknown) {
   if (!Array.isArray(value) || value.length > 500) invalid('elements');
   const ids = new Set();
@@ -32,6 +45,12 @@ function elements(value: unknown) {
     for (const k of ['fontSize','minFontSize','lineHeight','charWidth']) if (e[k] !== undefined) number(e[k],k,0.01,10000);
     for (const k of ['strokeWidth','borderRadius']) if (e[k] !== undefined) number(e[k],k,0,10000);
     if (e.lineStyle !== undefined && !['solid','dotted','dashed'].includes(String(e.lineStyle))) invalid('line style');
+    // Style fields end up in SVG/HTML attributes (sheet print, previews), so
+    // only known values are stored. Rendering escapes them as well.
+    for (const [k, allowed] of Object.entries(ENUMS)) if (e[k] !== undefined && e[k] !== null && !allowed.includes(String(e[k]))) invalid(k);
+    if (e.fontWeight !== undefined && typeof e.fontWeight !== 'string' && typeof e.fontWeight !== 'number') invalid('fontWeight');
+    for (const k of ['color','strokeColor','fillColor']) if (e[k] !== undefined && e[k] !== null && (typeof e[k] !== 'string' || !COLOR.test(String(e[k])))) invalid(k);
+    if (e.fontFamily !== undefined && e.fontFamily !== null && (typeof e.fontFamily !== 'string' || !FONT_FAMILY.test(e.fontFamily))) invalid('fontFamily');
     for (const [k,v] of Object.entries(e)) {
       if (typeof v === 'number' && !Number.isFinite(v)) invalid(k);
       if (typeof v === 'string') text(v,k,k==='src'?3_000_000:20000);

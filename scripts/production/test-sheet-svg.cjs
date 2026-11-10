@@ -16,5 +16,31 @@ const {renderSheetLabelSvg}=require('../../src/lib/sheetPrint.ts');
  const viewBox=svg.match(/<svg x="[^"]*"[^>]*viewBox="([^"]*)"/)[1];
  assert.match(viewBox,/^0 0 \d+(\.\d+)? \d+(\.\d+)?$/,`barcode viewBox must be numeric, got "${viewBox}"`);
  assert.ok(svg.includes('<rect'),'barcode bars missing');
- console.log('PASS sheet SVG: numeric barcode viewBox (px units parsed, defaults on bad input)');
+
+ // Stored-XSS regression: hostile values that bypass validation (old rows,
+ // direct DB edits) are escaped, and numbers are coerced, in the sheet SVG.
+ const evil='bold"/><image href="x" onerror="alert(1)"/><text x="';
+ const hostile=await renderSheetLabelSvg([
+  {...base,type:'text',content:'<script>x</script>',fontFamily:'A"onload="x',fontSize:'12" onclick="x',fontWeight:evil,textAlign:'left',color:'red" onmouseover="x',lineHeight:1.2},
+  {...base,x:'1" onclick="x',type:'rectangle',strokeWidth:1,strokeColor:'"><script>',fillColor:'"/>',borderRadius:'0" a="'},
+  {...base,type:'line',strokeWidth:'1"><script>',color:'#000"/>',lineStyle:'dashed'},
+  {...base,type:'image',src:'data:image/png;base64,AA"/><script>x</script>',objectFit:'cover'},
+ ],{...format,width:'2"><script>'},{});
+ assert.ok(!/<script|<image href="x"|\son[a-z]+="/i.test(hostile.replace(/&quot;|&lt;|&gt;|&amp;/g,'_')),'unescaped markup in sheet SVG: '+hostile);
+ assert.ok(hostile.includes('font-weight="bold&quot;/&gt;'),'fontWeight not escaped');
+ const {buildSheetPrintHtml}=require('../../src/lib/sheetPrint.ts');
+ const html=await buildSheetPrintHtml({id:'r',name:'<img src=x onerror=alert(1)>',sourceData:['a'],totalLabels:1,printedCount:0},{elements:[{...base,type:'text',content:'v',fontWeight:evil,textAlign:'left',fontSize:10}]},{...format,columns:1,rows:1,sheetWidth:'8.5}</style><script>x</script>'},{autoPrint:false});
+ assert.ok(!/<img src=x|<image href="x"|<\/style><script>x/.test(html),'unescaped markup in sheet print HTML');
+ // API validation rejects hostile style values outright.
+ const {validate}=require('../../src/lib/validation.ts');
+ const el={id:'e',type:'text',x:0,y:0,width:1,height:1,rotation:0,zIndex:0,isStatic:true,content:'x',fontFamily:'Arial',fontSize:10,fontWeight:'bold',textAlign:'left',color:'#000000',lineHeight:1.2};
+ validate({elements:[el]},'template');
+ validate({elements:[{...el,fontWeight:700,fontStyle:'italic',verticalAlign:'middle',fontFamily:'ABCDEF+Arial-BoldMT',color:'rgb(0, 0, 0)'}]},'template');
+ validate({elements:[{...el,id:'r',type:'rectangle',strokeColor:'#000',fillColor:'',strokeWidth:1,borderRadius:0}]},'global');
+ for(const bad of [{fontWeight:evil},{fontStyle:'oblique"'},{textAlign:'justify'},{verticalAlign:'x'},{color:'red" onclick="x'},{fontFamily:'Arial"><script>'},{fillColor:'url("javascript:x")'}])
+  assert.throws(()=>validate({elements:[{...el,...bad}]},'template'),/Invalid/,JSON.stringify(bad));
+ assert.throws(()=>validate({elements:[{...el,id:'q',type:'qr',errorCorrection:'Z'}]},'template'),/Invalid/);
+ assert.throws(()=>validate({elements:[{...el,id:'b',type:'barcode',barcodeFormat:'CODE128"'}]},'template'),/Invalid/);
+ assert.throws(()=>validate({elements:[{...el,id:'i',type:'image',src:'data:image/png;base64,AA',objectFit:'scale-down'}]},'template'),/Invalid/);
+ console.log('PASS sheet SVG: numeric barcode viewBox; hostile style values escaped in SVG/HTML and rejected by API validation');
 })().catch(e=>{console.error(e);process.exitCode=1;});
