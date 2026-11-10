@@ -53,17 +53,15 @@ const R=require('../../src/lib/officeRange.ts');
  assert.deepEqual(office.unsent,[{from:101,to:2000}],'labels the office has none of are named on every device');
  console.log('PASS rewind: kept as a print event once accepted; the Runs list offers only office work sent after it');
 
- // --- The run page records a rewind only after the server accepted it ---
+ // --- The run page never stamps a rewind with this device's clock ---
  const page=fs.readFileSync(path.join(__dirname,'../../src/components/runs/RunPrinter.tsx'),'utf8');
  assert.doesNotMatch(page,/noteRewind\(\)/,'no marker before the rewind is saved');
- const start=page.slice(page.indexOf('const startOrResume'),page.indexOf('const handlePause'));
- assert.ok(start.indexOf("await setRunStatus(run.id, 'printing'")<start.indexOf('recordRewind(selectedFrom'),'start: recorded after the server answered');
- assert.ok(start.indexOf('if (refusedStart.reason)')<start.indexOf('recordRewind(selectedFrom'),'never when refused');
- const back=page.slice(page.indexOf('const handleReprintFromHereAndContinue'),page.indexOf('const normalizeSheetRange'));
- assert.ok(back.indexOf("await setRunStatus(run.id, 'paused', n - 1")<back.indexOf('recordRewind(n, before)'));
- assert.ok(back.indexOf('if (refused.reason)')<back.indexOf('recordRewind(n, before)'));
- assert.match(page,/const rewoundAt = Math\.max\(localRewoundAt, serverRewoundAt\)/,'the print history counts on every device');
- console.log('PASS rewind: the run page marks a rewind only after the server accepts it, and reads other devices’ rewinds from the history');
+ assert.doesNotMatch(page,/recordRewind|localRewoundAt|pendingRewind/,'no local rewind stamp or in-memory pending rewind');
+ assert.doesNotMatch(page,/setItem\(`lw:run-rewound/,'no clock stamp kept on this device');
+ assert.match(page,/const rewoundAt = rewindWaiting \? Number\.POSITIVE_INFINITY : serverRewoundAt;/,'the server’s rewind time once read back; nothing offered while the go-back waits in the outbox');
+ const store=fs.readFileSync(path.join(__dirname,'../../src/lib/runStore.ts'),'utf8');
+ assert.match(store,/rewind = rewindEvent\(printedCount \+ 1/,'the store queues the rewind event with the go-back');
+ console.log('PASS rewind: the run page uses the server’s rewind time only, and holds back office offers while a go-back is unsent');
 
  // --- Saved parts never offer what is already printed ---
  const parts=[{from:1,to:500},{from:501,to:1000},{from:1001,to:1500},{from:1501,to:2000}];

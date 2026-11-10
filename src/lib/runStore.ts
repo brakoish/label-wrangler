@@ -1,6 +1,7 @@
 'use client';
 import { apiJson, ApiError } from './apiClient';
 import { updateRunWithQueue, savePrintEvent } from './offlineQueue';
+import { rewindEvent } from './runRewind';
 
 import { create } from 'zustand';
 import type { Run, RunPreset, RunPrintEvent, RunStatus } from './types';
@@ -133,6 +134,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
 
   setRunStatus: async (id, status, printedCount, options) => {
     const body: Record<string, unknown> = { status };
+    let rewind: ReturnType<typeof rewindEvent> | undefined;
     if (typeof printedCount === 'number') body.printedCount = printedCount;
     if (options?.resetProgress && typeof printedCount === 'number') {
       body.resetProgress = true;
@@ -143,9 +145,13 @@ export const useRunStore = create<RunStore>((set, get) => ({
       // fallback (local printing doesn't always write the store).
       const seen = typeof options.expectedPrintedCount === 'number' ? options.expectedPrintedCount : get().runs.find((r) => r.id === id)?.printedCount;
       if (typeof seen === 'number') body.expectedPrintedCount = seen;
+      // The go-back's print-history entry rides in the outbox with it: sent
+      // right after the server accepts the go-back (with the server's time),
+      // never when it is set aside, and kept if the tab closes first.
+      rewind = rewindEvent(printedCount + 1, typeof seen === 'number' ? seen : printedCount);
     }
     if (status === 'completed') body.completedAt = new Date().toISOString();
-    const run=await updateRunWithQueue(id,body as Partial<Run>,options?.onSetAside);
+    const run=await updateRunWithQueue(id,body as Partial<Run>,options?.onSetAside,rewind);
     if(run) set(state=>({runs:state.runs.map(r=>r.id===id?{...r,...run}:r)}));
     return run;
   },
