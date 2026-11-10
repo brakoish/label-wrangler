@@ -23,3 +23,33 @@ export function stillToGo(spans: ReadonlyArray<OfficeSpan>, total: number): Offi
   return out;
 }
 
+
+/** A print-history entry, as far as counting printed labels goes. */
+export interface CountedEventLike { eventType: string; output: string; rangeFrom: number; rangeTo: number; createdAt?: string | null }
+
+/**
+ * Stretches counted as printed apart from the run's progress (1..printedCount):
+ * office ranges a person confirmed came out, and labels printed one by one by
+ * scanning, after the latest accepted "Go back" (`rewoundAt`, ms; unknown
+ * times count as after). The run page and the Runs list both count printed
+ * labels with this and `printedLabelCount`, so they always say the same number.
+ */
+export function countedEventSpans(events: ReadonlyArray<CountedEventLike>, total: number, rewoundAt = 0): OfficeSpan[] {
+  const picked: OfficeSpan[] = [];
+  for (const event of events) {
+    const counts = (event.eventType === 'confirmed' && event.output === 'office-pi') || (event.eventType === 'sent' && event.output === 'scan');
+    if (!counts) continue;
+    if (rewoundAt) {
+      const at = event.createdAt ? Date.parse(event.createdAt) : NaN;
+      if (Number.isFinite(at) && at <= rewoundAt) continue;
+      if (!Number.isFinite(at) && rewoundAt === Number.POSITIVE_INFINITY) continue;
+    }
+    picked.push({ from: Number(event.rangeFrom), to: Number(event.rangeTo) });
+  }
+  return printedSpans(0, picked, total);
+}
+
+/** Labels counted as printed, wherever they sit: progress plus the counted stretches, each label once. */
+export function printedLabelCount(printedCount: number, counted: ReadonlyArray<OfficeSpan>, total: number): number {
+  return printedSpans(Math.max(0, Math.floor(printedCount) || 0), counted, total).reduce((n, s) => n + s.to - s.from + 1, 0);
+}

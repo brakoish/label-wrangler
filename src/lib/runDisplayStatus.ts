@@ -22,6 +22,10 @@ export interface RunOfficeSummary {
   refused?: { from: number; to: number } | null;
   /** The run page's office panel: the office printer is paused. */
   printerPaused?: boolean;
+  /** The run page's office panel is sending right now (or checking a send), in a few words: "Sending part 1 of 4". */
+  sending?: string | null;
+  /** Labels after progress that no office send covers yet (parts still to send, or labels never sent). */
+  stillToSend?: number;
 }
 
 /**
@@ -81,12 +85,17 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
     return out('needs-you', 'attention', short || 'Office print needs a check');
   }
   if (office?.refused) return out('needs-you', 'attention', `${labelsWord(office.refused)} weren’t sent`.replace(/^(Label \S+) weren’t/, '$1 wasn’t'));
+  // A send going out right now (a part of "Send all in parts", or one the page
+  // is checking) is never "Ready": the header says what the panel is doing.
+  if (office?.sending) return out('printing', 'active', office.sending);
   if (office?.heldBy && run.status !== 'draft') return out('paused', 'paused', `“${office.heldBy.runName || 'Another run'}” needs a check first`);
   if (office && office.onTheWay > 0) return office.held ? out('paused', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'At the office printer');
   if (office?.printerPaused) return out('paused', 'paused', 'The office printer is paused');
   if (run.status === 'printing') return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
-  if (office && (office.unchecked ?? 0) > 0) return out('sent', 'confirm', office.unchecked === 1 ? 'Did it come out?' : `Did all ${office.unchecked!.toLocaleString('en-US')} come out?`);
+  // The question is only about what was sent; labels still to send are said apart.
+  const toSend = (office?.stillToSend ?? 0) > 0 ? ` · ${office!.stillToSend!.toLocaleString('en-US')} still to send` : '';
+  if (office && (office.unchecked ?? 0) > 0) return out('sent', 'confirm', (office.unchecked === 1 ? 'Did it come out?' : `Did all ${office.unchecked!.toLocaleString('en-US')} come out?`) + toSend);
   if (office && office.unchecked === undefined && total > 0 && office.sent >= total) return out('sent', 'confirm', 'Did they all come out?');
   if (office && office.sent > 0) return out('ready', 'idle', printed > 0 ? 'Partly printed' : 'Partly sent');
   if (printed > 0) return out('ready', 'idle', 'Partly printed');

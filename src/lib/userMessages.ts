@@ -199,7 +199,8 @@ export function friendlyRenderError(message: string, elements: TemplateElement[]
 
 /** Plain-words history line, e.g. "Printed labels 1–20 on the thermal printer". */
 export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output' | 'rangeFrom' | 'rangeTo' | 'message'>) {
-  const range = event.rangeFrom === event.rangeTo ? `label ${event.rangeFrom}` : `labels ${event.rangeFrom}–${event.rangeTo}`;
+  // Grouped like every other count on the page ("1–2,000", not "1–2000").
+  const range = event.rangeFrom === event.rangeTo ? `label ${event.rangeFrom.toLocaleString('en-US')}` : `labels ${event.rangeFrom.toLocaleString('en-US')}–${event.rangeTo.toLocaleString('en-US')}`;
   const where = printOutputLabel(event.output);
   const reprint = /^Reprint/i.test(event.message || '');
   if (event.output === 'scan' && event.eventType === 'sent') return /again/i.test(event.message || '') ? `Printed ${range} again by scanning` : `Printed ${range} by scanning`;

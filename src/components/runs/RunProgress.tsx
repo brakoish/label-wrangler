@@ -50,10 +50,15 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   const left = stillToGo(covered, total);
   const gapped = covered.length > 1 || (covered.length === 1 && covered[0].from > 1);
   const fill = tone === 'done' ? 'bg-emerald-400' : tone === 'active' ? 'bg-amber-500' : 'bg-zinc-500';
-  const sentFill = tone === 'muted' ? 'bg-zinc-600' : 'bg-amber-500/35';
+  // Three looks that can't be mixed up: printed (solid), sent to the printer
+  // (light amber, a person still says whether they came out) and waiting at
+  // the office (grey, not sent yet). The words under the bar use the same dots.
+  const sentFill = tone === 'muted' ? 'bg-zinc-600' : 'bg-amber-500/40';
+  const waitingFill = tone === 'muted' ? 'bg-zinc-700' : 'bg-zinc-600';
   const leftWords = spanWords(left);
   const motion = animate ? 'transition-[left,width,background-color] duration-300 ease-in-out' : '';
-  const officeWords = [sentCount ? `${sentCount.toLocaleString()} sent to the printer` : '', waitingCount && waitingLabel ? `${waitingCount.toLocaleString()} ${waitingLabel}` : ''].filter(Boolean);
+  const officeKey = [sentCount ? { words: `${sentCount.toLocaleString()} sent to the printer`, fill: sentFill } : null, waitingCount && waitingLabel ? { words: `${waitingCount.toLocaleString()} ${waitingLabel}`, fill: waitingFill } : null].filter((k): k is { words: string; fill: string } => !!k);
+  const officeWords = officeKey.map((k) => k.words);
   const valueText = [`${printed.toLocaleString()} of ${total.toLocaleString()} printed`, ...officeWords, gapped && left.length ? `${leftWords} still to go` : ''].filter(Boolean).join('; ');
   return <div className="space-y-2">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -61,8 +66,8 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
       <span className="text-sm font-medium text-zinc-100 tabular-nums">Printed {printed.toLocaleString()} of {total.toLocaleString()}</span>
     </div>
     <div className="relative h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printed} aria-valuetext={officeWords.length || (gapped && left.length) ? valueText : undefined}>
-      {total > 0 && lighter.map((s) => (
-        <div key={`sent-${s.from}-${s.to}`} className={`progress-seg absolute inset-y-0 rounded-full ${sentFill} ${motion}`}
+      {total > 0 && [...sentOnly.map((s) => ({ ...s, fill: sentFill, kind: 'sent' })), ...waitingOnly.map((s) => ({ ...s, fill: waitingFill, kind: 'waiting' }))].map((s) => (
+        <div key={`${s.kind}-${s.from}-${s.to}`} className={`progress-seg absolute inset-y-0 rounded-full ${s.fill} ${motion}`}
           style={{ left: `${((s.from - 1) / total) * 100}%`, width: `${((s.to - s.from + 1) / total) * 100}%` }} />
       ))}
       {total > 0 && spans.map((s) => (
@@ -70,7 +75,9 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
           style={{ left: `${((s.from - 1) / total) * 100}%`, width: `${((s.to - s.from + 1) / total) * 100}%` }} />
       ))}
     </div>
-    {officeWords.length > 0 && <p className="reveal text-sm text-zinc-300 tabular-nums">{officeWords.join(' · ')}</p>}
+    {officeKey.length > 0 && <p className="reveal flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-300 tabular-nums">{officeKey.map((k) => (
+      <span key={k.words} className="inline-flex items-center gap-1.5"><span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${k.fill}`} />{k.words}</span>
+    ))}</p>}
     {gapped && left.length > 0 && <p className="reveal text-sm text-zinc-400 tabular-nums">{leftWords.charAt(0).toUpperCase() + leftWords.slice(1)} still to go.</p>}
   </div>;
 }

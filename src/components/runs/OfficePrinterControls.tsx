@@ -3,13 +3,17 @@ import { Loader2, Pause, Play } from 'lucide-react';
 import { useCallback,useEffect,useState,useRef } from 'react';
 import { confirmDialog } from '@/components/ui/feedback';
 import { controlFailure } from '@/lib/officeSendOutcome';
-import { clearSavedControl, controlPendingKey as keyFor, readSavedControl } from '@/lib/officeControlPending';
+import { clearSavedControl, controlPendingKey as keyFor, readLegacyControl, readOwnControl, readSavedControl } from '@/lib/officeControlPending';
 import { IconSwap } from '@/components/ui/IconSwap';
 type Control={id:string;action:string;result:{state:string;reason:string}|null};
 type State={canControl:boolean;status:{paused:boolean|null;fresh:boolean}|null;controls:Control[];userId?:string};
 const resultWords:Record<string,string>={failed:'didn’t go through',rejected:'was refused',expired:'timed out',succeeded:'worked'};
 class ControlError extends Error{constructor(message:string,public status:number){super(message);}}
-const readSaved=(userId?:string)=>readSavedControl(typeof window!=='undefined'?window.localStorage:null,userId);
+const store=()=>typeof window!=='undefined'?window.localStorage:null;
+/** This account's own saved pause/resume (never one an older build left for the whole device). */
+const readSaved=(userId?:string)=>readOwnControl(store(),userId);
+/** Takes over the device-wide request from an older build, once the person said yes. */
+const adoptLegacy=(userId?:string)=>readSavedControl(store(),userId);
 const clearSaved=(userId?:string)=>clearSavedControl(typeof window!=='undefined'?window.localStorage:null,userId);
 /**
  * Pause and Resume for the shared office printer, from any page (run page,
@@ -56,7 +60,15 @@ export function OfficePrinterControls({attention=false,stopped=false,showStatus=
   return()=>{active=false;clearInterval(t);document.removeEventListener('visibilitychange',onVisible);};
  },[refresh,onUnavailable,pending,busy]);
  const send=async(action:string)=>{if(sending.current)return;sending.current=true;setBusy(true);setError('');setCanRetry(false);try{
-  const saved=readSaved(userId);
+  let saved=readSaved(userId);
+  // A pause or resume an older build saved for the whole device may have been
+  // someone else's (a shared device): ask before sending it from this account.
+  const legacy=saved?null:readLegacyControl(store(),userId);
+  if(legacy){
+   let word='request';try{const a=JSON.parse(legacy)?.action;word=a==='pause'?'“Pause”':a==='resume'?'“Resume”':word;}catch{/* unreadable: asked the same way */}
+   const again=await confirmDialog({title:`Send the earlier ${word} from your account?`,body:`An earlier ${word} on this device wasn’t confirmed. Someone else signed in here may have pressed it. Sending it again is safe: it won’t happen twice.`,confirmLabel:'Send it again',cancelLabel:'Not mine'});
+   if(again)saved=adoptLegacy(userId);
+  }
   let payload:{action:string;idempotencyKey:string};
   try{payload=saved?JSON.parse(saved):{action,idempotencyKey:crypto.randomUUID()};}catch{clearSaved(userId);payload={action,idempotencyKey:crypto.randomUUID()};}
   const resend=!!saved;

@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { runs, runPrintEvents, officeRequests } from "@/lib/db/schema";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { afterRewind, lastRewindAt, REWIND_EVENT } from "@/lib/runRewind";
+import { countedEventSpans } from "@/lib/runProgress";
 
 /** What the office printer did for each run, for display only (read-only). */
 interface RunListOffice {
@@ -36,8 +37,10 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
   const ids = rows.map((row) => row.id);
   const office = new Map<string, RunListOffice>();
   const history = new Set<string>();
-  let officeOk = false, historyOk = false;
-  if (!ids.length) return { office, history, officeOk: true, historyOk: true };
+  // Stretches the print history counts as printed beyond progress (the run page counts the same way).
+  const counted = new Map<string, OfficeSpan[]>();
+  let officeOk = false, historyOk = false, countedOk = false;
+  if (!ids.length) return { office, history, counted, officeOk: true, historyOk: true, countedOk: true };
   const user = officeUserFor(request);
   await Promise.all([
     (async () => {
@@ -49,15 +52,21 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
         // An accepted "Go back to label N" (a rewind event) is respected the
         // same way: office work and confirmations from before it are never
         // offered or counted again.
-        const eventRows = await db.select({ runId: runPrintEvents.runId, type: runPrintEvents.eventType, from: runPrintEvents.rangeFrom, to: runPrintEvents.rangeTo, createdAt: runPrintEvents.createdAt })
-          .from(runPrintEvents).where(and(inArray(runPrintEvents.runId, ids), or(and(eq(runPrintEvents.eventType, 'confirmed'), eq(runPrintEvents.output, 'office-pi')), eq(runPrintEvents.eventType, REWIND_EVENT))));
+        // Labels printed one by one by scanning are read too, only to count
+        // printed labels the same way as the run page (countedSpans).
+        const eventRows = await db.select({ runId: runPrintEvents.runId, type: runPrintEvents.eventType, output: runPrintEvents.output, from: runPrintEvents.rangeFrom, to: runPrintEvents.rangeTo, createdAt: runPrintEvents.createdAt })
+          .from(runPrintEvents).where(and(inArray(runPrintEvents.runId, ids), or(and(eq(runPrintEvents.eventType, 'confirmed'), eq(runPrintEvents.output, 'office-pi')), and(eq(runPrintEvents.eventType, 'sent'), eq(runPrintEvents.output, 'scan')), eq(runPrintEvents.eventType, REWIND_EVENT))));
         const rewound = new Map<string, number>();
         for (const row of eventRows) if (row.type === REWIND_EVENT) rewound.set(row.runId, Math.max(rewound.get(row.runId) ?? 0, lastRewindAt([{ eventType: row.type, createdAt: row.createdAt }])));
         const confirmed = new Map<string, OfficeSpan[]>();
         for (const row of eventRows) {
-          if (row.type !== 'confirmed' || !afterRewind(row.createdAt, rewound.get(row.runId) ?? 0)) continue;
+          if (row.type !== 'confirmed' || row.output !== 'office-pi' || !afterRewind(row.createdAt, rewound.get(row.runId) ?? 0)) continue;
           const list = confirmed.get(row.runId) ?? []; list.push({ from: Number(row.from), to: Number(row.to) }); confirmed.set(row.runId, list);
         }
+        const byRunEvents = new Map<string, Array<{ eventType: string; output: string; rangeFrom: number; rangeTo: number; createdAt: string }>>();
+        for (const row of eventRows) { const list = byRunEvents.get(row.runId) ?? []; list.push({ eventType: row.type, output: row.output, rangeFrom: Number(row.from), rangeTo: Number(row.to), createdAt: row.createdAt }); byRunEvents.set(row.runId, list); }
+        for (const row of rows) counted.set(row.id, countedEventSpans(byRunEvents.get(row.id) ?? [], row.totalLabels, rewound.get(row.id) ?? 0));
+        countedOk = true;
         // The office's work, summed up in the database instead of one row per
         // job (a job holds at most 25 labels, so months of history is
         // thousands of rows). Jobs that only count as labels (sent, on their
@@ -129,7 +138,7 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
       } catch (error) { console.error('Runs list: print history check skipped:', error instanceof Error ? error.message : 'unknown'); }
     })(),
   ]);
-  return { office, history, officeOk, historyOk };
+  return { office, history, counted, officeOk, historyOk, countedOk };
 }
 
 async function handleGET(request: NextRequest) {
@@ -161,6 +170,8 @@ async function handleGET(request: NextRequest) {
       ...row,
       ...(extras.officeOk ? { office: extras.office.get(row.id) ?? null } : {}),
       ...(extras.historyOk ? { hasPrintHistory: extras.history.has(row.id) } : {}),
+      // Additive: stretches counted as printed beyond printedCount, so the list counts printed labels like the run page.
+      ...(extras.countedOk ? { countedSpans: extras.counted.get(row.id) ?? [] } : {}),
     })));
   } catch (error) {
     if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});

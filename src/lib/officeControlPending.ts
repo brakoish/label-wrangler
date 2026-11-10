@@ -38,3 +38,20 @@ export function clearSavedControl(storage: Store, userId?: string): void {
     if (legacy && ownKey && (ownKey === idempotencyKeyOf(legacy) || !idempotencyKeyOf(legacy))) storage?.removeItem(LEGACY_KEY);
   } catch { /* nothing saved */ }
 }
+
+/**
+ * The account's own saved request only (JSON text), or null. A device-wide
+ * request from an older build is never taken over silently: on a shared
+ * device it may be someone else's, so the page asks first (readLegacyControl).
+ */
+export function readOwnControl(storage: Store, userId?: string): string | null {
+  try { return storage?.getItem(controlPendingKey(userId)) ?? null; } catch { return null; }
+}
+
+/** The device-wide request an older build saved, when this account has none of its own. */
+export function readLegacyControl(storage: Store, userId?: string): string | null {
+  try {
+    if (!userId || storage?.getItem(controlPendingKey(userId))) return null;
+    return storage?.getItem(LEGACY_KEY) ?? null;
+  } catch { return null; }
+}
