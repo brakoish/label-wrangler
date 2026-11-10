@@ -2,12 +2,17 @@
 
 import { canLeaveLocalPrint, setLocalPrintRunning } from '@/lib/printNavigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, Copy, ScanBarcode, Download, FileText, FileCode2, Search } from 'lucide-react';
+import { Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, Hash, SquareDashed, Pencil, PenTool, Copy, ScanBarcode, Download, FileText, FileCode2, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { OfficePiPrinter } from './OfficePiPrinter';
+import { BlankValueCheck } from './BlankValueCheck';
+import { Dialog } from '@/components/ui/Dialog';
+import { confirmDialog } from '@/components/ui/feedback';
+import { blankCheckAllowsPrinting, checkRunData, hasBlankChoice, rememberBlankChoice } from '@/lib/runDataCheck';
+import { friendlyError, friendlyRenderError, printEventLabel, runStatusLabel } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
-import type { LabelTemplate, LabelFormat, Run, RunPrintEvent, RunStatus } from '@/lib/types';
+import type { LabelTemplate, LabelFormat, Run, RunStatus } from '@/lib/types';
 import { useRunStore } from '@/lib/runStore';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
@@ -83,14 +88,13 @@ function formatEventTime(iso: string) {
   }
 }
 
-function printEventLabel(event: RunPrintEvent) {
-  const range = `${event.rangeFrom}-${event.rangeTo}`;
-  if (event.eventType === 'opened') return `Opened ${event.output} labels ${range}`;
-  if (event.eventType === 'confirmed') return `Printed ${event.output} labels ${range}`;
-  if (event.eventType === 'failed') return `Failed ${event.output} labels ${range}`;
-  if (event.eventType === 'cancelled') return `Cancelled ${event.output} labels ${range}`;
-  return `${event.message || 'Sent'} labels ${range}`;
-}
+const TRANSPORT_LABELS: Record<Transport, { label: string; unavailable: string }> = {
+  dazzle: { label: 'This computer (Dazzle app)', unavailable: 'Install and open the free Dazzle app on this computer to use it.' },
+  webusb: { label: 'USB printer (Chrome)', unavailable: 'USB printing needs Chrome or Edge on a computer with the printer plugged in.' },
+  office: { label: 'Office printer (remote)', unavailable: '' },
+};
+
+
 
 /**
  * Screen shown after a run is created and ready to print.
@@ -98,7 +102,8 @@ function printEventLabel(event: RunPrintEvent) {
  * batches with a live progress bar, pause/resume, and cancel.
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
-  const { runs, fetchRun, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent } = useRunStore();
+  const { runs, fetchRun, updateRun, setRunStatus, printEvents, fetchPrintEvents, createPrintEvent, runLoadErrors } = useRunStore();
+  const loadError = runLoadErrors[runId] ?? null;
 
   const run = runs.find((r) => r.id === runId) ?? null;
   const template: LabelTemplate | null = run?.designSnapshot?.template ?? null;
@@ -131,16 +136,20 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const total = run?.totalLabels ?? 0;
   const pct = total > 0 ? Math.round((printedCount / total) * 100) : 0;
   const isSheetFormat = format?.type === 'sheet';
-  const progressLabel = isSheetFormat ? 'Printed' : 'Sent to printer';
+  const progressLabel = 'Printed';
 
   // Label preview state — which row to show in the small thumbnail.
   const [previewIndex, setPreviewIndex] = useState(0);
   // Show dashed outlines around each label in the preview. Default on for
   // multi-across formats where lane boundaries actually matter visually.
   const [showOutlines, setShowOutlines] = useState<boolean>(((format?.labelsAcross ?? 1) > 1));
-  // Reprint-range UI state.
+  // Reprint-range UI state. A reprint prints exactly From..To and never
+  // touches the run's progress or status.
   const [showReprint, setShowReprint] = useState(false);
-  const [reprintFrom, setReprintFrom] = useState(1);
+  const [reprintFromDraft, setReprintFromDraft] = useState('1');
+  const [reprintToDraft, setReprintToDraft] = useState('1');
+  const [reprinting, setReprinting] = useState<{ from: number; to: number; done: number } | null>(null);
+  const reprintQueue = useRef<RunQueueHandle | null>(null);
   const [stopAt, setStopAt] = useState(0); // 0 = print all; >0 = stop after this physical label
   const [fromDraft, setFromDraft] = useState<string | null>(null);
   const [throughDraft, setThroughDraft] = useState<string | null>(null);
@@ -298,7 +307,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // single-across rolls one feed = one physical label. For multi-across
   // each feed produces `across` physical labels with unique data per lane.
   const across = Math.max(1, format?.labelsAcross || 1);
-  const canStart = !sending && !!run && run.sourceData.length > 0 && (
+  // Whole-run blank check: a blank value would print the designer sample.
+  const blankCheck = useMemo(() => (run && template ? checkRunData(template, run) : null), [run, template]);
+  const [leaveBlankChoice, setLeaveBlankChoice] = useState<string | null>(null);
+  const leaveBlank = !!blankCheck && (leaveBlankChoice === blankCheck.signature || hasBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, runId, blankCheck));
+  const setLeaveBlank = (value: boolean) => {
+    if (!blankCheck) return;
+    setLeaveBlankChoice(value ? blankCheck.signature : '');
+    rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, runId, value ? blankCheck.signature : '');
+  };
+  const blanksOk = !blankCheck || blankCheckAllowsPrinting(blankCheck, leaveBlank);
+  const canStart = blanksOk && !reprinting && !sending && !!run && run.sourceData.length > 0 && (
     !isSheetFormat &&
     ((transport === 'dazzle' && !!dazzleSelected) ||
     (transport === 'webusb' && !!usbPrinter))
@@ -398,7 +417,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const mappingRows = useMemo(() => {
     if (!run || !template) return [] as Array<{ field: string; source: string; sample: string }>;
     const out: Array<{ field: string; source: string; sample: string }> = [];
-    const row0 = run.sourceData[0];
+    // Follow the label shown in the preview, not always row 1.
+    const row0 = run.sourceData[Math.min(Math.max(0, previewIndex), Math.max(0, run.sourceData.length - 1))];
     const isObjRow = row0 && typeof row0 === 'object' && !Array.isArray(row0);
     const sourceMeta = runSourceMeta(run.dataSource);
     const fieldsSeen = new Set<string>();
@@ -418,17 +438,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         }
         out.push({
           field: f,
-          source: col === '__paste__' ? 'pasted values' : `${sourceMeta.fieldLabel} → ${col}`,
+          source: col === '__paste__' ? 'pasted values' : `${sourceMeta.fieldLabel} column “${col}”`,
           sample,
         });
       } else if (run.mappedField === f && typeof row0 === 'string') {
         out.push({ field: f, source: 'pasted values', sample: row0 });
       } else {
-        out.push({ field: f, source: 'static', sample: run.staticValues?.[f] ?? '' });
+        out.push({ field: f, source: 'same on every label', sample: run.staticValues?.[f] ?? '' });
       }
     }
     return out;
-  }, [run, template]);
+  }, [run, template, previewIndex]);
 
   const persistProgress = async (next: number) => {
     if (!run) return;
@@ -448,22 +468,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     return () => window.removeEventListener('online', onOnline);
   }, []);
 
-  const startOrResume = async () => {
-    if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
-    starting.current = true;
-    try {
-    if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
-    setErrorMsg(null);
-    if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg('Sync pending print progress for this run before starting another batch. Use Retry sync above.'); return; } }
-    setStatus('running');
-    const controller = new AbortController();
-    preparation.current = controller;
-    try { await setRunStatus(run.id, 'printing', printedCount); }
-    catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
-    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
-    if (!mounted.current || controller.signal.aborted) return;
-
-    const sender = {
+  // One way to talk to the local printer, shared by normal printing and reprints.
+  const makeSender = (controller: AbortController) => {
+    return {
       send: async (zpl: string) => {
         if (!mounted.current || controller.signal.aborted) throw new Error('Printing stopped because the page was left. Already sent labels may still print.');
         setSending(true);
@@ -499,6 +506,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         } finally { if (mounted.current) setSending(false); }
       },
     };
+  };
+
+  const startOrResume = async () => {
+    if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
+    starting.current = true;
+    try {
+    if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
+    setErrorMsg(null);
+    if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg('Sync pending print progress for this run before starting another batch. Use Retry sync above.'); return; } }
+    setStatus('running');
+    const controller = new AbortController();
+    preparation.current = controller;
+    try { await setRunStatus(run.id, 'printing', printedCount); }
+    catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
+    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (!mounted.current || controller.signal.aborted) return;
+
+    const sender = makeSender(controller);
 
     const printRange = normalizeLabelRange({
       total,
@@ -577,6 +603,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (run) try { await setRunStatus(run.id, 'paused', printedCount); } catch(error) { setErrorMsg((error as Error).message); }
   };
 
+  const requestCancel = async () => {
+    const ok = await confirmDialog({
+      title: 'Cancel this run?',
+      body: 'Labels already printed stay printed. You can start a new run from the same data with Re-run.',
+      confirmLabel: 'Cancel run',
+      cancelLabel: 'Keep run',
+      danger: true,
+    });
+    if (ok) await handleCancel();
+  };
+
   const handleCancel = async () => {
     preparation.current?.abort();
     queueRef.current?.cancel();
@@ -596,29 +633,82 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     }
   };
 
-  // Jump back to label N (1-based) and put the run back in 'paused' so Start
-  // kicks off from there. Used for reprinting a bad strip without re-running
-  // the whole batch.
-  const handleReprintFrom = async (oneBased: number) => {
-    if (!run) return;
-    const n = Math.max(1, Math.min(total, Math.floor(oneBased)));
-    const newPrinted = n - 1;
-    clearRangeDrafts();
-    setPrintedCount(newPrinted);
-    setStatus('paused');
-    setShowReprint(false);
-    await setRunStatus(run.id, 'paused', newPrinted, { resetProgress: true });
+  const reprintFrom = Number(reprintFromDraft);
+  const reprintTo = Number(reprintToDraft);
+  const reprintValid = Number.isInteger(reprintFrom) && Number.isInteger(reprintTo) && reprintFrom >= 1 && reprintTo >= reprintFrom && reprintTo <= total;
+  const reprintCount = reprintValid ? reprintTo - reprintFrom + 1 : 0;
+  const openReprint = (from: number, to: number) => {
+    setReprintFromDraft(String(from));
+    setReprintToDraft(String(to));
+    setShowReprint(true);
   };
 
-  // Reset the whole run (printedCount -> 0, status -> queued) so user can hit
-  // Start again and print the whole batch from scratch.
-  const handleReprintAll = async () => {
-    if (!run) return;
-    if (!confirm(`Reprint all ${total} labels from the beginning?`)) return;
+  // Reprint exactly From..To (e.g. a jammed strip). This is a separate job:
+  // it never rewinds or changes the run's progress or status, and it is
+  // logged in the print history as a reprint.
+  const handleReprintRange = async () => {
+    if (!run || !template || !format || !reprintValid || reprinting || statusRef.current === 'running' || starting.current) return;
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
+    const range = { from: reprintFrom, to: reprintTo };
+    setErrorMsg(null);
+    if (isSheetFormat) {
+      const opened = window.open(sheetPrintHref(range), '_blank', 'noopener,noreferrer');
+      if (!opened) { setErrorMsg('Popup blocked. Allow popups, then try again.'); return; }
+      setShowReprint(false);
+      void createPrintEvent(run.id, { eventType: 'opened', output: 'sheet-pdf', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName: null, message: 'Reprint (run progress unchanged)' });
+      return;
+    }
+    if (!(transport === 'dazzle' && dazzleSelected) && !(transport === 'webusb' && usbPrinter)) { setErrorMsg('Connect a printer first, then press Reprint again.'); return; }
+    const controller = new AbortController();
+    preparation.current = controller;
+    setReprinting({ ...range, done: 0 });
+    setLocalPrintRunning(true);
+    const printerName = transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null;
+    const finish = () => { reprintQueue.current = null; if (mounted.current) { setReprinting(null); setLocalPrintRunning(false); } };
+    let labelsToSend: string[];
+    try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, range, { signal: controller.signal }); }
+    catch (error) { finish(); if (!controller.signal.aborted) setErrorMsg(friendlyRenderError(friendlyError(error, 'Could not prepare the labels.'), template.elements, across)); return; }
+    if (!mounted.current || controller.signal.aborted) { finish(); return; }
+    reprintQueue.current = startPrintQueue(makeSender(controller), {
+      labels: labelsToSend,
+      batchSize: 25,
+      delayBetweenBatchesMs: 0,
+      startIndex: 0,
+      onProgress: async (feedsDone) => {
+        const physical = Math.min(range.from - 1 + feedsDone * across, range.to) - (range.from - 1);
+        if (mounted.current) setReprinting((current) => current && { ...current, done: physical });
+        if (feedsDone >= labelsToSend.length) {
+          finish();
+          setShowReprint(false);
+          await createPrintEvent(run.id, { eventType: 'sent', output: 'roll-zpl', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName, message: 'Reprint (run progress unchanged)' });
+        }
+      },
+      onError: async (err) => {
+        finish();
+        setErrorMsg(friendlyError(err, 'Reprint failed'));
+        await createPrintEvent(run.id, { eventType: 'failed', output: 'roll-zpl', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName, message: `Reprint failed: ${(err as Error)?.message || 'Print failed'}` });
+      },
+    });
+  };
+  const stopReprint = () => { preparation.current?.abort(); reprintQueue.current?.cancel(); reprintQueue.current = null; setReprinting(null); setLocalPrintRunning(false); };
+
+  // Deliberate rewind: move the run's resume point back to label N and keep
+  // going to the end from there. Only this action rewinds progress.
+  const handleReprintFromHereAndContinue = async () => {
+    if (!run || !reprintValid) return;
+    const n = reprintFrom;
+    const ok = await confirmDialog({
+      title: `Go back to label ${n} and continue?`,
+      body: `The run's progress goes back to ${n - 1} of ${total}, and the next Start prints labels ${n} to ${total} (${total - n + 1} labels). To print only a few labels again, use "Reprint ${reprintCount} labels" instead.`,
+      confirmLabel: `Go back to label ${n}`,
+    });
+    if (!ok) return;
     clearRangeDrafts();
-    setPrintedCount(0);
-    setStatus('idle');
-    await setRunStatus(run.id, 'queued', 0, { resetProgress: true });
+    setStopAt(0);
+    setPrintedCount(n - 1);
+    setStatus('paused');
+    setShowReprint(false);
+    await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true });
   };
 
   const normalizeSheetRange = (range?: { from?: number; to?: number }) => normalizeLabelRange({
@@ -899,8 +989,34 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   if (!run || !template || !format) {
+    if (loadError) {
+      const missing = loadError.status === 404;
+      return (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div role="alert" className="max-w-sm space-y-3 text-center">
+            <h1 className="text-lg font-semibold text-zinc-100">{missing ? "We couldn't find that run" : "We couldn't load this run"}</h1>
+            <p className="text-sm text-zinc-400">{missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(new Error(loadError.message))}</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {!missing && <button type="button" onClick={() => void fetchRun(runId)} className="inline-flex h-10 items-center rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black hover:bg-amber-400">Try again</button>}
+              <Link href="/runs" className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-zinc-800 px-4 text-sm text-zinc-200 hover:bg-zinc-700"><ArrowLeft className="h-4 w-4" /> Back to runs</Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (run && run.designSnapshot === null) {
+      return (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div role="alert" className="max-w-sm space-y-3 text-center">
+            <h1 className="text-lg font-semibold text-zinc-100">This run has no saved design</h1>
+            <p className="text-sm text-zinc-400">It can&apos;t be printed. Use Re-run to start a new run from the same data.</p>
+            <Link href="/runs" className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-zinc-800 px-4 text-sm text-zinc-200 hover:bg-zinc-700"><ArrowLeft className="h-4 w-4" /> Back to runs</Link>
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-500">
+      <div role="status" className="flex-1 flex items-center justify-center text-zinc-500">
         <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run…
       </div>
     );
@@ -914,52 +1030,50 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-zinc-100 truncate">{run.name}</h1>
             <p className="text-sm text-zinc-500 mt-1">
-              {template.name} · {format.name} · {format.width}″ × {format.height}″ · {total} labels
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-1 sm:gap-2">
-            {/* Quick actions. On mobile we render icon-only buttons (still
-                tappable, just tighter); labels appear from sm up. */}
-            <Link
-              href={`/runs/${run.id}/scan`}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
-              title="Open scan mode: one label per scan, hands-free"
-            >
-              <ScanBarcode className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Scan mode</span>
-            </Link>
-            <Link
-              href={`/runs/new?duplicateFrom=${run.id}`}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
-              title="Start a new run with this run's data and mappings"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Re-run</span>
-            </Link>
-            <button
-              onClick={openEdit}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
-              title="Edit run name, static field values, notes"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Edit run</span>
-            </button>
-            <Link
-              href={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-              title="Edit the template for new runs; this run keeps its saved design"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Edit future template</span>
-            </Link>
-            <div className="hidden sm:flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full font-medium border border-zinc-800 bg-zinc-900/60">
-              <span className={
+              {template.name} · {format.name}{/["″]/.test(format.name) ? '' : ` · ${format.width}″ × ${format.height}″`} · {total.toLocaleString()} label{total === 1 ? '' : 's'}
+              <span className={`ml-2 inline-flex items-center gap-1 ${
                 run.status === 'completed' ? 'text-emerald-400' :
                 run.status === 'printing' ? 'text-amber-400' :
                 run.status === 'paused' ? 'text-yellow-400' :
                 run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-400'
-              }>{run.status}</span>
-            </div>
+              }`}>· {runStatusLabel(run.status)}</span>
+            </p>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+            {/* Quick actions keep their words on phones, with 44px targets. */}
+            <Link
+              href={`/runs/${run.id}/scan`}
+              className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors sm:min-h-9"
+              title="One label per scan, hands-free"
+            >
+              <ScanBarcode className="w-4 h-4" />
+              Scan mode
+            </Link>
+            <Link
+              href={`/runs/new?duplicateFrom=${run.id}`}
+              className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 bg-zinc-900 hover:text-zinc-100 hover:bg-zinc-800 transition-colors sm:min-h-9"
+              title="Start a new run with this run's data and settings"
+            >
+              <Copy className="w-4 h-4" />
+              Re-run
+            </Link>
+            <button
+              type="button"
+              onClick={openEdit}
+              className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 bg-zinc-900 hover:text-zinc-100 hover:bg-zinc-800 transition-colors sm:min-h-9"
+              title="Change the run name, values and notes"
+            >
+              <Pencil className="w-4 h-4" />
+              Edit run
+            </button>
+            <Link
+              href={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
+              className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 bg-zinc-900 hover:text-amber-400 hover:bg-amber-500/10 transition-colors sm:min-h-9"
+              title="Changes the design for new runs; this run keeps its saved design"
+            >
+              <PenTool className="w-4 h-4" />
+              Edit design for next time
+            </Link>
           </div>
         </header>
 
@@ -970,7 +1084,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         {/* Run summary: how fields are mapped + a live label preview. */}
         <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Label Data</h2>
+            <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Label {Math.min(previewIndex + 1, Math.max(1, total))} data</h2>
             <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
               {(() => {
                 const SourceIcon = runSourceMeta(run.dataSource).icon;
@@ -980,17 +1094,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </span>
           </div>
           {mappingRows.length === 0 ? (
-            <p className="text-xs text-zinc-500">No dynamic fields — every label prints the same.</p>
+            <p className="text-xs text-zinc-500">Nothing changes from label to label — every label prints the same.</p>
           ) : (
             <div className="space-y-1">
               {mappingRows.map((m) => (
                 <div key={m.field} className="flex items-center gap-3 text-xs py-1.5 px-2 rounded-md bg-zinc-950/40">
                   <span className="w-28 shrink-0 font-medium text-zinc-200 truncate">{m.field}</span>
-                  <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${m.source === 'static' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                  <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${m.source === 'same on every label' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-500/15 text-amber-400'}`}>
                     {m.source}
                   </span>
                   <span className="flex-1 min-w-0 truncate text-zinc-400 font-mono text-[10.5px]" title={m.sample}>
-                    {m.sample || <span className="text-zinc-600">(empty)</span>}
+                    {m.sample || <span className="text-amber-400">(empty)</span>}
                   </span>
                 </div>
               ))}
@@ -1004,7 +1118,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               <h3 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h3>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setShowOutlines((s) => !s)}
+                  aria-pressed={showOutlines}
+                  aria-label="Show label outlines"
                   title={showOutlines ? 'Hide label outlines' : 'Show label outlines'}
                   className={`p-1 rounded transition-colors ${showOutlines ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
                 >
@@ -1015,10 +1132,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <button
                     onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
                     disabled={previewIndex === 0}
+                    aria-label="Previous label"
                     className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
                   >‹</button>
                   <input
                     type="number"
+                    aria-label="Label number to preview"
                     min={1}
                     max={total}
                     value={previewIndex + 1}
@@ -1032,6 +1151,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <button
                     onClick={() => setPreviewIndex((i) => Math.min(total - 1, i + 1))}
                     disabled={previewIndex >= total - 1}
+                    aria-label="Next label"
                     className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
                   >›</button>
                 </div>
@@ -1079,25 +1199,28 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </div>
           ) : (
             <>
-              {(
-                <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 w-fit">
-                  <button
-                    disabled={!dazzleAvailable || status === 'running'}
-                    onClick={() => setTransport('dazzle')}
-                    className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'dazzle' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
-                  >
-                    Dazzle
-                  </button>
-                  <button
-                    disabled={!webUsbSupported || status === 'running'}
-                    onClick={() => setTransport('webusb')}
-                    className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'webusb' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
-                  >
-                    WebUSB
-                  </button>
-                  <button disabled={status === 'running'} onClick={() => setTransport('office')} className={`px-2.5 py-1 rounded text-[11px] font-medium ${transport === 'office' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}>Office Pi</button>
-                </div>
-              )}
+              <div role="radiogroup" aria-label="Which printer" className="grid grid-cols-1 gap-1 p-1 rounded-md bg-zinc-900 border border-zinc-800">
+                {(['office', 'dazzle', 'webusb'] as Transport[]).map((option) => {
+                  const available = option === 'office' || (option === 'dazzle' ? dazzleAvailable : webUsbSupported);
+                  const selected = transport === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-describedby={available ? undefined : `transport-why-${option}`}
+                      disabled={!available || status === 'running' || !!reprinting}
+                      title={available ? undefined : TRANSPORT_LABELS[option].unavailable}
+                      onClick={() => setTransport(option)}
+                      className={`min-h-10 px-3 py-1.5 rounded text-left text-xs font-medium disabled:cursor-not-allowed ${selected ? 'bg-amber-500/20 text-amber-300' : available ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600'}`}
+                    >
+                      {TRANSPORT_LABELS[option].label}
+                      {!available && <span id={`transport-why-${option}`} className="block text-[11px] font-normal text-zinc-500">{TRANSPORT_LABELS[option].unavailable}</span>}
+                    </button>
+                  );
+                })}
+              </div>
               {transport === 'office' && <div ref={setOfficeConnectionTarget} />}
               {transport === 'dazzle' && (
                 dazzlePrinters.length > 0 ? (
@@ -1117,11 +1240,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       ))}
                     </select>
                     <p className="text-[11px] leading-relaxed text-zinc-500">
-                      Dazzle accepts one label at a time, but this bridge does not expose printer status yet. Use WebUSB for live media/head/ribbon checks when available.
+                      The Dazzle app can&apos;t tell us if the printer is out of labels or ribbon. Watch the printer, or use &ldquo;USB printer (Chrome)&rdquo; for live checks.
                     </p>
                   </div>
                 ) : (
-                  <p className="text-xs text-zinc-500">No printers found in Dazzle.</p>
+                  <p className="text-xs text-zinc-500">The Dazzle app is running but doesn&apos;t see a printer. Turn the printer on and check it is installed on this computer.</p>
                 )
               )}
               {transport === 'webusb' && (
@@ -1132,8 +1255,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     </div>
                     <p className="text-[11px] text-zinc-500">
                       {usbPrinter.endpointIn
-                        ? 'WebUSB status polling available before each label.'
-                        : 'No USB status read endpoint exposed; progress is send-confirmed only.'}
+                        ? 'The printer is checked for paper and ribbon before each batch.'
+                        : 'This printer can\'t report paper or ribbon problems, so watch it while it prints.'}
                     </p>
                     {usbPrinter.endpointIn && (
                       <button
@@ -1149,7 +1272,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                         }}
                         className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-400 hover:text-amber-400"
                       >
-                        Check status
+                        Check printer
                       </button>
                     )}
                     {printerStatusMessage && (
@@ -1159,12 +1282,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 ) : (
                   <button
                     onClick={async () => {
+                      setTransportError(null);
                       try {
                         const d = await requestPrinter();
                         const o = await openPrinter(d);
                         setUsbPrinter(o);
                       } catch (err) {
-                        if ((err as Error).name !== 'NotFoundError') setTransportError((err as Error).message);
+                        setTransportError((err as Error).name === 'NotFoundError'
+                          ? 'No Zebra printer found. Plug it in with USB, turn it on, then press Connect printer again.'
+                          : (err as Error).name === 'SecurityError' || (err as Error).name === 'NetworkError'
+                            ? 'The printer is busy or in use by another program. Close other label apps, unplug and replug the printer, then try again.'
+                            : friendlyError(err, 'Could not connect to the printer. Unplug and replug it, then try again.'));
                       }
                     }}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-zinc-300 transition-colors"
@@ -1175,16 +1303,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               )}
             </>
           )}
-          {transportError && !isSheetFormat && transport !== 'office' && <p className="text-xs text-red-400">{transportError}</p>}
+          {transportError && !isSheetFormat && transport !== 'office' && <p role="alert" className="text-xs text-red-400">{transportError}</p>}
         </section>
 
         {/* Progress */}
         <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+          {blankCheck && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact />}
           {(isSheetFormat || transport !== 'office') && <>
           <div className="flex items-center justify-between">
             <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
-              {progressLabel}: {printedCount} / {total} · {pct}%
+              {progressLabel} {printedCount.toLocaleString()} of {total.toLocaleString()} · {pct}%
             </span>
           </div>
           <div className="h-3 rounded-full bg-zinc-900 overflow-hidden">
@@ -1213,30 +1342,28 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </div>
           )}
           {errorMsg && (
-            <p className="text-xs text-red-400 flex items-center gap-1.5">
-              <AlertCircle className="w-3.5 h-3.5" /> {errorMsg}
+            <p role="alert" className="text-xs text-red-400 flex items-start gap-1.5">
+              <AlertCircle className="mt-0.5 w-3.5 h-3.5 shrink-0" /> {friendlyRenderError(friendlyError(errorMsg), template.elements, across)}
             </p>
           )}
 
           {/* Stop-at control: only show when idle/paused (not while running) */}
-          {(status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-            <div className="space-y-3 text-xs text-zinc-400">
-              <div className="grid grid-cols-2 gap-2">
+          {(status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && !reprinting && (
+            <div className="space-y-2 text-xs text-zinc-400">
+              <div className="grid grid-cols-3 gap-2">
                 <label>From label
-                  <input aria-label="Local from label" type="number" min={1} max={total} value={fromValue} onChange={e => { setFromDraft(e.target.value); setCountDraft(null); }} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-400" />
+                  <input type="number" inputMode="numeric" min={1} max={total} value={fromValue} onChange={e => { setFromDraft(e.target.value); setCountDraft(null); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
                 </label>
                 <label>Stop after label
-                  <input aria-label="Local through label" type="number" min={selectedFrom || 1} max={total} value={throughValue} onChange={e => { setThroughDraft(e.target.value); setCountDraft(null); }} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                  <input type="number" inputMode="numeric" min={selectedFrom || 1} max={total} value={throughValue} onChange={e => { setThroughDraft(e.target.value); setCountDraft(null); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                </label>
+                <label>How many
+                  <input type="number" inputMode="numeric" min={1} max={total-selectedFrom+1} value={countDraft ?? (rangeValid ? selectedThrough-selectedFrom+1 : '')} onChange={e => { setCountDraft(e.target.value); if (e.target.value.trim() && Number.isInteger(Number(e.target.value)) && Number(e.target.value) > 0) setThroughDraft(String(selectedFrom + Number(e.target.value) - 1)); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
                 </label>
               </div>
-              <label className="block">Print count
-                <input aria-label="Print label count" type="number" min={1} max={total-selectedFrom+1} value={countDraft ?? (rangeValid ? selectedThrough-selectedFrom+1 : '')} onChange={e => { setCountDraft(e.target.value); if (e.target.value.trim() && Number.isInteger(Number(e.target.value)) && Number(e.target.value) > 0) setThroughDraft(String(selectedFrom + Number(e.target.value) - 1)); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
-              </label>
               {!rangeValid && <p role="alert" className="text-amber-400">Enter whole label numbers from 1 to {total}, with the stop number at or after the start.</p>}
             </div>
           )}
-
-          <p className="text-xs text-zinc-500">This run uses its saved design. Template edits apply to new runs. {run.designSnapshot?.legacy && "Older run: the design was captured during the reliability update, not at its original creation."}</p>
           {/* Controls */}
           <div className="flex items-center gap-2 pt-2">
             {isSheetFormat && pendingSheetRange && (
@@ -1264,7 +1391,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
               >
                 {status === 'paused' ? <Play className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
-                {status === 'paused' ? 'Resume' : status === 'error' ? 'Retry' : 'Start Printing'}
+                {status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
               </button>
             )}
             {status === 'running' && transport === 'dazzle' && (
@@ -1278,70 +1405,97 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <Pause className="w-4 h-4" /> Pause
               </button>
             )}
-            {!isSheetFormat && status !== 'completed' && status !== 'cancelled' && (
-              <button
-                onClick={handleCancel}
-                className="px-4 py-2.5 rounded-lg text-sm font-medium bg-zinc-900 text-zinc-400 hover:text-red-400 hover:border-red-500/30 border border-zinc-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
             {status === 'completed' && (
-              <button
-                onClick={onDone}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
-              >
-                <CheckCircle2 className="w-4 h-4" /> Done
-              </button>
+              onDone ? (
+                <button
+                  type="button"
+                  onClick={onDone}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Done
+                </button>
+              ) : (
+                <p role="status" className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-emerald-400"><CheckCircle2 className="w-4 h-4" /> All {total.toLocaleString()} labels printed</p>
+              )
             )}
           </div>
+          {!blanksOk && !isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            <p className="text-xs text-amber-400">Printing is off until every label has a value (see the list above).</p>
+          )}
 
-          {/* Reprint tools — always available once status is not 'running'. */}
+          <p className="text-xs text-zinc-500">This run keeps the design it was started with; design edits apply to new runs. {run.designSnapshot?.legacy && "Older run: the design was saved during the reliability update, not when the run was first made."}</p>
+          {!isSheetFormat && status !== 'completed' && status !== 'cancelled' && !reprinting && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void requestCancel()}
+                aria-label="Cancel run"
+                className="flex min-h-10 items-center gap-1.5 px-3 rounded-lg text-xs font-medium text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" /> Cancel run
+              </button>
+            </div>
+          )}
+
+          {/* Reprint: a separate From/To job that never changes the run's progress. */}
           {status !== 'running' && total > 0 && (
             <div className="pt-3 border-t border-zinc-800/60 space-y-2">
-              {!showReprint ? (
+              {reprinting ? (
+                <div role="status" className="space-y-2 text-xs text-zinc-300">
+                  <p className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reprinting labels {reprinting.from}–{reprinting.to} ({reprinting.done} of {reprinting.to - reprinting.from + 1} sent). The run&apos;s progress won&apos;t change.</p>
+                  <button type="button" onClick={stopReprint} className="min-h-10 px-3 rounded-md border border-zinc-800 text-zinc-300 hover:text-red-400">Stop reprint</button>
+                </div>
+              ) : !showReprint ? (
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => { setReprintFrom(Math.max(1, printedCount)); setShowReprint(true); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
-                    title="Jam, ribbon out, bad print? Reprint a range."
+                    type="button"
+                    onClick={() => openReprint(Math.max(1, Math.min(printedCount || 1, total)), Math.max(1, Math.min(printedCount || 1, total)))}
+                    className="flex-1 flex min-h-10 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
+                    title="Jam, ribbon out, bad print? Print some labels again."
                   >
-                    <Hash className="w-3 h-3" /> Reprint from label…
+                    <Hash className="w-3.5 h-3.5" /> Reprint some labels…
                   </button>
-                  {status === 'completed' && (
+                  {printedCount > 0 && (
                     <button
-                      onClick={handleReprintAll}
-                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
+                      type="button"
+                      onClick={() => openReprint(1, total)}
+                      className="flex min-h-10 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
                     >
-                      <RotateCcw className="w-3 h-3" /> All
+                      <RotateCcw className="w-3.5 h-3.5" /> Reprint all
                     </button>
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] text-zinc-400 whitespace-nowrap">Start at label</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={total}
-                    value={reprintFrom}
-                    onChange={(e) => setReprintFrom(parseInt(e.target.value, 10) || 1)}
-                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
-                  />
-                  <span className="text-[11px] text-zinc-500">/ {total}</span>
-                  <button
-                    onClick={() => void handleReprintFrom(reprintFrom)}
-                    className="px-3 py-1 rounded-md text-[11px] font-semibold bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
-                  >
-                    Set
-                  </button>
-                  <button
-                    onClick={() => setShowReprint(false)}
-                    className="px-2 py-1 rounded-md text-[11px] text-zinc-500 hover:text-zinc-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <fieldset className="space-y-2 rounded-lg border border-zinc-800 p-3">
+                  <legend className="px-1 text-xs font-semibold text-zinc-300">Reprint labels</legend>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400">
+                    <label>From label
+                      <input type="number" inputMode="numeric" min={1} max={total} value={reprintFromDraft} onChange={(e) => setReprintFromDraft(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 tabular-nums focus:outline-none focus:border-amber-500/50" />
+                    </label>
+                    <label>To label
+                      <input type="number" inputMode="numeric" min={reprintFrom || 1} max={total} value={reprintToDraft} onChange={(e) => setReprintToDraft(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 tabular-nums focus:outline-none focus:border-amber-500/50" />
+                    </label>
+                  </div>
+                  {reprintValid
+                    ? <p className="text-xs text-zinc-400">{reprintCount === 1 ? '1 label' : `${reprintCount.toLocaleString()} labels`}. This won&apos;t change the run&apos;s progress.</p>
+                    : <p role="alert" className="text-xs text-amber-400">Enter label numbers from 1 to {total}, with &ldquo;To&rdquo; at or after &ldquo;From&rdquo;.</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleReprintRange()}
+                      disabled={!reprintValid || !blanksOk || (!isSheetFormat && transport === 'office')}
+                      className="flex min-h-10 items-center gap-1.5 px-3 rounded-md text-xs font-semibold bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40"
+                    >
+                      <Printer className="w-3.5 h-3.5" /> {isSheetFormat ? 'Open these labels to print' : `Reprint ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`}`}
+                    </button>
+                    <button type="button" onClick={() => setShowReprint(false)} className="min-h-10 px-3 rounded-md text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+                  </div>
+                  {!isSheetFormat && reprintValid && reprintFrom <= printedCount && (
+                    <button type="button" onClick={() => void handleReprintFromHereAndContinue()} className="text-left text-[11px] text-zinc-500 underline hover:text-zinc-300">
+                      Or go back to label {reprintFrom} and continue the run from there…
+                    </button>
+                  )}
+                </fieldset>
               )}
             </div>
           )}
@@ -1355,19 +1509,21 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 onClick={() => { setExportFrom(1); setExportTo(total); setShowExport(true); }}
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
               >
-                <Download className="w-3 h-3" /> Export labels…
+                <Download className="w-3 h-3" /> Save labels as a file…
               </button>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-zinc-400 whitespace-nowrap">Labels</span>
                   <input
+                    aria-label="Save from label"
                     type="number" min={1} max={total} value={exportFrom}
                     onChange={(e) => setExportFrom(Math.max(1, parseInt(e.target.value, 10) || 1))}
                     className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
                   />
                   <span className="text-[11px] text-zinc-500">–</span>
                   <input
+                    aria-label="Save to label"
                     type="number" min={1} max={total} value={resolvedExportTo}
                     onChange={(e) => setExportTo(Math.min(total, parseInt(e.target.value, 10) || total))}
                     className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
@@ -1398,7 +1554,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
                     >
                       {exporting === 'zpl' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCode2 className="w-3 h-3" />}
-                      ZPL
+                      Printer file (ZPL)
                     </button>
                   )}
                   {isSheetFormat ? (
@@ -1457,75 +1613,66 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       </div>
     </div>
 
-    {/* Edit run modal */}
-    {showEdit && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl p-6 space-y-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-100">Edit Run</h2>
-            <button onClick={() => setShowEdit(false)} className="text-zinc-500 hover:text-zinc-300"><X className="w-4 h-4" /></button>
-          </div>
-
-          {/* Run name */}
+    {/* Edit run dialog */}
+    <Dialog open={showEdit} onClose={() => setShowEdit(false)} title="Edit run" dismissible={!saving}>
           <div className="space-y-1">
-            <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Run name</label>
+            <label htmlFor="edit-run-name" className="text-xs text-zinc-400">Run name</label>
             <input
+              id="edit-run-name"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
             />
           </div>
 
-          {/* Static field values */}
           {staticEditFields.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Static fields</label>
+            <fieldset className="space-y-2">
+              <legend className="text-xs text-zinc-400">Same on every label</legend>
               <div className="space-y-2">
                 {staticEditFields.map((field) => (
                   <div key={field} className="flex items-center gap-2">
-                    <span className="text-[11px] text-zinc-400 w-28 shrink-0 truncate">{field}</span>
+                    <label htmlFor={`edit-static-${field}`} className="text-xs text-zinc-300 w-28 shrink-0 truncate">{field}</label>
                     <input
+                      id={`edit-static-${field}`}
                       value={editStatic[field] ?? ''}
                       onChange={(e) => setEditStatic((prev) => ({ ...prev, [field]: e.target.value }))}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500/50"
+                      className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
                     />
                   </div>
                 ))}
               </div>
-            </div>
+            </fieldset>
           )}
 
           {sourceEditFields.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Label {editRowIndex + 1} data</label>
-                <span className="text-[10px] text-zinc-600">Mapped source fields</span>
-              </div>
-              <p className="text-[10px] leading-relaxed text-zinc-500">
-                If a mapped value is identical on every label, saving updates the whole run; otherwise it edits label {editRowIndex + 1}.
+            <fieldset className="space-y-2">
+              <legend className="text-xs text-zinc-400">Label {editRowIndex + 1}</legend>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                If a value is the same on every label, saving changes all of them; otherwise only label {editRowIndex + 1} changes.
               </p>
               <div className="space-y-2">
                 {sourceEditFields.map((item) => (
                   <div key={item.field} className="space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-zinc-400 truncate">{item.field}</span>
-                      <span className="text-[10px] text-zinc-600 truncate">{item.source}</span>
+                      <label htmlFor={`edit-source-${item.field}`} className="text-xs text-zinc-300 truncate">{item.field}</label>
+                      <span className="text-[11px] text-zinc-500 truncate">{item.source}</span>
                     </div>
                     <input
+                      id={`edit-source-${item.field}`}
                       value={editSourceValues[item.field] ?? ''}
                       onChange={(e) => setEditSourceValues((prev) => ({ ...prev, [item.field]: e.target.value }))}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-amber-500/50"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
                     />
                   </div>
                 ))}
               </div>
-            </div>
+            </fieldset>
           )}
 
-          {/* Notes */}
           <div className="space-y-1">
-            <label className="text-[11px] text-zinc-500 uppercase tracking-wide">Notes</label>
+            <label htmlFor="edit-run-notes" className="text-xs text-zinc-400">Notes</label>
             <textarea
+              id="edit-run-notes"
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
               rows={2}
@@ -1536,6 +1683,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           <div className="flex gap-2 pt-1">
             <button
+              type="button"
               onClick={() => void handleSaveEdit()}
               disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40 transition-all"
@@ -1544,15 +1692,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               {saving ? 'Saving…' : 'Save changes'}
             </button>
             <button
+              type="button"
               onClick={() => setShowEdit(false)}
               className="px-4 py-2 rounded-lg text-sm text-zinc-400 hover:text-zinc-200 bg-zinc-900 border border-zinc-800"
             >
               Cancel
             </button>
           </div>
-        </div>
-      </div>
-    )}
+    </Dialog>
     </>
   );
 }
@@ -1578,8 +1725,8 @@ function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: L
     return () => { cancelled = true; };
   }, [zpl, format]);
 
-  if (err) return <p className="text-[11px] text-red-400">{err}</p>;
-  if (!url) return <p className="text-[11px] text-zinc-500">Rendering…</p>;
+  if (err) return <p role="alert" className="text-[11px] text-red-400">{friendlyError(err)}</p>;
+  if (!url) return <p role="status" className="text-[11px] text-zinc-500">Rendering…</p>;
   return (
     <div className="relative inline-block">
       <img

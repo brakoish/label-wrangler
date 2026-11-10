@@ -2,7 +2,7 @@
 require('../thermal/register.cjs');
 const assert = require('node:assert/strict');
 const { blankCheckAllowsPrinting, checkRunData, describeBlankIssue, describeRowList, blankRemedy, describeBlankSummary, rememberBlankChoice, hasBlankChoice } = require('../../src/lib/runDataCheck.ts');
-const { friendlyError, friendlyRenderError, runStatusLabel, printOutputLabel, stripInternalIds, OFFLINE_MESSAGE } = require('../../src/lib/userMessages.ts');
+const { printEventLabel, friendlyError, friendlyRenderError, runStatusLabel, printOutputLabel, stripInternalIds, OFFLINE_MESSAGE } = require('../../src/lib/userMessages.ts');
 
 const text = (fieldName, extra = {}) => ({ id: 'txt-' + fieldName, type: 'text', isStatic: false, fieldName, ...extra });
 const barcode = (fieldName, extra = {}) => ({ id: 'bc-' + fieldName, type: 'barcode', isStatic: false, fieldName, ...extra });
@@ -73,4 +73,8 @@ assert.doesNotMatch(friendlyRenderError('Lane 1, 087b8c70-1234-4abc-8def-0123456
 assert.equal(runStatusLabel('queued'), 'Ready to print');
 assert.equal(runStatusLabel('completed'), 'Done');
 assert.equal(printOutputLabel('roll-zpl'), 'thermal printer');
+assert.equal(printEventLabel({ eventType: 'sent', output: 'roll-zpl', rangeFrom: 1, rangeTo: 20, message: null }), 'Sent labels 1–20 to the thermal printer');
+assert.equal(printEventLabel({ eventType: 'sent', output: 'roll-zpl', rangeFrom: 5, rangeTo: 8, message: 'Reprint' }), 'Reprinted labels 5–8 on the thermal printer');
+assert.equal(printEventLabel({ eventType: 'confirmed', output: 'sheet-pdf', rangeFrom: 3, rangeTo: 3, message: null }), 'Printed label 3 on the sheet printer / PDF');
+assert.doesNotMatch(printEventLabel({ eventType: 'sent', output: 'roll-pdf', rangeFrom: 1, rangeTo: 9, message: 'Exported PDF' }), /roll-/);
 console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe override), remembered choice, plain user messages');

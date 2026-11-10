@@ -1,4 +1,4 @@
-import type { RunPrintOutput, RunStatus, TemplateElement } from './types';
+import type { RunPrintEvent, RunPrintOutput, RunStatus, TemplateElement } from './types';
 
 /**
  * Plain-language wrappers for messages that come from frozen or low-level code
@@ -90,4 +90,19 @@ export function friendlyRenderError(message: string, elements: TemplateElement[]
     const where = labelsAcross > 1 ? ` (label position ${lane})` : '';
     return phrase ? `${subject}${where} ${phrase[1](element)}` : `${subject}${where}: ${detail}`;
   }).replace(UUID, '').trim();
+}
+
+/** Plain-words history line, e.g. "Printed labels 1–20 on the thermal printer". */
+export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output' | 'rangeFrom' | 'rangeTo' | 'message'>) {
+  const range = event.rangeFrom === event.rangeTo ? `label ${event.rangeFrom}` : `labels ${event.rangeFrom}–${event.rangeTo}`;
+  const where = printOutputLabel(event.output);
+  const reprint = /^Reprint/i.test(event.message || '');
+  if (event.eventType === 'opened') return reprint ? `Opened a reprint of ${range} for the ${where}` : `Opened ${range} for the ${where}`;
+  if (event.eventType === 'confirmed') return `Printed ${range} on the ${where}`;
+  if (event.eventType === 'failed') return reprint ? `Reprint of ${range} failed on the ${where}` : `Printing ${range} failed on the ${where}`;
+  if (event.eventType === 'cancelled') return `Stopped ${range} on the ${where}`;
+  if (/^Exported PDF/i.test(event.message || '')) return `Saved ${range} as a PDF`;
+  if (/^Exported ZPL/i.test(event.message || '')) return `Saved ${range} as a printer file`;
+  if (reprint) return `Reprinted ${range} on the ${where}`;
+  return `Sent ${range} to the ${where}`;
 }

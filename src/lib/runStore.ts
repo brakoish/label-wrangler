@@ -25,6 +25,8 @@ interface RunStore {
   offset: number;
   loadAll: (more?: boolean) => Promise<void>;
   fetchRun: (id: string) => Promise<Run | null>;
+  /** Why the last single-run fetch failed, per run id (cleared on success). */
+  runLoadErrors: Record<string, { status: number; message: string }>;
 
   // Runs
   createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections }) => Promise<Run>;
@@ -60,6 +62,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
   runs: [],
   presets: [],
   printEvents: [],
+  runLoadErrors: {},
   hydrated: false, loading: false, error: null, hasMore: false, offset: 0,
 
   loadAll: async (more = false) => {
@@ -79,10 +82,21 @@ export const useRunStore = create<RunStore>((set, get) => ({
   fetchRun: async (id) => {
     let run: Run;
     try { run = await apiJson<Run>(`/api/runs/${id}`); }
-    catch(error) { set({error:(error as Error).message}); return null; }
+    catch(error) {
+      const status = error instanceof ApiError ? error.status : 0;
+      set(state => ({
+        runLoadErrors: { ...state.runLoadErrors, [id]: { status, message: (error as Error).message } },
+        // A missing run is shown on its own page, not as a library-wide error.
+        ...(status === 404 ? {} : { error: (error as Error).message }),
+      }));
+      return null;
+    }
     set((state) => {
       const exists = state.runs.some((r) => r.id === id);
+      const { [id]: _cleared, ...runLoadErrors } = state.runLoadErrors;
+      void _cleared;
       return {
+        runLoadErrors,
         runs: exists
           ? state.runs.map((r) => (r.id === id ? { ...r, ...run } : r))
           : [run, ...state.runs],
