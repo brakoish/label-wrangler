@@ -237,18 +237,18 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
 // --- Header and list wording --------------------------------------------------
 {
   const run = (status, printedCount, totalLabels = 100) => ({ status, printedCount, totalLabels });
-  assert.equal(runDisplayStatus(run('queued', 0), { sent: 0, onTheWay: 20, failed: 0 }).label, 'Sending to office printer', 'never "Ready to print" while printing');
-  assert.equal(runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }).label, 'Sent to office printer', '"Sent", not "Printed"');
-  assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0 }).label, 'Partly sent');
-  assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 1 }).label, 'Office print needs a check');
-  assert.equal(runDisplayStatus(run('queued', 0), null).label, 'Ready to print');
+  { const s = runDisplayStatus(run('queued', 0), { sent: 0, onTheWay: 20, failed: 0 }); assert.equal(s.label, 'Printing', 'never "Ready" while printing'); assert.equal(s.detail, 'Sending to the office printer'); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Needs you', 'sent is not printed: someone confirms'); assert.match(s.detail, /^Sent to the office printer/); }
+  assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0 }).detail, 'Partly sent');
+  { const s = runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 1 }); assert.equal(s.label, 'Needs you'); assert.equal(s.detail, 'Office print needs a check'); }
+  assert.equal(runDisplayStatus(run('queued', 0), null).label, 'Ready');
   assert.equal(runDisplayStatus(run('printing', 10), null).label, 'Printing');
   assert.equal(runDisplayStatus(run('paused', 100), { sent: 100, onTheWay: 0, failed: 0 }).label, 'Done');
   assert.equal(runDisplayStatus(run('cancelled', 10), { sent: 0, onTheWay: 5, failed: 0 }).label, 'Cancelled');
   assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 0 }, 100), 'Sent to office printer: 20 of 100 · 30 on the way');
   assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 1 }, 100), 'Sent to office printer: 20 of 100 · 30 waiting', 'held labels are not on their way');
   assert.equal(officeSentLine({ sent: 0, onTheWay: 20, failed: 0, held: true }, 20), 'Sent to office printer: 0 of 20 · 20 waiting', 'paused printer: waiting');
-  assert.equal(runDisplayStatus({ status: 'printing', printedCount: 0, totalLabels: 20 }, { sent: 0, onTheWay: 20, failed: 0, held: true }).label, 'Waiting for office printer');
+  assert.equal(runDisplayStatus({ status: 'printing', printedCount: 0, totalLabels: 20 }, { sent: 0, onTheWay: 20, failed: 0, held: true }).detail, 'Waiting for the office printer');
   assert.equal(officeSentLine({ sent: 0, onTheWay: 0, failed: 0 }, 100), null);
   assert.equal(officeSentLine(null, 100), null);
 }
@@ -296,8 +296,8 @@ console.log('PASS field display names');
 
   const { runDisplayStatus } = require('../../src/lib/runDisplayStatus.ts');
   const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
-  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'print-again' } }).label, 'Labels to print again', 'a checked-off part that never printed again is named');
-  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print' } }).label, 'Office print needs a check');
+  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'print-again' } }).detail, 'Labels to print again', 'a checked-off part that never printed again is named');
+  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print' } }).detail, 'Office print needs a check');
 
   const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
   const panel = read('src/components/runs/OfficePiPrinter.tsx');

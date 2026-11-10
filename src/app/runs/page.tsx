@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet, CheckCircle2, Loader2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -13,8 +13,8 @@ import { useFormatStore } from '@/lib/store';
 import type { Run, RunPreset, RunStatus } from '@/lib/types';
 import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
 import { Dialog } from '@/components/ui/Dialog';
-import { friendlyError, runStatusLabel } from '@/lib/userMessages';
-import { officeSentLine, runDisplayStatus, type RunDisplayTone } from '@/lib/runDisplayStatus';
+import { friendlyError } from '@/lib/userMessages';
+import { moreNeedAttention, officeSentLine, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
 import { officeStatusLine, plainJobReason, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
@@ -26,10 +26,12 @@ interface ListOffice {
   firstFailed: { from: number; to: number; reason: string | null; didNotPrint: boolean; kind?: 'did-not-print' | 'needs-check' | 'print-again' } | null;
   /** Sent stretches nobody counted as printed yet, and where progress lands once they are. */
   markable?: { ranges: OfficeSpan[]; through: number };
+  /** Labels after the progress that no office send covers yet (what a stopped series left). */
+  unsent?: OfficeSpan[];
 }
 type ListRun = Run & { office?: ListOffice | null; hasPrintHistory?: boolean };
 
-type StatusFilter = 'all' | 'active' | RunStatus;
+type StatusFilter = 'all' | RunStatusBucket;
 
 const RUN_SCROLL_THRESHOLD = 15;
 const ACTIVE_STATUSES: RunStatus[] = ['draft', 'queued', 'printing', 'paused'];
@@ -44,7 +46,7 @@ const TONE_DOT: Record<RunDisplayTone, string> = {
   cancelled: 'bg-zinc-500',
 };
 
-function RunStatusText({ run, office }: { run: ListRun; office: ListOffice | null }) {
+function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean }) | null }) {
   const display = runDisplayStatus(run, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
@@ -149,9 +151,15 @@ function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolea
   const { setRunStatus, createPrintEvent } = useRunStore();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
   const [problem, setProblem] = useState('');
-  useEffect(() => { if (open) { setPicked(new Set(runs.map((r) => r.id))); setProblem(''); } }, [open, runs]);
+  // Picked once when the dialog opens; a list refresh while it is open keeps the choice.
+  useEffect(() => { if (open) { setPicked(new Set(runs.map((r) => r.id))); setProblem(''); } },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [open]);
   const save = async () => {
+    if (saving.current) return;
+    saving.current = true;
     setBusy(true); setProblem('');
     let done = 0; const failed: string[] = [];
     for (const run of runs.filter((r) => picked.has(r.id))) {
@@ -169,10 +177,13 @@ function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolea
           await createPrintEvent(run.id, { eventType: 'confirmed', output: 'office-pi', rangeFrom: r.from, rangeTo: r.to, labelCount: r.to - r.from + 1, printedCountAfter: through, printerName: 'Office printer', message: 'Checked and marked printed after the office sent them (from the Runs list)' });
         }
         done++;
+        // Saved: a second try after a failure never marks this run again.
+        setPicked((current) => { const next = new Set(current); next.delete(run.id); return next; });
       } catch { failed.push(run.name); }
     }
+    saving.current = false;
     setBusy(false);
-    if (failed.length) { setProblem(`${failed.length === 1 ? `“${failed[0]}” didn’t` : `${failed.length} runs didn’t`} save. Try again in a moment.`); return; }
+    if (failed.length) { setProblem(`${done ? `${done === 1 ? '1 run was' : `${done} runs were`} marked printed. ` : ''}${failed.length === 1 ? `“${failed[0]}” didn’t` : `${failed.length} runs didn’t`} save. Try again in a moment.`); return; }
     onClose();
     toast(`${done === 1 ? '1 run' : `${done} runs`} marked printed`);
   };
@@ -335,8 +346,8 @@ export default function RunsPage() {
   const filteredRuns = useMemo(() => {
     const q = search.trim().toLowerCase();
     const matches = (r: Run) => {
-      if (statusFilter === 'active' && !ACTIVE_STATUSES.includes(r.status)) return false;
-      if (statusFilter !== 'all' && statusFilter !== 'active' && r.status !== statusFilter) return false;
+      // The same five words as the rows and the run page.
+      if (statusFilter !== 'all' && runDisplayStatus(r, (r as ListRun).office ?? null).bucket !== statusFilter) return false;
       if (templateFilter !== 'all' && r.templateId !== templateFilter) return false;
       if (q) {
         const hay = [
@@ -464,7 +475,7 @@ export default function RunsPage() {
                   aria-label="Filter by status"
                   options={[
                     { value: 'all', label: 'All statuses' },
-                    ...(['completed', 'printing', 'paused', 'queued', 'draft', 'cancelled'] as RunStatus[]).map((status) => ({ value: status, label: runStatusLabel(status) })),
+                    ...(Object.keys(RUN_STATUS_WORDS) as RunStatusBucket[]).map((bucket) => ({ value: bucket, label: RUN_STATUS_WORDS[bucket] })),
                   ]}
                 />
               </div>
@@ -740,15 +751,13 @@ function RunRow({
   onTogglePin?: () => void;
 }) {
   const office = run.office ? { ...run.office, held: printerHeld } : null;
+  const display = runDisplayStatus(run, office);
   const sentLine = officeSentLine(office, run.totalLabels);
   const failed = office?.firstFailed ?? null;
   const printed = Math.min(run.printedCount || 0, run.totalLabels);
   const finished = run.totalLabels > 0 && printed >= run.totalLabels;
   const pct = run.totalLabels > 0 ? Math.round((printed / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
-  // Everything left is already with the office printer: open the run to
-  // check or mark it printed, rather than inviting another print.
-  const withOffice = !!office && office.failed === 0 && office.sent + office.onTheWay >= run.totalLabels;
   const pinned = !!run.pinnedAt;
   // A "Send all … in N parts" that stopped early on this device.
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);
@@ -763,15 +772,18 @@ function RunRow({
             <RunStatusText run={run} office={office} />
           </div>
           <p className="mt-0.5 truncate text-xs text-zinc-400">
-            {templateName}{formatName ? ` · ${formatName}` : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
+            {display.detail && !failed ? `${display.detail} · ` : ''}{templateName}{formatName ? ` · ${formatName}` : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
           </p>
           {failed && run.status !== 'cancelled' && (
             <p className={`mt-0.5 text-xs ${failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? 'text-red-400' : 'text-amber-300'}`}>
-              {failed.from === failed.to ? `Label ${failed.from}` : `Labels ${failed.from}–${failed.to}`} {failed.kind === 'print-again' ? 'need printing again' : failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? `didn’t print: ${plainJobReason(failed.reason)}` : 'need a check at the office printer'}{office && office.failed > 1 ? `, and ${office.failedLabels && office.failedLabels > failed.to - failed.from + 1 ? `${(office.failedLabels - (failed.to - failed.from + 1)).toLocaleString()} more labels` : `${office.failed - 1} more part${office.failed === 2 ? '' : 's'}`}` : ''}.
+              {failed.from === failed.to ? `Label ${failed.from.toLocaleString()}` : `Labels ${failed.from.toLocaleString()}–${failed.to.toLocaleString()}`} {failed.kind === 'print-again' ? (failed.from === failed.to ? 'needs printing again' : 'need printing again') : failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? `didn’t print: ${plainJobReason(failed.reason)}` : (failed.from === failed.to ? 'needs a check at the office printer' : 'need a check at the office printer')}.{office ? moreNeedAttention(office, failed) : ''}
             </p>
           )}
           {!failed && partsLeft.length > 0 && unfinished && (
             <p className="mt-0.5 text-xs text-amber-300">{partsLeft.length === 1 ? 'The last part wasn’t' : `${partsLeft.length} parts weren’t`} sent yet. Open this run to send {partsLeft.length === 1 ? 'it' : 'them'}.</p>
+          )}
+          {!failed && !partsLeft.length && unfinished && office && office.onTheWay === 0 && (office.unsent?.length ?? 0) > 0 && (
+            <p className="mt-0.5 text-xs text-zinc-400">{spanWords(office.unsent!).replace(/^l/, 'L')} {office.unsent!.length === 1 && office.unsent![0].from === office.unsent![0].to ? 'hasn’t' : 'haven’t'} gone to the office printer yet.</p>
           )}
         </div>
         <div className="w-full shrink-0 sm:w-36 sm:text-right">
@@ -785,11 +797,7 @@ function RunRow({
           </div>
           {sentLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{sentLine}</p>}
         </div>
-        {unfinished && (
-          <span className="btn btn-secondary btn-sm max-sm:self-start sm:w-32">
-            {failed || withOffice ? 'Open' : <><Play className="h-4 w-4 text-amber-400" aria-hidden="true" /> {printed > 0 ? 'Continue' : 'Print'}</>}
-          </span>
-        )}
+        {unfinished && <span className="btn btn-secondary btn-sm max-sm:self-start sm:w-24">Open</span>}
       </Link>
       <Menu
         label={`More for ${run.name}`}

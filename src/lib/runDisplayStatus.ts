@@ -14,29 +14,40 @@ export interface RunOfficeSummary {
 }
 
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'paused' | 'cancelled' | 'idle';
+/** The five run statuses, used the same way in rows, the run header and the filter. */
+export type RunStatusBucket = 'needs-you' | 'printing' | 'ready' | 'done' | 'cancelled';
+export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
+  'needs-you': 'Needs you',
+  printing: 'Printing',
+  ready: 'Ready',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
 
 /**
- * One status line for a run, shared by the run header and the Runs list.
- * Office deliveries are shown as "Sent", never as "Printed": the office
- * reports labels sent to the printer, which is not proof they printed.
- * A run is never called "Ready to print" while labels are on their way.
+ * One status for a run, shared by the run header and the Runs list: one of
+ * five words (Needs you, Printing, Ready, Done, Cancelled), with the detail
+ * beside it. Office deliveries are shown as "Sent", never as "Printed": the
+ * office reports labels sent to the printer, which is not proof they printed.
+ * A run is never called "Ready" while labels are on their way.
+ * `localProblem` is a printer here that stopped with an error.
  */
-export function runDisplayStatus(run: { status: RunStatus | string; printedCount?: number | null; totalLabels: number }, office?: RunOfficeSummary | null): { label: string; tone: RunDisplayTone } {
+export function runDisplayStatus(run: { status: RunStatus | string; printedCount?: number | null; totalLabels: number }, office?: RunOfficeSummary | null, localProblem = false): { label: string; tone: RunDisplayTone; bucket: RunStatusBucket; detail: string } {
   const printed = run.printedCount ?? 0;
   const total = run.totalLabels;
-  if (run.status === 'cancelled') return { label: 'Cancelled', tone: 'cancelled' };
-  if (total > 0 && printed >= total) return { label: 'Done', tone: 'done' };
-  if (office && office.failed > 0) return office.firstFailed?.kind === 'print-again'
-    ? { label: 'Labels to print again', tone: 'attention' }
-    : { label: 'Office print needs a check', tone: 'attention' };
-  if (office && office.onTheWay > 0) return office.held ? { label: 'Waiting for office printer', tone: 'paused' } : { label: 'Sending to office printer', tone: 'active' };
-  if (run.status === 'printing') return { label: 'Printing', tone: 'active' };
-  if (run.status === 'completed') return { label: 'Done', tone: 'done' };
-  if (office && total > 0 && office.sent >= total) return { label: 'Sent to office printer', tone: 'paused' };
-  if (office && office.sent > 0) return { label: printed > 0 ? 'Partly printed' : 'Partly sent', tone: 'paused' };
-  if (printed > 0 || run.status === 'paused') return { label: printed > 0 ? 'Partly printed' : 'Paused', tone: 'paused' };
-  if (run.status === 'draft') return { label: 'Draft', tone: 'idle' };
-  return { label: 'Ready to print', tone: 'idle' };
+  const out = (bucket: RunStatusBucket, tone: RunDisplayTone, detail = '') => ({ label: RUN_STATUS_WORDS[bucket], tone, bucket, detail });
+  if (run.status === 'cancelled') return out('cancelled', 'cancelled');
+  if (total > 0 && printed >= total) return out('done', 'done');
+  if (localProblem) return out('needs-you', 'attention', 'Stopped: printer problem');
+  if (office && office.failed > 0) return out('needs-you', 'attention', office.firstFailed?.kind === 'print-again' ? 'Labels to print again' : 'Office print needs a check');
+  if (office && office.onTheWay > 0) return office.held ? out('printing', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'Sending to the office printer');
+  if (run.status === 'printing') return out('printing', 'active');
+  if (run.status === 'completed') return out('done', 'done');
+  if (office && total > 0 && office.sent >= total) return out('needs-you', 'paused', 'Sent to the office printer: check they came out');
+  if (office && office.sent > 0) return out('ready', 'paused', printed > 0 ? 'Partly printed' : 'Partly sent');
+  if (printed > 0 || run.status === 'paused') return out('ready', 'paused', printed > 0 ? 'Partly printed' : 'Paused');
+  if (run.status === 'draft') return out('ready', 'idle', 'Draft');
+  return out('ready', 'idle');
 }
 
 /** "Sent to office printer: X of N" — the office line next to printed progress. */
@@ -46,4 +57,13 @@ export function officeSentLine(office: RunOfficeSummary | null | undefined, tota
   // A part that needs a check, or a paused printer, stops the office printer, so the rest waits.
   if (office.onTheWay > 0) parts.push(`${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way'}`);
   return parts.join(' · ');
+}
+
+/** " 50 more labels also need attention." after the first failed part, or nothing. */
+export function moreNeedAttention(office: { failed: number; failedLabels?: number }, first: { from: number; to: number }): string {
+  if (office.failed <= 1) return '';
+  const rest = (office.failedLabels ?? 0) - (first.to - first.from + 1);
+  if (rest > 0) return ` ${rest.toLocaleString()} more label${rest === 1 ? ' also needs' : 's also need'} attention.`;
+  const parts = office.failed - 1;
+  return ` ${parts} more part${parts === 1 ? ' also needs' : 's also need'} attention.`;
 }
