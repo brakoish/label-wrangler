@@ -73,7 +73,7 @@ export default function Home() {
       <div className="flex-1 flex flex-col min-h-0 max-w-[1600px] mx-auto w-full">
         <div className={`flex items-center justify-between gap-3 px-4 pt-6 pb-4 sm:px-8 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
           <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
-          <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+          <button type="button" onClick={() => setIsAddModalOpen(true)} className={`btn ${selectedFormat ? "btn-secondary" : "btn-primary"}`}>
             <PlusIcon className="w-4 h-4" />
             New label size
           </button>
