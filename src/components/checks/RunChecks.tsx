@@ -13,7 +13,10 @@ const MAX_ITEMS = 5;
 /** "3 labels are missing a value" / "2 fields have no value". */
 export function blankHeading(check: RunDataCheck): string {
   if (!check.issues.length) return '';
-  if (check.issues.every((issue) => issue.kind === 'no-value')) {
+  // A part with nothing on any label (no column, or an empty column) is one
+  // problem with that part, not thousands of problem labels.
+  const total = check.checkedLabels;
+  if (check.issues.every((issue) => issue.kind === 'no-value' || (total > 1 && issue.count >= total))) {
     const n = check.issues.length;
     return `${n} field${n === 1 ? ' has' : 's have'} no value`;
   }

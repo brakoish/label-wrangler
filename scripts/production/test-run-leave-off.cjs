@@ -35,6 +35,7 @@ const template = {
   assert.equal(before.issues.length, 1);
   assert.equal(before.issues[0].field, 'Packaged');
   assert.equal(blankCheckAllowsPrinting(before, false), false, 'a part with no value stops Start');
+  assert.equal(require('../../src/lib/runDataCheck.ts').describeBlankSummary(before), '1 field has no value', 'one column with nothing in it is one problem, not every label');
   const after = checkRunData(left, run);
   assert.equal(after.issues.length, 0, 'left off: nothing missing, so Start can unlock');
 
