@@ -118,9 +118,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const labelPadY = viewBoxHeight * padFraction;
 
   // SVG pixel size
-  const margin = 48;
+  // On a phone the label fills the width and the canvas grows to fit it,
+  // instead of a small label floating in a tall empty box.
+  const phone = containerSize.width < 600;
+  const margin = phone ? 4 : 48;
   const availW = containerSize.width - margin * 2;
-  const availH = containerSize.height - margin * 2;
+  const availH = phone ? Infinity : containerSize.height - margin * 2;
   const aspect = totalW / totalH;
   let svgW: number;
   let svgH: number;
@@ -479,7 +482,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
-    <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-6 pt-16 pb-6 overflow-hidden" style={{ minHeight: '340px', height: 'calc(100dvh - 270px)', maxHeight: '800px' }}>
+    <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-2 pt-12 pb-4 sm:px-6 sm:pt-16 sm:pb-6 overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
       {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
       {!bitmap && layoutProblems.length > 0 && <p role="status" className="absolute top-1 left-3 right-3 text-sm text-amber-300">{layoutProblems[0].message}{layoutProblems.length > 1 ? ` (and ${layoutProblems.length - 1} more)` : ''}</p>}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
