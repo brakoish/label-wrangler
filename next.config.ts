@@ -17,6 +17,8 @@ const reportOnlyCsp = [
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
+  // Violations are logged (trimmed, rate-limited) by /api/csp-report.
+  "report-uri /api/csp-report",
 ].join('; ');
 
 const securityHeaders = [

@@ -15,6 +15,7 @@ for(const file of [
  'scripts/production/test-legacy-templates.cjs',
  'scripts/production/test-open-tab.cjs',
  'scripts/production/test-dialog-stack.cjs',
+ 'scripts/production/test-csp-report.cjs',
  'scripts/production/test-run-images.cjs',
  'scripts/production/test-run-preview.cjs',
  'scripts/production/test-run-data-check.cjs',
