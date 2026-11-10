@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet } from 'lucide-react';
+import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet, CheckCircle2, Loader2 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Menu } from '@/components/ui/Menu';
 import { PageTitle } from '@/components/PageTitle';
@@ -12,13 +12,20 @@ import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import type { Run, RunPreset, RunStatus } from '@/lib/types';
 import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
+import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError, runStatusLabel } from '@/lib/userMessages';
 import { officeSentLine, runDisplayStatus, type RunDisplayTone } from '@/lib/runDisplayStatus';
-import { plainJobReason } from '@/lib/officeSendOutcome';
+import { officeStatusLine, plainJobReason, type OfficeReviewHold } from '@/lib/officeSendOutcome';
+import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
-interface ListOffice { sent: number; onTheWay: number; failed: number; firstFailed: { from: number; to: number; reason: string | null; didNotPrint: boolean } | null }
+interface ListOffice {
+  sent: number; onTheWay: number; failed: number; failedLabels?: number;
+  firstFailed: { from: number; to: number; reason: string | null; didNotPrint: boolean; kind?: 'did-not-print' | 'needs-check' | 'print-again' } | null;
+  /** Sent stretches nobody counted as printed yet, and where progress lands once they are. */
+  markable?: { ranges: OfficeSpan[]; through: number };
+}
 type ListRun = Run & { office?: ListOffice | null; hasPrintHistory?: boolean };
 
 type StatusFilter = 'all' | 'active' | RunStatus;
@@ -48,8 +55,8 @@ function RunStatusText({ run }: { run: ListRun }) {
 
 /**
  * Keeps progress and office status on this page current without reloading
- * the whole list: re-reads the first page every 15 seconds while the page is
- * visible and merges only those fields into the runs already shown.
+ * the whole list: re-reads the first page while the page is visible and
+ * merges only those fields into the runs already shown.
  */
 function useLiveRunsList() {
   useEffect(() => {
@@ -72,30 +79,130 @@ function useLiveRunsList() {
         }));
       } catch { /* the next try catches up */ }
     };
-    const timer = setInterval(() => void update(), 15000);
+    // Every 15 s, or every 5 s while labels are on their way to the office.
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const moving = useRunStore.getState().runs.some((run) => ((run as ListRun).office?.onTheWay ?? 0) > 0);
+      timer = setTimeout(() => { void update().finally(() => { if (active) schedule(); }); }, moving ? 5000 : 15000);
+    };
+    schedule();
     const onVisible = () => { if (document.visibilityState === 'visible') void update(); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+    return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 }
 
-/** Pause/Resume for the shared office printer, reachable without opening a run. */
-function OfficePrinterBar({ attention }: { attention: boolean }) {
-  const [shown, setShown] = useState(false);
+interface BarPrinter { station_id: string; id: string; name: string; online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at: string | null; needs_review: boolean; dispatch_hold_reason?: string | null; review_holds?: OfficeReviewHold[] }
+/**
+ * The shared office printer, reachable without opening a run: one status line
+ * (never "Ready" while it is stopped or paused), which run and labels stop it
+ * with a link there, and Pause/Resume. Reads every 15 s, faster while it is
+ * stopped or paused, never while the page is hidden.
+ */
+function OfficePrinterBar() {
+  const [printers, setPrinters] = useState<BarPrinter[] | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const read = useCallback(async () => {
+    try {
+      const response = await fetch('/api/office/stations', { cache: 'no-store' });
+      if (response.status === 401 || response.status === 403) { setHidden(true); return; }
+      if (!response.ok) return;
+      const data = await response.json();
+      if (Array.isArray(data?.printers)) setPrinters(data.printers);
+    } catch { /* tries again on the next read */ }
+  }, []);
+  const printer = printers?.find((p) => p.dispatch_enabled && p.paired_at) ?? null;
+  const status = officeStatusLine(printer ?? undefined);
+  const watch = status.stopped || status.paused || status.tone !== 'ok';
   useEffect(() => {
     let active = true;
-    void fetch('/api/office/stations', { cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => { if (active && Array.isArray(data?.printers) && data.printers.some((p: { dispatch_enabled?: boolean; paired_at?: string | null }) => p.dispatch_enabled && p.paired_at)) setShown(true); })
-      .catch(() => { /* no office printer for this account */ });
-    return () => { active = false; };
-  }, []);
-  if (!shown) return null;
+    const update = () => { if (active && document.visibilityState !== 'hidden') void read(); };
+    update();
+    const timer = setInterval(update, watch ? 5000 : 15000);
+    const onVisible = () => { if (document.visibilityState === 'visible') update(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [read, watch]);
+  if (hidden || !printer) return null;
+  const dot = status.tone === 'ok' ? 'bg-emerald-400' : status.tone === 'bad' ? 'bg-red-400' : 'bg-amber-300';
+  const text = status.tone === 'ok' ? 'text-zinc-300' : status.tone === 'bad' ? 'text-red-400' : 'text-amber-300';
   return (
-    <section aria-label="Office printer" className="space-y-1">
-      <h2 className="section-title">Office printer</h2>
-      <div className="max-w-xl"><OfficePrinterControls attention={attention} onUnavailable={() => setShown(false)} /></div>
+    <section aria-label="Office printer" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div role="status" className="min-w-0 space-y-0.5 text-sm">
+        <p className={`flex items-start gap-2 ${text}`}><span aria-hidden="true" className={`mt-1.5 size-2 shrink-0 rounded-full ${dot}`} /><span><span className="font-medium text-zinc-100">{printer.name}</span> · {status.text}</span></p>
+        {status.hold && <p className="pl-4"><Link href={`/runs/${encodeURIComponent(status.hold.run_id)}`} className="font-medium text-zinc-100 underline underline-offset-2">Open that run</Link><span className="text-zinc-400"> to check {status.hold.from === status.hold.to ? 'it' : 'them'}.</span></p>}
+      </div>
+      <OfficePrinterControls onUnavailable={() => setHidden(true)} onChange={() => void read()} />
     </section>
+  );
+}
+
+/**
+ * "Mark sent labels as printed" for many runs at once: one dialog that lists
+ * every selected run and its ranges, one confirm. Each run's progress moves
+ * through its unbroken sent stretches, and each range is kept as confirmed.
+ */
+function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolean; onClose: () => void }) {
+  const { setRunStatus, createPrintEvent } = useRunStore();
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  useEffect(() => { if (open) { setPicked(new Set(runs.map((r) => r.id))); setProblem(''); } }, [open, runs]);
+  const save = async () => {
+    setBusy(true); setProblem('');
+    let done = 0; const failed: string[] = [];
+    for (const run of runs.filter((r) => picked.has(r.id))) {
+      const plan = run.office?.markable;
+      if (!plan?.ranges.length) continue;
+      const printed = run.printedCount || 0;
+      const through = Math.max(printed, plan.through);
+      const refused = { reason: '' };
+      try {
+        if (through > printed) {
+          await setRunStatus(run.id, through >= run.totalLabels ? 'completed' : 'paused', through, { onSetAside: (reason) => { refused.reason = reason; } });
+          if (refused.reason) { failed.push(run.name); continue; }
+        }
+        for (const r of plan.ranges) {
+          await createPrintEvent(run.id, { eventType: 'confirmed', output: 'office-pi', rangeFrom: r.from, rangeTo: r.to, labelCount: r.to - r.from + 1, printedCountAfter: through, printerName: 'Office printer', message: 'Checked and marked printed after the office sent them (from the Runs list)' });
+        }
+        done++;
+      } catch { failed.push(run.name); }
+    }
+    setBusy(false);
+    if (failed.length) { setProblem(`${failed.length === 1 ? `“${failed[0]}” didn’t` : `${failed.length} runs didn’t`} save. Try again in a moment.`); return; }
+    onClose();
+    toast(`${done === 1 ? '1 run' : `${done} runs`} marked printed`);
+  };
+  const count = runs.filter((r) => picked.has(r.id)).length;
+  return (
+    <Dialog open={open} onClose={onClose} dismissible={!busy} title="Mark sent labels as printed?" className="max-w-lg">
+      <p className="text-sm text-zinc-300">The office printer reported these labels as sent. Check they came out of the printer first.</p>
+      <ul className="max-h-80 space-y-1 overflow-y-auto">
+        {runs.map((run) => {
+          const plan = run.office?.markable;
+          return (
+            <li key={run.id}>
+              <label className="flex min-h-control cursor-pointer items-start gap-3 rounded-lg px-2 py-2 text-sm hover:bg-zinc-800">
+                <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={picked.has(run.id)} disabled={busy}
+                  onChange={(e) => setPicked((current) => { const next = new Set(current); if (e.target.checked) next.add(run.id); else next.delete(run.id); return next; })} />
+                <span className="min-w-0">
+                  <span className="block font-medium text-zinc-100">{run.name}</span>
+                  <span className="block text-zinc-400">{plan ? spanWords(plan.ranges) : ''}{plan && plan.through > (run.printedCount || 0) ? ` · progress moves to ${plan.through.toLocaleString()} of ${run.totalLabels.toLocaleString()}` : ''}</span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {problem && <p role="alert" className="text-sm text-red-400">{problem}</p>}
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        <button type="button" className="btn btn-primary" disabled={busy || count === 0} onClick={() => void save()}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+          {count === 1 ? 'Mark 1 run printed' : `Mark ${count} runs printed`}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
@@ -124,16 +231,33 @@ export default function RunsPage() {
   const runsError = useRunStore((state) => state.error);
   useLiveRunsList();
   const requestDeleteRun = async (run: ListRun) => {
-    // Say plainly what will happen. When the list couldn't tell, say both.
-    const body = run.hasPrintHistory === false
-      ? 'Nothing has been printed from this run, so it’s deleted for good. This can’t be undone.'
-      : 'If anything was printed from this run, it’s kept for your records and nothing is deleted. Otherwise it’s deleted for good.';
-    const ok = await confirmDialog({ title: `Delete “${run.name}”?`, body, confirmLabel: 'Delete run', danger: true });
+    // One plain sentence for the case that applies. When the list couldn't
+    // tell, check the run's print history first.
+    let history = run.hasPrintHistory;
+    if (history === undefined) {
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(run.id)}/print-events`, { cache: 'no-store' });
+        const events = response.ok ? await response.json() : null;
+        history = Array.isArray(events) ? events.length > 0 || ((run as ListRun).office?.sent ?? 0) + ((run as ListRun).office?.onTheWay ?? 0) > 0 : undefined;
+      } catch { history = undefined; }
+    }
+    if (history === undefined) { void alertDialog('Couldn’t check this run', 'Its print history couldn’t be read just now, so nothing was deleted. Try again in a moment.'); return; }
+    if (history) { void alertDialog(`“${run.name}” is kept`, 'This run has print history, so it can’t be deleted. It stays in your list for your records.'); return; }
+    const printed = run.printedCount || 0;
+    const ok = await confirmDialog({
+      title: `Delete “${run.name}” for good?`,
+      body: printed > 0
+        ? `It counts ${printed.toLocaleString()} label${printed === 1 ? '' : 's'} as printed but has no print records, so it’s removed for good. This can’t be undone.`
+        : 'Nothing was printed from this run, so it’s removed for good. This can’t be undone.',
+      confirmLabel: 'Delete for good',
+      danger: true,
+    });
     if (!ok) return;
     const refused = await deleteRun(run.id);
     if (refused) void alertDialog('This run is kept for your records', refused);
     else toast('Run deleted');
   };
+  const [bulkOpen, setBulkOpen] = useState(false);
   const requestDeletePreset = async (preset: RunPreset) => {
     const ok = await confirmDialog({ title: `Delete the preset “${preset.name}”?`, body: 'A preset that runs were made from is kept for your records and can’t be deleted. A preset no run used is removed for good.', confirmLabel: 'Delete preset', danger: true });
     if (!ok) return;
@@ -174,8 +298,9 @@ export default function RunsPage() {
     }
     // Sort pinned by pinnedAt DESC (most recently pinned on top).
     pinned.sort((a, b) => (b.pinnedAt || '').localeCompare(a.pinnedAt || ''));
-    // Active sorted by recency.
-    active.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    // Active: runs whose office print needs someone first, then by recency.
+    const needsSomeone = (run: Run) => (((run as ListRun).office?.failed ?? 0) > 0 ? 0 : 1);
+    active.sort((a, b) => needsSomeone(a) - needsSomeone(b) || (b.createdAt || '').localeCompare(a.createdAt || ''));
     // History already comes in createdAt DESC from the API.
     return {
       active,
@@ -231,6 +356,9 @@ export default function RunsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, pinned, history, search, statusFilter, templateFilter, templates, formats]);
 
+  // Runs whose sent office labels nobody counted yet (for the bulk action).
+  const markableRuns = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.markable?.ranges.length ?? 0) > 0 && (r.office?.onTheWay ?? 0) === 0), [active]);
+
   const renderRunCollection = (collection: Run[], emptyMsg: string) => {
     if (collection.length === 0) {
       return <p className="py-2 text-sm text-zinc-400">{emptyMsg}</p>;
@@ -263,15 +391,17 @@ export default function RunsPage() {
   return (
     <AppShell>
       <PageTitle title="Runs" />
+      <BulkMarkDialog runs={markableRuns} open={bulkOpen} onClose={() => setBulkOpen(false)} />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto w-full px-4 py-4 sm:px-8 sm:py-6 lg:py-8 space-y-6 sm:space-y-8">
+        <div className="page-frame space-y-6 sm:space-y-8">
           <section>
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold text-zinc-100">Print runs</h1>
                 <p className="mt-1 text-sm text-zinc-400">Start a run, or pick up where you left off.</p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              {/* One primary on screen: with no runs (empty or couldn't load), the body has it. */}
+              {runs.length > 0 && <div className="flex flex-wrap gap-2">
                 <QuickAction
                   href="/runs/new"
                   icon={<Plus className="h-4 w-4" aria-hidden="true" />}
@@ -290,7 +420,7 @@ export default function RunsPage() {
                   label="From a spreadsheet"
                   secondary
                 />
-              </div>
+              </div>}
             </div>
           </section>
 
@@ -305,7 +435,7 @@ export default function RunsPage() {
           )}
 
           {/* The office printer can be paused even with no run open. */}
-          <OfficePrinterBar attention={(runs as ListRun[]).some((r) => (r.office?.failed ?? 0) > 0)} />
+          <OfficePrinterBar />
 
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (
@@ -386,6 +516,11 @@ export default function RunsPage() {
                 <span className="text-sm text-zinc-400 tabular-nums">
                   {filteredRuns.active.length}{filteredRuns.active.length !== active.length ? ` of ${active.length}` : ''}
                 </span>
+                {markableRuns.length > 0 && (
+                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm ml-auto text-zinc-300">
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Mark sent labels as printed…
+                  </button>
+                )}
               </div>
               {renderRunCollection(filteredRuns.active, 'No unfinished runs match your filters.')}
             </section>
@@ -607,6 +742,9 @@ function RunRow({
   // check or mark it printed, rather than inviting another print.
   const withOffice = !!office && office.failed === 0 && office.sent + office.onTheWay >= run.totalLabels;
   const pinned = !!run.pinnedAt;
+  // A "Send all … in N parts" that stopped early on this device.
+  const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);
+  useEffect(() => { try { setPartsLeft(remainingParts(readPartsPlan(localStorage.getItem(`lw:office-parts:${run.id}`)))); } catch { setPartsLeft([]); } }, [run.id, office?.sent, office?.onTheWay]);
 
   return (
     <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
@@ -620,9 +758,12 @@ function RunRow({
             {templateName}{formatName ? ` · ${formatName}` : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
           </p>
           {failed && run.status !== 'cancelled' && (
-            <p className="mt-0.5 text-xs text-red-400">
-              {failed.from === failed.to ? `Label ${failed.from}` : `Labels ${failed.from}–${failed.to}`} {failed.didNotPrint ? `didn’t print: ${plainJobReason(failed.reason)}` : 'may not have printed: check the office printer'}{office && office.failed > 1 ? ` (and ${office.failed - 1} more)` : ''}.
+            <p className={`mt-0.5 text-xs ${failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? 'text-red-400' : 'text-amber-300'}`}>
+              {failed.from === failed.to ? `Label ${failed.from}` : `Labels ${failed.from}–${failed.to}`} {failed.kind === 'print-again' ? 'need printing again' : failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? `didn’t print: ${plainJobReason(failed.reason)}` : 'need a check at the office printer'}{office && office.failed > 1 ? `, and ${office.failedLabels && office.failedLabels > failed.to - failed.from + 1 ? `${(office.failedLabels - (failed.to - failed.from + 1)).toLocaleString()} more labels` : `${office.failed - 1} more part${office.failed === 2 ? '' : 's'}`}` : ''}.
             </p>
+          )}
+          {!failed && partsLeft.length > 0 && unfinished && (
+            <p className="mt-0.5 text-xs text-amber-300">{partsLeft.length === 1 ? 'The last part wasn’t' : `${partsLeft.length} parts weren’t`} sent yet. Open this run to send {partsLeft.length === 1 ? 'it' : 'them'}.</p>
           )}
         </div>
         <div className="w-full shrink-0 sm:w-36 sm:text-right">
