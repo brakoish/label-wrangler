@@ -30,6 +30,7 @@ for(const file of [
  'scripts/production/test-run-field-setup.cjs',
  'scripts/production/test-wysiwyg-checks.cjs',
  'scripts/production/test-spreadsheet-import.cjs',
+ 'scripts/production/test-barcode-autofix.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',
