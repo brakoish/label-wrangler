@@ -11,6 +11,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { PlusIcon } from '../icons';
 import { alertDialog, confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,7 +59,7 @@ export default function Home() {
       {/* Main content */}
       <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left sidebar */}
-        <div className="w-full xl:w-[400px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800/50 max-h-[48vh] xl:max-h-none">
+        <div className="w-full xl:w-[400px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800 max-h-[48vh] xl:max-h-none">
           {/* Search & filters */}
           <div className="p-4 space-y-4">
             {/* New Format button */}
@@ -97,34 +98,23 @@ export default function Home() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 p-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
+            <div className="segmented" role="group" aria-label="Filter by type">
+              <SegmentedIndicator index={['all', 'thermal', 'sheet'].indexOf(activeTab)} count={3} />
               <button
                 onClick={() => setActiveTab('all')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${
-                  activeTab === 'all'
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                aria-pressed={activeTab === 'all'}
               >
                 All ({formats.length})
               </button>
               <button
                 onClick={() => setActiveTab('thermal')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${
-                  activeTab === 'thermal'
-                    ? 'bg-amber-500/10 text-amber-300 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                aria-pressed={activeTab === 'thermal'}
               >
                 Thermal ({thermalCount})
               </button>
               <button
                 onClick={() => setActiveTab('sheet')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${
-                  activeTab === 'sheet'
-                    ? 'bg-blue-500/20 text-blue-400 shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
+                aria-pressed={activeTab === 'sheet'}
               >
                 Sheet ({sheetCount})
               </button>
@@ -132,32 +122,26 @@ export default function Home() {
           </div>
 
           {/* Format list */}
-          <div className="flex-1 overflow-auto px-4 pb-4 space-y-2">
+          <div className="flex-1 overflow-auto px-4 pb-4 space-y-1 stagger">
             {!hydrated && formats.length === 0 ? (
               <div role="status" aria-label="Loading label sizes" className="space-y-2">
-                {[0, 1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse" />)}
+                {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 rounded-lg bg-zinc-900 animate-pulse" />)}
                 <span className="sr-only">Loading label sizes…</span>
               </div>
             ) : loadError && formats.length === 0 ? (
               <div role="alert" className="text-center py-12 space-y-3">
                 <p className="text-zinc-200 text-sm font-medium">We couldn&apos;t load your label sizes</p>
                 <p className="text-zinc-500 text-xs">{friendlyError(loadError, 'Something went wrong.')}</p>
-                <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="min-h-10 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black disabled:opacity-40">{loading ? 'Trying again…' : 'Try again'}</button>
+                <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>
               </div>
             ) : filteredFormats.length === 0 ? (
               <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
-                  <svg className="w-8 h-8 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="4" y="3" width="16" height="18" rx="2" />
-                    <path d="M4 9h16M4 15h16M12 3v18" />
-                  </svg>
-                </div>
-                <p className="text-zinc-400 text-sm font-medium">
+                <p className="text-zinc-200 text-sm font-medium">
                   {searchQuery || activeTab !== 'all'
                     ? 'No label sizes match'
                     : 'No label sizes yet'}
                 </p>
-                <p className="text-zinc-500 text-xs mt-1">
+                <p className="text-zinc-400 text-sm mt-1">
                   {searchQuery || activeTab !== 'all'
                     ? 'Try adjusting your search or filter'
                     : 'Add the size of the labels you print on to get started'}
@@ -165,7 +149,7 @@ export default function Home() {
                 {!searchQuery && activeTab === 'all' && (
                   <button
                     onClick={() => setIsAddModalOpen(true)}
-                    className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium"
+                    className="btn btn-secondary mt-4"
                   >
                     Add your first label size
                   </button>
@@ -199,23 +183,8 @@ export default function Home() {
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center max-w-sm">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
-                  <svg
-                    className="w-10 h-10 text-zinc-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
-                    />
-                  </svg>
-                </div>
-                <h3 className="text-zinc-300 font-semibold text-lg">Pick a label size</h3>
-                <p className="text-zinc-500 text-sm mt-2">
+                <h3 className="text-zinc-200 font-semibold text-lg">Pick a label size</h3>
+                <p className="text-zinc-400 text-sm mt-1">
                   Choose one from the list to see its measurements and a preview.
                 </p>
               </div>

@@ -6,6 +6,7 @@ import { LabelType, COMMON_THERMAL_SIZES, COMMON_DPI_VALUES } from '@/lib/types'
 import { useFormatStore } from '@/lib/store';
 import { parsePDFFile, generateFormatName } from '@/lib/pdfParser';
 import { PlusIcon, FileIcon } from '@/app/icons';
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface AddFormatModalProps {
@@ -156,38 +157,31 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
   return (
     <Dialog open={isOpen} onClose={onClose} title="New label size" className="max-w-lg">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {/* Type Toggle */}
-          <div className="flex rounded-xl bg-zinc-900/50 p-1 border border-zinc-800">
+          <div className="segmented" role="group" aria-label="Label type">
+            <SegmentedIndicator index={type === 'sheet' ? 1 : 0} count={2} />
             <button
               type="button"
               onClick={() => setType('thermal')}
-              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                type === 'thermal'
-                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+              aria-pressed={type === 'thermal'}
             >
-              Thermal Roll
+              Thermal roll
             </button>
             <button
               type="button"
               onClick={() => setType('sheet')}
-              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                type === 'sheet'
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-500/20'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+              aria-pressed={type === 'sheet'}
             >
-              Sheet Labels
+              Sheet labels
             </button>
           </div>
 
           {/* PDF Upload - Sheet labels only */}
           {type === 'sheet' && (
             <div>
-              <label htmlFor={`${uid}-1`} className="block text-xs font-medium text-zinc-500 mb-3">
-                Import from PDF Template
+              <label htmlFor={`${uid}-1`} className="field-label mb-1.5">
+                Import from a PDF template
               </label>
               <div className="relative">
                 <input id={`${uid}-1`}
@@ -198,16 +192,16 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                 />
                 <div className={`
-                  flex items-center justify-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed transition-colors
-                  ${isParsing 
-                    ? 'border-amber-500/30 bg-amber-500/10' 
-                    : 'border-zinc-700 hover:border-zinc-600 bg-zinc-900/30'
+                  flex min-h-control items-center justify-center gap-3 px-4 py-3 rounded-lg border border-dashed transition-colors
+                  ${isParsing
+                    ? 'border-amber-500/30 bg-amber-500/10'
+                    : 'border-zinc-700 hover:border-zinc-500 bg-zinc-950'
                   }
                 `}>
                   {isParsing ? (
                     <>
-                      <div className="w-5 h-5 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-                      <span className="text-sm text-amber-400">Analyzing PDF...</span>
+                      <div className="size-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" aria-hidden="true" />
+                      <span className="text-sm text-amber-400">Reading the PDF…</span>
                     </>
                   ) : (
                     <>
@@ -227,8 +221,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
           {/* Preview - for sheet labels */}
           {type === 'sheet' && pdfUploaded && !isParsing && parseInt(columns) > 0 && parseInt(rows) > 0 && parseFloat(width) > 0 && parseFloat(height) > 0 && (
-            <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
-              <p className="block text-xs font-medium text-zinc-500 mb-3">
+            <div className="rounded-lg bg-zinc-950 p-4">
+              <p className="field-label mb-1.5">
                 Layout preview
               </p>
               <SheetPreview
@@ -247,8 +241,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {/* Name & Description */}
           <div className="space-y-4">
             <div>
-              <label htmlFor={`${uid}-2`} className="block text-xs font-medium text-zinc-500 mb-2">
-                Format Name
+              <label htmlFor={`${uid}-2`} className="field-label mb-1.5">
+                Format name
               </label>
               <input id={`${uid}-2`}
                 type="text"
@@ -259,8 +253,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               />
             </div>
             <div>
-              <label htmlFor={`${uid}-3`} className="block text-xs font-medium text-zinc-500 mb-2">
-                Description <span className="text-zinc-500 normal-case">(optional)</span>
+              <label htmlFor={`${uid}-3`} className="field-label mb-1.5">
+                Description <span className="font-normal text-zinc-500">(optional)</span>
               </label>
               <input id={`${uid}-3`}
                 type="text"
@@ -275,7 +269,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {/* Thermal Presets */}
           {type === 'thermal' && (
             <div>
-              <p className="block text-xs font-medium text-zinc-500 mb-3">
+              <p className="field-label mb-1.5">
                 Common sizes
               </p>
               <div className="flex flex-wrap gap-2">
@@ -284,7 +278,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     key={preset.name}
                     type="button"
                     onClick={() => applyPreset(preset)}
-                    className="px-3 py-1.5 text-sm bg-zinc-900/50 border border-zinc-800 rounded-lg text-zinc-300 hover:border-amber-500/30 hover:text-amber-300 transition-colors"
+                    className="btn btn-secondary btn-sm"
                   >
                     {preset.name}
                   </button>
@@ -296,8 +290,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {/* Dimensions */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor={`${uid}-4`} className="block text-xs font-medium text-zinc-500 mb-2">
-                Width <span className="text-zinc-500">(inches)</span>
+              <label htmlFor={`${uid}-4`} className="field-label mb-1.5">
+                Width <span className="font-normal text-zinc-500">(inches)</span>
               </label>
               <input id={`${uid}-4`}
                 type="number"
@@ -309,8 +303,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               />
             </div>
             <div>
-              <label htmlFor={`${uid}-5`} className="block text-xs font-medium text-zinc-500 mb-2">
-                Height <span className="text-zinc-500">(inches)</span>
+              <label htmlFor={`${uid}-5`} className="field-label mb-1.5">
+                Height <span className="font-normal text-zinc-500">(inches)</span>
               </label>
               <input id={`${uid}-5`}
                 type="number"
@@ -328,7 +322,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label id={`${uid}-6-label`} className="block text-xs font-medium text-zinc-500 mb-2">
+                <label id={`${uid}-6-label`} className="field-label mb-1.5">
                   DPI
                 </label>
                 <CustomSelect aria-labelledby={`${uid}-6-label`}
@@ -338,8 +332,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 />
               </div>
               <div>
-                <label htmlFor={`${uid}-7`} className="block text-xs font-medium text-zinc-500 mb-2">
-                  Labels Across
+                <label htmlFor={`${uid}-7`} className="field-label mb-1.5">
+                  Labels across
                 </label>
                 <input id={`${uid}-7`}
                   type="number"
@@ -356,8 +350,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             {labelsAcross > 1 && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor={`${uid}-8`} className="block text-xs font-medium text-zinc-500 mb-2">
-                    Gap Between Labels
+                  <label htmlFor={`${uid}-8`} className="field-label mb-1.5">
+                    Gap between labels
                   </label>
                   <input id={`${uid}-8`}
                     type="number"
@@ -369,8 +363,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${uid}-9`} className="block text-xs font-medium text-zinc-500 mb-2">
-                    Side Margin
+                  <label htmlFor={`${uid}-9`} className="field-label mb-1.5">
+                    Side margin
                   </label>
                   <input id={`${uid}-9`}
                     type="number"
@@ -386,8 +380,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor={`${uid}-10`} className="block text-xs font-medium text-zinc-500 mb-2">
-                  Label Gap (Vertical)
+                <label htmlFor={`${uid}-10`} className="field-label mb-1.5">
+                  Label gap (vertical)
                 </label>
                 <input id={`${uid}-10`}
                   type="number"
@@ -399,8 +393,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 />
               </div>
               <div>
-                <label htmlFor={`${uid}-11`} className="block text-xs font-medium text-zinc-500 mb-2">
-                  Liner Width (optional)
+                <label htmlFor={`${uid}-11`} className="field-label mb-1.5">
+                  Liner width (optional)
                 </label>
                 <input id={`${uid}-11`}
                   type="number"
@@ -420,7 +414,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor={`${uid}-12`} className="block text-xs font-medium text-zinc-500 mb-2">
+                  <label htmlFor={`${uid}-12`} className="field-label mb-1.5">
                     Columns
                   </label>
                   <input id={`${uid}-12`}
@@ -432,7 +426,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${uid}-13`} className="block text-xs font-medium text-zinc-500 mb-2">
+                  <label htmlFor={`${uid}-13`} className="field-label mb-1.5">
                     Rows
                   </label>
                   <input id={`${uid}-13`}
@@ -447,8 +441,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor={`${uid}-14`} className="block text-xs font-medium text-zinc-500 mb-2">
-                    Top Margin <span className="text-zinc-500">(in)</span>
+                  <label htmlFor={`${uid}-14`} className="field-label mb-1.5">
+                    Top margin <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-14`}
                     type="number"
@@ -460,8 +454,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${uid}-15`} className="block text-xs font-medium text-zinc-500 mb-2">
-                    Side Margin <span className="text-zinc-500">(in)</span>
+                  <label htmlFor={`${uid}-15`} className="field-label mb-1.5">
+                    Side margin <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-15`}
                     type="number"
@@ -476,8 +470,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor={`${uid}-16`} className="block text-xs font-medium text-zinc-500 mb-2">
-                    Horizontal Gap <span className="text-zinc-500">(in)</span>
+                  <label htmlFor={`${uid}-16`} className="field-label mb-1.5">
+                    Horizontal gap <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-16`}
                     type="number"
@@ -489,8 +483,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${uid}-17`} className="block text-xs font-medium text-zinc-500 mb-2">
-                    Vertical Gap <span className="text-zinc-500">(in)</span>
+                  <label htmlFor={`${uid}-17`} className="field-label mb-1.5">
+                    Vertical gap <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-17`}
                     type="number"
@@ -506,11 +500,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           )}
 
           {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors rounded-xl hover:bg-zinc-800"
+              className="btn btn-secondary"
             >
               Cancel
             </button>
