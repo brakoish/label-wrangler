@@ -50,7 +50,7 @@ async function handleDELETE(_req: NextRequest, { params }: { params: Promise<{ i
       if (!isForeignKeyViolation(error)) throw error;
       const [used] = await db.select({ count: sql<number>`count(*)::int` }).from(runs).where(eq(runs.presetId, id));
       const count = Number(used?.count ?? 0);
-      throw new OfficeError(`This preset was used by ${count ? plural(count, 'run') : 'saved runs'}, so it can't be deleted. Runs keep a link to the preset they were made from.`, 409);
+      throw new OfficeError(`This preset was used by ${count ? plural(count, 'run') : 'saved runs'}, so it can’t be deleted. Runs keep a link to the preset they were made from.`, 409);
     }
     return NextResponse.json({ ok: true });
   } catch (error) {

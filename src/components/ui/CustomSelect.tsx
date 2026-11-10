@@ -27,7 +27,7 @@ interface CustomSelectProps {
   disabled?: boolean;
 }
 
-export function CustomSelect({ value, options, onChange, placeholder = 'Select...', className = '', compact = false, id, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledBy, disabled = false }: CustomSelectProps) {
+export function CustomSelect({ value, options, onChange, placeholder = 'Choose…', className = '', compact = false, id, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledBy, disabled = false }: CustomSelectProps) {
   const [open, setOpenState] = useState(false);
   const [active, setActive] = useState(-1);
   const listId = useId();

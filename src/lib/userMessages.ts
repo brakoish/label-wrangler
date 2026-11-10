@@ -15,7 +15,7 @@ const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
  * (lab results, retail IDs) because Manifest or Metrc was slow. */
 export const SEARCH_DETAILS_INCOMPLETE = 'Nabis didn’t send every detail just now. Search again in a moment to fill them in.';
 
-export const OFFLINE_MESSAGE = "Couldn't reach Label Wrangler — check your internet connection and try again.";
+export const OFFLINE_MESSAGE = 'Couldn’t reach Label Wrangler. Check your internet connection and try again.';
 
 export function isNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;

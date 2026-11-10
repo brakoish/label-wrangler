@@ -12,7 +12,9 @@ const { restyleSheetPrintToolbar } = require('../../src/lib/sheetPrintChrome.ts'
   const out = restyleSheetPrintToolbar(html, 'run 1');
   assert.match(out, /Print at 100% \(Actual size\), not Fit to page/);
   assert.doesNotMatch(out, /Print setting: 100%/);
-  assert.match(out, /<a class="back" href="\/runs\/run%201">Back to run<\/a>/);
+  assert.match(out, /<a class="back" href="\/runs\/run%201" aria-label="Back to run"><svg[^>]*aria-hidden="true">.*?<\/svg><span class="back-text">Back to run<\/span><\/a>/);
+  // Phones get one row of buttons (Back shrinks to its arrow), screen only.
+  assert.match(out, /@media screen and \(max-width: 640px\) \{[^@]*grid-template-columns: 44px auto auto/);
   assert.match(out, /text-transform: none/);
   assert.match(out, /\.toolbar button\.secondary \{ background: #f59e0b/, '"Print or save PDF" is the main button first');
   assert.match(out, /\.toolbar\.lw-printed button\.done \{ background: #f59e0b/, '"Mark as printed" becomes the main button after printing');

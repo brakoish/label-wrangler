@@ -7,6 +7,7 @@ import { useRunStore } from '@/lib/runStore';
 import { buildSheetPrintHtml } from '@/lib/sheetPrint';
 import { restyleSheetPrintToolbar } from '@/lib/sheetPrintChrome';
 import { PageTitle } from '@/components/PageTitle';
+import { ErrorState } from '@/components/EmptyState';
 import { blankCheckAllowsPrinting, checkRunData, describeBlankSummary, hasBlankChoice, rememberBlankChoice, type RunDataCheck } from '@/lib/runDataCheck';
 import { BlankValueCheck } from '@/components/runs/BlankValueCheck';
 import { friendlyError } from '@/lib/userMessages';
@@ -57,7 +58,7 @@ export default function SheetRunPrintPage({
     }
 
     if (format.type !== 'sheet') {
-      setError('Print / PDF is only for runs on sheet labels. Go back to the run to print on a thermal printer.');
+      setError('This page is only for sheet labels. This run prints on a label printer, from the run page.');
       return;
     }
 
@@ -94,11 +95,18 @@ export default function SheetRunPrintPage({
 
   if (!run && loadError) {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
-        <div role="alert" className="max-w-md text-center space-y-3">
-          <h1 className="text-lg font-semibold">{loadError.status === 404 ? 'We couldn\u2019t find that run' : 'We couldn\u2019t load that run'}</h1>
-          <p className="text-sm text-zinc-400">{loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}</p>
-          <Link href="/runs" className="btn btn-secondary">Back to runs</Link>
+      <main className="min-h-screen bg-zinc-950 text-zinc-100">
+        <PageTitle title="Print sheet labels" />
+        <div className="page-container">
+          <ErrorState
+            as="h1"
+            title={loadError.status === 404 ? 'We couldn’t find that run' : 'We couldn’t load that run'}
+            body={loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}
+            actions={<>
+              {loadError.status !== 404 && <button type="button" onClick={() => void fetchRun(id)} className="btn btn-primary">Try again</button>}
+              <Link href="/runs" className={loadError.status === 404 ? 'btn btn-primary' : 'btn btn-secondary'}>Go to Runs</Link>
+            </>}
+          />
         </div>
       </main>
     );
@@ -106,11 +114,15 @@ export default function SheetRunPrintPage({
 
   if (error) {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
-        <div role="alert" className="max-w-md space-y-3 text-center">
-          <h1 className="text-lg font-semibold">Can&apos;t print yet</h1>
-          <p className="text-sm text-zinc-400">{error}</p>
-          <a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-secondary">Back to the run</a>
+      <main className="min-h-screen bg-zinc-950 text-zinc-100">
+        <PageTitle title="Print sheet labels" />
+        <div className="page-container">
+          <ErrorState
+            as="h1"
+            title="Can’t print yet"
+            body={error}
+            actions={<a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-primary">Go to the run</a>}
+          />
         </div>
       </main>
     );

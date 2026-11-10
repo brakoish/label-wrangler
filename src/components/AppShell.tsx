@@ -9,11 +9,20 @@ import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 import { NewVersionNotice } from '@/components/NewVersionNotice';
 
+type NavBox = { left: number; width: number };
 /**
  * Where the nav's highlight was on the last page. Each page mounts its own
  * shell, so the highlight starts here and slides to the new page's link.
  */
-let lastNavIndicator: { left: number; width: number } | null = null;
+let lastNavIndicator: NavBox | null = null;
+/**
+ * A slide that started on the click, before the next page was ready. The next
+ * page's shell picks it up where it has got to, so the move never jumps.
+ */
+let navFlight: { from: NavBox; to: NavBox; at: number } | null = null;
+/** Matches .nav-indicator in globals.css. */
+const NAV_SLIDE_MS = 240;
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -34,7 +43,22 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   useRegisterShell();
   const banners = useShellBanners();
   const navRef = useRef<HTMLElement>(null);
-  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  const [indicator, setIndicator] = useState<NavBox | null>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+  // A slide for the highlight to play as soon as it is drawn (from, time, easing).
+  const pendingSlide = useRef<{ from: NavBox; ms: number; easing: string } | null>(null);
+  // Start the slide on the click itself, not once the next page has loaded.
+  const moveIndicatorTo = (href: string) => {
+    const link = Array.from(navRef.current?.querySelectorAll<HTMLElement>(':scope > a[href]') ?? []).find((a) => a.getAttribute('href') === href);
+    if (!link) return;
+    const to = { left: link.offsetLeft, width: link.offsetWidth };
+    const from = indicator ?? lastNavIndicator;
+    if (from) {
+      navFlight = { from, to, at: performance.now() };
+      pendingSlide.current = { from, ms: NAV_SLIDE_MS, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' };
+    }
+    setIndicator(to);
+  };
   useLayoutEffect(() => {
     const nav = navRef.current;
     const measure = () => {
@@ -42,23 +66,49 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
       return link ? { left: link.offsetLeft, width: link.offsetWidth } : null;
     };
     const next = measure();
+    const flight = navFlight;
+    navFlight = null;
     const from = lastNavIndicator;
     lastNavIndicator = next;
-    let frame = 0;
-    if (next && from && (from.left !== next.left || from.width !== next.width)) {
-      setIndicator(from);
-      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => setIndicator(next)); });
-    } else setIndicator(next);
+    pendingSlide.current = null;
+    if (next && flight && flight.to.left === next.left && flight.to.width === next.width) {
+      // The slide began on the click: carry on from where it has got to.
+      const t = (performance.now() - flight.at) / NAV_SLIDE_MS;
+      if (t < 1) {
+        const e = easeInOut(Math.max(0, t));
+        pendingSlide.current = {
+          from: { left: flight.from.left + (next.left - flight.from.left) * e, width: flight.from.width + (next.width - flight.from.width) * e },
+          ms: Math.max(80, Math.round(NAV_SLIDE_MS * (1 - t))),
+          easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+        };
+      }
+    } else if (next && from && (from.left !== next.left || from.width !== next.width)) {
+      pendingSlide.current = { from, ms: NAV_SLIDE_MS, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' };
+    }
+    setIndicator(next);
     const onResize = () => { const now = measure(); lastNavIndicator = now; setIndicator(now); };
     window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', onResize); };
+    return () => window.removeEventListener('resize', onResize);
   }, [pathname]);
+  // Play the pending slide on the first frame the highlight is drawn: no
+  // waiting a frame or two for a CSS transition to have something to start from.
+  useLayoutEffect(() => {
+    const slide = pendingSlide.current;
+    const el = indicatorRef.current;
+    if (!slide || !el || !indicator) return;
+    pendingSlide.current = null;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof el.animate !== 'function') return;
+    el.animate([
+      { width: `${slide.from.width}px`, transform: `translate(${slide.from.left}px, -50%)` },
+      { width: `${indicator.width}px`, transform: `translate(${indicator.left}px, -50%)` },
+    ], { duration: slide.ms, easing: slide.easing });
+  }, [indicator]);
 
-  const navItems: Array<{ href: string; label: string; short?: string; active: boolean }> = [
+  const navItems: Array<{ href: string; label: string; active: boolean }> = [
     { href: '/runs', label: 'Runs', active: isRuns },
     { href: '/nabis', label: 'Nabis', active: isNabis },
     { href: '/designer', label: 'Designs', active: isDesigner },
-    { href: '/formats', label: 'Label sizes', short: 'Sizes', active: isFormats },
+    { href: '/formats', label: 'Label sizes', active: isFormats },
   ];
 
   const activeLabel = navItems.find(item => item.active)?.label ?? '';
@@ -100,11 +150,14 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         event.preventDefault();
         event.stopPropagation();
         const href = link.getAttribute('href')!;
-        if (!canLeaveLocalPrint(() => router.push(href))) return;
-        void (beforeLeave ? beforeLeave() : Promise.resolve(true)).then(ready => { if (ready) router.push(href); });
+        const go = () => { moveIndicatorTo(href); router.push(href); };
+        if (!canLeaveLocalPrint(go)) return;
+        if (!beforeLeave) { go(); return; }
+        void beforeLeave().then(ready => { if (ready) go(); });
       }}>
         <div className="max-w-[1600px] mx-auto h-14 px-2 sm:px-6 flex items-center gap-1 sm:gap-6">
-          <Link href="/runs" aria-label="Label Wrangler, go to print runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 sm:p-0">
+          {/* On the narrowest phones the nav needs the room; Runs is the home link there. */}
+          <Link href="/runs" aria-label="Label Wrangler, go to Runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 max-[399px]:hidden sm:p-0">
             <img
               src="/logo.png"
               alt=""
@@ -118,22 +171,19 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
 
           <nav ref={navRef} aria-label="Main" className="relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
             {/* One highlight that slides between links (shared layout), drawn under them. */}
-            {indicator && <span aria-hidden="true" className="nav-indicator pointer-events-none absolute left-0 top-1/2 h-control-sm rounded-lg bg-zinc-800" style={{ width: indicator.width, transform: `translate(${indicator.left}px, -50%)` }} />}
+            {indicator && <span ref={indicatorRef} aria-hidden="true" className="nav-indicator pointer-events-none absolute left-0 top-1/2 h-control-sm rounded-lg bg-zinc-800" style={{ width: indicator.width, transform: `translate(${indicator.left}px, -50%)` }} />}
             {navItems.map(item => (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
-                // One accessible name, not the short and long names run together.
-                aria-label={item.short ? item.label : undefined}
-                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
+                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg px-2 max-[339px]:px-1.5 min-[400px]:px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
                   item.active
                     ? `${indicator ? '' : 'bg-zinc-800 '}text-zinc-100`
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
                 }`}
               >
-                {/* Short names on phones so the whole nav fits at 360px. */}
-                {item.short ? <><span aria-hidden="true" className="sm:hidden">{item.short}</span><span aria-hidden="true" className="max-sm:hidden">{item.label}</span></> : item.label}
+                {item.label}
               </Link>
             ))}
           </nav>
