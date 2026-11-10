@@ -714,7 +714,8 @@ textarea:focus-visible {
  *   y eases in, so the path curves) instead of a straight slide.
  * - .menu-sheet: the phone "More" sheet slides up; dragging past the top
  *   stretches a little (rubber band, done in Menu.tsx), down closes it.
- * - .nav-indicator: the nav highlight slides between links (shared layout).
+ * - .nav-indicator: the nav highlight slides between links (played from
+ *   AppShell.tsx on the click itself, so it doesn't wait for the next page).
  * - .status-dot, .progress-seg: colour and size changes ease in place.
  */
 @layer components {
@@ -737,7 +738,6 @@ textarea:focus-visible {
     .menu-sheet[data-dragging] { transition: none; }
     .menu-sheet-scrim { transition: opacity 240ms var(--ease-out); }
     .menu-sheet-scrim[data-state="closed"] { transition-duration: 190ms; transition-timing-function: var(--ease-in); }
-    .nav-indicator { transition: transform 240ms var(--ease-in-out), width 240ms var(--ease-in-out); }
     .status-dot { transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out); }
   }
 }

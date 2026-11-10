@@ -9,11 +9,20 @@ import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 import { NewVersionNotice } from '@/components/NewVersionNotice';
 
+type NavBox = { left: number; width: number };
 /**
  * Where the nav's highlight was on the last page. Each page mounts its own
  * shell, so the highlight starts here and slides to the new page's link.
  */
-let lastNavIndicator: { left: number; width: number } | null = null;
+let lastNavIndicator: NavBox | null = null;
+/**
+ * A slide that started on the click, before the next page was ready. The next
+ * page's shell picks it up where it has got to, so the move never jumps.
+ */
+let navFlight: { from: NavBox; to: NavBox; at: number } | null = null;
+/** Matches .nav-indicator in globals.css. */
+const NAV_SLIDE_MS = 240;
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -34,15 +43,21 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   useRegisterShell();
   const banners = useShellBanners();
   const navRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState<NavBox | null>(null);
   const indicatorRef = useRef<HTMLSpanElement>(null);
-  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  // A slide for the highlight to play as soon as it is drawn (from, time, easing).
+  const pendingSlide = useRef<{ from: NavBox; ms: number; easing: string } | null>(null);
   // Start the slide on the click itself, not once the next page has loaded.
   const moveIndicatorTo = (href: string) => {
     const link = Array.from(navRef.current?.querySelectorAll<HTMLElement>(':scope > a[href]') ?? []).find((a) => a.getAttribute('href') === href);
     if (!link) return;
-    const next = { left: link.offsetLeft, width: link.offsetWidth };
-    lastNavIndicator = next;
-    setIndicator(next);
+    const to = { left: link.offsetLeft, width: link.offsetWidth };
+    const from = indicator ?? lastNavIndicator;
+    if (from) {
+      navFlight = { from, to, at: performance.now() };
+      pendingSlide.current = { from, ms: NAV_SLIDE_MS, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' };
+    }
+    setIndicator(to);
   };
   useLayoutEffect(() => {
     const nav = navRef.current;
@@ -51,28 +66,43 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
       return link ? { left: link.offsetLeft, width: link.offsetWidth } : null;
     };
     const next = measure();
+    const flight = navFlight;
+    navFlight = null;
     const from = lastNavIndicator;
     lastNavIndicator = next;
-    let frame = 0;
-    if (next && from && (from.left !== next.left || from.width !== next.width)) {
-      setIndicator(from);
-      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => setIndicator(next)); });
-    } else setIndicator(next);
+    pendingSlide.current = null;
+    if (next && flight && flight.to.left === next.left && flight.to.width === next.width) {
+      // The slide began on the click: carry on from where it has got to.
+      const t = (performance.now() - flight.at) / NAV_SLIDE_MS;
+      if (t < 1) {
+        const e = easeInOut(Math.max(0, t));
+        pendingSlide.current = {
+          from: { left: flight.from.left + (next.left - flight.from.left) * e, width: flight.from.width + (next.width - flight.from.width) * e },
+          ms: Math.max(80, Math.round(NAV_SLIDE_MS * (1 - t))),
+          easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
+        };
+      }
+    } else if (next && from && (from.left !== next.left || from.width !== next.width)) {
+      pendingSlide.current = { from, ms: NAV_SLIDE_MS, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' };
+    }
+    setIndicator(next);
     const onResize = () => { const now = measure(); lastNavIndicator = now; setIndicator(now); };
     window.addEventListener('resize', onResize);
-    const highlight = indicatorRef.current;
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', onResize);
-      // Leaving mid-slide: the next page's highlight carries on from where
-      // this one is now, so the move never jumps.
-      if (nav && highlight?.isConnected && lastNavIndicator) {
-        const box = highlight.getBoundingClientRect();
-        const navBox = nav.getBoundingClientRect();
-        if (box.width) lastNavIndicator = { left: box.left - navBox.left + nav.scrollLeft, width: box.width };
-      }
-    };
+    return () => window.removeEventListener('resize', onResize);
   }, [pathname]);
+  // Play the pending slide on the first frame the highlight is drawn: no
+  // waiting a frame or two for a CSS transition to have something to start from.
+  useLayoutEffect(() => {
+    const slide = pendingSlide.current;
+    const el = indicatorRef.current;
+    if (!slide || !el || !indicator) return;
+    pendingSlide.current = null;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof el.animate !== 'function') return;
+    el.animate([
+      { width: `${slide.from.width}px`, transform: `translate(${slide.from.left}px, -50%)` },
+      { width: `${indicator.width}px`, transform: `translate(${indicator.left}px, -50%)` },
+    ], { duration: slide.ms, easing: slide.easing });
+  }, [indicator]);
 
   const navItems: Array<{ href: string; label: string; active: boolean }> = [
     { href: '/runs', label: 'Runs', active: isRuns },
