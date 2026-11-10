@@ -20,6 +20,8 @@ import { officeProblemWords } from '@/lib/officeProblem';
 import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
+import { isDazzleRunning } from '@/lib/dazzlePrinter';
+import { isWebUsbSupported } from '@/lib/webusbPrinter';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
 interface ListOffice {
@@ -299,6 +301,18 @@ export default function RunsPage() {
   // The shared printer is paused or stopped: queued labels read as waiting, not on their way.
   const [printerHeld, setPrinterHeld] = useState(false);
   const [holdRun, setHoldRun] = useState<{ runId: string; runName: string } | null>(null);
+  // The printer this device last chose on a run page; the run page starts on it.
+  const [officeDefault, setOfficeDefault] = useState(false);
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('lw:last-transport'); } catch { saved = null; }
+    if (saved === 'office') { setOfficeDefault(true); return; }
+    if (saved === 'webusb' && isWebUsbSupported()) return;
+    // Like the run page: a running Dazzle app comes first, then the office printer.
+    let live = true;
+    void isDazzleRunning().then((dz) => { if (live) setOfficeDefault(!dz); });
+    return () => { live = false; };
+  }, []);
   const onPrinterHeld = useCallback((held: boolean, by?: { runId: string; runName: string } | null) => {
     setPrinterHeld(held);
     setHoldRun((prev) => (prev?.runId === by?.runId && prev?.runName === by?.runName ? prev : by ?? null));
@@ -429,6 +443,7 @@ export default function RunsPage() {
                 onTogglePin={() => void togglePin(r.id)}
                 printerHeld={printerHeld}
                 holdRun={holdRun}
+                officeDefault={officeDefault}
               />
             </li>
           ))}
@@ -775,19 +790,25 @@ function RunRow({
   onTogglePin,
   printerHeld = false,
   holdRun = null,
+  officeDefault = false,
 }: {
   run: ListRun;
   printerHeld?: boolean;
   /** Another run whose part stops the shared printer. */
   holdRun?: { runId: string; runName: string } | null;
+  /** This device prints to the office printer by default, as the run page does. */
+  officeDefault?: boolean;
   templateName: string;
   formatName: string;
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
   // Labels of this run waiting behind another run's part: "Waiting on another run".
-  const heldBy = holdRun && holdRun.runId !== run.id && (run.office?.onTheWay ?? 0) > 0 ? holdRun : null;
-  const office = run.office ? { ...run.office, held: printerHeld, heldBy } : null;
+  // A run with nothing sent yet waits too when this device sends to the office
+  // printer, the same rule the run page uses, so both say the same thing.
+  const leftToSend = run.status !== 'draft' && run.status !== 'cancelled' && (run.printedCount || 0) < run.totalLabels;
+  const heldBy = holdRun && holdRun.runId !== run.id && ((run.office?.onTheWay ?? 0) > 0 || (officeDefault && leftToSend)) ? holdRun : null;
+  const office = run.office ? { ...run.office, held: printerHeld, heldBy } : heldBy ? { sent: 0, onTheWay: 0, failed: 0, firstFailed: null, held: printerHeld, heldBy } as ListOffice & { held: boolean; heldBy: typeof heldBy } : null;
   const { setRunStatus, createPrintEvent } = useRunStore();
   const display = runDisplayStatus(run, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
