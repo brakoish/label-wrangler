@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Printer } from 'lucide-react';
+import { Check, Loader2, Printer } from 'lucide-react';
 import { getBitmapProof, type BitmapResult } from '@/lib/thermal/client';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { PopLayer } from '@/components/ui/PopLayer';
+import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
+import { IconSwap } from '@/components/ui/IconSwap';
+import { Recovery } from '@/components/ui/Recovery';
 import { officeStatusLine, plainOfficeRefusal, readRefusal, refusalNeedsSomeoneElse, refusalStillApplies, sendKeepsRequest, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 
 type PrinterInfo = { station_id: string; id: string; name: string; online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at?: string | null; needs_review: boolean; dispatch_hold_reason?: string | null; review_holds?: OfficeReviewHold[] };
@@ -78,7 +80,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
     setPending(null); setRunId(''); setError(''); setRefusal(null);
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved) { setPending(JSON.parse(saved)); setOpen(true); }
+      if (saved) setPending(JSON.parse(saved));
       else setRefusal(readRefusal(localStorage.getItem(refusedKey)));
     } catch { setError('The saved test print on this device couldn’t be read. Check Runs before printing again.'); }
   }, [storageKey, refusedKey]);
@@ -103,7 +105,12 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   // a second tab on the same design says "sending from another tab" instead
   // of a false "not sure" (it also follows the saved test print as it changes).
   const sendingKey = `lw:designer-office-sending:${template.id}`;
+  // When a send succeeds this tab also leaves a short note, so another tab
+  // showing "sending from another tab" can say it went (and nobody sends a
+  // second test print). Only a hint: the server and Runs stay the record.
+  const sentKey = `lw:designer-office-sent:${template.id}`;
   const [otherTabSending, setOtherTabSending] = useState(false);
+  const [sentElsewhere, setSentElsewhere] = useState(false);
   useEffect(() => {
     const check = () => {
       if (inFlight.current) { setOtherTabSending(false); return; }
@@ -113,18 +120,25 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       if (event.key === storageKey && !inFlight.current) {
         try { setPending(event.newValue ? JSON.parse(event.newValue) : null); } catch { /* keep what is shown */ }
       }
+      if (event.key === sentKey && event.newValue && !inFlight.current) {
+        try {
+          const note = JSON.parse(event.newValue) as { runId?: string; at?: number };
+          if (typeof note.runId === 'string' && Date.now() - Number(note.at) < 5 * 60_000) { setRunId(note.runId); setSentElsewhere(true); setRefusal(null); setError(''); }
+        } catch { /* only a hint */ }
+      }
+      if (event.key === refusedKey && !inFlight.current) { setRefusal(readRefusal(event.newValue)); if (event.newValue) { setRunId(''); setSentElsewhere(false); } }
       if (event.key === storageKey || event.key === sendingKey) check();
     };
     check();
     window.addEventListener('storage', onStorage);
     const timer = setInterval(check, 2000);
     return () => { window.removeEventListener('storage', onStorage); clearInterval(timer); };
-  }, [storageKey, sendingKey]);
+  }, [storageKey, sendingKey, sentKey, refusedKey]);
 
   const printer = printers.find(p => p.id === (pending?.printerId ?? selected));
   const submit = async () => {
     if (inFlight.current || !printer || (bitmap && !pending && proofs?.key !== proofKey)) return;
-    inFlight.current = true; setBusy(true); setError(''); setRunId('');
+    inFlight.current = true; setBusy(true); setError(''); setRunId(''); setSentElsewhere(false);
     // A resend goes out with the saved key; a first send gets a new one.
     const resend = !!pending;
     try {
@@ -149,6 +163,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
           clearInterval(heartbeat);
           try { localStorage.removeItem(sendingKey); } catch { /* lapses on its own */ }
         });
+        try { localStorage.setItem(sentKey, JSON.stringify({ runId: result.runId, at: Date.now() })); } catch { /* only a hint for other tabs */ }
         localStorage.removeItem(storageKey); setPending(null); setRunId(result.runId);
       } catch (error) {
         // A definite refusal (400/404/409/413) means nothing was queued, so
@@ -178,33 +193,63 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   const quantityOk = Number.isInteger(quantity) && quantity >= 1 && quantity <= 25;
   const canSend = !busy && !otherTabSending && canPrint && !!printer && (pending ? true : readiness.canSend && quantityOk && !(bitmap && proofs?.key !== proofKey));
   const dot = readiness.tone === 'ok' ? 'bg-emerald-400' : readiness.tone === 'bad' ? 'bg-red-400' : 'bg-amber-400';
+  // Another tab is sending this design's saved test print: said once, with no button to press.
+  const elsewhere = !!pending && !busy && otherTabSending;
+  const unsure = !!pending && !busy && !otherTabSending;
+  const unsureWords = pending && (pending.status === undefined || uncertainSendWords(pending.status, pending.code).cause === 'no-answer')
+    ? '“Send again” resends that same print (not later edits), so it won’t print twice.'
+    : pending ? uncertainSendWords(pending.status, pending.code).message.replace('come back to this run', 'come back to this design') : '';
+  const sendLabel = busy ? 'Sending…' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`;
+  const startOver = async () => {
+    const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first. The office may already have this test print, and starting over doesn’t cancel anything already sent.', confirmLabel: 'Start over' });
+    if (!ok) return;
+    localStorage.removeItem(storageKey); setPending(null); setError('');
+  };
+  const sentLine = runId && <p role="status" className="flex items-start gap-2 text-emerald-400"><Check className="mt-0.5 size-4 shrink-0 rounded-full animate-success" aria-hidden="true" /><span>{sentElsewhere ? 'Sent from another tab.' : 'Test print sent to the office.'} <Link href={`/runs/${encodeURIComponent(runId)}`} className="link">See it or cancel it</Link></span></p>;
+  // Closed panel: one short line beside the button, so the state is seen
+  // without the panel opening by itself (and pushing the row about).
+  const inline = open ? null
+    : elsewhere ? <span role="status" className="text-zinc-400">Sending from another tab…</span>
+      : busy ? <span role="status" className="text-zinc-400">Sending…</span>
+        : unsure ? <span className="text-amber-300">Not sure the last test print went</span>
+          : runId ? <span role="status" className="text-emerald-400">{sentElsewhere ? 'Sent from another tab' : 'Test print sent'}</span>
+            : null;
+  const triggerIcon = busy || elsewhere ? 'busy' : runId ? 'sent' : 'idle';
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  useDismiss(open, () => setOpen(false), [panelRef, triggerRef]);
 
-  return <div className="text-sm">
-    <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="btn btn-secondary btn-sm"><Printer className="size-4" aria-hidden="true" />Test print at the office</button>
-    <PopLayer open={open} className="card mt-2 max-w-md space-y-3 p-4 [--origin:top_left]">
+  return <div className="relative flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+    <button ref={triggerRef} type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="btn btn-secondary btn-sm">
+      <IconSwap className="size-4" active={triggerIcon} icons={{ idle: <Printer className="size-4" />, busy: <Loader2 className="size-4 animate-spin" />, sent: <Check className="size-4 text-emerald-400" /> }} />
+      Test print at the office
+    </button>
+    {inline}
+    {/* Drawn over the page, so opening it moves nothing beside it. */}
+    <PopLayer ref={panelRef} open={open} className="absolute left-0 top-full z-50 mt-1 w-[min(28rem,calc(100vw-1.5rem))] space-y-3 rounded-xl bg-zinc-900 p-4 shadow-xl shadow-black/50 [--origin:top_left]">
       <p className="text-zinc-400">Prints this design with its sample text on the office printer. It shows up in Runs as a test print.</p>
       <div className="space-y-1.5">
         {printers.length > 1 ? (
           <CustomSelect aria-label="Office printer" disabled={busy || !!pending} value={pending?.printerId ?? selected} onChange={setSelected} options={printers.map(p => ({ value: p.id, label: p.name }))} />
         ) : <p className="font-medium text-zinc-100">{printers[0]?.name ?? 'No office printer is set up for your account'}</p>}
-        {printer && <p className="flex items-start gap-2 text-zinc-400"><span aria-hidden="true" className={`mt-1.5 size-2 shrink-0 rounded-full ${dot}`} />{readiness.text}</p>}
+        {printer && <p className="flex items-start gap-2 text-zinc-400"><span aria-hidden="true" className={`status-dot mt-1.5 size-2 shrink-0 rounded-full ${dot}`} />{readiness.text}</p>}
       </div>
       <label className="flex items-center gap-2 text-zinc-300">How many test labels
         <input type="number" inputMode="numeric" min={1} max={25} value={pending?.quantity ?? quantity} disabled={busy || !!pending} onChange={e => setQuantity(Number(e.target.value))} className="field w-20 tabular-nums" aria-describedby="office-test-quantity-help" />
         <span id="office-test-quantity-help" className="text-zinc-400">up to 25</span>
       </label>
       {bitmap && !pending && <div className="space-y-1">{proofs?.key === proofKey ? proofs.results.map((r, i) => <img key={i} src={r.proof} alt={`Test label ${i + 1} as it will print`} className="w-full bg-white" style={{ imageRendering: 'pixelated' }} />) : <p role="status" className="text-zinc-400">Drawing the label exactly as it will print…</p>}</div>}
-      {pending && !busy && otherTabSending && <p role="status" className="text-zinc-300">Sending this test print from another tab or window…</p>}
-      {pending && !busy && !otherTabSending && <p role="status" className="text-amber-300">We’re not sure the office got your last test print. {pending.status === undefined || uncertainSendWords(pending.status, pending.code).cause === 'no-answer' ? 'Press “Send again”. It resends that same print (not later edits), so it won’t print twice.' : uncertainSendWords(pending.status, pending.code).message.replace('come back to this run', 'come back to this design')}</p>}
-      {shownRefusal && !pending && <p role="alert" className="text-amber-300">Your last test print wasn’t sent. {shownRefusal.message}</p>}
-      <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending && otherTabSending ? 'Sending from another tab…' : pending ? 'Send again' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
+      {elsewhere && <p role="status" className="flex items-center gap-2 text-zinc-300"><Loader2 className="size-4 shrink-0 animate-spin text-amber-400" aria-hidden="true" />Sending this test print from another tab…</p>}
+      {unsure && <Recovery tone="warning" title="We’re not sure the office got your last test print" actions={<>
+        <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">Send again</button>
+        <button type="button" onClick={() => void startOver()} className="btn btn-ghost btn-sm">Start over</button>
+      </>}>
+        <p>{unsureWords} Or <Link href="/runs" className="link">check Runs</Link> first.</p>
+      </Recovery>}
+      {shownRefusal && !pending && <Recovery role="alert" tone="danger" title="Your last test print wasn’t sent"><p>{shownRefusal.message}</p></Recovery>}
+      {(!pending || busy) && <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}{sendLabel}</button>}
       {error && <p role="alert" className="text-red-400">{error}</p>}
-      {pending && !busy && !otherTabSending && <p className="text-zinc-400"><Link href="/runs" className="link">Check Runs</Link> first, or <button type="button" className="link" onClick={async () => {
-        const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first. The office may already have this test print, and starting over doesn’t cancel anything already sent.', confirmLabel: 'Start over' });
-        if (!ok) return;
-        localStorage.removeItem(storageKey); setPending(null); setError('');
-      }}>start over</button>.</p>}
-      {runId && <p role="status" className="text-emerald-400">Test print sent to the office. <Link href={`/runs/${encodeURIComponent(runId)}`} className="link">See it or cancel it</Link></p>}
+      {sentLine}
     </PopLayer>
   </div>;
 }
