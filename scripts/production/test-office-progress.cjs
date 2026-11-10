@@ -78,3 +78,14 @@ assert.equal(officePrinterReadiness({ ...ready, needs_review: true }, null).canS
 assert.equal(officePrinterReadiness(undefined, null).canSend, false);
 
 console.log('PASS office progress: deliveries record contiguous progress (done when all sent), one range across printers, 4xx refusals clear the saved request and read in plain words');
+
+// Field names on the run page read as words, not code.
+const { fieldDisplayName } = require('../../src/lib/fieldDisplayName.ts');
+assert.equal(fieldDisplayName('coa_url'), 'COA link');
+assert.equal(fieldDisplayName('package_tag'), 'Package tag');
+assert.equal(fieldDisplayName('thc'), 'THC');
+assert.equal(fieldDisplayName('batchNumber'), 'Batch number');
+assert.equal(fieldDisplayName('Product Name'), 'Product Name', 'spreadsheet headings stay as typed');
+assert.equal(fieldDisplayName('SKU'), 'SKU');
+assert.equal(fieldDisplayName('url'), 'Link');
+console.log('PASS field display names');
