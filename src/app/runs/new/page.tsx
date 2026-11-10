@@ -45,6 +45,7 @@ import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
+import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
 import { clearRunDraft, lastRunSource, readRunDraft, rememberRunSource, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 /** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
@@ -1171,7 +1172,7 @@ function NewRunContent() {
   const checkReasons = setupReason || !format ? [] : [
     !blanksOk && !nabisCoversBlanks && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
-      : `${blankHeading(blankCheck)}: choose what to do above.`),
+      : `${blankHeading(blankCheck)}: choose what to do in Review.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
     !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
@@ -1179,13 +1180,13 @@ function NewRunContent() {
       : `Some barcodes can’t print. ${charSkippable ? 'Leave those labels out, fix those rows' : 'Fix those rows'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`)
       : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
         : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
-    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. Fix them, leave those labels out, or tick “Print anyway” above.`,
-    !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
+    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. Fix them, leave those labels out, or tick “Print anyway” in Review.`,
+    !layoutOk && 'Items overlap: tick “I checked the preview” in Review, or fix the design.',
     !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, manifestSelectedRows.length)}. Search again, or tick ${nabisGapFields.length ? `to leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off` : 'to print without them'}.`,
   ].filter((reason): reason is string => !!reason);
   const previewReason = setupReason || !format || checkReasons.length ? null
     : format.type === 'thermal' && previewState.status === 'error'
-      ? 'Fix the preview error above to start.'
+      ? 'Fix the preview error in Review to start.'
       : format.type === 'thermal' && previewState.status === 'loading'
         ? 'Checking the label preview…'
         : format.type === 'thermal' && previewState.status === 'empty'
@@ -2086,9 +2087,9 @@ function NewRunContent() {
               {/* Review — always shown once a label size is known; with no
                   data yet it shows the design's sample text. */}
               {format && (
-                <section className="card card-flat p-4 sm:p-5 space-y-4">
+                <section id={REVIEW_ID} className="card card-flat scroll-mt-20 p-4 sm:p-5 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="text-base font-semibold text-zinc-100">Review</h2>
+                    <h2 id={`${REVIEW_ID}-title`} tabIndex={-1} className="text-base font-semibold text-zinc-100 outline-none">Review</h2>
                     {labelCount > 0 ? (
                       <div className="flex items-center gap-2 text-sm">
                         <button
@@ -2416,6 +2417,21 @@ export default function NewRunPage() {
   );
 }
 
+/** The Review section, so a footer reason can take you to it. */
+const REVIEW_ID = 'run-review';
+
+/** “… in Review.” with “in Review” as a link that scrolls to it (the choices may be off screen). */
+function ReasonText({ reason }: { reason: string }) {
+  const at = reason.indexOf('in Review');
+  if (at < 0) return <>{reason}</>;
+  const goToReview = () => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById(REVIEW_ID)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    document.getElementById(`${REVIEW_ID}-title`)?.focus({ preventScroll: true });
+  };
+  return <>{reason.slice(0, at)}<button type="button" className="link" onClick={goToReview}>in Review</button>{reason.slice(at + 'in Review'.length)}</>;
+}
+
 /**
  * Why Start is waiting, on one line: the reason itself when there is one,
  * else “3 things left” that opens the list above the footer.
@@ -2423,27 +2439,28 @@ export default function NewRunPage() {
 function WaitReasons({ reasons }: { reasons: string[] }) {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const listRef = useRef<HTMLUListElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  useDismiss(open, () => setOpen(false), [listRef, toggleRef]);
   if (reasons.length === 1) {
     return (
       <p role="status" className="flex items-start gap-1.5 text-sm text-amber-300 sm:max-w-md">
-        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{reasons[0]}
+        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span><ReasonText reason={reasons[0]} /></span>
       </p>
     );
   }
   return (
     <div role="status" className="relative text-sm">
-      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="press inline-flex min-h-11 items-center gap-1.5 text-amber-300 hover:text-amber-200">
+      <button ref={toggleRef} type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="press inline-flex min-h-11 items-center gap-1.5 text-amber-300 hover:text-amber-200">
         <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
         {reasons.length} things left before you can start
         <ChevronRight className={`size-4 shrink-0 transition-transform duration-200 ease-in-out motion-reduce:transition-none ${open ? '-rotate-90' : ''}`} aria-hidden="true" />
       </button>
-      {open && (
-        <ul id={id} className="popover-enter absolute bottom-full left-0 z-40 mb-2 w-[min(28rem,calc(100vw-2rem))] sm:left-auto sm:right-0 [--origin:bottom_right] space-y-2 rounded-lg bg-zinc-800 p-4 text-zinc-100 shadow-xl">
-          {reasons.map((reason) => (
-            <li key={reason} className="flex items-start gap-1.5"><Circle className="mt-1.5 size-2 shrink-0 fill-current text-amber-300" aria-hidden="true" />{reason}</li>
-          ))}
-        </ul>
-      )}
+      <PopLayer as="ul" ref={listRef} open={open} id={id} className="absolute bottom-full left-0 z-40 mb-2 w-[min(28rem,calc(100vw-2rem))] sm:left-auto sm:right-0 [--origin:bottom_right] space-y-2 rounded-lg bg-zinc-800 p-4 text-zinc-100 shadow-xl">
+        {reasons.map((reason) => (
+          <li key={reason} className="flex items-start gap-1.5"><Circle className="mt-1.5 size-2 shrink-0 fill-current text-amber-300" aria-hidden="true" /><span><ReasonText reason={reason} /></span></li>
+        ))}
+      </PopLayer>
     </div>
   );
 }

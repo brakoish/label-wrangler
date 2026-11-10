@@ -383,12 +383,6 @@ textarea:focus-visible,
     transform: translateX(1.1rem);
   }
 
-  /* Popovers and menus scale in from their trigger. Set --origin per use. */
-  .popover-enter {
-    animation: pop 160ms var(--ease-out) both;
-    transform-origin: var(--origin, top);
-  }
-
   /* First-load list entrance: 30ms stagger, capped at the 10th item. */
   .stagger > * {
     animation: enter 220ms var(--ease-out) both;

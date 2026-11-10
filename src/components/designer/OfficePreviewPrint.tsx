@@ -8,6 +8,7 @@ import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { PopLayer } from '@/components/ui/PopLayer';
 import { officeStatusLine, plainOfficeRefusal, readRefusal, refusalNeedsSomeoneElse, refusalStillApplies, sendKeepsRequest, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 
 type PrinterInfo = { station_id: string; id: string; name: string; online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at?: string | null; needs_review: boolean; dispatch_hold_reason?: string | null; review_holds?: OfficeReviewHold[] };
@@ -150,7 +151,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
 
   return <div className="text-sm">
     <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="btn btn-secondary btn-sm"><Printer className="size-4" aria-hidden="true" />Test print at the office</button>
-    {open && <div className="popover-enter card mt-2 max-w-md space-y-3 p-4">
+    <PopLayer open={open} className="card mt-2 max-w-md space-y-3 p-4 [--origin:top_left]">
       <p className="text-zinc-400">Prints this design with its sample text on the office printer. It shows up in Runs as a test print.</p>
       <div className="space-y-1.5">
         {printers.length > 1 ? (
@@ -173,6 +174,6 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
         localStorage.removeItem(storageKey); setPending(null); setError('');
       }}>start over</button>.</p>}
       {runId && <p role="status" className="text-emerald-400">Test print sent to the office. <Link href={`/runs/${encodeURIComponent(runId)}`} className="link">See it or cancel it</Link></p>}
-    </div>}
+    </PopLayer>
   </div>;
 }
