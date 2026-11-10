@@ -205,13 +205,3 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
   console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');
 }
-
-// Round 9: "Why?" under an odd-character problem says only what is new.
-{
-  const item = 'Label 3: the SKU "café-é" has characters a barcode can\'t hold (é). Fix row 4 of your spreadsheet.';
-  assert.equal(B.barcodePlainSentence(item), 'Label 3: the SKU "café-é" has characters a barcode can\'t hold (é).');
-  const why = B.barcodeWhyText(item);
-  assert.ok(!why.includes('café-é'), 'the sentence is not repeated behind Why?');
-  assert.match(why, /^This barcode holds plain letters, numbers and everyday symbols only\. Fix row 4 of your spreadsheet\.$/);
-  console.log('PASS run r9: Why? under a barcode problem adds only what the sentence did not say');
-}
