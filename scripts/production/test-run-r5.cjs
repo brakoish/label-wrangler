@@ -104,8 +104,10 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
 {
   const save=panel.slice(panel.indexOf('const saveFix='),panel.indexOf('const pendingWords='));
   assert.ok(save.indexOf('saveHeld(')>save.indexOf("method:'DELETE'"),'held labels are remembered only after the office cancelled them');
-  assert.match(panel,/<li>1\. Hold \{spanWords\(fixLater\.spans\)\}<\/li>\s*<li>2\. Print \{range\(again\.from,again\.to\)\} again<\/li>\s*<li>3\. Then you send \{spanWords\(fixLater\.spans\)\} \(one tap, after the reprint\)<\/li>/,'the dialog says what really happens, in three steps');
-  assert.match(panel,/:sendingHeld && plan\.kind!=='reprint'\?`\$\{proofCurrent\?'Send':'Check & send'\} /,'after the reprint: "Check & send 76–150", named before the generic check');
+  assert.doesNotMatch(panel,/<li>1\. Hold/,'B13: no numbered plan repeating the choice');
+  assert.match(panel,/wait'\}\s*until the reprint is done\. Then you send \$\{single\(fixLater\.spans\)\?'it':'them'\} with one tap\./,'B13: the order is one sentence, saying the held labels are one tap after the reprint');
+  assert.match(panel,/'Let them print first instead':'Hold them until the reprint is done'/,'B13: the other order is a link, not a second choice group');
+  assert.match(panel,/:sendingHeld && plan\.kind!=='reprint'\?`\$\{proofCurrent\?'Send':'Check'\} /,'after the reprint: "Check labels 76–150" only checks, then "Send labels 76–150"');
   assert.ok(panel.indexOf(":sendingHeld && plan.kind!=='reprint'")<panel.indexOf(":!proofCurrent?(plan.kind==='reprint'"),'the held labels are named even before their check');
   assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
