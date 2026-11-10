@@ -71,7 +71,9 @@ function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string;
   const unfinished = run.status !== 'cancelled' && run.status !== 'completed' && printedShown(run) < run.totalLabels;
   const heldBy = holdRun && holdRun.runId !== run.id && unfinished ? holdRun : null;
   // Labels still to send are said beside "Did they all come out?", like the run page.
-  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) } : null;
+  if (run.office) return { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) };
+  // Nothing sent to the office yet: the run page (office printer by default) still says it waits, so the row does too.
+  return heldBy && run.status !== 'draft' ? { sent: 0, onTheWay: 0, failed: 0, firstFailed: null, unsent: undefined as OfficeSpan[] | undefined, held: printerHeld, heldBy, unchecked: 0, stillToSend: 0, heldBack: null } : null;
 }
 
 /**
