@@ -16,6 +16,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
+import { Menu } from '@/components/ui/Menu';
 import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
 
 interface TemplateListProps {
@@ -290,46 +291,19 @@ function TemplateCard({
               {template.name}
             </button>
           </h3>
-          <div className="flex items-center flex-shrink-0 -mr-1">
-            {onRename && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRename();
-                }}
-                className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-                title="Rename design"
-                aria-label={`Rename ${template.name}`}
-              >
-                <Pencil className="size-4" />
-              </button>
-            )}
-            {onDuplicate && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDuplicate();
-                }}
-                className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-                title="Duplicate (optionally to another label size)"
-                aria-label={`Duplicate ${template.name}`}
-              >
-                <Copy className="size-4" />
-              </button>
-            )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (template.archivedAt) { onDelete(); return; }
-                void confirmDialog({ title: `Archive “${template.name}”?`, body: 'It leaves the active list. Runs that used it keep working, and you can restore it from Archived.', confirmLabel: 'Archive' }).then((ok) => { if (ok) onDelete(); });
-              }}
-              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-              disabled={pending}
-              title={template.archivedAt ? "Restore design" : "Archive design"}
-              aria-label={`${template.archivedAt ? "Restore" : "Archive"} ${template.name}`}
-            >
-              {template.archivedAt ? <RotateCcw className="size-4" /> : <Archive className="size-4" />}
-            </button>
+          {/* One menu instead of three icon buttons on every card. */}
+          <div className="-mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <Menu
+              label={`More for ${template.name}`}
+              showLabel={false}
+              items={[
+                ...(onRename ? [{ label: 'Rename', icon: <Pencil className="size-4" aria-hidden="true" />, onSelect: onRename }] : []),
+                ...(onDuplicate ? [{ label: 'Duplicate', icon: <Copy className="size-4" aria-hidden="true" />, onSelect: onDuplicate }] : []),
+                template.archivedAt
+                  ? { label: 'Restore', icon: <RotateCcw className="size-4" aria-hidden="true" />, onSelect: onDelete, disabled: pending }
+                  : { label: 'Archive', icon: <Archive className="size-4" aria-hidden="true" />, disabled: pending, onSelect: () => { void confirmDialog({ title: `Archive “${template.name}”?`, body: 'It leaves the active list. Runs that used it keep working, and you can restore it from Archived.', confirmLabel: 'Archive' }).then((ok) => { if (ok) onDelete(); }); } },
+              ]}
+            />
           </div>
         </div>
 
