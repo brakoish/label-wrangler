@@ -382,6 +382,12 @@ console.log('PASS field display names');
     assert.equal(controls.indexOf("localStorage.setItem(key,JSON.stringify(payload))") < controls.indexOf("fetch('/api/office/controls',{method:'POST'"), true, 'saved before the POST');
   }
 
+  // Another run on the same page starts empty, and a late answer for the last run is dropped.
+  const officeHook = read('src/components/runs/useOfficeRequests.ts');
+  assert.match(officeHook, /if \(shownRun !== runId\) \{\n\s+setShownRun\(runId\);\n\s+setRequests\(\[\]\); setAllJobs\(null\); setTruncated\(false\); setLoaded\(false\); setEverLoaded\(false\); setFailed\(null\);/);
+  assert.match(officeHook, /if \(currentRun\.current !== runId\) return;/);
+  assert.doesNotMatch(officeHook, /active\.current = true/, 'no shared flag that a new run turns back on');
+
   const list = read('src/app/runs/page.tsx');
   assert.doesNotMatch(list, /Otherwise it’s deleted for good/, 'the delete dialog says the one case that applies');
   assert.match(list, /moving \? 5000 : 15000/, 'the Runs list reads faster only while labels are on their way');
