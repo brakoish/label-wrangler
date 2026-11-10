@@ -31,6 +31,16 @@ const range=(a:number,b:number)=>a===b?`label ${a.toLocaleString()}`:`labels ${n
 const Range=(a:number,b:number)=>a===b?`Label ${a.toLocaleString()}`:`Labels ${nums(a,b)}`;
 const capitalise=(text:string)=>text.charAt(0).toUpperCase()+text.slice(1);
 const single=(spans:ReadonlyArray<OfficeSpan>)=>spans.length===1 && spans[0].from===spans[0].to;
+/** Touching parts in the same state read as one line ("1–1,900: Sent to the printer"); parts that need someone stay on their own. */
+function foldJobs<J extends {id:string;from:number;to:number;state:string;review?:boolean;reason?:string|null}>(jobs:ReadonlyArray<J>,attention:(j:J)=>boolean):J[]{
+  const out:J[]=[];
+  for(const job of [...jobs].sort((a,b)=>a.from-b.from)){
+    const last=out[out.length-1];
+    if(last && !attention(last) && !attention(job) && last.state===job.state && job.from===last.to+1)out[out.length-1]={...last,to:job.to};
+    else out.push(job);
+  }
+  return out;
+}
 /** Server wording -> plain words, without changing what the server checks. */
 function officeMessage(error:unknown,fallback='The office printer didn’t answer. Try again in a moment.'){
   if(error instanceof OfficeRequestError){
@@ -628,7 +638,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           :part.kind==='needs-check'?`${Range(part.from,part.to)} need${part.from===part.to?'s':''} a check: ${part.reason?plainJobReason(part.reason):'the office computer didn’t confirm them'}.`
           :`${Range(part.from,part.to)} ${part.from===part.to?'was':'were'} checked at the office but not printed again.`;
         const action=part.kind==='needs-check'?`Check ${nums(part.from,part.to)}…`:part.kind==='did-not-print'?`Print ${nums(part.from,part.to)} again…`:`Print ${nums(part.from,part.to)} again`;
-        return <div key={`${part.requestId}-${part.from}-${part.kind}`} className="space-y-2">
+        return <div key={`${part.requestId}-${part.from}-${part.kind}`} className="reveal space-y-2">
           <p className={`flex items-start gap-2 font-medium ${bad?'text-red-400':'text-amber-300'}`}><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{text}</p>
           {canPrint && <button type="button" disabled={busy} onClick={()=>openFix(part)} className={`btn ml-6 ${owner==='problem' && i===0?'btn-primary':'btn-secondary btn-sm'}`}>{action}</button>}
         </div>;
@@ -686,7 +696,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="text-sm text-zinc-300">This run was cancelled after {printedCount.toLocaleString()} of {total.toLocaleString()} labels.</p>
       {canPrint && <button type="button" disabled={busy} onClick={()=>{rangeEdited.current=true;setChooseAgain(true);setReprintOf('');setFrom('');setTo('');setNotice(null);}} className="btn btn-ghost btn-sm -ml-2 text-zinc-300">Print some labels anyway…</button>}
     </div>}
-    {status.stopped && !ownHold && !pending && !settled && <p className="text-sm text-zinc-400">Sending waits until that check is done.</p>}
+    {status.stopped && !ownHold && !pending && !settled && !movingLine && <p className="text-sm text-zinc-400">Nothing can be sent until {status.hold?.run_id?'that run’s labels are':'the office printer is'} checked. Labels sent before then print once it is.</p>}
     {printer && !canPrint && stationsLoaded && <p className="text-sm text-zinc-400">Your account can’t send labels to the office printer. Ask your admin for print access.</p>}
 
     {showForm && <>
@@ -700,7 +710,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <label className="text-xs font-medium text-zinc-400">How many<input type="number" inputMode="numeric" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending || busy} className={inputClass+' mt-1'} value={rangeValid?sendCount:''} onChange={e=>{rangeEdited.current=true;const n=Number(e.target.value);if(Number(from)>=1 && n>=1)setTo(String(Math.min(total,Number(from)+Math.floor(n)-1)));}} /></label>
     </div>}
     {!pending && !rangeValid && from.trim()!=='' && to.trim()!=='' && <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total.toLocaleString()}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
-    {!pending && tooBig && parts.length>1 && <p className="text-sm text-zinc-400">The office printer takes up to {plural(cap)} of this design at a time. Each part is {bitmap?'checked, then ':''}queued, one after another.</p>}
+    {!pending && tooBig && parts.length>1 && <p className="text-sm text-zinc-400">Goes in parts of up to {plural(cap)}, one after another.</p>}
     {!pending && tooBig && parts.length<2 && <div className="space-y-1 text-sm text-amber-300"><p>The office printer takes up to {plural(cap)} of this design in one send.</p><button type="button" className="btn btn-ghost btn-sm -ml-2 text-amber-300" onClick={()=>{rangeEdited.current=true;setTo(String(fromNumber+cap-1));}}>Send {nums(fromNumber,fromNumber+cap-1)} now</button></div>}
     {!pending && rangeValid && plan.kind==='wait' && <p role="status" className="text-sm text-zinc-400">{plan.why==='needs-check'?`${Range(plan.overlap.from,plan.overlap.to)} need a check first (see above).`:`${Range(plan.overlap.from,plan.overlap.to)} ${plan.overlap.from===plan.overlap.to?'is':'are'} still on the way to the office printer. Send these once ${plan.overlap.from===plan.overlap.to?'it’s':'they’re'} sent.`}</p>}
     {!pending && rangeValid && plan.kind==='reprint' && !tooBig && fixedRange.current!==`${fromNumber}-${toNumber}` && <p className="text-sm text-amber-300">{Range(plan.overlap.from,plan.overlap.to)} went to the office printer before, so this prints {plan.overlap.from===plan.overlap.to?'it':'them'} again.</p>}
@@ -719,7 +729,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     {requestsError && requestsError.status!==401 && requestsError.status!==403 && <p role="status" className="text-sm text-zinc-400">The office queue couldn’t be read just now. It tries again on its own.</p>}
     {/* The amber waiting line already says why queued labels aren't printing. */}
-    {notice && !(notice.queued && movingLine) && <p role="status" className={`text-sm animate-enter ${notice.tone==='next'?'text-zinc-200':'text-emerald-400'}`}>{notice.text}</p>}
+    {notice && !(notice.queued && movingLine) && <p role="status" className={`text-sm ${notice.tone==='next'?'reveal text-zinc-200':'animate-enter text-emerald-400'}`}>{notice.text}</p>}
     {requests.length>0 && <div>
       <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue <span className="tabular-nums">· {plural(summary.sent)} sent{summary.failedLabels?` · ${plural(summary.failedLabels)} need${summary.failedLabels===1?'s':''} attention`:''}</span></FoldToggle>
       <Fold open={queueOpen} id={`${uid}-queue`}>
@@ -739,7 +749,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <p className="font-medium text-zinc-100">{Range(r.range_from,r.range_to)}{r.reprint_of?' · printed again':''}</p>
           <p className="text-zinc-400">{[formatWhen(r.created_at),r.username].filter(Boolean).join(' · ')}</p>
           {many && <p className="text-zinc-300 tabular-nums">{r.jobs.length.toLocaleString()} parts · {tally}</p>}
-          {shown.length>0 && <ul className="space-y-1">{shown.map(j=><li key={j.id} className="text-zinc-300"><span className="tabular-nums">{nums(j.from,j.to)}</span>: {j.review && j.state!=='rejected'?'Needs a check':labels[j.state] ?? 'Unknown'}{j.reason && (j.review || ['rejected','needs_review'].includes(j.state)) && <span className="block text-zinc-400">{capitalise(plainJobReason(j.reason))}.</span>}
+          {shown.length>0 && <ul className="space-y-1">{foldJobs(shown,attention).map(j=><li key={j.id} className="text-zinc-300"><span className="tabular-nums">{nums(j.from,j.to)}</span>: {j.review && j.state!=='rejected'?'Needs a check':labels[j.state] ?? 'Unknown'}{j.reason && (j.review || ['rejected','needs_review'].includes(j.state)) && <span className="block text-zinc-400">{capitalise(plainJobReason(j.reason))}.</span>}
             {canPrint && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-amber-300" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
           </li>)}</ul>}
           <div className="flex flex-wrap gap-1 -ml-2">

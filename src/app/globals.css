@@ -652,3 +652,28 @@ textarea:focus-visible {
   }
 }
 /* end area A r4 */
+
+/* area B r5 -----------------------------------------------------------------
+ * Run page and Runs list motion, with the existing easing tokens:
+ * - .reveal: a masked reveal (clip-path) for a line that appears in place,
+ *   like a problem with its fix or a "what to do now" note.
+ * - .status-swap: the run's status word crossfades and settles when it changes.
+ * - .run-row: list rows press in slightly, like buttons.
+ * No bounce; reduced motion gets none of it.
+ */
+@layer components {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { animation: lw-reveal 240ms var(--ease-out) both; }
+    .status-swap { animation: lw-status-swap 200ms var(--ease-out) both; }
+    .run-row { transition: background-color 150ms var(--ease-out), transform 120ms var(--ease-out); }
+    .run-row:active:has(> a:active) { transform: scale(0.99); }
+  }
+}
+@keyframes lw-reveal {
+  from { clip-path: inset(0 0 100% 0); opacity: 0.4; }
+  to { clip-path: inset(0 0 0 0); opacity: 1; }
+}
+@keyframes lw-status-swap {
+  from { opacity: 0; transform: translateY(-2px); filter: blur(1px); }
+}
+/* end area B r5 */

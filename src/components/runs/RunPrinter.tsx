@@ -1254,7 +1254,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       return (
         <div className="flex-1 flex items-center justify-center p-6">
           <div role="alert" className="max-w-sm space-y-3 text-center">
-            <h1 className="text-lg font-semibold text-zinc-100">{missing ? "We couldn't find that run" : "We couldn't load this run"}</h1>
+            <h1 className="text-lg font-semibold text-zinc-100">{missing ? 'We couldn’t find that run' : 'We couldn’t load this run'}</h1>
             <p className="text-sm text-zinc-400">{missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(new Error(loadError.message))}</p>
             <div className="flex flex-wrap justify-center gap-2">
               {!missing && <button type="button" onClick={() => void fetchRun(runId)} className="btn btn-primary">Try again</button>}
@@ -1269,7 +1269,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         <div className="flex-1 flex items-center justify-center p-6">
           <div role="alert" className="max-w-sm space-y-3 text-center">
             <h1 className="text-lg font-semibold text-zinc-100">This run has no saved design</h1>
-            <p className="text-sm text-zinc-400">It can&apos;t be printed. Use Re-run to start a new run from the same data.</p>
+            <p className="text-sm text-zinc-400">It can’t be printed. Use Re-run to start a new run from the same data.</p>
             <Link href="/runs" className="btn btn-secondary"><ArrowLeft className="h-4 w-4" /> Back to runs</Link>
           </div>
         </div>
@@ -1375,7 +1375,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     <>
     <div className="flex-1 overflow-auto">
       <div className="page-container space-y-5 sm:space-y-6">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100 break-words">{run.name}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-zinc-400">
@@ -1386,7 +1386,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   display.tone === 'attention' ? 'bg-red-400' :
                   display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
                   display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
-                }`} /><span className={display.tone === 'attention' ? 'text-red-400' : undefined}>{display.label}</span>{display.detail && <span className="font-normal text-zinc-300">· {display.detail}</span>}</span>
+                }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap inline-flex gap-1.5 ${display.tone === 'attention' ? 'text-red-400' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300">· {display.detail}</span>}</span></span>
               <span aria-hidden="true">·</span>
               <span>{template.name}</span>
               <span aria-hidden="true">·</span>
@@ -1402,14 +1402,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </Link>}
             <Menu items={moreItems} label="More" />
           </div>
-        </header>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-5 lg:gap-6">
           {/* Print first, on every screen: what you see first is what Tab reaches first. */}
           <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
         <section aria-label="Print" className="card card-flat p-4 sm:p-5 space-y-5">
           {calm ? (
-            <div className="space-y-4 animate-enter">
+            <div className="space-y-4 reveal">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                   <h2 className="section-title">{runFinished ? 'Printed' : 'Cancelled'}</h2>
@@ -1573,7 +1573,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )}
             {markNotice && <p role={markNotice.tone === 'bad' ? 'alert' : 'status'} className={`text-sm ${markNotice.tone === 'bad' ? 'text-red-400' : 'text-emerald-400'}`}>{markNotice.text}</p>}
             {rewindNotice && <p role="status" className="text-sm text-amber-300">{rewindNotice}</p>}
-            {countedAheadLine && <p className="text-sm text-zinc-400">{countedAheadLine}</p>}
+            {countedAheadLine && <p className="reveal text-sm text-zinc-400">{countedAheadLine}</p>}
           </div>
 
           {(isSheetFormat || transport !== 'office') && <>

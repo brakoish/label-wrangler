@@ -14,7 +14,7 @@ import type { Run, RunPreset, RunStatus } from '@/lib/types';
 import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
 import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError } from '@/lib/userMessages';
-import { moreNeedAttention, officeSentLine, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
+import { moreNeedAttention, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
 import { officeStatusLine, plainJobReason, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
@@ -50,8 +50,8 @@ function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { 
   const display = runDisplayStatus(run, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
-      <span aria-hidden="true" className={`size-2 rounded-full ${TONE_DOT[display.tone]}`} />
-      {display.label}
+      <span aria-hidden="true" className={`size-2 rounded-full transition-colors duration-200 ${TONE_DOT[display.tone]}`} />
+      <span key={display.label} className="status-swap">{display.label}</span>
     </span>
   );
 }
@@ -211,7 +211,7 @@ function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolea
       {problem && <p role="alert" className="text-sm text-red-400">{problem}</p>}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn-primary" disabled={busy || count === 0} onClick={() => void save()}>
+        <button type="button" className="btn btn-primary" data-autofocus disabled={busy || count === 0} onClick={() => void save()}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
           {count === 1 ? 'Mark 1 run printed' : `Mark ${count} runs printed`}
         </button>
@@ -752,7 +752,8 @@ function RunRow({
 }) {
   const office = run.office ? { ...run.office, held: printerHeld } : null;
   const display = runDisplayStatus(run, office);
-  const sentLine = officeSentLine(office, run.totalLabels);
+  // Under the bar, only what the bar doesn't show: labels on their way.
+  const waitingLine = office && office.onTheWay > 0 ? `${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way to the office printer'}` : '';
   const failed = office?.firstFailed ?? null;
   const printed = Math.min(run.printedCount || 0, run.totalLabels);
   const finished = run.totalLabels > 0 && printed >= run.totalLabels;
@@ -764,7 +765,7 @@ function RunRow({
   useEffect(() => { try { setPartsLeft(remainingParts(readPartsPlan(localStorage.getItem(`lw:office-parts:${run.id}`)))); } catch { setPartsLeft([]); } }, [run.id, office?.sent, office?.onTheWay]);
 
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
+    <div className="run-row flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
       <Link href={`/runs/${run.id}`} className="flex min-w-0 flex-1 flex-col gap-2 rounded-lg sm:flex-row sm:items-center sm:gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
@@ -795,7 +796,7 @@ function RunRow({
           <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
             <div className={`h-full rounded-full ${finished ? 'bg-emerald-400' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
           </div>
-          {sentLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{sentLine}</p>}
+          {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>
         {unfinished && <span className="btn btn-secondary btn-sm max-sm:self-start sm:w-24">Open</span>}
       </Link>
