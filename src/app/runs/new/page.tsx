@@ -2080,7 +2080,7 @@ function WaitReasons({ reasons }: { reasons: string[] }) {
         <ChevronRight className={`size-4 shrink-0 transition-transform duration-200 ease-in-out motion-reduce:transition-none ${open ? '-rotate-90' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <ul id={id} className="popover-enter absolute bottom-full left-0 z-40 mb-2 w-[min(28rem,calc(100vw-2rem))] space-y-2 rounded-lg bg-zinc-800 p-4 text-zinc-100 shadow-xl">
+        <ul id={id} className="popover-enter absolute bottom-full left-0 z-40 mb-2 w-[min(28rem,calc(100vw-2rem))] sm:left-auto sm:right-0 [--origin:bottom_right] space-y-2 rounded-lg bg-zinc-800 p-4 text-zinc-100 shadow-xl">
           {reasons.map((reason) => (
             <li key={reason} className="flex items-start gap-1.5"><Circle className="mt-1.5 size-2 shrink-0 fill-current text-amber-300" aria-hidden="true" />{reason}</li>
           ))}
