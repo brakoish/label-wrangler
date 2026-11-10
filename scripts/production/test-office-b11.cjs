@@ -61,5 +61,8 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
  assert.match(panel,/lw:office-sending:/,'the in-flight mark has its own key');
  assert.match(panel,/finally\{clearInterval\(beat\);unmark\(\);\}/,'and is cleared whatever the answer');
  assert.doesNotMatch(panel,/lw:office-pending:[^`]*`[^;]*tab:/,'nothing new in the saved request');
+ // Start reads the count the server saved: another device ahead pauses with a word, nothing prints twice.
+ const runPage=fs.readFileSync(path.join(__dirname,'../../src/components/runs/RunPrinter.tsx'),'utf8');
+ assert.match(runPage,/if \(!plan\.rewind && Number\.isFinite\(serverCount\) && serverCount > startCount\) \{\s*setStatus\('paused'\); setPrintedCount\(serverCount\);\s*setErrorMsg\(`Another device already printed up to label/);
  console.log('PASS office B11: key lookup before “not sure”, no false “connection dropped”, other tabs told, one header status while sending');
 })().catch((error)=>{console.error(error);process.exit(1);});

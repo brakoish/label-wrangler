@@ -827,10 +827,21 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const controller = new AbortController();
     preparation.current = controller;
     const refusedStart = { reason: '' };
-    try { await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
+    let started: Awaited<ReturnType<typeof setRunStatus>> = null;
+    try { started = await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
     if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    // The server keeps the highest progress any device saved. If it is ahead
+    // of this screen, another device printed meanwhile: nothing prints here
+    // until the person has looked, so no label comes out twice.
+    const serverCount = Number(started?.printedCount);
+    if (!plan.rewind && Number.isFinite(serverCount) && serverCount > startCount) {
+      setStatus('paused'); setPrintedCount(serverCount);
+      setErrorMsg(`Another device already printed up to label ${serverCount.toLocaleString('en-US')}, so nothing was printed here. Check the labels, then press Start to carry on.`);
+      try { await setRunStatus(run.id, 'paused', serverCount); } catch { /* the count above is still right */ }
+      return;
+    }
     if (!mounted.current || controller.signal.aborted) return;
 
     const sender = makeSender(controller);
