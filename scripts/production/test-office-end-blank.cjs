@@ -100,7 +100,9 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   // No room for the blank: a new request without it, never the refused payload again.
   assert.match(src,/refusalStep==='without-blank'[\s\S]{0,400}sendNow\(\{from:again\.from,to:Math\.min\(again\.to,again\.from\+cap-1\)\},undefined,false,false\)/);
   // While the single POST is on its way, the panel doesn't say "not sure".
-  assert.match(src,/const unsure=!!pending && !posting;/);
+  assert.match(src,/const unsure=!!pending && !posting && pendingPhase==='unsure';/);
+  // Before "not sure", the page checks the office queue, and says when another tab is sending.
+  assert.match(src,/Checking whether the office got \$\{range\(pending\.from,pending\.to\)\}…/);
   assert.match(src,/\{unsure && pending && <div role="status"/);
   assert.match(src,/const unsureFrom=unsure\?pending\?\.from:undefined/);
   assert.match(src,/payload\.endBlank===true\?payload\.to:undefined/,'the notice names the blank when one was asked for');

@@ -59,6 +59,21 @@ export function uncertainSendWords(status: number | undefined, code?: string): {
   return { cause: 'no-answer', message: 'The connection dropped before the server answered. Press “Send again”. It’s the same request, so it won’t print twice.' };
 }
 
+/**
+ * The "not sure" words for a saved send, by who saw what happen to it:
+ * 'here' this page saw the try fail (its own words may say the connection
+ * dropped); 'earlier' an earlier page on this device saw it fail (its status
+ * is kept beside the request); 'none' no page saw an answer (a reload or a
+ * second tab while it was on its way), so nothing is blamed, only what the
+ * office queue shows. Never says the connection dropped unless this page saw it.
+ */
+export function unconfirmedSendWords(status: number | undefined, code: string | undefined, seen: 'here' | 'earlier' | 'none', one = false): string {
+  const same = 'Press “Send again”. It’s the same request, so it won’t print twice.';
+  if (seen === 'here' || (seen === 'earlier' && status !== undefined)) return uncertainSendWords(status, code).message;
+  if (seen === 'earlier') return `The last try didn’t get an answer. ${same}`;
+  return `The office queue doesn’t show ${one ? 'it' : 'them'} yet. ${same}`;
+}
+
 const REFUSALS: Array<[RegExp, OfficeRefusalReason, string]> = [
   [/awaiting verified pairing|pairing not activated|job creation is disabled/i, 'not-paired',
     'The office printer isn’t ready to take jobs yet — it’s waiting to be paired. Ask your admin to finish setting it up. Nothing new was sent.'],

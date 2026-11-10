@@ -308,7 +308,7 @@ console.log('PASS field display names');
   // A failed storage write is said, not silent, and nothing is sent.
   assert.match(panel, /try\{localStorage\.setItem\(storageKey,JSON\.stringify\(payload\)\);\}\s*catch\{setError\('This device can’t save the request, so it wasn’t sent/, 'a failed save stops the send and says so');
   // "Send again" reuses the saved key whatever the printer says (the server answers a saved key first).
-  assert.match(panel, /const disabled=pending\?busy:/, '"Send again" is only disabled while busy');
+  assert.match(panel, /const disabled=pending\?\(busy \|\| \(!posting && pendingPhase==='other'\)\):/, '"Send again" is only disabled while busy, or while another tab is sending that same request');
   // The reason for "not sure" is kept beside the saved request, so a refresh says the same.
   assert.match(panel, /localStorage\.setItem\(metaKey,JSON\.stringify\(meta\)\)/);
   assert.match(panel, /readPendingMeta\(meta\)/);
@@ -356,7 +356,7 @@ console.log('PASS field display names');
     assert.equal(officePrinterHeld([{ ...base, needs_review: true, review_holds: [{ run_id: 'x', from: 1, to: 2 }] }]), true, 'stopped for a check');
     assert.equal(officePrinterHeld([base]), false, 'ready');
     assert.equal(officePrinterHeld([]), false, 'no printer');
-    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld,\s*unchecked: uncheckedLabels, unsure: panel\.unsure, refused: panel\.refused, printerPaused: panel\.paused \}/, 'the run header gets the station status and what the panel says');
+    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld,\s*unchecked: uncheckedLabels, unsure: panel\.unsure, refused: panel\.refused, printerPaused: panel\.paused, sending: panel\.sending, stillToSend \}/, 'the run header gets the station status and what the panel says');
     assert.match(page, /onHeldChange=\{setPanelHeld\}/, 'lifted from the office panel');
     assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld,heldById\?\{runId:heldById,runName:heldByName\}:null\);\}/, 'the header also learns which other run holds the printer');
   }
