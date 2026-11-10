@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { RefreshCw, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { plainRenderWarning } from '@/lib/designerLayout';
-import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
 import { OfficePreviewPrint } from './OfficePreviewPrint';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
@@ -20,9 +20,11 @@ interface ZPLPreviewProps {
   active?: boolean;
   /** The designer already names the problems above the preview: don't say them twice. */
   problemsShown?: boolean;
+  /** The design's problems, shown where the Edit view shows them. */
+  notice?: ReactNode;
 }
 
-export function ZPLPreview({ format, template, testData, active = true, problemsShown = false }: ZPLPreviewProps) {
+export function ZPLPreview({ format, template, testData, active = true, problemsShown = false, notice }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,87 +81,123 @@ export function ZPLPreview({ format, template, testData, active = true, problems
     return () => { clearTimeout(timer); revision.current++; };
   }, [active, fetchPreview]);
 
+  // The label sits in the same frame, at the same size and place, as in the
+  // Edit view (LabelPreview): switching views compares, it doesn't jump.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameSize, setFrameSize] = useState({ width: 600, height: 400 });
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) setFrameSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   if (format.type !== 'thermal') return null;
 
-  const basePreviewWidth = Math.min(900, Math.max(520, format.width * (format.dpi || 203) * 1.25));
+  // The same fit as the Edit canvas: the label plus a 10% surround, fitted
+  // with a 48px margin (4px on a phone, where the frame follows the width).
+  const { linerDots, heightDots } = thermalRenderGeometry(format);
+  const labelDots = Math.round(format.width * (format.dpi || 203));
+  const padX = labelDots * 0.1, padY = heightDots * 0.1;
+  const totalW = linerDots + padX * 2, totalH = heightDots + padY * 2;
+  const phone = frameSize.width < 600;
+  const margin = phone ? 4 : 48;
+  const availW = frameSize.width - margin * 2;
+  const availH = phone ? Infinity : frameSize.height - margin * 2;
+  const fitW = availW / availH > totalW / totalH ? Math.max(availH, 200) * (totalW / totalH) : Math.max(availW, 200);
+  const frameW = fitW * zoom;
+  const frameH = frameW * (totalH / totalW);
+  const pxPerDot = frameW / totalW;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
-        {/* Test prints: the office printer, and a printer plugged into this computer. */}
-        <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />
-        <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />
-
-        <div className="ml-auto flex items-center">
-          {(format.labelsAcross || 1) > 1 && <button
-            onClick={() => setShowOutlines((s) => !s)}
-            aria-pressed={showOutlines}
-            className="btn btn-ghost btn-sm"
-          >
-            {showOutlines ? 'Hide label edges' : 'Show label edges'}
-          </button>}
-          <button
-            onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-            title="Zoom out"
-            aria-label="Zoom out"
-            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <span className="text-xs text-zinc-400 w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={() => setZoom((z) => Math.min(8, +(z + 0.25).toFixed(2)))}
-            title="Zoom in"
-            aria-label="Zoom in"
-            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setZoom(1)}
-            title="Fit to view"
-            aria-label="Fit to view"
-            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
+      {/* Desktop: problems and the test print row above the label, in the
+          space the Edit view keeps for its notices. Phone: the row goes
+          under the label, so the label sits where it does in Edit. */}
+      <div className="shrink-0 sm:space-y-1 px-3 pt-2 min-h-12 sm:min-h-16 sm:px-6 max-sm:contents">
+        <div className="space-y-1 sm:empty:hidden max-sm:order-1 max-sm:min-h-12 max-sm:px-3 max-sm:pt-2">
+          {notice}
+          {error && previewUrl && !problemsShown && <p role="status" className="text-sm text-amber-300">Fix this before printing: {error}</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 max-sm:order-3 max-sm:px-3 max-sm:pb-4">
+          {/* Test prints: the office printer, and a printer plugged into this computer. */}
+          <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />
+          <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />
+          <div className="ml-auto flex items-center">
+            {(format.labelsAcross || 1) > 1 && <button
+              onClick={() => setShowOutlines((s) => !s)}
+              aria-pressed={showOutlines}
+              className="btn btn-ghost btn-sm"
+            >
+              {showOutlines ? 'Hide label edges' : 'Show label edges'}
+            </button>}
+            <button
+              onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+              title="Zoom out"
+              aria-label="Zoom out"
+              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-zinc-400 w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={() => setZoom((z) => Math.min(8, +(z + 0.25).toFixed(2)))}
+              title="Zoom in"
+              aria-label="Zoom in"
+              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setZoom(1)}
+              title="Fit to view"
+              aria-label="Fit to view"
+              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex min-h-[320px] flex-1 flex-col px-4 pb-4 pt-1 sm:px-6">
-        {error && previewUrl && !problemsShown && <p role="status" className="mb-2 text-sm text-amber-300">Fix this before printing: {error}</p>}
-        {/* Zoomed output scrolls inside this frame. */}
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
-          {loading && !previewUrl ? (
-            <div className="flex items-center justify-center text-sm text-zinc-400">
-              <RefreshCw className="mr-2 w-5 h-5 animate-spin" aria-hidden="true" />
-              Drawing the label…
-            </div>
-          ) : error && !previewUrl ? (
-            <div className="flex items-center justify-center text-sm text-red-400">
-              {error}
-            </div>
-          ) : previewUrl ? (
-            <div
-              className="relative shrink-0"
-              style={{ padding: '4px', width: `${basePreviewWidth * zoom}px`, maxWidth: zoom === 1 ? '100%' : 'none' }}
-            >
-              <img
-                src={previewUrl}
-                alt={error ? 'Print preview, with problems to fix' : 'Print preview'}
-                className="rounded-md"
-                style={{ imageRendering: 'pixelated', display: 'block', maxWidth: '100%', width: '100%', height: 'auto' }}
-              />
-              {showOutlines && <LabelOutlineOverlay format={format} />}
-              {(loading || (!proofReady && !error)) && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
-                  <RefreshCw className="w-5 h-5 animate-spin text-zinc-100" aria-hidden="true" />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center text-sm text-zinc-400">Drawing the label…</div>
-          )}
+      {/* The same box as the Edit canvas; zoomed output scrolls inside it. */}
+      <div className="relative flex-1 shrink-0 flex flex-col overflow-hidden max-sm:order-2 min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
+        <div ref={frameRef} className={`relative flex min-h-0 flex-1 px-2 pb-4 pt-2 sm:px-6 sm:pb-6 ${zoom > 1 ? 'overflow-auto' : 'items-center justify-center'}`}>
+          <div
+            className="relative m-auto shrink-0 rounded-xl"
+            style={{ width: `${frameW}px`, height: `${frameH}px`, background: '#1e1e23', filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))' }}
+          >
+            {loading && !previewUrl ? (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-400">
+                <RefreshCw className="mr-2 w-5 h-5 animate-spin" aria-hidden="true" />
+                Drawing the label…
+              </div>
+            ) : error && !previewUrl ? (
+              <div role="alert" className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-red-400">
+                {error}
+              </div>
+            ) : previewUrl ? (
+              <div className="absolute" style={{ left: `${padX * pxPerDot}px`, top: `${padY * pxPerDot}px`, width: `${linerDots * pxPerDot}px`, height: `${heightDots * pxPerDot}px` }}>
+                <img
+                  src={previewUrl}
+                  alt={error ? 'Print preview, with problems to fix' : 'Print preview'}
+                  className="bg-white"
+                  style={{ imageRendering: 'pixelated', display: 'block', width: '100%', height: '100%', outline: '1px solid #52525b' }}
+                />
+                {showOutlines && <LabelOutlineOverlay format={format} />}
+                {(loading || (!proofReady && !error)) && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <RefreshCw className="w-5 h-5 animate-spin text-zinc-100" aria-hidden="true" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-400">Drawing the label…</div>
+            )}
+          </div>
         </div>
       </div>
     </div>

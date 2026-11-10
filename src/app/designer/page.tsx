@@ -965,13 +965,6 @@ function DesignerContent() {
                 never hides in a sideways scroller): the view switch on one
                 line, undo, redo and More on the next. */}
             <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 max-sm:w-full max-sm:justify-start">
-              {currentFormat.type === 'thermal' && (
-                <div className="segmented mr-1" role="group" aria-label="What the label shows">
-                  <SegmentedIndicator index={exactView ? 1 : 0} count={2} />
-                  <button type="button" aria-pressed={!exactView} onClick={() => setView('edit')} title="Move and change items">Edit</button>
-                  <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Print preview</button>
-                </div>
-              )}
               {showThermalOrientationPicker && !exactView && (
                 <>
                   <div className="segmented mr-2" role="group" aria-label="View">
@@ -992,6 +985,13 @@ function DesignerContent() {
                     </button>
                   </div>
                 </>
+              )}
+              {currentFormat.type === 'thermal' && (
+                <div className="segmented mr-1 max-sm:order-first" role="group" aria-label="What the label shows">
+                  <SegmentedIndicator index={exactView ? 1 : 0} count={2} />
+                  <button type="button" aria-pressed={!exactView} onClick={() => setView('edit')} title="Move and change items">Edit</button>
+                  <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Print preview</button>
+                </div>
               )}
               <div className="ml-auto flex shrink-0 items-center gap-1">
               <button
@@ -1057,15 +1057,16 @@ function DesignerContent() {
           />
           </div>
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
-          {currentFormat.type === 'thermal' ? (exactView && <>
-            <p role="status" className="px-4 pb-1 text-sm text-zinc-400">This is exactly how it prints. Press Edit to change it.</p>
-            {canvasProblems.length > 0 && <div className="px-3 pt-2 sm:px-6"><DesignNotice problems={canvasProblems} action={noticeAction} /></div>}
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} problemsShown={canvasProblems.length > 0} />
-          </>) : (
+          {currentFormat.type === 'thermal' ? (exactView && (
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} problemsShown={canvasProblems.length > 0} notice={canvasProblems.length > 0 ? <DesignNotice problems={canvasProblems} action={noticeAction} /> : null} />
+          )) : (
             <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}
         </div>
 
+        {/* Print preview keeps the right column, so the label and the view
+            switch stay exactly where they are in Edit. */}
+        {exactView && <div className="hidden lg:block w-[264px] 2xl:w-[280px] shrink-0 bg-zinc-900 p-4 text-sm text-zinc-400">This is exactly how it prints. Press Edit to change it.</div>}
         {/* Right Panel - Properties */}
         <div className={exactView ? 'hidden' : shownPane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel
