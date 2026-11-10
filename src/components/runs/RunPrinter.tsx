@@ -12,8 +12,10 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { useOfficeRequests } from './useOfficeRequests';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
-import { runLayoutWarnings } from '@/lib/runLayoutCheck';
+import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
+import { PrintCheckList } from '@/components/checks/RunChecks';
 import { fieldDisplayName } from '@/lib/fieldDisplayName';
+import { columnSourceWords, runSourceWords } from '@/lib/fieldLabels';
 import { choiceDialog, confirmDialog } from '@/components/ui/feedback';
 import { blankCheckAllowsPrinting, checkRunData, hasBlankChoice, rememberBlankChoice } from '@/lib/runDataCheck';
 import { friendlyError, friendlyRenderError, printEventLabel } from '@/lib/userMessages';
@@ -67,11 +69,10 @@ function isSheetPrintConfirmedMessage(value: unknown): value is SheetPrintConfir
     (record.status === 'paused' || record.status === 'completed');
 }
 
+/** Where the run's values came from, in the same words as everywhere else (runSourceWords). */
 function runSourceMeta(source: string) {
-  if (source === 'csv') return { label: 'From a spreadsheet', fieldLabel: 'Spreadsheet', icon: FileSpreadsheet };
-  if (source === 'manifest') return { label: 'From a manifest', fieldLabel: 'Manifest', icon: Search };
-  if (source === 'manual') return { label: 'Typed in', fieldLabel: 'Typed', icon: Pencil };
-  return { label: 'Pasted', fieldLabel: 'Paste', icon: Clipboard };
+  const icon = source === 'csv' ? FileSpreadsheet : source === 'manifest' ? Search : source === 'manual' ? Pencil : Clipboard;
+  return { label: runSourceWords(source).label, icon };
 }
 
 function uiStatusForRunStatus(status: RunStatus): PrinterUiStatus {
@@ -254,26 +255,27 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   useEffect(() => { if (officeSignature) void fetchPrintEvents(runId); }, [officeSignature, fetchPrintEvents, runId]);
   const [markNotice, setMarkNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
 
-  // Items that cover each other or run off the label, checked on every label
-  // (up to 2,000) the same way the run wizard does. Asked about once before
-  // printing or sending. Keyed on what changes printed labels, not progress.
-  const layoutWarnings = useMemo(
-    () => runLayoutWarnings(run, template, format),
+  // The same check the wizard does, before any print or office send: barcodes
+  // the printer would cut off (shown first, with the fix, and an explicit
+  // go-ahead), barcodes close to the edge, and items that overlap. Checked on
+  // every label (up to 2,000). Keyed on what changes printed labels, not
+  // progress. The go-ahead is kept on this device for these exact problems.
+  const printCheck = useMemo(
+    () => runPrintCheck(run, template, format),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, run?.totalLabels, template, format],
+    [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, run?.totalLabels, run?.dataSource, template, format],
   );
-  const [layoutAskedKey, setLayoutAskedKey] = useState('');
-  const layoutKey = layoutWarnings.join('|');
-  const askAboutLayout = async (action: string) => {
-    if (!layoutWarnings.length || layoutAskedKey === layoutKey) return true;
-    const ok = await confirmDialog({
-      title: `${action} labels with layout problems?`,
-      body: <div className="space-y-2"><p>The preview shows items that cover each other or run off the label:</p><ul className="list-disc space-y-1 pl-5">{layoutWarnings.slice(0, 4).map((w) => <li key={w}>{w}</li>)}</ul>{layoutWarnings.length > 4 && <p>And {layoutWarnings.length - 4} more.</p>}<p>Check the preview first. Fix the design for next time with Edit design.</p></div>,
-      confirmLabel: `${action} anyway`,
-    });
-    if (ok) setLayoutAskedKey(layoutKey);
-    return ok;
-  };
+  const [goAhead, setGoAhead] = useState<PrintGoAhead>({});
+  useEffect(() => { setGoAhead(readPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, runId)); }, [runId]);
+  const chooseGoAhead = (part: keyof PrintGoAhead, key: string | false) => setGoAhead((current) => {
+    const next = { ...current, [part]: key || undefined };
+    rememberPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, runId, next);
+    return next;
+  });
+  const checksOk = printCheckAllows(printCheck, goAhead);
+  const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || goAhead.barcode !== printCheck.blockingKey)
+    ? printCheck.verdict.waitReason
+    : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.
   const previewStarted = useRef('');
@@ -407,7 +409,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, runId, value ? blankCheck.signature : '');
   };
   const blanksOk = !blankCheck || blankCheckAllowsPrinting(blankCheck, leaveBlank);
-  const canStart = blanksOk && !reprinting && !sending && !!run && run.sourceData.length > 0 && (
+  const canStart = blanksOk && checksOk && !reprinting && !sending && !!run && run.sourceData.length > 0 && (
     !isSheetFormat &&
     ((transport === 'dazzle' && !!dazzleSelected) ||
     (transport === 'webusb' && !!usbPrinter))
@@ -440,13 +442,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const templateFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
   const sourceEditFields = useMemo<EditSourceField[]>(() => {
     if (!run) return [];
-    const sourceMeta = runSourceMeta(run.dataSource);
     return templateFields.flatMap<EditSourceField>((field) => {
       const mapping = run.fieldMappings?.[field];
       if (mapping?.mode === 'column' && mapping.csvColumn) {
         return [{
           field,
-          source: mapping.csvColumn === '__paste__' ? 'Pasted value' : `${sourceMeta.fieldLabel} column “${mapping.csvColumn}”`,
+          source: columnSourceWords(run.dataSource, mapping.csvColumn).text,
           column: mapping.csvColumn,
           legacyPaste: false,
         }];
@@ -510,7 +511,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // Follow the label shown in the preview, not always row 1.
     const row0 = run.sourceData[Math.min(Math.max(0, previewIndex), Math.max(0, run.sourceData.length - 1))];
     const isObjRow = row0 && typeof row0 === 'object' && !Array.isArray(row0);
-    const sourceMeta = runSourceMeta(run.dataSource);
     const fieldsSeen = new Set<string>();
     for (const el of template.elements) {
       if (el.isStatic) continue;
@@ -528,7 +528,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         }
         out.push({
           field: f,
-          source: col === '__paste__' ? 'pasted values' : `${sourceMeta.fieldLabel} column “${col}”`,
+          source: columnSourceWords(run.dataSource, col).text,
           sample,
         });
       } else if (run.mappedField === f && typeof row0 === 'string') {
@@ -607,6 +607,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try {
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
+    if (!checksOk) { setErrorMsg(checksReason); return; }
     setErrorMsg(null);
     if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg('Sync pending print progress for this run before starting another batch. Use Retry sync above.'); return; } }
     // A From at or below what is already printed moves the run back, the same
@@ -639,7 +640,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       });
       if (!ok) return;
     }
-    if (!(await askAboutLayout('Print'))) return;
     if (plan.rewind) {
       const ok = await confirmDialog({
         title: `Go back to label ${selectedFrom} and continue?`,
@@ -786,6 +786,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const handleReprintRange = async () => {
     if (!run || !template || !format || !reprintValid || reprinting || statusRef.current === 'running' || starting.current) return;
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
+    if (!checksOk) { setErrorMsg(checksReason); return; }
     const range = { from: reprintFrom, to: reprintTo };
     setErrorMsg(null);
     if (isSheetFormat) {
@@ -877,6 +878,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const openSheetPrintRange = (range?: { from?: number; to?: number }) => {
     if (!range && !rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
+    if (!checksOk) { setErrorMsg(checksReason); return; }
     const resolved = normalizeSheetRange(range);
     if (!openInNewTab(sheetPrintHref(resolved))) {
       setErrorMsg('Popup blocked. Allow popups, then try again.');
@@ -1397,6 +1399,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           </div>
 
           {blankCheck && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact />}
+          <PrintCheckList
+            check={printCheck}
+            barcodeGoAhead={!!printCheck.blocking.length && goAhead.barcode === printCheck.blockingKey}
+            layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
+            onBarcodeGoAhead={(value) => chooseGoAhead('barcode', value && printCheck.blockingKey)}
+            onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
+          />
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -1463,7 +1472,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {/* While "Print some labels again" is open, its own range and button are the only ones on screen. */}
           {!showReprint && <div className="flex items-center gap-2">
             {isSheetFormat && !pendingSheetRange && printedCount < total && (
-              <button type="button" onClick={() => openSheetPrintRange()} className="btn btn-primary flex-1">
+              <button type="button" onClick={() => openSheetPrintRange()} disabled={!checksOk} className="btn btn-primary flex-1">
                 <FileText className="w-4 h-4" aria-hidden="true" />
                 Open print page
               </button>
@@ -1495,8 +1504,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!isSheetFormat && !transportReady && !showReprint && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
             <p className="text-sm text-zinc-400">{transport === 'webusb' ? 'Connect a printer first.' : transport === 'dazzle' ? 'Turn on a printer in the Dazzle app first.' : 'Choose a printer first.'}</p>
           )}
-          {!blanksOk && !isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-            <p className="text-sm text-amber-300">Printing is off until every label has a value (see the list above).</p>
+          {((!blanksOk && !isSheetFormat) || !checksOk) && (isSheetFormat || transport !== 'office') && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            <p className="text-sm text-amber-300">{!blanksOk && !isSheetFormat ? 'Printing is off until every label has a value (see the list above).' : checksReason}</p>
           )}
 
           {/* Reprint: a separate From/To job that never changes the run's progress.
@@ -1534,7 +1543,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <button
                     type="button"
                     onClick={() => void handleReprintRange()}
-                    disabled={!reprintValid || !blanksOk || (!isSheetFormat && transport === 'office')}
+                    disabled={!reprintValid || !blanksOk || !checksOk || (!isSheetFormat && transport === 'office')}
                     className="btn btn-primary btn-sm"
                   >
                     <Printer className="w-4 h-4" aria-hidden="true" /> {isSheetFormat ? 'Open these labels to print' : `Print ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`} again`}
@@ -1551,7 +1560,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} layoutWarnings={layoutWarnings} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} />}
         </section>
           </div>
 

@@ -10,7 +10,9 @@ const sharp = require('sharp');
 const { barcodeFit, nativeBarcodeFootprint, barcodeFitProblem, barcodeFitFix } = require('../../src/lib/barcodeFit.ts');
 const { checkRunBarcodes, describeBarcodeGroups } = require('../../src/lib/barcodeCheck.ts');
 const { layoutProblems } = require('../../src/lib/designerLayout.ts');
-const { runPrintCheck } = require('../../src/lib/runLayoutCheck.ts');
+const { runPrintCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, BARCODE_GO_AHEAD, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
+const fs = require('node:fs');
+const path = require('node:path');
 const { generateZPL } = require('../../src/lib/zplGenerator.ts');
 const { thermalRenderGeometry } = require('../../src/lib/thermal/geometry.ts');
 const { renderThermalBitmap } = require('../../src/lib/thermal/render.server.ts');
@@ -129,7 +131,23 @@ async function renderNative(template, format, values) {
     assert.match(grouped.items[0], /^The Package Tag barcode on all 40 labels prints 2\.95" wide/);
     assert.doesNotMatch(grouped.items.join(' '), /shorten/i);
     const page = runPrintCheck({ ...forty, totalLabels: 40, dataSource: 'csv' }, t, F['2x1']);
-    assert.deepEqual(page.blocking, grouped.items, 'the run page blocks with the same words');
+    assert.deepEqual(page.blocking, grouped.items, 'the run page names it with the same words');
+    // Operational rule: an emulated "won't print whole" never hard-stops. It is
+    // shown first, in red, with its fix, and printing takes an explicit go-ahead.
+    assert.equal(page.verdict.stops, false, 'a native barcode the printer cuts off is not a stop');
+    assert.equal(page.verdict.goAheadLabel, BARCODE_GO_AHEAD);
+    assert.equal(BARCODE_GO_AHEAD, 'Print anyway — the barcode may be cut off');
+    assert.match(page.verdict.heading, /^40 labels have a barcode that won’t print whole$/);
+    assert.equal(printCheckAllows(page, {}), false, 'printing waits for the go-ahead');
+    assert.equal(printCheckAllows(page, { barcode: page.blockingKey }), true, 'and goes ahead once given');
+    assert.equal(printCheckAllows(page, { barcode: 'an older problem' }), false, 'a go-ahead covers only the problems it was given for');
+    const store = new Map();
+    const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+    rememberPrintGoAhead(storage, 'run-1', { barcode: page.blockingKey });
+    assert.equal(printCheckAllows(page, readPrintGoAhead(storage, 'run-1')), true, 'the go-ahead is kept for this run on this device');
+    rememberPrintGoAhead(storage, 'run-1', {});
+    assert.deepEqual(readPrintGoAhead(storage, 'run-1'), {}, 'unticking takes it back');
+    assert.doesNotMatch(page.verdict.waitReason, /shorten/i);
   }
   // Two across: the bars print onto the next label's barcode.
   {
@@ -213,6 +231,29 @@ async function renderNative(template, format, values) {
     const check = checkRunBarcodes(design('2x1', 'bitmap-v1', full), run([T24, forty]), F['2x1']);
     assert.equal(check.badLabels, 1, 'only the impossible label is held back');
     assert.equal(check.issues[0].label, 2);
+    // The exact renderer refuses it, so nothing could print: that stays a stop.
+    const exactPage = runPrintCheck({ ...run([T24, forty]), totalLabels: 2, dataSource: 'csv' }, design('2x1', 'bitmap-v1', full), F['2x1']);
+    assert.equal(exactPage.verdict.stops, true, 'a renderer refusal is a stop');
+    assert.equal(printCheckAllows(exactPage, { barcode: exactPage.blockingKey }), false, 'no go-ahead past a renderer refusal');
+    // A native value the barcode type can't hold: the printer is still sent it, so it needs a go-ahead, not a stop.
+    const valuePage = runPrintCheck({ ...run([accented]), totalLabels: 1, dataSource: 'csv' }, design('4x6', 'native-v1', barcode()), F['4x6']);
+    assert.equal(valuePage.verdict.stops, false);
+    assert.equal(valuePage.verdict.goAheadLabel, BARCODE_VALUE_GO_AHEAD);
+  }
+  // The wizard and the run page use the same verdict and the same go-ahead words, and neither hard-stops on it.
+  {
+    const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+    const wizard = read('src/app/runs/new/page.tsx');
+    assert.match(wizard, /const barcodesOk = barcodesClear \|\| barcodeGoAhead;/, 'the wizard goes ahead on an explicit tick');
+    assert.match(wizard, /confirmLabel=\{barcodeWords\.stops \? undefined : barcodeWords\.goAheadLabel\}/);
+    const page = read('src/components/runs/RunPrinter.tsx');
+    assert.match(page, /runPrintCheck\(run, template, format\)/, 'the run page checks with runPrintCheck');
+    assert.match(page, /printAllowed=\{blanksOk && checksOk\}/, 'office sends wait for the same check');
+    assert.doesNotMatch(page, /runLayoutWarnings|anyway`/, 'no old layout-only "… anyway" path');
+    const panel = read('src/components/runs/OfficePiPrinter.tsx');
+    assert.doesNotMatch(panel, /Send anyway|layoutWarnings/, 'the office panel has no second, different ask');
+    const checks = read('src/components/checks/RunChecks.tsx');
+    assert.match(checks, /confirmLabel=\{check\.verdict\.stops \? undefined : check\.verdict\.goAheadLabel\}/);
   }
   console.log('PASS barcode fit: one verdict, matched to the native and exact renderers; Metrc tags pass on 4"×6", 3"×2" (tight), 300 dpi 2"×1" and every exact design; impossible values still blocked; never "shorten"');
 })().catch((error) => { console.error(error); process.exit(1); });

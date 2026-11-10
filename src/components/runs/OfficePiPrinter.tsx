@@ -59,7 +59,7 @@ type Series={total:number;index:number;part:OfficeSpan;phase:'checking'|'sending
 type Fix={part:OfficeFailedPart;choice:''|'printed'|'reprint';checked:boolean;note:string;order:'in-order'|'let-run'};
 const tone={bad:'text-red-400',warn:'text-amber-300',ok:'text-emerald-400'} as const;
 const dotTone={bad:'bg-red-400',warn:'bg-amber-300',ok:'bg-emerald-400'} as const;
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,layoutWarnings=[],markRanges=[],onMarkPrinted,onRecordPrinted}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -73,8 +73,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   requestsTruncated?:boolean;
   requestsError?:{status:number;message:string}|null;
   refreshRequests:()=>Promise<void>;
-  /** Items that cover each other or run off the label: asked about before sending. */
-  layoutWarnings?:string[];
+  /** Why sending is off when printAllowed is false (the run page's check above names the problem). */
+  printBlockedReason?:string;
   /** Stretches the office reported sent that aren't counted as printed yet. */
   markRanges?:OfficeSpan[];
   /** Asks once, then counts every sent stretch as printed. */
@@ -426,15 +426,12 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(!pending){
       if(plan.kind==='wait' || !rangeValid)return;
       // Ask once per range before anything long starts: printing labels the
-      // office already got again, and a design that has layout problems.
+      // office already got again. Barcode and layout problems are checked on
+      // the run page first (printAllowed), with the same words as the wizard.
       if(askedKey!==rangeKey){
         if(plan.kind==='reprint' && fixedRange.current!==`${fromNumber}-${toNumber}`){
           const one=fromNumber===toNumber;
           const ok=await confirmDialog({title:`Print ${range(fromNumber,toNumber)} again?`,body:`${Range(plan.overlap.from,plan.overlap.to)} went to the office printer before. ${one?'It prints':'They print'} again. The run’s progress doesn’t change.`,confirmLabel:'Print again'});
-          if(!ok)return;
-        }
-        if(layoutWarnings.length){
-          const ok=await confirmDialog({title:'Send labels with layout problems?',body:<div className="space-y-2"><p>The preview shows items that cover each other or run off the label:</p><ul className="list-disc space-y-1 pl-5">{layoutWarnings.slice(0,4).map(w=><li key={w}>{w}</li>)}</ul>{layoutWarnings.length>4 && <p>And {layoutWarnings.length-4} more.</p>}<p>Check the preview first. Fix the design for next time with Edit design.</p></div>,confirmLabel:'Send anyway'});
           if(!ok)return;
         }
         setAskedKey(rangeKey);
@@ -620,7 +617,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {!pending && rangeValid && plan.kind==='wait' && <p role="status" className="text-sm text-zinc-400">{plan.why==='needs-check'?`${Range(plan.overlap.from,plan.overlap.to)} need a check first (see above).`:`${Range(plan.overlap.from,plan.overlap.to)} ${plan.overlap.from===plan.overlap.to?'is':'are'} still on the way to the office printer. Send these once ${plan.overlap.from===plan.overlap.to?'it’s':'they’re'} sent.`}</p>}
     {!pending && rangeValid && plan.kind==='reprint' && !tooBig && fixedRange.current!==`${fromNumber}-${toNumber}` && <p className="text-sm text-amber-300">{Range(plan.overlap.from,plan.overlap.to)} went to the office printer before, so this prints {plan.overlap.from===plan.overlap.to?'it':'them'} again.</p>}
     {!pending && alreadyPrinted && <div className="space-y-1 text-sm text-amber-300"><p>{Range(fromNumber,Math.min(toNumber,printedCount))} {fromNumber===Math.min(toNumber,printedCount)?'is':'are'} already counted as printed.</p>{printedCount<toNumber && <button type="button" className="btn btn-ghost btn-sm -ml-2 text-amber-300" onClick={()=>{rangeEdited.current=true;setFrom(String(printedCount+1));}}>Send {nums(printedCount+1,toNumber)} instead</button>}</div>}
-    {!printAllowed && <p className="text-sm text-amber-300">Sending is off until every label has a value (see the list above).</p>}
+    {!printAllowed && <p className="text-sm text-amber-300">{printBlockedReason || 'Sending is off until the problems above are fixed.'}</p>}
     {!formReady && !pending && <p role="status" className="text-sm text-zinc-400">Reading the office queue first…</p>}
     <button type="button" disabled={disabled} onClick={()=>void onPrimary()} className={`btn w-full ${owner==='form'||owner==='pending'?'btn-primary':'btn-secondary'}`}>{busy?<Loader2 className="size-4 animate-spin" />:<PrinterIcon className="size-4" />}{primaryLabel}</button>
     {pending && <button type="button" onClick={()=>void startOver()} disabled={busy} className="btn btn-ghost btn-sm -ml-2 text-zinc-300">Start over</button>}
