@@ -11,6 +11,7 @@ const { barcodeFit, nativeBarcodeFootprint, barcodeFitProblem, barcodeFitFix } =
 const { checkRunBarcodes, describeBarcodeGroups } = require('../../src/lib/barcodeCheck.ts');
 const { layoutProblems } = require('../../src/lib/designerLayout.ts');
 const { runPrintCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, barcodeVerdict, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
+const { barcodeDamage, barcodeTickLabel, barcodeTicksAllow } = require('../../src/lib/runBarcodeTicks.ts');
 const fs = require('node:fs');
 const path = require('node:path');
 const { generateZPL } = require('../../src/lib/zplGenerator.ts');
@@ -261,6 +262,95 @@ async function renderNative(template, format, values) {
     assert.match(exactValue.verdict.heading, /barcode value it can’t print/);
     const typed = barcodeVerdict(exactValue.verdict.stops ? [{ kind: 'characters', fit: { bitmap: true, level: 'blocked', reason: 'characters' }, field: 'Package Tag', label: 1 }] : [], 1, F['4x6'], () => false);
     assert.equal(typed.fixIn, 'design', 'a typed value is not a spreadsheet fix');
+  }
+  // -------------------------------------------------------------------------
+  // A print the printer can produce is never a stop. On an exact design the
+  // renderer (JsBarcode) decides: a value it still encodes needs a go-ahead
+  // that says what will scan; only a value it refuses stops the run.
+  // -------------------------------------------------------------------------
+  {
+    const lot = (format, extra = {}) => barcode({ fieldName: 'Batch', barcodeFormat: format, x: 40, width: 700, ...extra });
+    const batchRun = (values) => ({ sourceData: values.map((v) => ({ Batch: v })), fieldMappings: { Batch: { mode: 'column', csvColumn: 'Batch' } }, staticValues: {}, totalLabels: values.length, dataSource: 'csv' });
+    const cases = [
+      { name: 'CODE39 lowercase', format: 'CODE39', value: 'lot-a12', stops: false, note: /Lowercase letters will scan as UPPERCASE/, go: 'Print anyway — lowercase letters will scan as UPPERCASE', tick: 'Print anyway — I accept it scans as UPPERCASE', damage: /scans in UPPERCASE/ },
+      { name: 'CODE128 tab', format: 'CODE128', value: 'LOT\t12', stops: false, note: /The tab will scan as a Tab key press/, go: 'Print anyway — the tab will scan as a Tab key press', tick: 'Print anyway — I accept it won’t scan exactly as written', damage: /won’t scan exactly as written/ },
+      { name: 'CODE128 DEL', format: 'CODE128', value: 'LOT12\x7f', showText: false, stops: false, note: /hidden character \(DEL\)/, go: 'Print anyway — the hidden character is printed in the barcode, so the scan won’t match the text you see', tick: 'Print anyway — I accept it won’t scan exactly as written', damage: /won’t scan exactly as written/ },
+      { name: 'CODE128 é', format: 'CODE128', value: 'café', stops: true },
+    ];
+    // Every stop decision matches what the exact renderer really does, with and without the number under the bars.
+    for (const showText of [true, false]) {
+      for (const [format, value] of [['CODE39', 'lot-a12'], ['CODE39', 'lot_a12'], ['CODE128', 'LOT\t12'], ['CODE128', 'A\r\nB'], ['CODE128', 'LOT12\x7f'], ['CODE128', 'café'], ['CODE128', 'A\x01B'], ['CODE128', 'AÈB'], ['CODE128', 'AÏB'], ['CODE128', 'AÓB'], ['CODE128', 'A\u00a0B']]) {
+        const el = lot(format, { showText });
+        const rendered = await renderThermalBitmap(design('4x6', 'bitmap-v1', el), F['4x6'], { Batch: value, Product: 'x' }).then(() => true, () => false);
+        const fit = barcodeFit(el, value, F['4x6'], true);
+        assert.equal(fit.level === 'blocked' && !fit.printable, !rendered, `${format} ${JSON.stringify(value)} (number ${showText ? 'shown' : 'hidden'}): stops exactly when the exact renderer refuses it`);
+      }
+    }
+    // DEL can't go in the number under the bars: a stop that says how to fix it.
+    const delText = barcodeFit(lot('CODE128', { showText: true }), 'LOT12\x7f', F['4x6'], true);
+    assert.equal(delText.printable, undefined);
+    assert.match(delText.problem, /turn off the number under the barcode/);
+    for (const c of cases) {
+      const t = design('4x6', 'bitmap-v1', lot(c.format, c.showText === false ? { showText: false } : {}));
+      // What the exact renderer really does with it.
+      const rendered = await renderThermalBitmap(t, F['4x6'], { Batch: c.value, Product: 'x' }).then(() => true, () => false);
+      assert.equal(rendered, !c.stops, `${c.name}: the exact renderer ${c.stops ? 'refuses' : 'draws'} it`);
+      const fit = barcodeFit(t.elements[1], c.value, F['4x6'], true);
+      assert.equal(fit.reason, 'characters', c.name);
+      assert.equal(!!fit.printable, !c.stops, `${c.name}: printable only when the renderer draws it`);
+      const page = runPrintCheck(batchRun([c.value]), t, F['4x6']);
+      assert.equal(page.blocking.length, 1, c.name);
+      assert.equal(page.verdict.stops, c.stops, `${c.name}: ${c.stops ? 'a stop' : 'a go-ahead, not a stop'}`);
+      assert.equal(printCheckAllows(page, { barcode: page.blockingKey }), !c.stops, `${c.name}: the go-ahead ${c.stops ? 'cannot' : 'does'} let it print`);
+      assert.equal(printCheckAllows(page, {}), false, `${c.name}: never prints without a tick`);
+      if (c.stops) {
+        assert.match(page.blocking[0], /é/);
+        assert.match(page.verdict.waitReason, /nothing can print/);
+        continue;
+      }
+      assert.match(page.blocking[0], c.note, `${c.name}: the problem says what will scan`);
+      assert.match(page.blocking[0], /Fix row 2 of your spreadsheet/);
+      assert.equal(page.verdict.severity, 'value');
+      assert.equal(page.verdict.carriesOver, true);
+      assert.equal(page.verdict.fixIn, 'data');
+      assert.equal(page.verdict.goAheadLabel, c.go, `${c.name}: the wizard's tick says what will scan`);
+      assert.match(page.verdict.heading, /won’t scan exactly as written/);
+      assert.match(page.verdict.waitReason, /tick the box/);
+      assert.equal(barcodeTickLabel(page.blocking[0]), c.tick, `${c.name}: the run page's tick`);
+      assert.match(barcodeDamage(page.blocking[0]), c.damage);
+      assert.equal(barcodeTicksAllow(page.blocking, [], false), false);
+      assert.equal(barcodeTicksAllow(page.blocking, [page.blocking[0]], false), true);
+      // The wizard's checks use the same verdict.
+      const wizard = barcodeVerdict(checkRunBarcodes(t, batchRun([c.value]), F['4x6']).issues, 1, F['4x6'], () => true);
+      assert.equal(wizard.stops, false);
+      assert.equal(wizard.goAheadLabel, c.go);
+    }
+    // A drawable value in a box the renderer refuses is still a stop (the box is the reason).
+    const narrow = barcodeFit(lot('CODE39', { width: 120 }), 'lot-a12', F['4x6'], true);
+    assert.equal(narrow.reason, 'box-too-small');
+    // A Code 39 value with a character JsBarcode refuses stops, naming only that character.
+    const under = barcodeFit(lot('CODE39'), 'lot_a12', F['4x6'], true);
+    assert.equal(under.printable, undefined);
+    assert.match(under.problem, /\(_\)/);
+    // A control character the exact renderer refuses before drawing stays a stop, though JsBarcode could encode it.
+    assert.equal(barcodeFit(lot('CODE128'), 'A\x01B', F['4x6'], true).printable, undefined);
+    // Mixed drawn values: one go-ahead in general words.
+    const mixed = runPrintCheck(batchRun(['LOT\t1', 'LOT2\x7f']), design('4x6', 'bitmap-v1', lot('CODE128', { showText: false })), F['4x6']);
+    assert.equal(mixed.verdict.stops, false);
+    assert.equal(mixed.verdict.goAheadLabel, 'Print anyway — the barcode won’t scan exactly as written');
+    // A drawable value next to a refused one: the refusal stops the run.
+    const both = runPrintCheck(batchRun(['LOT\t1', 'café']), design('4x6', 'bitmap-v1', lot('CODE128')), F['4x6']);
+    assert.equal(both.verdict.stops, true);
+    // Native designs: the printer is sent every value, so none of these is a stop.
+    for (const c of cases) {
+      const page = runPrintCheck(batchRun([c.value]), design('4x6', 'native-v1', lot(c.format, c.showText === false ? { showText: false } : {})), F['4x6']);
+      assert.equal(page.verdict.stops, false, `native ${c.name}: a go-ahead, not a stop`);
+      assert.equal(printCheckAllows(page, { barcode: page.blockingKey }), true);
+      assert.equal(printCheckAllows(page, {}), false);
+      assert.equal(page.verdict.goAheadLabel, BARCODE_VALUE_GO_AHEAD);
+    }
+    // Line breaks are named once, as a line break.
+    assert.match(barcodeFit(lot('CODE128'), 'A\r\nB', F['4x6'], false).problem, /\(a line break\)$/);
   }
   // A barcode cut off over a QR code: one line names both, and the go-ahead says both won't scan.
   {
