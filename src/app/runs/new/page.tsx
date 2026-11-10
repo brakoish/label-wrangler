@@ -1147,7 +1147,7 @@ function NewRunContent() {
           router.replace(target);
         }, 600);
       } else {
-        router.replace(target);
+        router.replace(`/runs/${run.id}`);
       }
     }
   };

@@ -263,7 +263,7 @@ export function barcodeFitFix(fit: BarcodeFit, place: BarcodeFixPlace = 'elsewhe
   const options: string[] = [];
   for (const fix of fit.fixes) {
     if (fix === 'wider-box') options.push(`make the barcode box at least ${width} wide in the design`);
-    if (fix === 'wider-label') options.push(`this needs ${width} and the label is ${label}: use a wider label or a QR code`);
+    if (fix === 'wider-label') options.push(`use a label at least ${width} wide, or a QR code`);
     if (fix === 'taller-box') options.push('make the barcode box taller in the design');
     if (fix === 'move-inside') options.push('move the barcode box fully onto the label in the design');
     if (fix === 'move') options.push(fit.reason === 'quiet-zone' ? 'move it in from the edge a little in the design' : `move it in the design so the ${width} of bars fit on the ${label} label`);

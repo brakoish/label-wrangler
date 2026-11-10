@@ -238,7 +238,7 @@ async function renderNative(template, format, values) {
     const full = barcode({ x: 0, width: 406 });
     const fit = barcodeFit(full, forty, F['2x1'], true);
     assert.equal(fit.reason, 'box-too-small');
-    assert.match(barcodeFitFix(fit), /use a wider label or a QR code/);
+    assert.match(barcodeFitFix(fit), /use a label at least [0-9.]+" wide, or a QR code/i);
     await assert.rejects(renderThermalBitmap(design('2x1', 'bitmap-v1', full), F['2x1'], { 'Package Tag': forty, Product: 'x' }), /Barcode box is too small/);
     const check = checkRunBarcodes(design('2x1', 'bitmap-v1', full), run([T24, forty]), F['2x1']);
     assert.equal(check.badLabels, 1, 'only the impossible label is held back');
