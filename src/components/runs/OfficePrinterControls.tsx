@@ -3,6 +3,7 @@ import { Loader2, Pause, Play } from 'lucide-react';
 import { useCallback,useEffect,useState,useRef } from 'react';
 import { confirmDialog } from '@/components/ui/feedback';
 import { controlFailure } from '@/lib/officeSendOutcome';
+import { IconSwap } from '@/components/ui/IconSwap';
 type Control={id:string;action:string;result:{state:string;reason:string}|null};
 type State={canControl:boolean;status:{paused:boolean|null;fresh:boolean}|null;controls:Control[];userId?:string};
 const resultWords:Record<string,string>={failed:'didn’t go through',rejected:'was refused',expired:'timed out',succeeded:'worked'};
@@ -99,7 +100,7 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
  const ok=!!data && !pending && fresh && paused===false && !attention;
  const tone=!data||pending?'text-zinc-400':ok?'text-emerald-400':'text-amber-300';
  const dot=!data||pending?'bg-zinc-500':ok?'bg-emerald-400':'bg-amber-300';
- const buttons=data?.canControl && <div className="flex shrink-0 gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className={`btn btn-sm ${action==='resume' && primaryResume?'btn-primary':'btn-secondary'}`}>{busy?<Loader2 className="size-4 animate-spin" aria-hidden="true" />:action==='pause'?<Pause className="size-4 animate-icon" aria-hidden="true" />:<Play className="size-4 animate-icon" aria-hidden="true" />}{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>;
+ const buttons=data?.canControl && <div className="flex shrink-0 gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className={`btn btn-sm ${action==='resume' && primaryResume?'btn-primary':'btn-secondary'}`}><IconSwap className="size-4" active={busy?'busy':action==='pause'?'pause':'resume'} icons={{busy:<Loader2 className="size-4 animate-spin" />,pause:<Pause className="size-4" />,resume:<Play className="size-4" />}} />{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>;
  const notes=<>
   {data?.canControl && !fresh && !pending && <p className="text-zinc-400">Pause and Resume work again once the office computer reports in.</p>}
   {last?.result && last.result.state!=='succeeded' && !pending && <p role="status" className="text-amber-300">The last {last.action==='pause'?'Pause':'Resume'} {resultWords[last.result.state] ?? 'didn’t finish'}. Check the status before trying again.</p>}

@@ -700,3 +700,52 @@ textarea:focus-visible {
   from { opacity: 0; transform: translateY(-2px); filter: blur(1px); }
 }
 /* end area B r5 */
+
+/* area B r6 -----------------------------------------------------------------
+ * Run page, office panel, Runs list, scan page and shell, with the existing
+ * easing tokens. No bounce anywhere; reduced motion turns all of it off.
+ * - .link: the one inline link style (amber, always underlined in text).
+ * - .icon-swap: icons crossfade with a blur instead of jumping.
+ * - .arc-in: a new problem or note travels in on a short arc (x eases out,
+ *   y eases in, so the path curves) instead of a straight slide.
+ * - .menu-sheet: the phone "More" sheet slides up; dragging past the top
+ *   stretches a little (rubber band, done in Menu.tsx), down closes it.
+ * - .nav-indicator: the nav highlight slides between links (shared layout).
+ * - .status-dot, .progress-seg: colour and size changes ease in place.
+ */
+@layer components {
+  .link { color: var(--color-amber-400); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+  .link:hover { color: var(--color-amber-300); text-decoration-thickness: 2px; }
+
+  .icon-swap { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; }
+  .icon-swap > span { grid-area: 1 / 1; display: inline-flex; opacity: 0; filter: blur(2px); transform: scale(0.8); }
+  .icon-swap > span[data-active] { opacity: 1; filter: none; transform: none; }
+
+  .menu-sheet { transform: translateY(var(--sheet-y, 0px)); }
+  .menu-sheet[data-state="closed"] { transform: translateY(100%); pointer-events: none; }
+  .menu-sheet-scrim { background: rgb(0 0 0 / 0.45); opacity: 1; }
+  .menu-sheet-scrim[data-state="closed"] { opacity: 0; pointer-events: none; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .icon-swap > span { transition: opacity 180ms var(--ease-out), filter 180ms var(--ease-out), transform 180ms var(--ease-out); }
+    .arc-in { animation: lw-arc-x 280ms var(--ease-out) both, lw-arc-y 280ms var(--ease-in) both; }
+    .menu-sheet { transition: transform 260ms var(--ease-out); }
+    .menu-sheet[data-state="closed"] { transition: transform 200ms var(--ease-in); }
+    .menu-sheet[data-dragging] { transition: none; }
+    .menu-sheet-scrim { transition: opacity 260ms var(--ease-out); }
+    .menu-sheet-scrim[data-state="closed"] { transition-duration: 200ms; transition-timing-function: var(--ease-in); }
+    .nav-indicator { transition: transform 240ms var(--ease-in-out), width 240ms var(--ease-in-out); }
+    .status-dot { transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out); }
+  }
+}
+@starting-style {
+  .menu-sheet[data-state="open"] { transform: translateY(100%); }
+  .menu-sheet-scrim[data-state="open"] { opacity: 0; }
+}
+@keyframes lw-arc-x { from { transform: translateX(-10px); } }
+@keyframes lw-arc-y { from { translate: 0 6px; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .icon-swap > span, .menu-sheet, .menu-sheet-scrim, .nav-indicator, .status-dot, .progress-seg { transition: none !important; }
+  .arc-in { animation: none !important; }
+}
+/* end area B r6 */

@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, AlertCircle, CheckCircle2, Loader2, Plug, ScanBarcode } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { IconSwap } from '@/components/ui/IconSwap';
 import { PageTitle } from '@/components/PageTitle';
 import { useRunStore } from '@/lib/runStore';
 import { BlankSummary } from '@/components/checks/RunChecks';
@@ -295,7 +296,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       <AppShell>
         <PageTitle title="Scan to print" />
         <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <div className="max-w-sm space-y-3"><p className="text-sm text-zinc-300">This run has no saved design, so it can&apos;t print from scans.</p><Link href={`/runs/${run.id}`} className="underline text-amber-400">Back to run</Link></div>
+          <div className="max-w-sm space-y-3"><p className="text-sm text-zinc-300">This run has no saved design, so it can&apos;t print from scans.</p><Link href={`/runs/${run.id}`} className="link">Back to run</Link></div>
         </div>
       </AppShell>
     );
@@ -469,17 +470,12 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 className="w-full bg-zinc-900 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-5">
-                <span key={busy ? 'busy' : flash ?? 'idle'} className={`block ${flash === 'ok' && !busy ? 'animate-success' : 'animate-icon'}`}>
-                {busy ? (
-                  <Loader2 className="size-6 text-zinc-400 animate-spin" aria-hidden="true" />
-                ) : flash === 'ok' ? (
-                  <CheckCircle2 className="size-6 text-emerald-400" aria-hidden="true" />
-                ) : flash === 'error' ? (
-                  <AlertCircle className="size-6 text-red-400" aria-hidden="true" />
-                ) : (
-                  <ScanBarcode className="size-6 text-zinc-500" aria-hidden="true" />
-                )}
-                </span>
+                <IconSwap className={`size-6 ${flash === 'ok' && !busy ? 'animate-success' : ''}`} active={busy ? 'busy' : flash === 'ok' ? 'ok' : flash === 'error' ? 'error' : 'idle'} icons={{
+                  busy: <Loader2 className="size-6 text-zinc-400 animate-spin" />,
+                  ok: <CheckCircle2 className="size-6 text-emerald-400" />,
+                  error: <AlertCircle className="size-6 text-red-400" />,
+                  idle: <ScanBarcode className="size-6 text-zinc-500" />,
+                }} />
               </div>
             </div>
             {repeat && (
