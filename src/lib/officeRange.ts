@@ -427,6 +427,7 @@ export function heldStillUnsent(held: ReadonlyArray<OfficeSpan>, jobs: ReadonlyA
   if (!held.length) return [];
   const printed = Math.max(0, Math.floor(printedCount) || 0);
   const covered = union(jobs.filter(jobCoversLabels), total);
-  const want = held.map(s => [Math.max(s.from, printed + 1), Math.min(s.to, total)] as [number, number]).filter(([a, b]) => a <= b);
-  return want.flatMap(span => minus([span], covered)).map(([from, to]) => ({ from, to }));
+  // Touching held parts (76–100, 101–125, 126–150) read as one stretch.
+  const want = union(held.map(s => ({ from: Math.max(s.from, printed + 1), to: s.to })), total);
+  return minus(want, covered).map(([from, to]) => ({ from, to }));
 }

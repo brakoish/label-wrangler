@@ -28,6 +28,7 @@ assert.deepEqual(R.readHeldSpans('[{"from":1,"to":50}]',20),[],'beyond the run r
   assert.deepEqual(R.heldStillUnsent(held,[job(76,100,'queued')],0,2000),[{from:101,to:150}]);
   assert.deepEqual(R.heldStillUnsent(held,[],120,2000),[{from:121,to:150}]);
   assert.deepEqual(R.heldStillUnsent([],[],0,2000),[]);
+  assert.deepEqual(R.heldStillUnsent([{from:76,to:100},{from:101,to:125},{from:126,to:150}],[],0,2000),[{from:76,to:150}],'held parts read as one stretch');
 }
 // A saved parts plan never offers labels already counted as printed.
 assert.deepEqual(R.partsAfterPrinted([{from:1,to:500},{from:501,to:1000},{from:1001,to:1500}],700),{parts:[{from:701,to:1000},{from:1001,to:1500}],trimmed:{from:1,to:700}});
