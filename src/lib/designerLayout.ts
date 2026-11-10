@@ -133,7 +133,7 @@ function intersection(a: Box, b: Box): number {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
-export type LayoutProblemKind = 'overlap' | 'off-label' | 'wider-than-box';
+export type LayoutProblemKind = 'overlap' | 'off-label' | 'wider-than-box' | 'characters';
 
 export interface LayoutProblem {
   /** The main problem; `kinds` lists all of them for this item. */

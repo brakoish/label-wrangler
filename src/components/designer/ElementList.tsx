@@ -4,6 +4,7 @@ import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, Plus, ArrowLeft, C
 import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
 import { elementTypeName, friendlyFieldName } from '@/lib/fieldLabels';
+import { Menu } from '@/components/ui/Menu';
 
 interface ElementListProps {
   elements: TemplateElement[];
@@ -34,8 +35,8 @@ export function ElementList({
 }: ElementListProps) {
   const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
-  const selected = sortedElements.filter(e => selectedElementIds.has(e.id));
-  const primary = selected[0];
+  // Layer actions apply to the whole selection when the row is part of it.
+  const targets = (id: string) => (selectedElementIds.has(id) ? selectedElementIds : new Set([id]));
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -84,22 +85,11 @@ export function ElementList({
         </details>
       </div>
 
-      <p className="px-3 pb-2 text-xs text-zinc-500 max-lg:hidden">Shift or Ctrl-click to select several.</p>
-      {primary && <div className="mx-3 mb-2 space-y-1.5 rounded-lg bg-zinc-900 p-2" aria-label="Selected layer actions">
-        <p className="text-xs text-zinc-400">{selected.length} selected{selected.some(e => e.locked) ? '. Locked items can’t move.' : ''}</p>
-        <div className="grid grid-cols-2 gap-0.5">
-          {([['top', 'Move to top'], ['back', 'Move to back'], ['up', 'Move up'], ['down', 'Move down']] as const).map(([direction, label]) => (
-            <button key={direction} onClick={() => onMoveElement(primary.id, direction)} disabled={moveLayers(elements, selectedElementIds, direction) === elements} className="btn btn-ghost btn-sm justify-start px-2 text-xs">{label}</button>
-          ))}
-          <button onClick={() => onLockElements(selectedElementIds, true)} disabled={selected.every(e => e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Lock</button>
-          <button onClick={() => onLockElements(selectedElementIds, false)} disabled={selected.every(e => !e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Unlock</button>
-        </div>
-      </div>}
       {/* Element list */}
       <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-px">
         {sortedElements.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-zinc-200 text-sm font-medium">Nothing on this label yet</p>
+            <p className="text-zinc-100 text-sm font-medium">Nothing on this label yet</p>
             <p className="text-zinc-400 text-sm mt-1">Add text, a barcode or a picture to start.</p>
           </div>
         ) : (
@@ -111,7 +101,9 @@ export function ElementList({
               onSelect={(additive) => onSelectElement(element.id, additive)}
               onDelete={() => onDeleteElement(element.id)}
               onDuplicate={() => onDuplicateElement(element.id)}
-                            onToggleLock={() => onLockElements(new Set([element.id]), !element.locked)}
+              onToggleLock={() => onLockElements(targets(element.id), !element.locked)}
+              onMove={(direction) => onMoveElement(element.id, direction)}
+              canMove={(direction) => moveLayers(elements, targets(element.id), direction) !== elements}
             />
           ))
         )}
@@ -128,6 +120,8 @@ function ElementItem({
   onDelete,
   onDuplicate,
   onToggleLock,
+  onMove,
+  canMove,
 }: {
   element: TemplateElement;
   isSelected: boolean;
@@ -135,6 +129,8 @@ function ElementItem({
   onDelete: () => void;
   onDuplicate: () => void;
   onToggleLock: () => void;
+  onMove: (direction: LayerDirection) => void;
+  canMove: (direction: LayerDirection) => boolean;
 }) {
   const icon = getElementIcon(element.type, `w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-zinc-400'}`);
   const label = getElementLabel(element);
@@ -146,7 +142,7 @@ function ElementItem({
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
       role="group"
       aria-label={`${typeLabel} layer ${label}`}
-      className={`flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
+      className={`group/layer flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
         isSelected
           ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
           : 'hover:bg-zinc-900'
@@ -164,25 +160,21 @@ function ElementItem({
       </div>
       {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 
-      {/* Actions */}
-      <div className={isSelected ? "flex items-center" : "hidden"}>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-          className="btn btn-ghost btn-icon btn-sm"
-          title="Duplicate"
-          aria-label={`Duplicate layer ${label}`}
-        >
-          <Copy className="size-4" />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="btn btn-danger-ghost btn-icon btn-sm"
-          disabled={element.locked}
-          title={element.locked ? "Unlock layer to delete" : "Delete"}
-          aria-label={`Delete layer ${label}`}
-        >
-          <Trash2 className="size-4" />
-        </button>
+      {/* Actions: one quiet menu per layer, shown on the selected row and on hover. */}
+      <div onClick={(e) => e.stopPropagation()} className={isSelected ? 'flex items-center' : 'flex items-center opacity-0 transition-opacity duration-150 group-hover/layer:opacity-100 focus-within:opacity-100 max-lg:opacity-100'}>
+        <Menu
+          label={`Actions for ${label}`}
+          showLabel={false}
+          items={[
+            { label: 'Duplicate', icon: <Copy className="size-4" aria-hidden="true" />, onSelect: onDuplicate },
+            { label: 'Bring to front', onSelect: () => onMove('top'), disabled: !canMove('top') },
+            { label: 'Move forward', onSelect: () => onMove('up'), disabled: !canMove('up') },
+            { label: 'Move backward', onSelect: () => onMove('down'), disabled: !canMove('down') },
+            { label: 'Send to back', onSelect: () => onMove('back'), disabled: !canMove('back') },
+            { label: element.locked ? 'Unlock' : 'Lock in place', icon: element.locked ? <Unlock className="size-4" aria-hidden="true" /> : <Lock className="size-4" aria-hidden="true" />, onSelect: onToggleLock },
+            { label: element.locked ? 'Unlock to delete' : 'Delete', icon: <Trash2 className="size-4" aria-hidden="true" />, onSelect: onDelete, danger: true, disabled: element.locked },
+          ]}
+        />
       </div>
     </div>
   );

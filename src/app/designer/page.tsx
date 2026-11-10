@@ -27,7 +27,8 @@ import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { freeSpot, layoutProblems, printedBounds, type Box } from '@/lib/designerLayout';
+import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
+import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
 import { elementTypeName } from '@/lib/fieldLabels';
 import { friendlyError } from '@/lib/userMessages';
@@ -364,6 +365,17 @@ function DesignerContent() {
       ? layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured)
       : []
   ), [currentTemplate, currentFormat, previewValues, measured]);
+  // Characters the printer's own font can't print, outlined on the canvas too.
+  const canvasProblems = useMemo<LayoutProblem[]>(() => {
+    if (!currentTemplate || currentTemplate.summaryOnly || !usesPrinterFont(currentFormat, currentTemplate)) return designProblems;
+    const characters = currentTemplate.elements.flatMap((el): LayoutProblem[] => {
+      const chars = elementUnprintable(el, previewValues);
+      if (!chars.length) return [];
+      const name = itemName(el);
+      return [{ kind: 'characters', kinds: ['characters'], ids: [el.id], message: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${describeUnprintable(chars).replace(/^The printer/, 'the printer')}` }];
+    });
+    return [...designProblems, ...characters];
+  }, [currentTemplate, currentFormat, designProblems, previewValues]);
 
   // If no template is selected, show template list view
   if (!currentTemplate || currentTemplate.summaryOnly || !currentFormat) {
@@ -845,7 +857,7 @@ function DesignerContent() {
             onDragEnd={finishGesture}
             onGestureCancel={cancelGesture}
             testData={previewValues}
-            layoutProblems={designProblems}
+            layoutProblems={canvasProblems}
           />
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (

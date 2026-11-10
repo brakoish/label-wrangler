@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ChevronDown, Circle, FlaskConical, Search, X } from 'lucide-react';
+import { CheckCircle2, Circle, Search, X } from 'lucide-react';
 import { TemplateElement } from '@/lib/types';
 import { MANIFEST_FIELDS } from '@/lib/manifestFields';
 import { SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
+import { friendlyFieldName } from '@/lib/fieldLabels';
+import { designSampleValues } from '@/lib/sampleValues';
 
 interface TestDataPanelProps {
   elements: TemplateElement[];
@@ -13,7 +15,6 @@ interface TestDataPanelProps {
 }
 
 export function TestDataPanel({ elements, testData, onTestDataChange }: TestDataPanelProps) {
-  const [expanded, setExpanded] = useState(true);
   const [manifestSearch, setManifestSearch] = useState('');
   const [manifestRows, setManifestRows] = useState<ManifestRow[]>([]);
   const [selectedManifestKey, setSelectedManifestKey] = useState<string | null>(null);
@@ -37,6 +38,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
       return acc;
     }, [] as { fieldName: string; defaultValue: string; type: string; prefix: string; suffix: string }[]);
 
+  const samples = designSampleValues(elements);
   const fieldNames = JSON.stringify(dynamicFields.map(field => field.fieldName));
   const selectedRow = manifestRows.find(row => manifestPackageKey(row) === selectedManifestKey);
   const appliedFields = useRef<{ row: ManifestRow | undefined; names: Set<string> }>({ row: undefined, names: new Set() });
@@ -54,7 +56,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
     }
   }, [fieldNames, selectedRow, onTestDataChange]);
 
-  if (dynamicFields.length === 0) return null;
+  if (dynamicFields.length === 0) return <p className="px-4 py-3 text-sm text-zinc-400">Nothing on this label changes per label, so there is nothing to try.</p>;
 
   const manifestPackageSummaries = summarizeManifestPackages(manifestRows);
   const selectedManifest = selectedManifestKey
@@ -113,20 +115,28 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        aria-expanded={expanded}
-        className="w-full shrink-0 flex min-h-control items-center gap-2 px-4 text-sm hover:bg-zinc-900 transition-colors"
-      >
-        <FlaskConical className="w-4 h-4 text-zinc-500" aria-hidden="true" />
-        <span className="text-zinc-200 font-medium flex-1 text-left">Test data</span>
-        <span className="text-xs text-zinc-500 mr-1">{dynamicFields.length} field{dynamicFields.length !== 1 ? 's' : ''}</span>
-        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
-      </button>
+      {(
+        <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-1 space-y-3">
+          <p className="text-sm text-zinc-400">Try your own values. They only change the preview.</p>
+          {dynamicFields.map((field) => (
+            <label key={field.fieldName} className="block">
+              <span className="mb-1 block text-sm font-medium text-zinc-300">{friendlyFieldName(field.fieldName)}</span>
+              <span className="flex items-center gap-1.5">
+                {field.prefix.trim() && <span className="shrink-0 text-sm text-zinc-500" aria-hidden="true">{field.prefix.trim()}</span>}
+                <input
+                  type="text"
+                  value={testData[field.fieldName] ?? ''}
+                  onChange={(e) => onTestDataChange(field.fieldName, e.target.value)}
+                  placeholder={samples[field.fieldName] || ''}
+                  className="field field-sm min-w-0 flex-1"
+                />
+                {field.suffix.trim() && <span className="shrink-0 text-sm text-zinc-500" aria-hidden="true">{field.suffix.trim()}</span>}
+              </span>
+            </label>
+          ))}
 
-      {expanded && (
-        <div className="min-h-0 overflow-y-auto px-4 pb-4 space-y-3">
-          <div className="space-y-2 rounded-lg bg-zinc-900 p-2">
+          <div className="space-y-2 pt-2">
+            <p className="text-sm text-zinc-400">Or fill them from a Manifest package</p>
             <div className="flex gap-1">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
@@ -140,9 +150,9 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') void searchManifest();
                   }}
-                  aria-label="Search Manifest package"
-                  placeholder="Search Manifest package"
-                  className="field field-sm w-full pl-7 pr-7 text-xs"
+                  aria-label="Fill from a Manifest package"
+                  placeholder="Find a package"
+                  className="field field-sm w-full pl-7 pr-7"
                 />
                 {manifestSearch && (
                   <button
@@ -173,12 +183,12 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
 
             {manifestError && <p className="text-xs text-amber-400">{manifestError}</p>}
             {selectedManifest && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
+              <div className="rounded-lg bg-amber-500/10 px-2 py-1.5">
                 <p className="truncate text-xs font-medium text-amber-300" title={selectedManifest.row.itemName}>
                   {selectedManifest.row.itemName || '(no item)'}
                 </p>
                 <div className="mt-0.5 flex items-center justify-between gap-2">
-                  <p className="truncate font-mono text-xs text-amber-300" title={selectedManifest.row.tag}>
+                  <p className="truncate text-xs text-amber-300 tabular-nums" title={selectedManifest.row.tag}>
                     {selectedManifest.row.tag || '(no tag)'}
                   </p>
                   <span className="shrink-0 text-xs text-amber-300">
@@ -189,7 +199,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             )}
 
             {manifestPackageSummaries.length > 0 && (
-              <div className="max-h-36 overflow-auto rounded-lg border border-zinc-800">
+              <div className="max-h-36 overflow-auto space-y-px">
                 {manifestPackageSummaries.map(({ row, labelRows }) => {
                   const key = manifestPackageKey(row);
                   const isSelected = key === selectedManifestKey;
@@ -198,8 +208,8 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       key={key}
                       type="button"
                       onClick={() => selectManifestPackage(key)}
-                      className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 border-b border-zinc-900 px-2 py-1.5 text-left text-xs transition-colors last:border-b-0 ${
-                        isSelected ? 'bg-amber-500/10 text-amber-300' : 'text-zinc-500 hover:bg-zinc-900/70'
+                      className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                        isSelected ? 'bg-amber-500/10 text-amber-300' : 'text-zinc-500 hover:bg-zinc-800'
                       }`}
                     >
                       <span className={isSelected ? 'text-amber-300' : 'text-zinc-500'}>
@@ -207,7 +217,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-zinc-300" title={row.itemName}>{row.itemName || '(no item)'}</span>
-                        <span className="block truncate font-mono text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
+                        <span className="block truncate tabular-nums text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
                       </span>
                       <span className={isSelected ? 'text-amber-300' : 'text-zinc-500'}>{labelRows}</span>
                     </button>
@@ -220,29 +230,6 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
               <p className="text-xs text-zinc-500">No Manifest packages found.</p>
             )}
           </div>
-
-          {dynamicFields.map((field) => (
-            <div key={field.fieldName}>
-              <div className="flex items-center gap-1 mb-1">
-                <span className="text-sm text-zinc-300 font-medium">{field.fieldName}</span>
-                {(field.prefix || field.suffix) && (
-                  <span className="text-xs text-zinc-500">
-                    {field.prefix && `"${field.prefix}"`}
-                    {field.prefix && field.suffix && ' · '}
-                    {field.suffix && `"${field.suffix}"`}
-                  </span>
-                )}
-              </div>
-              <input
-                type="text"
-                value={testData[field.fieldName] ?? ''}
-                onChange={(e) => onTestDataChange(field.fieldName, e.target.value)}
-                placeholder={field.defaultValue || `Enter ${field.fieldName}...`}
-                aria-label={field.fieldName}
-                className="field field-sm w-full"
-              />
-            </div>
-          ))}
 
           {Object.values(testData).some((v) => v) && (
             <button

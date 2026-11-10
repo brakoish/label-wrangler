@@ -8,6 +8,7 @@ import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
+import { friendlyFieldName } from '@/lib/fieldLabels';
 import { plainRenderWarning, type Box, type LayoutProblem } from '@/lib/designerLayout';
 
 interface LabelPreviewProps {
@@ -514,11 +515,14 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         onDragEnd?.();
       }}>Fit QR inside label</button>}
       {editing && <div className="fixed z-40 bg-zinc-950 border border-amber-400 rounded p-2" style={{ left: Math.max(0, Math.min(editing.left, window.innerWidth - editing.width - 20)), top: Math.max(0, Math.min(editing.top, window.innerHeight - editing.height - 70)), width: editing.width + 16 }}>
-        <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Default for ${editing.field} (binding preserved)` : 'Edit text'} · Ctrl/⌘ Enter saves · Esc cancels</p>
+        <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Sample for ${friendlyFieldName(editing.field)} (the spreadsheet fills it when printing)` : 'Edit text'}. Ctrl or ⌘ + Enter saves, Esc cancels.</p>
         <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
       </div>}
       <svg
         ref={svgRef}
+        tabIndex={0}
+        role="group"
+        aria-label="Label. Arrow keys move the selected item; hold Shift for bigger steps."
         width={svgW}
         height={svgH}
         viewBox={`${-padX} ${-padY} ${totalW} ${totalH}`}
