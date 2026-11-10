@@ -40,8 +40,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.variable} ${zebraFace.variable} font-sans antialiased`}>
+    <html lang="en" className={`dark ${inter.variable} ${zebraFace.variable}`}>
+      <body className="font-sans antialiased">
         <StoreHydrator>{children}</StoreHydrator>
         <FeedbackHost />
       </body>
