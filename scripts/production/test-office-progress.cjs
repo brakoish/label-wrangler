@@ -320,7 +320,7 @@ console.log('PASS field display names');
   assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
   // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
   assert.match(panel, /if\(direct \|\| payload\.from!==want\.from \|\| payload\.to!==want\.to\)\{/, 'a part, the form or a one-tap send never sends another range\'s saved request');
-  assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
+  assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{(if\(partCarriesEndBlank\(current,part\)\)blankSkipped=\{span:part,why:'office'\};)?current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
   assert.match(panel, /if\(pending && pendingInPlan && partsPlan\)\{void runSeries\(partsPlan\);return;\}/, '"Send again" on an unsure part carries on with the plan');
   // Fixing a part: later parts are held before the check lets the office carry on; a 409 means already checked.
   const save = panel.slice(panel.indexOf('const saveFix='), panel.indexOf('const pendingWords='));
@@ -330,10 +330,10 @@ console.log('PASS field display names');
   assert.match(save, /onRecordPrinted\?\.\(/, '"They printed" counts them only on that explicit choice');
   // "Print some labels again" starts empty.
   assert.match(panel, /Print some labels again…/);
-  assert.match(panel, /const openAgain=\(mode:Again\['mode'\],requestId\?:string\)=>\{setAgain\(\{mode,text:'',queue:\[\],requestId\}\);/, 'choosing labels again starts with an empty box (never prefilled, also in a queue row)');
+  assert.match(panel, /const openAgain=\(mode:Again\['mode'\],requestId\?:string\)=>\{setAgain\(\{mode,text:'',queue:\[\],requestId,blank:false\}\);/, 'choosing labels again starts with an empty box and no blank label (never prefilled, also in a queue row)');
   assert.ok((panel.match(/openAgain\('(again|missing)'/g) || []).length >= 4, 'every "print again" opens the same one box');
   assert.match(panel, /const showForm=!!pending \|\| \(!again && /, 'only one range editor at a time');
-  assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true\);/, 'one press checks and sends one stretch');
+  assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true,current\.blank && rest\.length===0\);/, 'one press checks and sends one stretch; only the last can end with a blank label');
 
   const page = read('src/components/runs/RunPrinter.tsx');
   assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: `Print only \$\{only\}`/, 'the safe start is the primary button; printing only the chosen labels leaves progress alone');

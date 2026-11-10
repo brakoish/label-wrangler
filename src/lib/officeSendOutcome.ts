@@ -31,6 +31,7 @@ export type OfficeRefusalReason =
   | 'labels-changed'
   | 'key-mismatch'
   | 'too-large'
+  | 'no-blank-room'
   | 'printer-offline'
   | 'other';
 
@@ -77,10 +78,11 @@ const REFUSALS: Array<[RegExp, OfficeRefusalReason, string]> = [
     'This request doesn’t match the one saved on this device. Start a new send.'],
   [/printer is offline|printer offline|station (is )?(offline|unavailable)|printer (is )?(not connected|unreachable)/i, 'printer-offline',
     'The office printer is offline, so nothing was sent. Check that the Office Pi and the printer are switched on.'],
+  // Checked before "too large": the blank label at the end is what didn't fit.
+  [/no room for a blank feed|with its blank feed/i, 'no-blank-room',
+    'There isn’t room for the blank label at the end, so nothing was sent.'],
   [/too large|exceeds 32 MiB|exceeds the 2 MiB|up to 10,000/i, 'too-large',
     'That’s too many labels for one send. Send a smaller range.'],
-  [/no room for a blank feed/i, 'too-large',
-    'There isn’t room for the blank label at the end of this send. Send a smaller range, or untick the blank label.'],
 ];
 
 /** A refusal from the office API in plain words, with a reason the UI can act on. */
@@ -98,26 +100,33 @@ export function plainOfficeRefusal(message: string, status?: number): { reason: 
  * - queue:   look at the office queue (the office already has these labels)
  * - smaller: pick a smaller range
  * - sign-in: sign in again
+ * - without-blank: send the same labels without the blank label at the end
+ *            (a new request; the refused one is never resent)
  * - none:    only someone else can fix it, so no button
  */
-export type OfficeRefusalNextStep = 'resend' | 'queue' | 'smaller' | 'sign-in' | 'none';
+export type OfficeRefusalNextStep = 'resend' | 'queue' | 'smaller' | 'sign-in' | 'without-blank' | 'none';
 export function refusalNextStep(reason: OfficeRefusalReason): OfficeRefusalNextStep {
   if (reason === 'no-access' || reason === 'not-paired') return 'none';
+  if (reason === 'no-blank-room') return 'without-blank';
   if (reason === 'already-queued' || reason === 'reprint-pending' || reason === 'needs-review') return 'queue';
   if (reason === 'too-large') return 'smaller';
   if (reason === 'signed-out') return 'sign-in';
   return 'resend';
 }
 
-/** What the run page remembers about a refused send, so a refresh tells the truth. */
-export interface OfficeRefusalRecord { from: number; to: number; reason: OfficeRefusalReason; message: string; at: string }
+/**
+ * What the run page remembers about a refused send, so a refresh tells the truth.
+ * endBlank: the refused send asked for a blank label at the end. A resend of
+ * the same labels keeps that choice, except after "no room for the blank".
+ */
+export interface OfficeRefusalRecord { from: number; to: number; reason: OfficeRefusalReason; message: string; at: string; endBlank?: boolean }
 
 export function readRefusal(raw: string | null): OfficeRefusalRecord | null {
   if (!raw) return null;
   try {
     const data = JSON.parse(raw) as Partial<OfficeRefusalRecord>;
     if (typeof data.message !== 'string' || !Number.isInteger(data.from) || !Number.isInteger(data.to)) return null;
-    return { from: data.from!, to: data.to!, reason: (data.reason ?? 'other') as OfficeRefusalReason, message: data.message, at: typeof data.at === 'string' ? data.at : '' };
+    return { from: data.from!, to: data.to!, reason: (data.reason ?? 'other') as OfficeRefusalReason, message: data.message, at: typeof data.at === 'string' ? data.at : '', ...(data.endBlank === true ? { endBlank: true } : {}) };
   } catch { return null; }
 }
 
