@@ -160,7 +160,7 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
 
   return (
     <form
-      className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] [&>*]:min-w-0"
+      className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_auto] [&>*]:min-w-0"
       onSubmit={(event) => {
         event.preventDefault();
         if (!canAdd) return;
