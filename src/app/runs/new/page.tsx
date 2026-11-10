@@ -48,14 +48,14 @@ import { saveLastColumns } from '@/lib/lastColumns';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 /** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
-function runFixWords(before: TemplateElement, after: TemplateElement): string {
-  if (before.type !== after.type) return `Swapped the barcode for a ${after.type === 'qr' ? 'QR code' : after.type}`;
+function runFixWords(before: TemplateElement, after: TemplateElement, ahead = false): string {
+  if (before.type !== after.type) return `${ahead ? 'This swaps' : 'Swapped'} the barcode for a ${after.type === 'qr' ? 'QR code' : after.type}`;
   const done: string[] = [];
-  if ((before.rotation || 0) !== (after.rotation || 0)) done.push('turned');
-  if (before.x !== after.x || before.y !== after.y) done.push('moved');
-  if (before.width !== after.width || before.height !== after.height) done.push('resized');
-  const verbs = done.length ? andList(done) : 'changed';
-  return `${verbs.charAt(0).toUpperCase()}${verbs.slice(1)} the barcode`;
+  if ((before.rotation || 0) !== (after.rotation || 0)) done.push(ahead ? 'turns' : 'turned');
+  if (before.x !== after.x || before.y !== after.y) done.push(ahead ? 'moves' : 'moved');
+  if (before.width !== after.width || before.height !== after.height) done.push(ahead ? 'resizes' : 'resized');
+  const verbs = done.length ? andList(done) : ahead ? 'changes' : 'changed';
+  return ahead ? `This ${verbs} the barcode` : `${verbs.charAt(0).toUpperCase()}${verbs.slice(1)} the barcode`;
 }
 
 /** “Strain, THC, CBD and Batch”: a plain list join for the wait reasons. */
@@ -1005,7 +1005,7 @@ function NewRunContent() {
     const what = runFixWords(was, changed);
     const ok = await confirmDialog({
       title: `Change the design “${template.name}”?`,
-      body: `${what} in the design itself, so every run made from it from now on gets this change too. Runs you already made keep their design. You can undo it right after.`,
+      body: `${runFixWords(was, changed, true)} in the design itself, so every run made from it from now on gets this change too. Runs you already made keep their design. You can undo it right after.`,
       confirmLabel: 'Change the design',
       cancelLabel: 'Not now',
     });
@@ -1095,8 +1095,11 @@ function NewRunContent() {
     const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
     return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
   };
+  // The parts Nabis didn't send are said once, in the Nabis notice with its
+  // own Search again and Leave off: not again as "pick another package".
+  const nabisCoversBlanks = !nabisOk && blankCheck.issues.length > 0 && blankCheck.issues.every((issue) => nabisGapFields.includes(issue.field));
   const checkReasons = setupReason || !format ? [] : [
-    !blanksOk && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
+    !blanksOk && !nabisCoversBlanks && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
@@ -2045,7 +2048,7 @@ function NewRunContent() {
                         </div>
                       </div>
                     )}
-                    {hasData && template && (
+                    {hasData && template && !nabisCoversBlanks && (
                       <BlankSummary
                         check={blankCheck}
                         mode={inputMode}
