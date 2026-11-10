@@ -497,7 +497,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
                 value={renderMode}
                 onChange={(v) => setRenderMode(v as 'native-v1' | 'bitmap-v1')}
                 options={[
-                  { value: 'bitmap-v1', label: 'Exact picture (recommended)', sublabel: 'Any font. Needs internet to print.' },
+                  { value: 'bitmap-v1', label: 'Exact picture (recommended)', sublabel: 'Any font. This computer must be online to print.' },
                   { value: 'native-v1', label: 'Printer font', sublabel: 'The printer’s built-in font, as older designs use' },
                 ]}
               />
