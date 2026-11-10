@@ -338,6 +338,22 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [askedKey,setAskedKey]=useState('');
   const rangeKey=`${proofKey}|${plan.kind}`;
 
+  /** A request saved on this device that hasn't been answered yet, or null. */
+  const savedRequest=():{from:number;to:number;reprintOf?:string}|null|'unreadable'=>{
+    let saved:string|null=null;try{saved=localStorage.getItem(storageKey);}catch{saved=null;}
+    if(!saved)return null;
+    try{const data=JSON.parse(saved);return Number.isInteger(data?.from) && Number.isInteger(data?.to)?data:'unreadable';}catch{return 'unreadable';}
+  };
+  const finishFirstWords=(saved:{from:number;to:number})=>`Nothing new was sent: we’re still not sure the office got ${range(saved.from,saved.to)}. Tap “Send again” to finish that first (it can’t print twice), or “Start over” if the office queue shows it arrived.`;
+  /** True (and says why) when a saved request has to be sorted out before anything else is sent. */
+  const blockedBySaved=():boolean=>{
+    const saved=savedRequest();
+    if(!saved)return false;
+    if(saved==='unreadable'){setError('The saved request on this device couldn’t be read. Check the office queue below before starting over.');return true;}
+    setPending(p=>p ?? {from:saved.from,to:saved.to,reprintOf:saved.reprintOf});
+    setError(finishFirstWords(saved));return true;
+  };
+
   /**
    * One send = one POST with one saved idempotency key. `target` is a part of
    * an explicit multi-part send; `direct` is a one-tap send whose range was
@@ -349,14 +365,22 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     let outcome:SendOutcome='skipped';
     const onScreen={plan,tooBig};
     try{
-      let payload;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let payload:any;
       let saved:string|null=null;try{saved=localStorage.getItem(storageKey);}catch{saved=null;}
       const proof=proofRef.current;
       const want=target ?? direct?.span ?? {from:fromNumber,to:toNumber};
       if(saved){
         try{payload=JSON.parse(saved);}catch{setError('The saved request on this device couldn’t be read. Check the office queue below before starting over.');return;}
-        // A part of "Send all in parts" only ever resends its own saved request.
-        if(target && (payload.from!==target.from || payload.to!==target.to)){setError(`Finish sending ${range(payload.from,payload.to)} first.`);return;}
+        // A saved request is only ever resent as itself, never in place of
+        // other labels: a one-tap send (a reprint from the fix dialog or a
+        // queue row, a resend after a refusal) waits until it is sorted out,
+        // and a part or the form resends it only for exactly its range.
+        if(direct || payload.from!==want.from || payload.to!==want.to){
+          const kept={from:Number(payload.from),to:Number(payload.to),reprintOf:typeof payload.reprintOf==='string'?payload.reprintOf:undefined};
+          setPending(p=>p ?? kept);
+          setError(finishFirstWords(kept));return;
+        }
       }else{
         // A new request always needs a check of exactly this range first, and
         // is never one the server would refuse.
@@ -421,6 +445,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [directCheck,setDirectCheck]=useState<{span:OfficeSpan;progress?:{completed:number;total:number}}|null>(null);
   const sendNow=async(span:OfficeSpan,reprintOf?:string):Promise<SendOutcome|undefined>=>{
     if(!printer || inFlight.current || directRunning.current || seriesRunning.current)return;
+    if(blockedBySaved())return 'skipped';
     directRunning.current=true;
     rangeEdited.current=true;fixedRange.current=`${span.from}-${span.to}`;
     setFrom(String(span.from));setTo(String(span.to));setReprintOf(reprintOf ?? '');setChooseAgain(false);setSendOther(false);
@@ -671,6 +696,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     const {part}=current;
     const again=fixAgain(current);
     if(current.seen!=='all' && !again)return;
+    // An unanswered send must be sorted out first: nothing is recorded or
+    // cancelled at the office, and the panel says what to do.
+    if(again && blockedBySaved()){setFix(null);return;}
     const later=laterQueued(part);
     // 1. Hold later parts of this run first, before the check lets the office
     //    carry on, so the reprint comes out in order.
@@ -691,11 +719,22 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     const reason=(current.seen==='all'
       ?`They printed: ${range(part.from,part.to)} counted as printed.`
       :`${capitalise(fixWhy(part))}. ${capitalise(range(again!.from,again!.to))} sent to print again${cameOut.length?`; ${spanWords(cameOut)} came out`:''}.`)+(note?` ${note}`:'');
-    for(const jobId of part.jobIds){
-      const job=freshJobs.find(j=>j.id===jobId);
-      if(job && !job.review && ['resolved','cancelled','sent_to_printer'].includes(job.state))continue;
-      try{await api('/api/office/review',{method:'POST',body:JSON.stringify({jobId,pendingCupsResolved:true,reason:reason.slice(0,500)})});}
-      catch(err){if(!(err instanceof OfficeRequestError && err.status===409))throw err;}
+    try{
+      for(const jobId of part.jobIds){
+        const job=freshJobs.find(j=>j.id===jobId);
+        if(job && !job.review && ['resolved','cancelled','sent_to_printer'].includes(job.state))continue;
+        try{await api('/api/office/review',{method:'POST',body:JSON.stringify({jobId,pendingCupsResolved:true,reason:reason.slice(0,500)})});}
+        catch(err){if(!(err instanceof OfficeRequestError && err.status===409))throw err;}
+      }
+    }catch(err){
+      // The later parts are already out of the queue: say so plainly, so
+      // nobody thinks they are still on their way. The office queue (on
+      // every device) shows them as cancelled, and this panel offers them
+      // again after the reprint.
+      if(!held.length)throw err;
+      setFix(null);
+      setError(`${capitalise(spanWords(held))} ${single(held)?'was':'were'} taken out of the office queue so the reprint comes out first, but your answer for ${range(part.from,part.to)} didn’t save (${officeMessage(err,'the office printer didn’t answer').replace(/\.$/,'')}). Tap “${part.kind==='needs-check'?`Check ${nums(part.from,part.to)}…`:`Print ${nums(part.from,part.to)} again…`}” to answer again. Nothing was printed again yet.`);
+      return;
     }
     // The reprint below plans from the queue, and the screen's copy still
     // shows these jobs waiting for this check (and the later parts queued).
@@ -875,7 +914,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <p className="text-zinc-400">{[formatWhen(r.created_at),r.username].filter(Boolean).join(' · ')}</p>
           {many && <p className="text-zinc-300 tabular-nums">{r.jobs.length.toLocaleString()} parts · {tally}</p>}
           {shown.length>0 && <ul className="space-y-1">{foldJobs(shown,attention).map(j=><li key={j.id} className="text-zinc-300"><span className="tabular-nums">{nums(j.from,j.to)}</span>: {j.review && j.state!=='rejected'?'Needs a check':labels[j.state] ?? 'Unknown'}{j.reason && (j.review || ['rejected','needs_review'].includes(j.state)) && <span className="block text-zinc-400">{capitalise(plainJobReason(j.reason))}.</span>}
-            {canPrint && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-zinc-200" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
+            {canPrint && !pending && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-zinc-200" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
           </li>)}</ul>}
           <div className="flex flex-wrap gap-1 -ml-2">
             {many && <button type="button" aria-expanded={open} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>setOpenSends(prev=>{const next=new Set(prev);if(next.has(r.id))next.delete(r.id);else next.add(r.id);return next;})}>{open?'Hide parts':`Show all ${r.jobs.length.toLocaleString()} parts`}</button>}
