@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { IconSwap } from '@/components/motion/IconSwap';
 
 type PackageResult = {
@@ -378,21 +379,22 @@ export default function NabisPage() {
 
       <div className="flex-1 overflow-auto">
         <div className="page-container grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0">
-          <div className="lg:col-span-2">
-            <h1 className="text-2xl font-semibold text-zinc-100">Nabis labels</h1>
-            <p className="mt-1 text-sm text-zinc-400">Print a 6&quot; × 4&quot; case label for a Nabis delivery. Find the package by name or Metrc tag, or type it in.</p>
-          </div>
+          <PageHeader
+            className="lg:col-span-2"
+            title="Nabis"
+            subtitle={<>Print a 6&quot; × 4&quot; case label for a Nabis delivery.</>}
+          />
           <section className="min-h-0 space-y-4">
             <div>
               <h2 className="mb-3 text-base font-semibold text-zinc-100">Find a package</h2>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search item name or tag"
                   aria-label="Search packages by item name or tag"
-                  className="field w-full pl-10 pr-10"
+                  className="field w-full pl-9 pr-10"
                 />
                 {query && (
                   <button

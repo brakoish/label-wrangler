@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, Search } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
+import { CountLabel, PageHeader, SearchField } from '@/components/ui/PageHeader';
 import { useFormatStore } from '@/lib/store';
 import type { ApiError } from '@/lib/apiClient';
 import { FormatCard } from '@/components/FormatCard';
@@ -71,42 +72,33 @@ export default function Home() {
   }, [selectedFormat, filteredFormats, selectFormat]);
 
   const hasFormats = formats.length > 0;
-  const tabLabel = (text: string, n: number) => (n > 0 ? `${text} (${n})` : text);
 
   return (
     <AppShell>
       <PageTitle title="Label sizes" />
       <div className="page-container flex-1 flex flex-col min-h-0 pb-0 sm:pb-0 lg:pb-0">
-        <div className={`flex items-center justify-between gap-3 pb-4 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
-          <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
-          {/* With none yet, the one "New label size" button is the empty state's. */}
-          {!(hydrated && !loadError && formats.length === 0) && <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+        <PageHeader
+          className={`pb-6 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}
+          title="Label sizes"
+          subtitle="The labels and rolls you print on."
+          // With none yet, the one "New label size" button is the empty state's.
+          action={!(hydrated && !loadError && formats.length === 0) ? <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
             <PlusIcon className="w-4 h-4" />
             New label size
-          </button>}
-        </div>
+          </button> : undefined}
+        />
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 overflow-auto xl:overflow-hidden">
         {/* List */}
         <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full ${hydrated && formats.length === 0 ? '' : 'xl:w-[360px]'} xl:shrink-0 flex-col min-h-0`}>
           {hasFormats && (
             <div className="pb-3 space-y-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" aria-hidden="true" />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  aria-label="Search label sizes"
-                  placeholder="Search label sizes…"
-                  className="field w-full pl-10 pr-4"
-                />
-              </div>
+              <SearchField label="Search label sizes" value={searchQuery} onChange={setSearchQuery} />
               {thermalCount > 0 && sheetCount > 0 && (
                 <div className="segmented" role="group" aria-label="Filter by type">
                   <SegmentedIndicator index={['all', 'thermal', 'sheet'].indexOf(activeTab)} count={3} />
-                  <button onClick={() => setActiveTab('all')} aria-pressed={activeTab === 'all'}>{tabLabel('All', formats.length)}</button>
-                  <button onClick={() => setActiveTab('thermal')} aria-pressed={activeTab === 'thermal'}>{tabLabel('Rolls', thermalCount)}</button>
-                  <button onClick={() => setActiveTab('sheet')} aria-pressed={activeTab === 'sheet'}>{tabLabel('Sheets', sheetCount)}</button>
+                  <button onClick={() => setActiveTab('all')} aria-pressed={activeTab === 'all'}><CountLabel text="All" count={formats.length} /></button>
+                  <button onClick={() => setActiveTab('thermal')} aria-pressed={activeTab === 'thermal'}><CountLabel text="Rolls" count={thermalCount} /></button>
+                  <button onClick={() => setActiveTab('sheet')} aria-pressed={activeTab === 'sheet'}><CountLabel text="Sheets" count={sheetCount} /></button>
                 </div>
               )}
             </div>
