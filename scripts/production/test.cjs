@@ -19,6 +19,7 @@ for(const file of [
  'scripts/production/test-run-images.cjs',
  'scripts/production/test-run-preview.cjs',
  'scripts/production/test-run-data-check.cjs',
+ 'scripts/production/test-office-progress.cjs',
  'scripts/production/test-template-previews.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
