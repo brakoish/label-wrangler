@@ -922,7 +922,9 @@ function NewRunContent() {
                   ? 'Choose which field the pasted values fill.'
                   : null;
   const checkReasons = setupReason || !format ? [] : [
-    !blanksOk && `${blankHeading(blankCheck)}: choose what to do above.`,
+    !blanksOk && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
+      ? `Give ${blankCheck.issues.map((issue) => friendlyFieldName(issue.field)).join(' and ')} a column or one value above.`
+      : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
     !barcodesOk && barcodeWords.waitReason,

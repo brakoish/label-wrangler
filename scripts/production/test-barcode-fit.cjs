@@ -271,6 +271,14 @@ async function renderNative(template, format, values) {
     assert.match(page.blocking[0], /It also prints over the COA link QR code, so that won’t scan either\./);
     assert.equal(page.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode and the COA link QR code won’t scan');
     assert.equal(page.layout.length, 0, 'the overlap is part of the barcode problem, not a second tick');
+    // Over a QR code and a text: the code is named as the one that won't scan, never "the code it covers".
+    const batch = { id: 'batch', type: 'text', fieldName: 'Batch', isStatic: false, x: 230, y: 60, width: 60, height: 90, rotation: 0, zIndex: 4, fontSize: 10, fontFamily: 'Arial', fontWeight: 'normal', textAlign: 'left', color: '#000000', lineHeight: 1.2 };
+    const t2 = { ...t, elements: [...t.elements, batch] };
+    const data2 = { ...data, sourceData: [{ ...data.sourceData[0], Batch: 'B-1102' }], fieldMappings: { ...data.fieldMappings, Batch: { mode: 'column', csvColumn: 'Batch' } } };
+    const page2 = runPrintCheck(data2, t2, F['2x1']);
+    assert.doesNotMatch(page2.blocking[0] + page2.verdict.goAheadLabel, /code it covers/);
+    assert.match(page2.blocking[0], /so the COA link QR code won’t scan either\./);
+    assert.equal(page2.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode and the COA link QR code won’t scan');
   }
   // The wizard and the run page use the same verdict and the same go-ahead words, and neither hard-stops on it.
   {

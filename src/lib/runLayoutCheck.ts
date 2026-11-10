@@ -59,7 +59,7 @@ export const BARCODE_VALUE_GO_AHEAD = 'Print anyway — the barcode may not scan
 /** The go-ahead for items that cover each other or run off the label (the wizard's words). */
 export const LAYOUT_GO_AHEAD = 'I checked the preview. Print it like this.';
 
-type VerdictIssue = Pick<BarcodeIssue, 'kind' | 'fit'> & Partial<Pick<BarcodeIssue, 'field' | 'label' | 'overprints' | 'overprintsCode'>>;
+type VerdictIssue = Pick<BarcodeIssue, 'kind' | 'fit'> & Partial<Pick<BarcodeIssue, 'field' | 'label' | 'overprints' | 'overprintsCode' | 'overprintedCodes'>>;
 type VerdictFormat = Pick<LabelFormat, 'type'> | null | undefined;
 
 /**
@@ -98,6 +98,10 @@ export interface BarcodeVerdict {
   carriesOver: boolean;
   /** What to change: the spreadsheet rows, the design, or both. */
   fixIn: 'design' | 'data' | 'both' | 'none';
+}
+
+function joinNames(names: ReadonlyArray<string>): string {
+  return names.length <= 1 ? names[0] ?? '' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 function codeNames(issues: ReadonlyArray<VerdictIssue>): string {
@@ -143,7 +147,7 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
     const covered = fits.find((issue) => issue.overprints?.length);
     const name = codeNames(fits);
     goAheadLabel = covered?.overprintsCode
-      ? `Print anyway — ${name} and ${covered.overprints!.length === 1 ? covered.overprints![0] : 'the code it covers'} won’t scan`
+      ? `Print anyway — ${name} and ${covered.overprintedCodes?.length ? joinNames(covered.overprintedCodes) : covered.overprints!.length === 1 ? covered.overprints![0] : 'the code it covers'} won’t scan`
       : covered
         ? `Print anyway — ${name} won’t scan and print${name.endsWith('s') ? '' : 's'} over ${covered.overprints![0]}`
         : `Print anyway — ${name} will be cut off and won’t scan`;

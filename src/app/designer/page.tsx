@@ -337,6 +337,7 @@ function DesignerContent() {
 
   const [recovery, setRecovery] = useState<Array<TemplateDraft & {key:string}>>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const templatesError = useTemplateStore((state) => state.error);
   useEffect(() => {
     let active = true;
     fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
@@ -426,7 +427,7 @@ function DesignerContent() {
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
           {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && <div className="page-container pt-0 sm:pt-0 lg:pt-0">
+          {isAdmin && !(templatesError && templates.length === 0) && <div className="page-container pt-0 sm:pt-0 lg:pt-0">
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           </div>}
         </div>

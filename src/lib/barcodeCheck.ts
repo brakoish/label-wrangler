@@ -40,6 +40,8 @@ export interface BarcodeIssue {
   overprints?: string[];
   /** Some of `overprints` is a QR code or barcode, so it won't scan either. */
   overprintsCode?: boolean;
+  /** The barcodes and QR codes among them, by name: they won’t scan either. */
+  overprintedCodes?: string[];
 }
 
 type FitFormat = Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'> & Partial<Pick<LabelFormat, 'labelsAcross' | 'horizontalGapThermal'>>;
@@ -125,7 +127,9 @@ function addOverprints(template: Pick<LabelTemplate, 'elements'>, run: RunData, 
     const items = template.elements.filter((el) => others.has(el.id));
     if (!items.length) continue;
     issue.overprints = items.map(itemName);
-    issue.overprintsCode = items.some((el) => el.type === 'qr' || el.type === 'barcode');
+    const codes = items.filter((el) => el.type === 'qr' || el.type === 'barcode');
+    issue.overprintsCode = codes.length > 0;
+    if (codes.length) issue.overprintedCodes = codes.map(itemName);
   }
 }
 
@@ -134,9 +138,11 @@ function listNames(names: string[]): string {
 }
 
 /** " It also prints over the COA link QR code, so that won’t scan either." */
-export function describeOverprints(issue: Pick<BarcodeIssue, 'overprints' | 'overprintsCode'>): string {
+export function describeOverprints(issue: Pick<BarcodeIssue, 'overprints' | 'overprintsCode' | 'overprintedCodes'>): string {
   if (!issue.overprints?.length) return '';
-  return ` It also prints over ${listNames(issue.overprints)}${issue.overprintsCode ? `, so ${issue.overprints.length === 1 ? 'that' : 'the code it covers'} won’t scan either` : ''}.`;
+  const codes = issue.overprintedCodes ?? [];
+  const lost = !issue.overprintsCode ? '' : issue.overprints.length === 1 ? ', so that won’t scan either' : codes.length ? `, so ${listNames(codes)} won’t scan either` : ', so the code it covers won’t scan either';
+  return ` It also prints over ${listNames(issue.overprints)}${lost}.`;
 }
 
 export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format?: FitFormat | null): BarcodeCheck {
