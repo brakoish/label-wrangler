@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { IconSwap } from '@/components/motion/IconSwap';
 import { SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 
 type PackageResult = {
@@ -437,7 +438,7 @@ export default function NabisPage() {
                         <p className="break-words text-sm font-semibold text-zinc-100">{pkg.itemName}</p>
                         <p className="mt-1 break-all text-xs tabular-nums text-zinc-400">{pkg.tag}</p>
                       </div>
-                      {active ? <Check className="h-5 w-5 shrink-0 text-amber-400 animate-icon" aria-hidden="true" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-400" aria-hidden="true" />}
+                      <IconSwap on={active} onIcon={<Check className="h-5 w-5 text-amber-400" />} offIcon={<PackageCheck className="h-5 w-5 text-zinc-400" />} />
                     </div>
                     <p className="mt-2 text-xs text-zinc-400">
                       {[pkg.batch && `Batch ${pkg.batch}`, pkg.quantity && `${pkg.quantity} ${pkg.unitOfMeasure ?? ''}`.trim(), pkg.brandName].filter(Boolean).join(' · ')}

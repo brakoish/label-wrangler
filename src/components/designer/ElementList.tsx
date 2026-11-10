@@ -1,6 +1,7 @@
 'use client';
 
 import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, Plus, ArrowLeft, Copy, Globe, Save, Lock, Unlock, ChevronRight } from 'lucide-react';
+import { useRubberBand } from '@/components/motion/rubberBand';
 import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
 import { elementTypeName, friendlyFieldName } from '@/lib/fieldLabels';
@@ -43,6 +44,7 @@ export function ElementList({
   // old row to the new one (a shared layout move), instead of a hard cut.
   const single = selectedElementIds.size === 1 ? [...selectedElementIds][0] : null;
   const listRef = useRef<HTMLDivElement>(null);
+  useRubberBand(listRef);
   const highlightRef = useRef<HTMLDivElement>(null);
   const shownFor = useRef<string | null>(null);
   const order = sortedElements.map((e) => e.id).join(',');

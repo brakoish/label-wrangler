@@ -13,6 +13,7 @@ import { snapZplQrSize } from '@/lib/zplGenerator';
 import { contentModeUpdates } from '@/lib/elementBinding';
 import { elementTypeName, friendlyFieldName, nextFieldName } from '@/lib/fieldLabels';
 import { Menu } from '@/components/ui/Menu';
+import { useRubberBand } from '@/components/motion/rubberBand';
 import { describeUnprintable, elementUnprintable, plainPrinterText } from '@/lib/printerCharacters';
 import { parseSizeInput, sizeProblem } from '@/lib/sizeInput';
 import { columnChoices, isMadeUpFieldName, readLastColumns } from '@/lib/lastColumns';
@@ -57,6 +58,8 @@ function itemLabel(el: TemplateElement): string {
 const PANEL = 'w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 lg:bg-zinc-900 overflow-y-auto';
 
 export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange, allElements = [], problems = [], onPick }: PropertyPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useRubberBand(panelRef);
   const [showManifest, setShowManifest] = useState(false);
   // Columns to pick from: the last spreadsheet loaded on New run, then the ones other items use.
   const [lastColumns] = useState(() => readLastColumns(typeof window === 'undefined' ? null : window.localStorage));
@@ -73,7 +76,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
 
     return (
-      <div className={PANEL}>
+      <div ref={panelRef} className={PANEL}>
         <h2 className="px-4 pt-3 text-sm font-semibold text-zinc-100">
           {canEditTextGroup ? `${selectedTextElements.length} text items` : `${selectedElements.length} items selected`}
         </h2>
@@ -153,7 +156,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   const typeIcons = ITEM_ICONS;
 
   return (
-    <div className={PANEL}>
+    <div ref={panelRef} className={PANEL}>
       {/* Item header */}
       <div className="px-4 pt-3 flex items-center gap-2">
         <span className="flex size-4 items-center justify-center text-zinc-400" aria-hidden="true">

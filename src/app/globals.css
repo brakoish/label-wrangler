@@ -713,4 +713,35 @@ textarea:focus-visible {
 }
 .link:hover { color: var(--color-amber-300); text-decoration-line: underline; }
 p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
+
+/* One dialog footer: right-aligned, primary last; stacked full-width on
+   narrow phones (primary on top). */
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+@media (max-width: 479px) {
+  .dialog-actions { flex-direction: column-reverse; }
+  .dialog-actions > * { width: 100%; }
+}
+
+/* Segmented controls and filter bars: the surface alone, no outline. */
+.segmented { border-color: transparent; }
+
+/* Icon crossfade: both icons stay in one cell; the old one blurs out as the
+   new one blurs in (ease-out in, a shorter ease-in out). */
+.icon-swap { display: inline-grid; place-items: center; }
+.icon-swap > * {
+  grid-area: 1 / 1;
+  transition: opacity 180ms var(--ease-out), filter 180ms var(--ease-out), scale 180ms var(--ease-out);
+}
+.icon-swap > [data-shown="false"] {
+  opacity: 0;
+  filter: blur(3px);
+  scale: 0.6;
+  transition-duration: 140ms;
+  transition-timing-function: var(--ease-in);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-swap > * { transition: none; }
+  .icon-swap > [data-shown="false"] { filter: none; scale: 1; }
+}
 /* end area A r6 */
