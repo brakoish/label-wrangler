@@ -37,7 +37,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
 
     return (
-      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 max-h-[48vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
+      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
         <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
             <Type className="w-3 h-3" />
@@ -93,7 +93,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   };
 
   return (
-    <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 max-h-[48vh] lg:max-h-none border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
+    <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
       {/* Element type header */}
       <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
         <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">

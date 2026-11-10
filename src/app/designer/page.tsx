@@ -99,6 +99,8 @@ function DesignerContent() {
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [leftPanel, setLeftPanel] = useState<'layers' | 'data'>('layers');
+  // Phones show one pane at a time; large screens show all three.
+  const [phonePane, setPhonePane] = useState<'label' | 'layers' | 'edit'>('label');
   const saveRevision = useRef(0);
   const unsavedChanges = useRef(false);
   const persistEdits = useCallback((id: string) => {
@@ -596,10 +598,15 @@ function DesignerContent() {
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
       {saveError && <button className="text-amber-300 underline px-6 text-left" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
+      <div role="tablist" aria-label="Designer panes" className="lg:hidden grid grid-cols-3 gap-1 p-2 border-b border-zinc-800/50">
+        {([['label', 'Label'], ['layers', 'Layers & data'], ['edit', selectedIds.size ? 'Edit selected' : 'Edit']] as const).map(([pane, text]) => (
+          <button key={pane} type="button" role="tab" aria-selected={phonePane === pane} onClick={() => setPhonePane(pane)} className={`min-h-11 rounded-lg px-2 text-sm font-medium ${phonePane === pane ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>{text}</button>
+        ))}
+      </div>
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className="w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex flex-col border-b lg:border-b-0 lg:border-r border-zinc-800/50 max-h-[420px] lg:max-h-none">
+        <div className={`${phonePane === 'layers' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col border-b lg:border-b-0 lg:border-r border-zinc-800/50 lg:max-h-none`}>
           <div className="grid grid-cols-2 gap-1 p-2 border-b border-zinc-800/50" aria-label="Designer panels">
             <button aria-pressed={leftPanel === 'layers'} onClick={() => setLeftPanel('layers')} className={`rounded-lg px-3 py-2 text-sm font-medium ${leftPanel === 'layers' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>Layers <span className="text-zinc-400">{currentTemplate.elements.length}</span></button>
             <button aria-pressed={leftPanel === 'data'} onClick={() => setLeftPanel('data')} className={`rounded-lg px-3 py-2 text-sm font-medium ${leftPanel === 'data' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>Test data</button>
@@ -632,7 +639,7 @@ function DesignerContent() {
         </div>
 
         {/* Center Panel - Preview */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-[440px] lg:min-h-0 overflow-y-auto">
+        <div className={`${phonePane === 'label' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 min-h-[440px] lg:min-h-0 overflow-y-auto`}>
           {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
               so the round-trip feels like 'I edited this and came back'
               rather than 'I'm lost in the designer'. */}
@@ -651,7 +658,7 @@ function DesignerContent() {
                 onClick={e => { e.preventDefault(); void leaveEditor(); }}
                 className="text-zinc-500 hover:text-amber-400 transition-colors"
               >
-                Templates
+                Designs
               </a>
             )}
             <span className="text-zinc-700">/</span>
@@ -769,7 +776,7 @@ function DesignerContent() {
         </div>
 
         {/* Right Panel - Properties */}
-        <div className="contents" onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
+        <div className={phonePane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel
           element={selectedElement}
           selectedElements={currentTemplate.elements.filter((e) => selectedIds.has(e.id))}

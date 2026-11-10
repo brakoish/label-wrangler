@@ -821,9 +821,9 @@ function NewRunContent() {
                   <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                     step.done ? 'bg-emerald-500/20' : 'bg-zinc-900'
                   }`}>
-                    {step.done ? '✓' : index + 1}
+                    <span aria-hidden="true">{step.done ? '✓' : index + 1}</span>
                   </span>
-                  <span className="truncate text-xs font-medium">{step.label}</span>
+                  <span className="truncate text-xs font-medium">{step.label}<span className="sr-only">{step.done ? ' (done)' : ' (not done yet)'}</span></span>
                 </li>
               ))}
             </ol>
