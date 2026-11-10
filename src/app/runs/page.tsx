@@ -21,7 +21,8 @@ import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtO
 import { scannedLabelNumbers } from '@/lib/scannedLabels';
 import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
-import { printedLabelCount } from '@/lib/runProgress';
+import { intersectSpans, printedLabelCount, printedSpans, stillToGo } from '@/lib/runProgress';
+import { spanNumbers } from '@/components/runs/RunProgress';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
@@ -772,6 +773,8 @@ function RunRow({
   const finished = run.totalLabels > 0 && shown >= run.totalLabels;
   const pct = run.totalLabels > 0 ? Math.round((shown / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
+  // Labels no office send covers and nothing counts as printed: the run page's "Still to go" line, in the same words.
+  const stillToSend = office?.unsent?.length ? intersectSpans(office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)) : [];
   const pinned = !!run.pinnedAt;
   // A "Send all … in N parts" that stopped early on this device.
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);
@@ -840,8 +843,8 @@ function RunRow({
           {!failed && partsLeft.length > 0 && unfinished && (
             <p className="mt-0.5 text-xs text-amber-300">{partsLeft.length === 1 ? 'The last part wasn’t' : `${partsLeft.length} parts weren’t`} sent yet. Open this run to send {partsLeft.length === 1 ? 'it' : 'them'}.</p>
           )}
-          {!failed && !partsLeft.length && unfinished && office && office.onTheWay === 0 && (office.unsent?.length ?? 0) > 0 && (
-            <p className="mt-0.5 text-xs text-zinc-400">{spanWords(office.unsent!).replace(/^l/, 'L')} {office.unsent!.length === 1 && office.unsent![0].from === office.unsent![0].to ? 'hasn’t' : 'haven’t'} gone to the office printer yet.</p>
+          {!failed && !partsLeft.length && unfinished && office && office.onTheWay === 0 && stillToSend.length > 0 && (
+            <p className="mt-0.5 text-xs text-zinc-400 tabular-nums">Still to go: {spanNumbers(stillToSend)}</p>
           )}
         </div>
         <div className="w-full shrink-0 sm:w-36 sm:text-right">

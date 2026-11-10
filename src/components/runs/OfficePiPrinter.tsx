@@ -17,6 +17,7 @@ import { drawFailureWords } from '@/lib/officeSendOutcome';
 import { parseLabelList, OFFICE_IN_PROGRESS, officeQueuedRequestIds, capAfterSizeError, firstUnsentLabel, isValidOfficeRange, officeProofKey, officeSendCap, officeSendParts, officeSendPlan, officeUnsentSpans, officeWaitingSpans, partsAfterPrinted, partCarriesEndBlank, readPartsPlan, readHeldSpans, heldStillUnsent, remainingParts, spanWords, suggestOfficeRange, OFFICE_BITMAP_LABELS_PER_SEND, OFFICE_MAX_LABELS, type OfficeDeliverySummary, type OfficeFailedPart, type OfficePartsPlan, type OfficeSendPlan, type OfficeSpan } from '@/lib/officeRange';
 import { officeFailureKind, officeStatusLine, plainJobReason, plainOfficeRefusal, queuedNotice, readPendingMeta, readRefusal, readSavedOfficeRequest, refusalNeedsSomeoneElse, refusalNextStep, refusalStillApplies, sendKeepsRequest, unconfirmedSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { officeProblemWords } from '@/lib/officeProblem';
+import { intersectSpans } from '@/lib/runProgress';
 import type { OfficeJobBrief, OfficeRequest } from './useOfficeRequests';
 import { readOfficeJobs } from './officeCancel';
 import { useRunStore } from '@/lib/runStore';
@@ -163,7 +164,7 @@ function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadB
     </Fold>
   </div>;
 }
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,toGo,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,toGo,toGoShown=false,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -195,8 +196,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   scannedLabels?:ReadonlyArray<number>;
   /** Goes up when the run page's "Print some labels again…" asks this panel to start choosing labels. */
   openChooser?:number;
-  /** Labels not counted as printed yet, as the run's progress names them (not repeated here). */
+  /** Labels not counted as printed yet (progress and print history). */
   toGo?:ReadonlyArray<OfficeSpan>;
+  /** The progress line above already names what is still to go: not said again here. */
+  toGoShown?:boolean;
   /** Tells the run header what this panel says (a send it isn't sure arrived, a refused send, a paused printer), so both say the same. */
   onPanelState?:(state:{unsure:OfficeSpan|null;refused:OfficeSpan|null;paused:boolean;sending:string|null})=>void;
   /** The labels the main button sends next (null when none), so the run page's "Print anyway" ticks name the same range. */
@@ -899,7 +902,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   },[heldCarriesBlank]);
   // Labels after the progress that no office send covers, read from the
   // office's own records: what a stopped series left, seen on every device.
-  const unsentSpans=requestsEverLoaded && jobs.length?officeUnsentSpans(jobs,total,printedCount):[];
+  // Only labels not counted as printed (a scanned label is printed), so this
+  // never names a range the progress line contradicts.
+  const unsentSpans=requestsEverLoaded && jobs.length?intersectSpans(officeUnsentSpans(jobs,total,printedCount),toGo ?? [{from:1,to:total}]):[];
   // Held labels of a "Print in order" fix still on their way: the next send waits for them.
   const heldWait=heldMoving.length>0 && !heldUnsent.length && !pending && !chooseAgain && !reprintOf && !sendOther;
   // Another tab is sending this very request: nothing to press here until it answers.
@@ -1336,7 +1341,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {(reprintOf || sendOther) && !pending && <div className="flex items-center justify-between gap-2 text-sm text-zinc-300"><span>{reprintOf?'Print these labels again.':'Choose which labels to send.'}</span><button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setReprintOf('');setSendOther(false);rangeEdited.current=false;}}>Cancel</button></div>}
     {heldWait && <p role="status" className="text-sm text-zinc-300">{capitalise(spanWords(heldMoving))} {single(heldMoving)?'is':'are'} on {single(heldMoving)?'its':'their'} way to the office printer, after the reprint. Send more once {single(heldMoving)?'it’s':'they’re'} sent.</p>}
     {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300">{capitalise(spanWords(heldUnsent))} {single(heldUnsent)?'was':'were'} held back so the reprint came out first.{sendingHeld?'':` Send ${range(heldOffer.from,heldOffer.to)} next.`}</p>}
-    {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(unsentSpans.length===1 && rangeValid && unsentSpans[0].from===fromNumber && unsentSpans[0].to===toNumber) && !(toGo && toGo.length>0 && (toGo.length>1 || toGo[0].from!==printedCount+1) && spanWords(toGo)===spanWords(unsentSpans)) && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
+    {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(unsentSpans.length===1 && rangeValid && unsentSpans[0].from===fromNumber && unsentSpans[0].to===toNumber) && !toGoShown && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
     {/* "Send again" resends the saved request, so the range boxes step aside. */}
     {!pending && <div className="grid grid-cols-3 gap-2">
       <label className="text-xs font-medium text-zinc-400">From label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>

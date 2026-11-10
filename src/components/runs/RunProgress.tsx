@@ -1,6 +1,11 @@
 'use client';
-import { spanWords, type OfficeSpan } from '@/lib/officeRange';
+import { type OfficeSpan } from '@/lib/officeRange';
 import { printedSpans, stillToGo } from '@/lib/runProgress';
+
+/** "41–60, 81–89, 93–120": label numbers only, each range kept on one line. */
+export function spanNumbers(spans: ReadonlyArray<OfficeSpan>): string {
+  return spans.map((s) => (s.from === s.to ? s.from.toLocaleString() : `${s.from.toLocaleString()}\u2060–\u2060${s.to.toLocaleString()}`)).join(', ');
+}
 
 /** Labels in `spans` that aren't in `minus`, merged. */
 function without(spans: ReadonlyArray<OfficeSpan>, minus: ReadonlyArray<OfficeSpan>, total: number): OfficeSpan[] {
@@ -16,6 +21,23 @@ function without(spans: ReadonlyArray<OfficeSpan>, minus: ReadonlyArray<OfficeSp
     if (from <= s.to) out.push({ from, to: s.to });
   }
   return out;
+}
+
+/**
+ * What the progress line names: printed stretches, office labels drawn
+ * lighter, and the labels still to go (never printed, not at the office).
+ * `shown` is true when the progress line spells those labels out (the
+ * printed labels aren't one stretch from label 1). The office panel reads
+ * this too, so "still to go" is said once, from one place.
+ */
+export function progressParts(printedCount: number, total: number, confirmed: ReadonlyArray<OfficeSpan>, sent: ReadonlyArray<OfficeSpan> = [], waiting: ReadonlyArray<OfficeSpan> = []) {
+  const spans = printedSpans(printedCount, confirmed, total);
+  const sentOnly = without(sent, spans, total);
+  const waitingOnly = without(waiting, [...spans, ...sentOnly], total);
+  const covered = printedSpans(0, [...spans, ...sentOnly, ...waitingOnly], total);
+  const left = stillToGo(covered, total);
+  const gapped = covered.length > 1 || (covered.length === 1 && covered[0].from > 1);
+  return { spans, sentOnly, waitingOnly, left, shown: gapped && left.length > 0 };
 }
 
 /**
@@ -39,33 +61,27 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   waitingLabel?: string;
   tone: 'done' | 'active' | 'muted'; animate?: boolean;
 }) {
-  const spans = printedSpans(printedCount, confirmed, total);
+  const { spans, sentOnly, waitingOnly, left, shown } = progressParts(printedCount, total, confirmed, sent, waiting);
   const printed = spans.reduce((n, s) => n + s.to - s.from + 1, 0);
-  const sentOnly = without(sent, spans, total);
   const sentCount = sentOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
-  const waitingOnly = without(waiting, [...spans, ...sentOnly], total);
   const waitingCount = waitingOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
-  const lighter = [...sentOnly, ...waitingOnly];
-  const covered = printedSpans(0, [...spans, ...lighter], total);
-  const left = stillToGo(covered, total);
-  const gapped = covered.length > 1 || (covered.length === 1 && covered[0].from > 1);
   const fill = tone === 'done' ? 'bg-emerald-400' : tone === 'active' ? 'bg-amber-500' : 'bg-zinc-500';
   // Three looks that can't be mixed up: printed (solid), sent to the printer
   // (light amber, a person still says whether they came out) and waiting at
   // the office (grey, not sent yet). The words under the bar use the same dots.
   const sentFill = tone === 'muted' ? 'bg-zinc-600' : 'bg-amber-500/40';
   const waitingFill = tone === 'muted' ? 'bg-zinc-700' : 'bg-zinc-600';
-  const leftWords = spanWords(left);
+  const leftWords = spanNumbers(left);
   const motion = animate ? 'transition-[left,width,background-color] duration-300 ease-in-out' : '';
   const officeKey = [sentCount ? { words: `${sentCount.toLocaleString()} sent to the printer`, fill: sentFill } : null, waitingCount && waitingLabel ? { words: `${waitingCount.toLocaleString()} ${waitingLabel}`, fill: waitingFill } : null].filter((k): k is { words: string; fill: string } => !!k);
   const officeWords = officeKey.map((k) => k.words);
-  const valueText = [`${printed.toLocaleString()} of ${total.toLocaleString()} printed`, ...officeWords, gapped && left.length ? `${leftWords} still to go` : ''].filter(Boolean).join('; ');
+  const valueText = [`${printed.toLocaleString()} of ${total.toLocaleString()} printed`, ...officeWords, shown ? `Still to go: ${leftWords}` : ''].filter(Boolean).join('; ');
   return <div className="space-y-2">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <h2 className="section-title">Progress</h2>
       <span className="text-sm font-medium text-zinc-100 tabular-nums">Printed {printed.toLocaleString()} of {total.toLocaleString()}</span>
     </div>
-    <div className="relative h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printed} aria-valuetext={officeWords.length || (gapped && left.length) ? valueText : undefined}>
+    <div className="relative h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printed} aria-valuetext={officeWords.length || shown ? valueText : undefined}>
       {total > 0 && [...sentOnly.map((s) => ({ ...s, fill: sentFill, kind: 'sent' })), ...waitingOnly.map((s) => ({ ...s, fill: waitingFill, kind: 'waiting' }))].map((s) => (
         <div key={`${s.kind}-${s.from}-${s.to}`} className={`progress-seg absolute inset-y-0 rounded-full ${s.fill} ${motion}`}
           style={{ left: `${((s.from - 1) / total) * 100}%`, width: `${((s.to - s.from + 1) / total) * 100}%` }} />
@@ -78,6 +94,6 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
     {officeKey.length > 0 && <p className="reveal flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-300 tabular-nums">{officeKey.map((k) => (
       <span key={k.words} className="inline-flex items-center gap-1.5"><span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${k.fill}`} />{k.words}</span>
     ))}</p>}
-    {gapped && left.length > 0 && <p className="reveal text-sm text-zinc-400 tabular-nums">{leftWords.charAt(0).toUpperCase() + leftWords.slice(1)} still to go.</p>}
+    {shown && <p className="reveal text-sm text-zinc-400 tabular-nums">Still to go: {spanNumbers(left)}</p>}
   </div>;
 }

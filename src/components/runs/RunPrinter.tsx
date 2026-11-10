@@ -12,7 +12,7 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
 import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from './officeCancel';
 import { extendThrough, parseLabelList, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeUnsentSpans, officeWaitingSpans, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
-import { RunProgress } from './RunProgress';
+import { RunProgress, progressParts } from './RunProgress';
 import { countedEventSpans, printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
@@ -1448,6 +1448,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const printedSpanList = printedSpans(printedCount, countedSpans, total);
   const printedLabels = printedSpanList.reduce((n, s) => n + s.to - s.from + 1, 0);
   const toGo = stillToGo(printedSpanList, total);
+  // Whether the progress line spells out what is still to go (then the office panel doesn't say it again).
+  const toGoShown = progressParts(printedCount, total, countedSpans, officeMark.ranges, waitingSpans).shown;
   const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
@@ -1889,7 +1891,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
           {officeFixFirst && checkList}
           </>}
         </section>
