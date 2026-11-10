@@ -382,6 +382,14 @@ console.log('PASS field display names');
     assert.equal(controls.indexOf("localStorage.setItem(key,JSON.stringify(payload))") < controls.indexOf("fetch('/api/office/controls',{method:'POST'"), true, 'saved before the POST');
   }
 
+  // A parts series never stops silently, and Start over drops the unsure part from a saved plan.
+  {
+    const pi = read('src/components/runs/OfficePiPrinter.tsx');
+    assert.match(pi, /if\(!checked\)\{setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
+    const over = pi.slice(pi.indexOf('const startOver=async'), pi.indexOf('const act=async'));
+    assert.match(over, /if\(pendingInPlan && partsPlan\)savePartsPlan\(\{\.\.\.partsPlan,next:partsPlan\.next\+1\}\);/);
+    assert.ok(over.indexOf('confirmDialog') < over.indexOf('savePartsPlan'), 'only after the person confirms');
+  }
   // Another run on the same page starts empty, and a late answer for the last run is dropped.
   const officeHook = read('src/components/runs/useOfficeRequests.ts');
   assert.match(officeHook, /if \(shownRun !== runId\) \{\n\s+setShownRun\(runId\);\n\s+setRequests\(\[\]\); setAllJobs\(null\); setTruncated\(false\); setLoaded\(false\); setEverLoaded\(false\); setFailed\(null\);/);
