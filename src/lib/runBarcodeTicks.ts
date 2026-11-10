@@ -59,6 +59,26 @@ export function barcodeTickLabel(item: string): string {
   return PRINT_ANYWAY;
 }
 
+/** True when one problem is on every label of the run (so any send has it). */
+function onEveryLabel(item: string): boolean {
+  return / on all [\d,]+ labels /.test(item) || /^The fixed barcode /.test(item);
+}
+
+/**
+ * The run page's tick words, for the labels the next send or print really
+ * covers: a problem on every label names that exact range and count ("Print
+ * labels 97–240 (144) anyway"), never the run's total when fewer go. The
+ * whole run (or no range yet) keeps the plain words.
+ */
+export function barcodeSendTickLabel(item: string, send: { from: number; to: number } | null | undefined, total: number): string {
+  const plain = barcodeTickLabel(item);
+  if (!send || !onEveryLabel(item) || !Number.isInteger(send.from) || !Number.isInteger(send.to) || send.from < 1 || send.to < send.from) return plain;
+  if (send.from === 1 && send.to >= total) return plain;
+  const count = send.to - send.from + 1;
+  if (count === 1) return `Print label ${send.from.toLocaleString('en-US')} anyway`;
+  return `Print labels ${send.from.toLocaleString('en-US')}–${send.to.toLocaleString('en-US')} (${count.toLocaleString('en-US')}) anyway`;
+}
+
 /** The fix link's words, the same wherever a barcode problem is shown outside the designer. */
 export const FIX_IN_DESIGNER = 'Fix in the designer';
 
