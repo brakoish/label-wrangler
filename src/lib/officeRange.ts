@@ -5,9 +5,10 @@ export const OFFICE_IN_PROGRESS = ['queued', 'claimed', 'submitted'];
 
 /**
  * First label that is neither sent nor still on its way, so the suggested
- * range never repeats labels already queued at the office.
+ * range never repeats labels already queued at the office. Null when every
+ * label is already sent or on its way.
  */
-export function firstUnsentLabel(jobs: ReadonlyArray<OfficeJobLike>, total: number): number {
+export function firstUnsentLabel(jobs: ReadonlyArray<OfficeJobLike>, total: number): number | null {
   const covered = jobs
     .filter((job) => job.state === 'sent_to_printer' || OFFICE_IN_PROGRESS.includes(job.state))
     .slice()
@@ -17,7 +18,7 @@ export function firstUnsentLabel(jobs: ReadonlyArray<OfficeJobLike>, total: numb
     if (job.from > through + 1) break;
     through = Math.max(through, job.to);
   }
-  return Math.max(1, Math.min(total, through + 1));
+  return through >= total ? null : Math.max(1, through + 1);
 }
 
 /** True when work still on its way to the office overlaps labels from..to. */

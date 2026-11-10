@@ -95,7 +95,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(!rangeEdited.current && !localStorage.getItem(storageKey)){
       // Start after everything already sent or still on its way, so the
       // suggested range never repeats queued labels.
-      setFrom(String(firstUnsentLabel(jobData.requests.flatMap((r:PrintRequest)=>r.jobs),total)));setTo(String(total));
+      // Everything sent or on its way: show the whole run (Start then reads
+      // "Waiting for office printer…" or "All labels sent").
+      const first=firstUnsentLabel(jobData.requests.flatMap((r:PrintRequest)=>r.jobs),total);
+      setFrom(String(first ?? 1));setTo(String(total));
     }
     setSelected(value=>value || (stationData.printers[0]?`${stationData.printers[0].station_id}/${stationData.printers[0].id}`:''));
   },[runId,storageKey,total]);
@@ -181,10 +184,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {connectionTarget && createPortal(connection,connectionTarget)}
     <div className="flex items-center justify-between gap-2">
       <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
-      <span className="text-sm font-semibold text-zinc-100 tabular-nums">Sent to office printer: {delivered.toLocaleString()} of {total.toLocaleString()} · {pct}%</span>
+      <span className="text-xs font-semibold text-zinc-100 tabular-nums">Sent to office printer: {delivered.toLocaleString()} of {total.toLocaleString()} · {pct}%</span>
     </div>
     <div className="h-3 rounded-full bg-zinc-900 overflow-hidden"><div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{width:`${pct}%`}} /></div>
-    <p className="text-[11px] text-zinc-500">{queued>0?`${queued.toLocaleString()} label${queued===1?'':'s'} waiting to be sent. `:''}&ldquo;Sent&rdquo; means the office printer received them — it doesn&apos;t prove they came out.</p>
     {pending && <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-1">
       {errorKind==='rejected' && error
         ? <><p className="font-semibold">The office printer didn&apos;t accept labels {pending.from}–{pending.to}.</p><p>{error}</p><p>Nothing new was queued. Check the queue below, then start over.</p></>
@@ -198,8 +200,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     </div>
     {!pending && !rangeValid && <p role="alert" className="text-xs text-amber-400">Enter label numbers from 1 to {total}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
     {reprintOf && <div className="space-y-2 rounded border border-amber-700 p-2 text-xs"><p>Reprint: these labels are printed again and recorded as a reprint in the history.</p><button type="button" className="min-h-9 rounded-md border border-zinc-700 px-3 text-zinc-200 hover:border-zinc-500" onClick={()=>{setReprintOf('');}}>Stop reprinting</button></div>}
+    {!printAllowed && <p className="text-xs text-amber-400">Sending is off until every label has a value (see the list above).</p>}
+    {waitingOnQueue && <p role="status" className="text-xs text-zinc-400">Some of these labels are already on their way to the office printer. When they&apos;re sent, use Reprint if you need them again.</p>}
+    <button type="button" disabled={disabled} onClick={onPrimary} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40">{busy?<Loader2 className="w-4 h-4 animate-spin" />:<PrinterIcon className="w-4 h-4" />}{primaryLabel}</button>
+    {error && !(pending && errorKind==='rejected') && <p role="alert" className="text-xs text-red-400">{error}</p>}
+    {notice && <p role="status" className="text-xs text-emerald-400">{notice}</p>}
     {bitmap && !pending && <div className="space-y-2 rounded-lg border border-zinc-800 p-3 text-xs" aria-labelledby={`${uid}-check`}>
-      <p id={`${uid}-check`} className="font-semibold text-zinc-300">Step 1 · Check the labels{rangeValid?` (${fromNumber}–${toNumber})`:''}</p>
+      <p id={`${uid}-check`} className="font-semibold text-zinc-300">Label check{rangeValid?` (${fromNumber}–${toNumber})`:''}</p>
       {preparationProgress && <div role="status" className="space-y-1">
         <p className="text-zinc-300">Checked {preparationProgress.completed.toLocaleString()} of {preparationProgress.total.toLocaleString()} labels…</p>
         <progress className="w-full" max={preparationProgress.total} value={preparationProgress.completed} aria-label="Checking labels" />
@@ -210,15 +217,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         <p className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{proof.feeds.length === 1 ? '1 label' : `${proof.feeds.length.toLocaleString()} labels`} checked — every label renders.</p>
         {proofImage ? <img src={proofImage} alt={`Checked label ${fromNumber+proofIndex}`} className="w-full bg-white" style={{imageRendering:'pixelated'}} /> : <p className="text-zinc-500 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Drawing preview…</p>}
         <label className="flex items-center gap-2 text-zinc-400">Preview label #<input type="number" min={1} max={proof.feeds.length} value={proofIndex+1} onChange={e=>setProofIndex(Math.max(0,Math.min(proof.feeds.length-1,Number(e.target.value)-1)))} className={inputClass+' w-20'} /><span>of {proof.feeds.length}</span></label>
-        <p className="font-semibold text-zinc-300">Step 2 · Send to the office printer</p>
       </div>}
       {!preparationProgress && !proofCurrent && <p className="text-zinc-400">We draw every label first. If any label is missing a value or doesn&apos;t fit, nothing is sent.</p>}
     </div>}
-    {!printAllowed && <p className="text-xs text-amber-400">Sending is off until every label has a value (see the list above).</p>}
-    {waitingOnQueue && <p role="status" className="text-xs text-zinc-400">Some of these labels are already on their way to the office printer. When they&apos;re sent, use Reprint if you need them again.</p>}
-    <button type="button" disabled={disabled} onClick={onPrimary} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40">{busy?<Loader2 className="w-4 h-4 animate-spin" />:<PrinterIcon className="w-4 h-4" />}{primaryLabel}</button>
-    {error && !(pending && errorKind==='rejected') && <p role="alert" className="text-xs text-red-400">{error}</p>}
-    {notice && <p role="status" className="text-xs text-emerald-400">{notice}</p>}
+    <p className="text-[11px] text-zinc-500">{queued>0?`${queued.toLocaleString()} label${queued===1?'':'s'} waiting to be sent. `:''}&ldquo;Sent&rdquo; means the office printer received them — it doesn&apos;t prove they came out.</p>
     <div className="pt-3 border-t border-zinc-800/60 space-y-2">
       <button type="button" disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} aria-expanded={showReprint} className="w-full flex min-h-10 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><Hash className="w-3.5 h-3.5" />Reprint an earlier print…</button>
       <button type="button" disabled={busy || !!pending || !reprintRequests.length || allJobs.some(j=>j.review || ['queued','claimed','submitted','needs_review'].includes(j.state))} onClick={()=>{rangeEdited.current=true;setReprintOf(reprintRequests[0].id);setFrom('1');setTo(String(total));setShowReprint(false);}} className="w-full flex min-h-10 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><RotateCcw className="w-3.5 h-3.5" />Reprint all</button>

@@ -1030,13 +1030,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-zinc-100 truncate">{run.name}</h1>
             <p className="text-sm text-zinc-500 mt-1">
-              {template.name} · {format.name}{/["″]/.test(format.name) ? '' : ` · ${format.width}″ × ${format.height}″`} · {total.toLocaleString()} label{total === 1 ? '' : 's'}
-              <span className={`ml-2 inline-flex items-center gap-1 ${
+              <span className={`mr-2 font-medium ${
                 run.status === 'completed' ? 'text-emerald-400' :
                 run.status === 'printing' ? 'text-amber-400' :
                 run.status === 'paused' ? 'text-yellow-400' :
-                run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-400'
-              }`}>· {runStatusLabel(run.status)}</span>
+                run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-300'
+              }`}>{runStatusLabel(run.status)}</span>
+              <span className="whitespace-nowrap">{template.name}</span> · <span className="whitespace-nowrap">{format.name}{/["″]/.test(format.name) ? '' : ` · ${format.width}″ × ${format.height}″`}</span> · <span className="whitespace-nowrap">{total.toLocaleString()} label{total === 1 ? '' : 's'}</span>
             </p>
           </div>
           <div className="grid shrink-0 grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
