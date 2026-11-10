@@ -63,6 +63,14 @@ const queue=require('../../src/lib/offlineQueue.ts');
  assert.match(queue.progressSyncError(),/usual address/);
  global.fetch=async()=>Response.json({id:'origin',printedCount:0});
  await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('origin'),0);
+ // After a rollback, main's server refuses the origin without the code: still kept.
+ global.fetch=async()=>Response.json({error:'Request origin not allowed'},{status:403});
+ aside=null;
+ assert.equal(await queue.updateRunWithQueue('origin-main',{printedCount:4},r=>{aside=r;}),null);
+ assert.equal(aside,null,'main’s origin refusal must not be set aside');
+ assert.equal(queue.pendingPatchCount('origin-main'),1);assert.equal(queue.deadLetteredOps().length,0);
+ global.fetch=async()=>Response.json({id:'origin-main',printedCount:4});
+ await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('origin-main'),0);
  // A plain 403 (no permission) is still set aside.
  global.fetch=async()=>Response.json({error:'Your account does not have permission'},{status:403});
  await queue.updateRunWithQueue('perm',{printedCount:1});assert.equal(queue.pendingPatchCount('perm'),0);assert.equal(queue.deadLetteredOps().length,1);

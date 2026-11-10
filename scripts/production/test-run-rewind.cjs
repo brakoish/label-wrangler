@@ -25,6 +25,14 @@ const R=require('../../src/lib/officeRange.ts');
  h.reset();h.results.push([],[{id:'print-event-x',runId:'r',...ev,createdAt:'now'}]);
  const saved=await events.POST(h.request('POST',ev),h.params('r'));
  assert.equal(saved.status,201,'a rewind event is accepted');
+ {
+  // Stamped with the database clock (like office requests), not this server's.
+  const values=h.log.flat().find((call)=>Array.isArray(call)&&call[0]==='values')?.[1]?.[0];
+  assert.ok(values&&typeof values.createdAt==='object'&&!('toISOString' in values.createdAt),'createdAt is an SQL expression');
+  const route=fs.readFileSync(path.join(__dirname,'../../src/app/api/runs/[id]/print-events/route.ts'),'utf8');
+  assert.match(route,/to_char\(now\(\) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS\.MS"Z"'\)/,'same ISO shape, database time');
+  assert.doesNotMatch(route,/new Date\(\)\.toISOString\(\)/,'no app-server clock for print events');
+ }
  h.reset();
  assert.equal((await events.POST(h.request('POST',{...ev,eventType:'rewound'}),h.params('r'))).status,400,'unknown event types are still refused');
  // --- Runs list: sent work from before the rewind is not markable ---

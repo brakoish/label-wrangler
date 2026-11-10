@@ -4,7 +4,7 @@ import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runPrintEvents } from "@/lib/db/schema";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, sql } from "drizzle-orm";
 import { isForeignKeyViolation } from "@/lib/dbErrors";
 // An accepted "Go back to label N" (additive: older pages never send it).
 import { REWIND_EVENT } from "@/lib/runRewind";
@@ -35,7 +35,10 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: 
     if(body.printedCountAfter!=null && (!Number.isInteger(body.printedCountAfter)||Number(body.printedCountAfter)<0||Number(body.printedCountAfter)>100000)) throw new OfficeError('Invalid print count');
     for(const key of ['printerName','message']) if(body[key]!=null && (typeof body[key]!=='string'||String(body[key]).length>2000)) throw new OfficeError('Invalid print event text');
     if(body.idempotencyKey!==undefined && !uuid(body.idempotencyKey)) throw new OfficeError('Invalid print event key');
-    const now = new Date().toISOString();
+    // Stamped with the database's clock, as office requests and jobs are, so
+    // a "Go back to label N" cutoff and the office work it is compared with
+    // use one clock (same ISO text shape as before).
+    const now = sql<string>`to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
     const rangeFrom = Math.max(1, Math.floor(Number(body.rangeFrom) || 1));
     const rangeTo = Math.max(rangeFrom, Math.floor(Number(body.rangeTo) || rangeFrom));
     const labelCount = Math.max(0, Math.floor(Number(body.labelCount) || (rangeTo - rangeFrom + 1)));
