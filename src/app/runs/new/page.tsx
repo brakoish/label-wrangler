@@ -1230,7 +1230,7 @@ function NewRunContent() {
           </div>
 
           {draftOffer && (
-            <section role="status" className="card p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <section role="status" className="card card-flat p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-zinc-100">We kept your unfinished run{draftOffer.name.trim() ? <> “{draftOffer.name.trim()}”</> : ''}.</p>
               <div className="flex gap-2">
                 <button type="button" className="btn btn-primary btn-sm" onClick={() => restoreDraft(draftOffer)}>Continue</button>
@@ -1240,7 +1240,7 @@ function NewRunContent() {
           )}
 
           {/* Design */}
-          <section className="card p-4 sm:p-5 space-y-4">
+          <section className="card card-flat p-4 sm:p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <div className="mb-1 flex min-h-control-sm items-center"><label htmlFor={`${formId}-name`} className="field-label">Run name</label></div>
@@ -1312,7 +1312,7 @@ function NewRunContent() {
           {template && <RunImagePicker key={template.id} template={template} selections={imageSelections} onBusyChange={setImageBusy} onChange={value => setImagesByTemplate(current => ({ ...current, [template.id]: value }))} />}
 
           {template && unnamedDynamic.length > 0 && (
-            <section className="card p-4 sm:p-5 space-y-3">
+            <section className="card card-flat p-4 sm:p-5 space-y-3">
               <h2 className="text-base font-semibold text-zinc-100">Some parts have no name</h2>
               <p className="text-sm text-zinc-300">
                 {unnamedDynamic.length === 1 ? '1 part of this design changes per label but has' : `${unnamedDynamic.length} parts of this design change per label but have`} no name, so {unnamedDynamic.length === 1 ? 'it' : 'they'} can&apos;t be filled. Naming them saves the design.
@@ -1329,9 +1329,9 @@ function NewRunContent() {
           )}
 
           {template && flippable.length > 0 && (
-            <section className="card p-4 sm:p-5 space-y-3" aria-labelledby={`${formId}-codes`}>
+            <section className="card card-flat p-4 sm:p-5 space-y-3" aria-labelledby={`${formId}-codes`}>
               <h2 id={`${formId}-codes`} className="text-base font-semibold text-zinc-100">{exampleRisks.length ? 'Check the codes on this label' : 'Codes that print the same on every label'}</h2>
-              <ul className="divide-y divide-zinc-800">
+              <ul className="space-y-4">
                 {flippable.map((f) => {
                   const el = template.elements.find((e) => e.id === f.id);
                   const value = el && 'content' in el ? (el.content ?? '').trim() : '';
@@ -1340,7 +1340,7 @@ function NewRunContent() {
                   const columnName = risk?.column ? (inputMode === 'manifest' ? friendlyFieldName(risk.column) : risk.column) : null;
                   const columnWord = inputMode === 'manifest' ? 'field' : 'column';
                   return (
-                    <li key={f.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <li key={f.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                       <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
                         The {kind} prints {risk?.isExample ? 'the design’s example ' : ''}“{value || 'nothing'}” on every label.{columnName ? ` Your ${sheetWord} has a “${columnName}” ${columnWord}.` : ''}
                       </p>
@@ -1373,7 +1373,7 @@ function NewRunContent() {
           {template && allDynamicFields.length > 0 && (
             <>
               {/* Data */}
-              <section className="card p-4 sm:p-5 space-y-4">
+              <section className="card card-flat p-4 sm:p-5 space-y-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <h2 className="text-base font-semibold text-zinc-100">Where the values come from</h2>
                   <SourceSwitch value={inputMode} onChange={setInputMode} />
@@ -1611,12 +1611,12 @@ function NewRunContent() {
                         <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, or choose &ldquo;Same on every label&rdquo; and type one value.</p>
                       </div>
                     )}
-                    <div className="divide-y divide-zinc-800">
+                    <div className="space-y-4">
                       {dynamicFields.map((field) => {
                         const mapping = fieldMappings[field] ?? { mode: 'static' };
                         const risk = sameRisks.find((r) => r.field === field);
                         return (
-                          <div key={field} className={`py-3 first:pt-0 ${risk ? 'pl-3 shadow-[inset_2px_0_0_var(--color-amber-500)]' : ''}`}>
+                          <div key={field} className={risk ? 'pl-3 shadow-[inset_2px_0_0_var(--color-amber-500)]' : undefined}>
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                               <div id={`${formId}-map-${field}`} className="w-40 shrink-0 text-sm font-medium text-zinc-100 break-words">{friendlyFieldName(field)}</div>
                               <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="segmented map-mode w-full sm:w-auto sm:shrink-0">
@@ -1735,7 +1735,7 @@ function NewRunContent() {
               {/* Review — always shown once a label size is known; with no
                   data yet it shows the design's sample text. */}
               {format && (
-                <section className="card p-4 sm:p-5 space-y-4">
+                <section className="card card-flat p-4 sm:p-5 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-zinc-100">Review</h2>
                     {labelCount > 0 ? (

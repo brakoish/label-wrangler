@@ -245,7 +245,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
         {!isThermal && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Sheet dimensions */}
-            <div className="card p-4 sm:p-5">
+            <div className="card card-flat p-4 sm:p-5">
               <h3 className="section-title mb-3">Sheet dimensions</h3>
               <div className="space-y-3">
                 <DetailRow label="Sheet size" editing={editing}>
@@ -292,7 +292,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
             </div>
 
             {/* Visual preview */}
-            <div className="card p-4 sm:p-5">
+            <div className="card card-flat p-4 sm:p-5">
               <h3 className="section-title mb-3">Layout preview</h3>
               <SheetPreview format={editing ? { ...format, ...draft } as LabelFormat : format} />
             </div>

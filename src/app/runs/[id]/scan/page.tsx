@@ -424,7 +424,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 ? 'border-emerald-500'
                 : flash === 'error'
                   ? 'border-red-500'
-                  : 'border-zinc-700 focus-within:border-amber-500'
+                  : 'border-transparent focus-within:border-amber-500'
             }`}>
               <input
                 ref={inputRef}
@@ -435,7 +435,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 placeholder={waitingFor}
                 autoFocus
                 disabled={!canPrint || busy}
-                className="w-full bg-zinc-950 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
+                className="w-full bg-zinc-900 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-5">
                 <span key={busy ? 'busy' : flash ?? 'idle'} className={`block ${flash === 'ok' && !busy ? 'animate-success' : 'animate-icon'}`}>

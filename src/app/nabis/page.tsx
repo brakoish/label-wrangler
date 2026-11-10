@@ -438,7 +438,7 @@ export default function NabisPage() {
         <div className="page-container grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0">
           <div className="lg:col-span-2">
             <h1 className="text-2xl font-semibold text-zinc-100">Nabis labels</h1>
-            <p className="mt-1 text-sm text-zinc-400">Print a 6×4 case label for a Nabis delivery. Find the package by its name or state tracking (Metrc) tag, or type it in.</p>
+            <p className="mt-1 text-sm text-zinc-400">Print a 6&quot; × 4&quot; case label for a Nabis delivery. Find the package by name or Metrc tag, or type it in.</p>
           </div>
           <section className="min-h-0 space-y-4">
             <div>
