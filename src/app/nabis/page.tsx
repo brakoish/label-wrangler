@@ -274,7 +274,7 @@ function LabelPreview({ label }: { label: LabelInfo }) {
 
           <div className="flex min-h-0 items-center justify-center overflow-hidden border border-black px-[0.06in] text-center">
             <FittedText maxPx={12} minPx={7.5} rows={2}>
-              {label.itemName || 'Item description'}
+              {label.itemName || 'Item Description'}
             </FittedText>
           </div>
 
@@ -534,7 +534,7 @@ export default function NabisPage() {
                   [
                     ['distributor', 'Distributor'],
                     ['license', 'License'],
-                    ['itemName', 'Item Description'],
+                    ['itemName', 'Item description'],
                     ['batch', 'Batch'],
                     ['uid', 'UID / package tag'],
                     ['unitsPerCase', 'Units per case'],
