@@ -21,10 +21,10 @@ export function plainPrinterProblem(message: string): string {
     if (found.length) {
       const what = found.map((p, i) => (i === 0 && !p.what.startsWith('its') ? `is ${p.what}` : p.what));
       const fix = join(found.map((p) => p.fix));
-      return `The printer ${join(what)}. ${fix.charAt(0).toUpperCase()}${fix.slice(1)}, then press Try again.`;
+      return `The printer ${join(what)}. ${fix.charAt(0).toUpperCase()}${fix.slice(1)}, then resume printing.`;
     }
   }
-  if (/transfer error/i.test(text)) return 'The printer stopped answering over USB, so printing stopped. Check the cable, turn the printer off and on, then press Try again.';
-  if (/device (was |has been )?disconnected|device unavailable/i.test(text)) return 'The printer was unplugged or turned off. Plug it back in, press Connect printer, then press Try again.';
+  if (/transfer error/i.test(text)) return 'The printer stopped answering over USB, so printing stopped. Check the cable, turn the printer off and on, then resume printing.';
+  if (/device (was |has been )?disconnected|device unavailable/i.test(text)) return 'The printer was unplugged or turned off. Plug it back in, press Connect printer, then resume printing.';
   return text;
 }

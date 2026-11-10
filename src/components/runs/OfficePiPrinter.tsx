@@ -276,7 +276,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [heldSpans.length,requestsEverLoaded,busy,heldUnsent.length]);
   const heldNext=heldUnsent[0];
-  const heldOffer=heldNext?{from:heldNext.from,to:Math.min(heldNext.to,heldNext.from+cap-1)}:null;
+  // The whole held stretch: bigger than one send, it goes as "Send all … in N parts".
+  const heldOffer=heldNext?{from:heldNext.from,to:heldNext.to}:null;
   const heldFrom=heldOffer?.from,heldTo=heldOffer?.to;
   // Suggest the next labels to send: the labels a "Print in order" fix held
   // back come first; otherwise after everything printed anywhere and

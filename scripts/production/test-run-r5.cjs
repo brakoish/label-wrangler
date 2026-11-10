@@ -84,8 +84,8 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
 }
 
 // --- Plain printer words ---
-assert.equal(W.plainPrinterProblem('Printer media out'),'The printer is out of labels. Load a new roll, then press Try again.');
-assert.equal(W.plainPrinterProblem('Printer media out, head open'),'The printer is out of labels and its lid is open. Load a new roll and close the lid, then press Try again.');
+assert.equal(W.plainPrinterProblem('Printer media out'),'The printer is out of labels. Load a new roll, then resume printing.');
+assert.equal(W.plainPrinterProblem('Printer media out, head open'),'The printer is out of labels and its lid is open. Load a new roll and close the lid, then resume printing.');
 assert.match(W.plainPrinterProblem('A transfer error has occurred.'),/^The printer stopped answering over USB/);
 assert.match(W.plainPrinterProblem('NetworkError: A transfer error has occurred.'),/^The printer stopped answering over USB/);
 assert.equal(W.plainPrinterProblem('Printer ready'),'The printer is ready.');
@@ -118,7 +118,7 @@ assert.doesNotMatch(page,/<PrintCheckList/,'the run page has its own one-tick-pe
 assert.match(page,/barcodeTicksAllow\(printCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
 assert.match(page,/const calm = \(runFinished \|\| run\.status === 'cancelled' \|\| status === 'cancelled'\) && !woken && status !== 'running'/,'finished and cancelled runs are a calm summary');
 assert.match(page,/\{officeFixFirst && checkList\}/,'a failed office part comes before the barcode list');
-assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount, totalLabels: total \}, officeSummary, status === 'error'\)/,'the header says a printer problem stopped it');
+assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it');
 assert.doesNotMatch(page,/remaining in printer batch/);
 const nav=read('src/lib/printNavigation.ts');
 assert.match(nav,/if \(officeSeries\) \{/);

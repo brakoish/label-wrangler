@@ -156,6 +156,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const webUsbStatusWorkingRef = useRef(false);
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // The printer here stopped mid-run (out of labels, unplugged…): the header says so until the next start.
+  const [printerStopped, setPrinterStopped] = useState(false);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
 
   const total = run?.totalLabels ?? 0;
@@ -663,6 +665,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
     starting.current = true;
     try {
+    setPrinterStopped(false);
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
@@ -802,6 +805,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       },
       onError: async (err, atFeed) => {
         setStatus('error');
+        setPrinterStopped(true);
         setErrorMsg((err as Error)?.message || 'Print failed');
         // Persist physical-label count corresponding to the failed feed.
         const atPhysical = feedEnds
@@ -1285,7 +1289,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const transportReady = (transport === 'dazzle' && !!dazzleSelected) || (transport === 'webusb' && !!usbPrinter);
   const pickerOpen = !isSheetFormat && (showTransportPicker || !transport);
   const runFinished = printedCount >= total && total > 0;
-  const display = runDisplayStatus({ status: run.status, printedCount, totalLabels: total }, officeSummary, status === 'error');
+  const display = runDisplayStatus({ status: run.status, printedCount, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
   const officeNeedsSomeone = (officeSummary?.failed ?? 0) > 0 || (officeSummary?.onTheWay ?? 0) > 0;
@@ -1412,7 +1416,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <div className="space-y-4 reveal">
               <div className="space-y-2">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <h2 className="section-title">{runFinished ? 'Printed' : 'Cancelled'}</h2>
+                  <h2 className="section-title">Progress</h2>
                   <span className="text-sm font-medium text-zinc-100 tabular-nums">Printed {printedCount.toLocaleString()} of {total.toLocaleString()}</span>
                 </div>
                 <div className="h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printedCount}>
@@ -1519,7 +1523,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       >
                         Check paper and ribbon
                       </button>
-                      {printerStatusMessage && <p role="status" className="text-sm text-zinc-400">{printerStatusMessage}</p>}
+                      {printerStatusMessage && !errorMsg && <p role="status" className="text-sm text-zinc-400">{printerStatusMessage}</p>}
                     </div>
                   ) : <p className="text-sm text-zinc-400">This printer can&apos;t report paper or ribbon problems, so watch it while it prints.</p>}
                 </div>
