@@ -1,5 +1,6 @@
 'use client';
 
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
@@ -335,7 +336,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
       <div className="flex items-center gap-1.5 text-xs text-zinc-500" title="Need Chromium browser or Dazzle desktop app">
         <AlertCircle className="w-3.5 h-3.5" />
         <span>Local printing needs Chrome/Edge or Dazzle.</span>
-        <a href={DAZZLE_DOWNLOAD_URL} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline inline-flex items-center gap-1">
+        <a href={DAZZLE_DOWNLOAD_URL} target="_blank" rel="noreferrer" className="text-amber-300 underline-offset-2 hover:underline inline-flex items-center gap-1">
           <Download className="w-3 h-3" /> Dazzle
         </a>
       </div>
@@ -346,18 +347,19 @@ export function PrintControls({ format, template, testData, proofReady = true }:
     <div className="flex items-center gap-2 flex-wrap">
       {/* Transport toggle — only show if both are available */}
       {webUsbSupported && dazzleAvailable && (
-        <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
+        <div className="segmented segmented-xs" role="group" aria-label="How to reach the printer">
+          <SegmentedIndicator index={transport === 'webusb' ? 1 : 0} count={2} />
           <button
             onClick={() => setTransport('dazzle')}
             title="Use Dazzle (local desktop app) — works even when Windows owns the printer"
-            className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${transport === 'dazzle' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+            aria-pressed={transport === 'dazzle'}
           >
             Dazzle
           </button>
           <button
             onClick={() => setTransport('webusb')}
             title="Use WebUSB (direct browser→USB, no app needed, fails on Windows without driver swap)"
-            className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${transport === 'webusb' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+            aria-pressed={transport === 'webusb'}
           >
             WebUSB
           </button>
@@ -372,15 +374,15 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             <div className="relative">
               <button
                 onClick={() => setDazzlePickerOpen((v) => !v)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/10 transition-colors"
+                className="btn btn-secondary btn-sm"
                 title="Click to choose a printer"
               >
-                <PrinterCheck className="w-3.5 h-3.5" />
+                <PrinterCheck className="size-4 text-emerald-400" aria-hidden="true" />
                 <span className="max-w-[160px] truncate">{selectedDazzlePrinter ?? 'Select printer'}</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
               {dazzlePickerOpen && (
-                <div className="absolute top-full left-0 mt-1 min-w-[200px] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 py-1">
+                <div className="popover-enter absolute top-full left-0 mt-1 min-w-[200px] rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50 p-1 [--origin:top_left]">
                   {dazzlePrinters.map((p) => (
                     <button
                       key={p.name}
@@ -388,7 +390,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                         setSelectedDazzlePrinter(p.name);
                         setDazzlePickerOpen(false);
                       }}
-                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-400' : 'text-zinc-300'}`}
+                      className={`flex w-full min-h-control-sm items-center rounded-md text-left px-2.5 text-sm hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-300' : 'text-zinc-200'}`}
                     >
                       {p.name} {p.is_default && <span className="text-zinc-500">(default)</span>}
                     </button>
@@ -404,7 +406,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             href={DAZZLE_DOWNLOAD_URL}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400 hover:text-amber-300 border border-amber-500/30 bg-amber-500/10 transition-colors"
+            className="btn btn-secondary btn-sm"
             title="Download and install the Dazzle desktop app"
           >
             <Download className="w-3.5 h-3.5" />
@@ -418,14 +420,14 @@ export function PrintControls({ format, template, testData, proofReady = true }:
           onClick={handleConnectUsb}
           disabled={connecting}
           title="Connect a Zebra printer via USB"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 border border-zinc-800 hover:border-amber-500/30 transition-colors disabled:opacity-50"
+          className="btn btn-secondary btn-sm"
         >
           {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
           {connecting ? 'Connecting…' : 'Connect printer'}
         </button>
       ) : (
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
-          <PrinterCheck className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-1.5 text-sm text-zinc-300">
+          <PrinterCheck className="size-4 text-emerald-400" aria-hidden="true" />
           <span className="max-w-[140px] truncate" title={connectedLabel}>{connectedLabel}</span>
         </div>
       )}
@@ -433,7 +435,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
       {/* Print + Calibrate buttons — only shown when we have a usable printer */}
       {canPrint && (
         <>
-          <label className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-zinc-800 bg-zinc-950/60 text-xs text-zinc-400">
+          <label className="flex items-center gap-1.5 text-sm text-zinc-400">
             Qty
             <input
               type="number"
@@ -445,7 +447,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                 const next = parseInt(e.target.value, 10);
                 setLabelQty(Number.isFinite(next) ? Math.max(1, Math.min(9999, next)) : 1);
               }}
-              className="field field-sm w-16 text-xs text-center"
+              className="field field-sm w-16 text-center"
             />
           </label>
           <button
@@ -455,15 +457,15 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             className="btn btn-primary btn-sm"
           >
             {printing === 'label' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-            Print{labelQty > 1 && <span className="text-amber-300">×{labelQty}</span>}
+            Print{labelQty > 1 && <span className="tabular-nums">×{labelQty}</span>}
           </button>
           {/* Calibrate button with adjacent options menu (style + copies). */}
-          <div className="relative flex items-center rounded-md border border-zinc-800">
+          <div className="relative flex items-center rounded-md border border-zinc-700 bg-zinc-800">
             <button
               onClick={handlePrintCalibration}
               disabled={!!printing}
               title={`Print ${calibCount} calibration label${calibCount > 1 ? 's' : ''}`}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-amber-400 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+              className="btn btn-sm rounded-r-none text-zinc-100 hover:bg-zinc-700"
             >
               {printing === 'calibration' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
               Calibrate {calibCount > 1 && <span className="text-zinc-500">×{calibCount}</span>}
@@ -471,22 +473,23 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             <button
               onClick={() => setCalibMenuOpen((v) => !v)}
               title="Calibration options"
-              className="px-1 py-1.5 text-xs text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border-l border-zinc-800"
+              className="btn btn-sm btn-icon rounded-l-none border-l border-l-zinc-700 text-zinc-300 hover:bg-zinc-700"
             >
-              <ChevronDown className="w-3 h-3" />
+              <ChevronDown className="size-4" />
             </button>
             {calibMenuOpen && (
               // Anchor to the right edge of the trigger so the menu opens
               // leftward — keeps it inside the viewport on narrow screens.
-              <div className="absolute top-full mt-1 right-0 w-[300px] max-w-[calc(100vw-2rem)] rounded-md bg-zinc-900 border border-zinc-800 shadow-xl z-50 p-3 space-y-3">
+              <div className="popover-enter absolute top-full mt-1 right-0 w-[300px] max-w-[calc(100vw-2rem)] rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50 p-3 space-y-4 [--origin:top_right]">
                 <div>
-                  <div className="text-xs text-zinc-500 font-semibold mb-1.5">Copies</div>
-                  <div className="flex gap-0.5">
+                  <div className="section-title mb-1.5">Copies</div>
+                  <div className="segmented segmented-xs" role="group" aria-label="Calibration copies">
+                    <SegmentedIndicator index={[1, 3, 5, 10].indexOf(calibCount)} count={4} />
                     {[1, 3, 5, 10].map((n) => (
                       <button
                         key={n}
                         onClick={() => setCalibCount(n)}
-                        className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${calibCount === n ? 'bg-amber-500/10 text-amber-400' : 'bg-zinc-800/50 text-zinc-400 hover:text-zinc-200'}`}
+                        aria-pressed={calibCount === n}
                       >
                         {n}
                       </button>
@@ -496,8 +499,8 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                 </div>
 
                 {/* Printer adjustments */}
-                <div className="border-t border-zinc-800 pt-3 space-y-2">
-                  <div className="text-xs text-zinc-500 font-semibold">Printer Adjustments</div>
+                <div className="space-y-2">
+                  <div className="section-title">Printer adjustments</div>
 
                   <NumberRow
                     label="Top offset"
@@ -553,7 +556,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                   <button
                     onClick={handleAutoCalibrate}
                     disabled={!canPrint || !!printing}
-                    className="w-full py-1.5 rounded text-xs font-medium bg-zinc-800/60 text-zinc-300 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                    className="btn btn-secondary btn-sm w-full"
                     title="Send ~JC to have the printer re-sense media gaps/length"
                   >
                     Auto-calibrate media (~JC)
@@ -596,11 +599,11 @@ function NumberRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-xs text-zinc-400 w-20 shrink-0">{label}</label>
+      <label className="text-sm text-zinc-400 w-20 shrink-0">{label}</label>
       <div className="flex items-center gap-0.5">
         <button
           onClick={() => onChange(Math.max(min ?? -Infinity, value - (step ?? 1)))}
-          className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs flex items-center justify-center"
+          className="btn btn-secondary btn-icon btn-sm"
         >
           −
         </button>
@@ -614,11 +617,11 @@ function NumberRow({
             const v = parseFloat(e.target.value);
             if (!isNaN(v)) onChange(v);
           }}
-          className="field field-sm w-14 h-6 text-xs text-center"
+          className="field field-sm w-14 text-center"
         />
         <button
           onClick={() => onChange(Math.min(max ?? Infinity, value + (step ?? 1)))}
-          className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs flex items-center justify-center"
+          className="btn btn-secondary btn-icon btn-sm"
         >
           +
         </button>

@@ -110,20 +110,21 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
   };
 
   return (
-    <div className="flex-1 min-h-0 border-t border-zinc-800/50 flex flex-col">
+    <div className="flex-1 min-h-0 flex flex-col">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-zinc-800/30 transition-colors"
+        aria-expanded={expanded}
+        className="w-full shrink-0 flex min-h-control items-center gap-2 px-4 text-sm hover:bg-zinc-900 transition-colors"
       >
-        <FlaskConical className="w-4 h-4 text-amber-400" />
-        <span className="text-zinc-300 font-medium flex-1 text-left">Test Data</span>
+        <FlaskConical className="w-4 h-4 text-zinc-500" aria-hidden="true" />
+        <span className="text-zinc-200 font-medium flex-1 text-left">Test data</span>
         <span className="text-xs text-zinc-500 mr-1">{dynamicFields.length} field{dynamicFields.length !== 1 ? 's' : ''}</span>
-        <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
       {expanded && (
-        <div className="min-h-0 overflow-y-auto px-4 pb-4 space-y-2">
-          <div className="space-y-2 rounded-lg border border-zinc-800/50 bg-zinc-950/30 p-2">
+        <div className="min-h-0 overflow-y-auto px-4 pb-4 space-y-3">
+          <div className="space-y-2 rounded-lg bg-zinc-900 p-2">
             <div className="flex gap-1">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
@@ -151,7 +152,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       setManifestError(null);
                       setHasSearchedManifest(false);
                     }}
-                    className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                    className="absolute right-0.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                     aria-label="Clear Manifest search"
                   >
                     <X className="h-3 w-3" />
@@ -162,7 +163,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                 type="button"
                 onClick={() => void searchManifest()}
                 disabled={manifestSearch.trim().length < 2 || isSearchingManifest}
-                className="h-7 rounded-lg border border-zinc-800/50 bg-zinc-900 px-2 text-xs font-medium text-zinc-300 transition-colors hover:border-amber-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                className="btn btn-secondary btn-sm"
               >
                 {isSearchingManifest ? 'Searching' : 'Search'}
               </button>
@@ -186,7 +187,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             )}
 
             {manifestPackageSummaries.length > 0 && (
-              <div className="max-h-36 overflow-auto rounded-lg border border-zinc-800/50">
+              <div className="max-h-36 overflow-auto rounded-lg border border-zinc-800">
                 {manifestPackageSummaries.map(({ row, labelRows }) => {
                   const key = manifestPackageKey(row);
                   const isSelected = key === selectedManifestKey;
@@ -221,7 +222,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
           {dynamicFields.map((field) => (
             <div key={field.fieldName}>
               <div className="flex items-center gap-1 mb-1">
-                <span className="text-xs text-zinc-500 font-medium">{field.fieldName}</span>
+                <span className="text-sm text-zinc-300 font-medium">{field.fieldName}</span>
                 {(field.prefix || field.suffix) && (
                   <span className="text-xs text-zinc-500">
                     {field.prefix && `"${field.prefix}"`}
@@ -235,7 +236,8 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                 value={testData[field.fieldName] ?? ''}
                 onChange={(e) => onTestDataChange(field.fieldName, e.target.value)}
                 placeholder={field.defaultValue || `Enter ${field.fieldName}...`}
-                className="field field-sm w-full text-xs"
+                aria-label={field.fieldName}
+                className="field field-sm w-full"
               />
             </div>
           ))}
@@ -243,7 +245,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
           {Object.values(testData).some((v) => v) && (
             <button
               onClick={() => dynamicFields.forEach((f) => onTestDataChange(f.fieldName, ''))}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="btn btn-ghost btn-sm -ml-3"
             >
               Clear test data
             </button>

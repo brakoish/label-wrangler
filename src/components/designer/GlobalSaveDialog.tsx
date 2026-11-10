@@ -27,7 +27,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
 
         <div className="space-y-3 mb-5">
           <div>
-            <label htmlFor={nameId} className="block text-xs font-medium text-zinc-400 mb-1.5">Name (required)</label>
+            <label htmlFor={nameId} className="field-label mb-1.5">Name (required)</label>
             <input
               type="text"
               id={nameId}
@@ -39,7 +39,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
             />
           </div>
           <div>
-            <label htmlFor={descriptionId} className="block text-xs font-medium text-zinc-400 mb-1.5">Note (optional)</label>
+            <label htmlFor={descriptionId} className="field-label mb-1.5">Note (optional)</label>
             <input
               type="text"
               id={descriptionId}
@@ -55,7 +55,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="btn btn-secondary flex-1"
           >
             Cancel
           </button>

@@ -42,27 +42,28 @@ export function ElementList({
       {onBackToTemplates && (
         <button
           onClick={onBackToTemplates}
-          className="flex items-center gap-2 px-4 py-2.5 text-zinc-400 hover:text-zinc-200 text-sm border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+          className="btn btn-ghost justify-start rounded-none border-b border-zinc-800"
         >
           <ArrowLeft className="w-4 h-4" />
-          All Templates
+          All designs
         </button>
       )}
 
       {/* Add Element button */}
-      <div className="p-3 space-y-1">
+      <div className="p-3 space-y-2">
         <button
           onClick={onAddElement}
           className="btn btn-primary w-full"
         >
           <Plus className="w-4 h-4" />
-          Add Element
+          Add element
         </button>
-        <details className="text-xs text-zinc-400"><summary className="cursor-pointer py-2 hover:text-white">Reusable elements</summary>
+        <details className="group text-sm text-zinc-400"><summary className="flex min-h-control-sm cursor-pointer items-center rounded-md hover:text-zinc-100">Reusable elements</summary>
+        <div className="space-y-2 pt-1">
         {onInsertGlobal && (
           <button
             onClick={onInsertGlobal}
-            className="btn btn-secondary w-full border border-zinc-700 hover:border-zinc-600"
+            className="btn btn-secondary btn-sm w-full"
           >
             <Globe className="w-4 h-4" />
             Insert reusable element
@@ -72,35 +73,33 @@ export function ElementList({
           <button
             onClick={onSaveAsGlobal}
             disabled={selectedElementIds.size === 0}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-400 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-colors"
+            className="btn btn-secondary btn-sm w-full"
           >
             <Save className="w-4 h-4" />
             Save selection for reuse
           </button>
         )}
+        </div>
         </details>
       </div>
 
-      <p className="px-3 pb-2 text-xs text-zinc-500">Shift/Ctrl-click layers to select several.</p>
-      {primary && <div className="px-3 pb-2 space-y-1" aria-label="Selected layer actions">
+      <p className="px-3 pb-2 text-xs text-zinc-500 max-lg:hidden">Shift or Ctrl-click to select several.</p>
+      {primary && <div className="mx-3 mb-2 space-y-1.5 rounded-lg bg-zinc-900 p-2" aria-label="Selected layer actions">
         <p className="text-xs text-zinc-400">{selected.length} selected{selected.some(e => e.locked) ? ' · locked layers stay protected' : ''}</p>
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-0.5">
           {([['top', 'Move to top'], ['back', 'Move to back'], ['up', 'Move up'], ['down', 'Move down']] as const).map(([direction, label]) => (
-            <button key={direction} onClick={() => onMoveElement(primary.id, direction)} disabled={moveLayers(elements, selectedElementIds, direction) === elements} className="rounded bg-zinc-800 px-2 py-1.5 min-h-8 text-xs text-zinc-300 disabled:opacity-30">{label}</button>
+            <button key={direction} onClick={() => onMoveElement(primary.id, direction)} disabled={moveLayers(elements, selectedElementIds, direction) === elements} className="btn btn-ghost btn-sm justify-start px-2 text-xs">{label}</button>
           ))}
-          <button onClick={() => onLockElements(selectedElementIds, true)} disabled={selected.every(e => e.locked)} className="rounded bg-zinc-800 px-2 py-1.5 min-h-8 text-xs text-zinc-300 disabled:opacity-30">Lock selected</button>
-          <button onClick={() => onLockElements(selectedElementIds, false)} disabled={selected.every(e => !e.locked)} className="rounded bg-zinc-800 px-2 py-1.5 min-h-8 text-xs text-zinc-300 disabled:opacity-30">Unlock selected</button>
+          <button onClick={() => onLockElements(selectedElementIds, true)} disabled={selected.every(e => e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Lock selected</button>
+          <button onClick={() => onLockElements(selectedElementIds, false)} disabled={selected.every(e => !e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Unlock selected</button>
         </div>
       </div>}
       {/* Element list */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
+      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-px">
         {sortedElements.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
-              <Square className="w-8 h-8 text-zinc-500" />
-            </div>
-            <p className="text-zinc-400 text-sm font-medium">No elements yet</p>
-            <p className="text-zinc-500 text-xs mt-1">Add elements to build your template</p>
+            <p className="text-zinc-200 text-sm font-medium">Nothing on this label yet</p>
+            <p className="text-zinc-400 text-sm mt-1">Add text, a barcode or a picture to start.</p>
           </div>
         ) : (
           sortedElements.map((element) => (
@@ -146,53 +145,49 @@ function ElementItem({
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
       role="group"
       aria-label={`${typeLabel} layer ${label}`}
-      className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
+      className={`flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
         isSelected
-          ? 'bg-amber-500/10 border border-amber-500/30'
-          : 'bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700'
+          ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
+          : 'hover:bg-zinc-900'
       }`}
     >
       {/* Type icon */}
-      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-        isSelected
-          ? 'bg-amber-500/10'
-          : 'bg-zinc-800/80'
-      }`}>
+      <div className={`size-7 flex items-center justify-center flex-shrink-0 ${isSelected ? 'text-zinc-100' : 'text-zinc-500'}`}>
         {icon}
       </div>
 
       {/* Label */}
       <div className="flex-1 min-w-0">
-        <button aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-200 font-medium truncate min-h-6 focus-visible:outline-2 focus-visible:outline-amber-400" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
-        <div className="flex items-center gap-1.5 mt-0.5">
+        <button aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
+        <div className="flex items-center gap-1.5">
           <span className="text-xs text-zinc-500">{typeLabel}</span>
           {!element.isStatic && (
-            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
-              Dynamic
+            <span className="text-xs text-amber-300">
+              · Changes per label
             </span>
           )}
         </div>
       </div>
-      {(isSelected || element.locked) && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="p-1.5 text-zinc-400 hover:text-white">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
+      {(isSelected || element.locked) && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 
       {/* Actions */}
-      <div className={isSelected ? "flex items-center gap-0.5" : "hidden"}>
+      <div className={isSelected ? "flex items-center" : "hidden"}>
         <button
           onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-          className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors"
+          className="btn btn-ghost btn-icon btn-sm"
           title="Duplicate"
           aria-label={`Duplicate layer ${label}`}
         >
-          <Copy className="w-3.5 h-3.5" />
+          <Copy className="size-4" />
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"
+          className="btn btn-danger-ghost btn-icon btn-sm"
           disabled={element.locked}
           title={element.locked ? "Unlock layer to delete" : "Delete"}
           aria-label={`Delete layer ${label}`}
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 className="size-4" />
         </button>
       </div>
     </div>

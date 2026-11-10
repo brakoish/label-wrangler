@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Globe, Plus, Trash2, Search } from 'lucide-react';
+import { Plus, Trash2, Search } from 'lucide-react';
 import { Dialog } from '@/components/ui/Dialog';
 import { confirmDialog } from '@/components/ui/feedback';
 import type { GlobalElement, TemplateElement } from '@/lib/types';
@@ -45,12 +45,12 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="text-center py-10">
-              <Globe className="w-10 h-10 text-zinc-500 mx-auto mb-3" />
-              <p className="text-zinc-400 text-sm">
+              
+              <p className="text-zinc-200 text-sm font-medium">
                 {search ? 'Nothing matches your search' : 'No reusable elements yet'}
               </p>
               {!search && (
-                <p className="text-zinc-500 text-xs mt-1">
+                <p className="text-zinc-400 text-sm mt-1">
                   Select objects on a design, then choose “Save selection for reuse” under Layers.
                 </p>
               )}
@@ -60,12 +60,12 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
               {filtered.map((g) => (
                 <div
                   key={g.id}
-                  className="flex items-start gap-3 p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 hover:border-amber-500/30 transition-colors"
+                  className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3 transition-colors hover:border-zinc-700"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-zinc-100 text-sm mb-0.5">{g.name}</div>
                     {g.description && (
-                      <div className="text-xs text-zinc-500 mb-2">{g.description}</div>
+                      <div className="text-sm text-zinc-400 mb-1">{g.description}</div>
                     )}
                     <div className="text-xs text-zinc-500">
                       {g.elements.length} object{g.elements.length !== 1 ? 's' : ''}
@@ -75,18 +75,18 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
                     <button
                       type="button"
                       onClick={() => { onInsert(g.elements); onClose(); }}
-                      className="inline-flex min-h-10 items-center gap-1 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/10 text-amber-400 text-xs font-medium transition-colors"
+                      className="btn btn-primary btn-sm"
                     >
-                      <Plus className="w-3.5 h-3.5" />Insert
+                      <Plus className="size-4" aria-hidden="true" />Insert
                     </button>
                     {onDelete && (
                       <button
                         type="button"
                         onClick={async () => { if (await confirmDialog({ title: `Delete “${g.name}”?`, body: 'Designs that already use it keep their copy. It just won’t be offered here any more.', confirmLabel: 'Delete', danger: true })) onDelete(g.id); }}
-                        className="grid min-h-10 min-w-10 place-items-center rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"
+                        className="btn btn-danger-ghost btn-icon btn-sm"
                         aria-label={`Delete reusable element ${g.name}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="size-4" />
                       </button>
                     )}
                   </div>

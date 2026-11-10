@@ -7,6 +7,7 @@ import {
   Move, Maximize2, RotateCw, Type, QrCode, Barcode, Square, Image,
 } from 'lucide-react';
 import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { MANIFEST_FIELD_OPTIONS } from '@/lib/manifestFields';
 import { prepareDesignerImage } from '@/lib/imageUpload';
@@ -37,18 +38,15 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
 
     return (
-      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
-        <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <Type className="w-3 h-3" />
-          </div>
+      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800 overflow-y-auto">
+        <div className="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-2">
           <span className="text-sm font-medium text-zinc-200">
-            {canEditTextGroup ? `${selectedTextElements.length} Text` : `${selectedElements.length} Selected`}
+            {canEditTextGroup ? `${selectedTextElements.length} text layers` : `${selectedElements.length} selected`}
           </span>
         </div>
 
         {format.type === 'thermal' && onArrange && <div className="p-3 grid grid-cols-3 gap-1">
-          {(['left', 'center', 'right', 'top', 'middle', 'bottom', 'distribute-x', 'distribute-y'] as AlignAction[]).map(action => <button key={action} title={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} onClick={() => onArrange(action)} className="text-xs text-zinc-300 bg-zinc-800 rounded p-1 disabled:opacity-30">{action.replace('distribute-', 'Space ')}</button>)}
+          {(['left', 'center', 'right', 'top', 'middle', 'bottom', 'distribute-x', 'distribute-y'] as AlignAction[]).map(action => <button key={action} title={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} onClick={() => onArrange(action)} className="btn btn-secondary btn-sm px-1 text-xs capitalize">{action.replace('distribute-', 'Space ')}</button>)}
         </div>}
         {canEditTextGroup ? (
           <div className="p-3 space-y-1">
@@ -61,7 +59,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           </div>
         ) : (
           <div className="min-h-20 flex items-center justify-center px-4">
-            <p className="text-zinc-500 text-xs">Mixed selection</p>
+            <p className="text-zinc-400 text-sm">These layers have different settings. Select one type to edit it.</p>
           </div>
         )}
       </div>
@@ -70,8 +68,8 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
   if (!element) {
     return (
-      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 min-h-20 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 flex items-center justify-center">
-        <div className="p-5 space-y-3 text-sm text-zinc-400"><h2 className="font-medium text-zinc-200">Edit your label</h2><p>Select an object on the label or in Layers to edit it.</p><p>Double-click text to edit. Shift-click to select several objects.</p><p className="text-xs">Arrow keys move · Shift + arrow moves faster · Ctrl/⌘ Z undoes</p></div>
+      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 min-h-20 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-zinc-800 flex items-center justify-center">
+        <div className="p-5 space-y-3 text-sm text-zinc-400"><h2 className="text-base font-semibold text-zinc-100">Edit your label</h2><p>Select an object on the label or in Layers to edit it.</p><p>Double-click text to edit. Shift-click to select several objects.</p><p className="text-xs">Arrow keys move · Shift + arrow moves faster · Ctrl/⌘ Z undoes</p></div>
       </div>
     );
   }
@@ -84,26 +82,26 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
   // Element type badge
   const typeIcons: Record<string, React.ReactNode> = {
-    text: <Type className="w-3 h-3" />,
-    qr: <QrCode className="w-3 h-3" />,
-    barcode: <Barcode className="w-3 h-3" />,
+    text: <Type className="size-4" />,
+    qr: <QrCode className="size-4" />,
+    barcode: <Barcode className="size-4" />,
     line: <span className="w-3 h-0.5 bg-current rounded" />,
-    rectangle: <Square className="w-3 h-3" />,
-    image: <Image className="w-3 h-3" />,
+    rectangle: <Square className="size-4" />,
+    image: <Image className="size-4" />,
   };
 
   return (
-    <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
+    <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800 overflow-y-auto">
       {/* Element type header */}
-      <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-        <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+      <div className="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-2">
+        <span className="flex size-4 items-center justify-center text-zinc-400" aria-hidden="true">
           {typeIcons[element.type]}
-        </div>
+        </span>
         <span className="text-sm font-medium text-zinc-200 capitalize">{element.type}</span>
         <span className="ml-auto text-xs text-zinc-500">{isThermal ? `Sizes in dots (${dpi} per inch)` : 'Sizes in inches'}</span>
       </div>
 
-      <div className="p-3 space-y-1">
+      <div className="p-3 space-y-1.5">
         {/* ── Size ── */}
         <SectionLabel icon={<Maximize2 className="w-3 h-3" />} label="Size" />
         {element.type === 'qr' ? (
@@ -121,7 +119,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
             />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-2 gap-1.5">
             <CompactInput label="W" value={element.width} onChange={(v) => onUpdate({ width: v })} step={step} />
             <CompactInput label="H" value={element.height} onChange={(v) => onUpdate({ height: v })} step={step} />
           </div>
@@ -134,7 +132,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {/* ── Position ── */}
         <SectionLabel icon={<Move className="w-3 h-3" />} label="Position" />
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-1.5">
           <CompactInput label="X" value={element.x} onChange={(v) => onUpdate({ x: v })} step={step} />
           <CompactInput label="Y" value={element.y} onChange={(v) => onUpdate({ y: v })} step={step} />
         </div>
@@ -143,18 +141,14 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         <div>
           <div>
             <SectionLabel icon={<RotateCw className="w-3 h-3" />} label="Rotate" />
-            <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
+            <div className="segmented segmented-xs" role="group" aria-label="Rotation">
+              <SegmentedIndicator index={[0, 90, 180, 270].indexOf(element.rotation)} count={4} />
               {[0, 90, 180, 270].map((deg) => (
                 <button
                   key={deg}
                   onClick={() => onUpdate({ rotation: deg })}
                   aria-label={`Rotate ${deg} degrees`}
                   aria-pressed={element.rotation === deg}
-                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                    element.rotation === deg
-                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                      : 'text-zinc-500 hover:text-zinc-200'
-                  }`}
                 >
                   {deg}°
                 </button>
@@ -164,32 +158,30 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         </div>
 
         {/* ── Alignment ── */}
-        <div className="pt-2 pb-1">
-          <div className="flex items-center gap-0.5">
-            <AlignBtn icon={<AlignHorizontalJustifyStart className="w-3.5 h-3.5" />} tip="Left" onClick={() => onUpdate({ x: 0 })} />
-            <AlignBtn icon={<AlignHorizontalJustifyCenter className="w-3.5 h-3.5" />} tip="Center H" onClick={() => onUpdate({ x: (labelW - element.width) / 2 })} />
-            <AlignBtn icon={<AlignHorizontalJustifyEnd className="w-3.5 h-3.5" />} tip="Right" onClick={() => onUpdate({ x: labelW - element.width })} />
-            <div className="w-px h-4 bg-zinc-800 mx-1" />
-            <AlignBtn icon={<AlignVerticalJustifyStart className="w-3.5 h-3.5" />} tip="Top" onClick={() => onUpdate({ y: 0 })} />
-            <AlignBtn icon={<AlignVerticalJustifyCenter className="w-3.5 h-3.5" />} tip="Center V" onClick={() => onUpdate({ y: (labelH - element.height) / 2 })} />
-            <AlignBtn icon={<AlignVerticalJustifyEnd className="w-3.5 h-3.5" />} tip="Bottom" onClick={() => onUpdate({ y: labelH - element.height })} />
+        <div className="pt-1">
+          <div className="flex items-center justify-between" role="group" aria-label="Align to label">
+            <AlignBtn icon={<AlignHorizontalJustifyStart className="size-4" />} tip="Left" onClick={() => onUpdate({ x: 0 })} />
+            <AlignBtn icon={<AlignHorizontalJustifyCenter className="size-4" />} tip="Center H" onClick={() => onUpdate({ x: (labelW - element.width) / 2 })} />
+            <AlignBtn icon={<AlignHorizontalJustifyEnd className="size-4" />} tip="Right" onClick={() => onUpdate({ x: labelW - element.width })} />
+            <AlignBtn icon={<AlignVerticalJustifyStart className="size-4" />} tip="Top" onClick={() => onUpdate({ y: 0 })} />
+            <AlignBtn icon={<AlignVerticalJustifyCenter className="size-4" />} tip="Center V" onClick={() => onUpdate({ y: (labelH - element.height) / 2 })} />
+            <AlignBtn icon={<AlignVerticalJustifyEnd className="size-4" />} tip="Bottom" onClick={() => onUpdate({ y: labelH - element.height })} />
           </div>
         </div>
 
         <Divider />
 
         {/* Images are selected once per run, never bound to source rows. */}
-        {element.type !== 'image' && <div className="flex items-center justify-between py-1">
-          <span id="content-mode-label" className="text-xs text-zinc-500 font-medium">Content</span>
-          <div role="radiogroup" aria-labelledby="content-mode-label" className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
+        {element.type !== 'image' && <div className="space-y-1.5 pt-1">
+          <span id="content-mode-label" className="block text-sm font-medium text-zinc-300">Content</span>
+          <div role="radiogroup" aria-labelledby="content-mode-label" className="segmented segmented-xs">
+            <SegmentedIndicator index={element.isStatic ? 0 : 1} count={2} />
             <button
               type="button"
               role="radio"
               aria-checked={element.isStatic}
               onClick={() => onUpdate(contentModeUpdates(element, true))}
-              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-                element.isStatic ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              data-active={element.isStatic}
             >
               Same on every label
             </button>
@@ -200,9 +192,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
               // Keeps what was typed as the preview sample and picks a
               // column name if there isn't one yet (renamable below).
               onClick={() => onUpdate(contentModeUpdates(element, false))}
-              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-                !element.isStatic ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              data-active={!element.isStatic}
             >
               Changes per label
             </button>
@@ -210,7 +200,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         </div>}
 
         {element.type !== 'image' && !element.isStatic && (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <CompactTextInput label="Spreadsheet column name" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
             <CustomSelect
               compact
@@ -223,7 +213,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
             />
             <CompactTextInput label="Sample text (preview only)" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Shown in the preview" />
             {element.type === 'text' && (
-              <div className="grid grid-cols-1 gap-1">
+              <div className="grid grid-cols-1 gap-1.5">
                 <CompactTextInput label="Text before" value={element.prefix || ''} onChange={(v) => onUpdate({ prefix: v })} placeholder="SKU: " />
                 <CompactTextInput label="Text after" value={element.suffix || ''} onChange={(v) => onUpdate({ suffix: v })} placeholder=" oz" />
               </div>
@@ -258,9 +248,9 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
         onChange={(e) => onUpdate(element.isStatic ? { content: e.target.value } : { defaultValue: e.target.value })}
         placeholder={element.isStatic ? 'Type the text' : 'Sample text for the preview'}
         rows={3}
-        className="field field-sm w-full text-xs resize-y min-h-[28px]"
+        className="field field-sm w-full resize-y py-1.5"
       />
-      <div className="grid grid-cols-2 gap-1">
+      <div className="grid grid-cols-2 gap-1.5">
         <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
         <CompactInput label="LH" value={element.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
         <div className="col-span-2"><CompactSelect value={element.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
@@ -269,7 +259,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
           0.5 = Zebra native (default, tight/squished), 0.6 = balanced, 0.8 = roomy. */}
       {isThermal && (
         <>
-          <div className="grid grid-cols-1 gap-1">
+          <div className="grid grid-cols-1 gap-1.5">
             <CompactInput
               label="CW"
               value={element.charWidth ?? (bitmap ? 1 : 0.5)}
@@ -277,7 +267,8 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
               step={0.05}
               labelRight
             />
-            <div className="flex items-center gap-0.5">
+            <div className="segmented segmented-xs" role="group" aria-label="Letter width preset">
+            <SegmentedIndicator index={[bitmap ? 0.8 : 0.5, bitmap ? 1 : 0.6, bitmap ? 1.2 : 0.8].indexOf(element.charWidth ?? 0.5)} count={3} />
             {([
               { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
               { label: 'Normal', value: bitmap ? 1 : 0.6 },
@@ -286,11 +277,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
               <button
                 key={p.label}
                 onClick={() => onUpdate({ charWidth: p.value })}
-                className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
-                  (element.charWidth ?? 0.5) === p.value
-                    ? 'bg-zinc-700 text-zinc-100'
-                    : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
-                }`}
+                aria-pressed={(element.charWidth ?? 0.5) === p.value}
                 title={`Set character width ratio to ${p.value}`}
               >
                 {p.label}
@@ -298,17 +285,16 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
             ))}
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-lg bg-zinc-900/50 px-2 py-1.5">
+          <div className="flex min-h-control-sm items-center gap-2">
             <button
               type="button"
               role="switch"
               aria-checked={(element.autoFit ?? bitmap)}
               onClick={() => onUpdate({ autoFit: !(element.autoFit ?? bitmap) })}
-              className={`relative h-4 w-7 rounded-full transition-colors ${(element.autoFit ?? bitmap) ? 'bg-amber-500' : 'bg-zinc-700'}`}
-            >
-              <span className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${(element.autoFit ?? bitmap) ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-            </button>
-            <span className="text-xs text-zinc-400">Auto-fit text</span>
+              aria-labelledby="autofit-label"
+              className="switch"
+            />
+            <span id="autofit-label" className="text-sm text-zinc-300">Auto-fit text</span>
             {(element.autoFit ?? bitmap) && (
               <div className="ml-auto w-32">
                 <CompactInput label="Min" value={element.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />
@@ -318,18 +304,17 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
         </>
       )}
       {bitmap && <>
-        <div className="grid grid-cols-2 gap-1"><CompactSelect value={element.fontStyle ?? 'normal'} options={['normal', 'italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} /><CompactInput label="Track" value={element.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} /></div>
+        <div className="grid grid-cols-2 gap-1.5"><CompactSelect value={element.fontStyle ?? 'normal'} options={['normal', 'italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} /><CompactInput label="Track" value={element.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} /></div>
         <CompactSelect value={element.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} />
       </>}
       <CompactSelect value={element.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
-      <div className="flex gap-0.5">
+      <div className="segmented segmented-xs" role="group" aria-label="Text alignment">
+        <SegmentedIndicator index={['left', 'center', 'right'].indexOf(element.textAlign)} count={3} />
         {(['left', 'center', 'right'] as const).map((a) => (
           <button
             key={a}
             onClick={() => onUpdate({ textAlign: a })}
-            className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
-              element.textAlign === a ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
-            }`}
+            aria-pressed={element.textAlign === a}
           >
             {a.charAt(0).toUpperCase() + a.slice(1)}
           </button>
@@ -337,7 +322,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
       </div>
       {format.type === 'sheet' && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500 w-10">Color</span>
+          <span className="text-sm text-zinc-400 w-12">Color</span>
           <input
             type="color"
             value={element.color}
@@ -360,14 +345,14 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
-      <div className="grid grid-cols-2 gap-1">
+      <div className="grid grid-cols-2 gap-1.5">
         <CompactInput label="Pt" value={first.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
         <CompactInput label="LH" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
         <div className="col-span-2"><CompactSelect value={first.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
       </div>
       {isThermal && (
         <>
-          <div className="grid grid-cols-1 gap-1">
+          <div className="grid grid-cols-1 gap-1.5">
             <CompactInput
               label="CW"
               value={first.charWidth ?? (bitmap ? 1 : 0.5)}
@@ -375,7 +360,8 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
               step={0.05}
               labelRight
             />
-            <div className="flex items-center gap-0.5">
+            <div className="segmented segmented-xs" role="group" aria-label="Letter width preset">
+            <SegmentedIndicator index={[bitmap ? 0.8 : 0.5, bitmap ? 1 : 0.6, bitmap ? 1.2 : 0.8].indexOf(first.charWidth ?? 0.5)} count={3} />
             {([
               { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
               { label: 'Normal', value: bitmap ? 1 : 0.6 },
@@ -384,11 +370,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
               <button
                 key={p.label}
                 onClick={() => onUpdate({ charWidth: p.value })}
-                className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
-                  (first.charWidth ?? 0.5) === p.value
-                    ? 'bg-zinc-700 text-zinc-100'
-                    : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
-                }`}
+                aria-pressed={(first.charWidth ?? 0.5) === p.value}
                 title={`Set character width ratio to ${p.value}`}
               >
                 {p.label}
@@ -399,7 +381,8 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
           <button
             type="button"
             onClick={() => onUpdate({ autoFit: !(first.autoFit ?? bitmap) })}
-            className={`w-full rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${(first.autoFit ?? bitmap) ? 'bg-amber-500/10 text-amber-300' : 'bg-zinc-900/50 text-zinc-500'}`}
+            aria-pressed={(first.autoFit ?? bitmap)}
+            className="btn btn-secondary btn-sm w-full"
           >
             Auto-fit text {(first.autoFit ?? bitmap) ? 'on' : 'off'}
           </button>
@@ -411,14 +394,13 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
         <CompactSelect value={first.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} />
       </>}
       <CompactSelect value={first.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
-      <div className="flex gap-0.5">
+      <div className="segmented segmented-xs" role="group" aria-label="Text alignment">
+        <SegmentedIndicator index={['left', 'center', 'right'].indexOf(first.textAlign)} count={3} />
         {(['left', 'center', 'right'] as const).map((a) => (
           <button
             key={a}
             onClick={() => onUpdate({ textAlign: a })}
-            className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
-              first.textAlign === a ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
-            }`}
+            aria-pressed={first.textAlign === a}
           >
             {a.charAt(0).toUpperCase() + a.slice(1)}
           </button>
@@ -426,7 +408,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
       </div>
       {format.type === 'sheet' && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-zinc-500 w-10">Color</span>
+          <span className="text-sm text-zinc-400 w-12">Color</span>
           <input
             type="color"
             value={first.color}
@@ -469,9 +451,9 @@ function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate
         options={['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14']}
         onChange={(v) => onUpdate({ barcodeFormat: v as BarcodeFormat })}
       />
-      <div className="flex items-center justify-between py-0.5">
-        <span className="text-xs text-zinc-500 ">Text</span>
-        <Toggle checked={element.showText} onChange={(v) => onUpdate({ showText: v })} />
+      <div className="flex min-h-control-sm items-center justify-between">
+        <span id="barcode-text-label" className="text-sm text-zinc-300">Show the number under the barcode</span>
+        <Toggle checked={element.showText} onChange={(v) => onUpdate({ showText: v })} labelledBy="barcode-text-label" />
       </div>
     </>
   );
@@ -492,7 +474,7 @@ function RectProps({ element, onUpdate }: { element: RectangleElement; onUpdate:
   return (
     <>
       <SectionLabel icon={<Square className="w-3 h-3" />} label="Rectangle" />
-      <div className="grid grid-cols-2 gap-1">
+      <div className="grid grid-cols-2 gap-1.5">
         <CompactInput label="Bdr" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} />
         <CompactInput label="Rad" value={element.borderRadius} onChange={(v) => onUpdate({ borderRadius: v })} step={1} />
       </div>
@@ -522,12 +504,12 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
         accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
         disabled={uploading}
         onChange={e => void handleUpload(e)}
-        className="text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:cursor-pointer w-full"
+        className="text-sm text-zinc-400 file:mr-2 file:min-h-control-sm file:px-3 file:rounded-md file:border file:border-zinc-700 file:text-sm file:font-medium file:bg-zinc-800 file:text-zinc-100 hover:file:bg-zinc-700 file:cursor-pointer w-full"
       />
       {uploading && <p className="text-xs text-zinc-500">Preparing image…</p>}
       {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
       <p className="text-xs text-zinc-500">Large images are scaled down to 1200 px on the longest side.</p>
-      <label className="flex items-center gap-2 text-xs text-zinc-300">
+      <label className="flex min-h-control-sm items-center gap-2 text-sm text-zinc-300">
         <input type="checkbox" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
         Choose image during run setup
       </label>
@@ -539,17 +521,14 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
 
 // ── Primitives ──
 
-function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div className="flex items-center gap-1.5 pt-2 pb-1">
-      <span className="text-zinc-500">{icon}</span>
-      <span className="text-xs text-zinc-500 font-medium">{label}</span>
-    </div>
-  );
+// Icons are accepted for call-site compatibility but not drawn: a plain
+// heading reads faster in a dense panel.
+function SectionLabel({ label }: { icon?: React.ReactNode; label: string }) {
+  return <h3 className="pt-3 pb-0.5 text-sm font-medium text-zinc-300">{label}</h3>;
 }
 
 function Divider() {
-  return <div className="border-t border-zinc-800/40 my-1" />;
+  return <div className="h-1" aria-hidden="true" />;
 }
 
 function CompactInput({ label, value, onChange, step, labelRight }: {
@@ -575,9 +554,9 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
   };
 
   return (
-    <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
+    <div className="flex items-center bg-zinc-950 border border-zinc-700 rounded-md h-control-sm transition-colors hover:border-zinc-600 focus-within:border-amber-500 focus-within:outline-2 focus-within:outline-amber-500">
       {!labelRight && (
-        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-r border-zinc-800/40">{visibleLabel}</span>
+        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-r border-zinc-800">{visibleLabel}</span>
       )}
       <input
         type="number"
@@ -604,10 +583,10 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
           }
         }}
         step={step}
-        className="flex-1 bg-transparent text-xs text-zinc-100 px-1.5 h-full min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="flex-1 bg-transparent text-sm max-sm:text-base text-zinc-100 px-1.5 h-full min-w-0 tabular-nums focus-visible:outline-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
       {labelRight && (
-        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-l border-zinc-800/40">{visibleLabel}</span>
+        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-l border-zinc-800">{visibleLabel}</span>
       )}
     </div>
   );
@@ -630,9 +609,9 @@ function CompactTextInput({ label, value, onChange, placeholder, full }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; full?: boolean;
 }) {
   return (
-    <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
+    <div className="flex items-center bg-zinc-950 border border-zinc-700 rounded-md h-control-sm transition-colors hover:border-zinc-600 focus-within:border-amber-500 focus-within:outline-2 focus-within:outline-amber-500">
       {label && (
-        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-2 flex-shrink-0 border-r border-zinc-800/40">{label}</span>
+        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-2 flex-shrink-0 border-r border-zinc-800">{label}</span>
       )}
       <input
         type="text"
@@ -640,7 +619,7 @@ function CompactTextInput({ label, value, onChange, placeholder, full }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`${full ? 'w-full' : 'flex-1'} bg-transparent text-xs text-zinc-100 px-2 h-full placeholder-zinc-500 min-w-0`}
+        className={`${full ? 'w-full' : 'flex-1'} bg-transparent text-sm max-sm:text-base text-zinc-100 px-2 h-full placeholder-zinc-500 min-w-0 focus-visible:outline-0`}
       />
     </div>
   );
@@ -661,27 +640,29 @@ function CompactSelect({ value, options, labels, onChange }: {
 
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex items-center gap-2 h-7">
-      <span className="text-xs text-zinc-500 w-8 flex-shrink-0">{label}</span>
+    <label className="flex items-center gap-2 h-control-sm">
+      <span className="text-sm text-zinc-400 w-12 flex-shrink-0">{label}</span>
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-5 h-5 rounded border border-zinc-700 bg-transparent cursor-pointer flex-shrink-0"
+        className="size-7 rounded border border-zinc-700 bg-transparent cursor-pointer flex-shrink-0"
       />
       <span className="text-xs text-zinc-400 font-mono">{value}</span>
-    </div>
+    </label>
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ checked, onChange, labelledBy }: { checked: boolean; onChange: (v: boolean) => void; labelledBy?: string }) {
   return (
     <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-labelledby={labelledBy}
       onClick={() => onChange(!checked)}
-      className={`w-7 h-4 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-amber-500' : 'bg-zinc-700'}`}
-    >
-      <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-    </button>
+      className="switch"
+    />
   );
 }
 
@@ -690,7 +671,8 @@ function AlignBtn({ icon, tip, onClick }: { icon: React.ReactNode; tip: string; 
     <button
       onClick={onClick}
       title={tip}
-      className="flex items-center justify-center w-7 h-7 rounded-md text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+      aria-label={tip}
+      className="btn btn-ghost btn-icon btn-sm text-zinc-400"
     >
       {icon}
     </button>

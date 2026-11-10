@@ -49,24 +49,24 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated }
       setDraft(null); onCreated(created.id);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
-  return <div className="text-xs">
-    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <details className="inline-block"><summary className="cursor-pointer text-zinc-400 hover:text-zinc-200">Advanced</summary><button type="button" title="Makes a separate copy that prints with sharper, exact artwork" className="mt-1 text-amber-400 border border-zinc-700 rounded px-2 py-1" onClick={() => { setError(''); setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (bitmap)` }, format, report: ['Creates a new editable template. Original templates and runs are unchanged.', 'Fonts use bundled Liberation equivalents. Text sizing is adjusted once to fit the displayed sample values. Auto-fit stays off unless already enabled. Condensed width is retained. Compare the proofs before creating the copy.'] }); }}>Duplicate and convert</button></details> : <details className="px-8 pt-5"><summary className="cursor-pointer text-zinc-500 hover:text-zinc-300">Advanced</summary><div className="flex flex-wrap gap-3 pt-2">
-      <button type="button" className="text-amber-400" onClick={() => file.current?.click()}>Import Natural label JSON</button>
-      <button type="button" className="text-amber-400" onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Lemon example</button>
+  return <div className="text-sm">
+    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <details className="inline-block"><summary className="cursor-pointer text-zinc-400 hover:text-zinc-100">Advanced</summary><button type="button" title="Makes a separate copy that prints with sharper, exact artwork" className="btn btn-secondary btn-sm mt-1" onClick={() => { setError(''); setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (bitmap)` }, format, report: ['Creates a new editable template. Original templates and runs are unchanged.', 'Fonts use bundled Liberation equivalents. Text sizing is adjusted once to fit the displayed sample values. Auto-fit stays off unless already enabled. Condensed width is retained. Compare the proofs before creating the copy.'] }); }}>Duplicate and convert</button></details> : <details className="px-4 sm:px-6 lg:px-8"><summary className="inline-flex min-h-control-sm cursor-pointer items-center text-zinc-400 hover:text-zinc-100">Advanced</summary><div className="flex flex-wrap gap-3 pt-2">
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => file.current?.click()}>Import Natural label JSON</button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Lemon example</button>
       <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />
     </div></details>}
-    {error && !draft && <p role="alert" className="text-red-400 p-2">{friendlyError(error)}</p>}
+    {error && !draft && <p role="alert" className="text-red-400 py-2">{friendlyError(error)}</p>}
     <Dialog open={!!draft} onClose={() => { if (!busy) { setDraft(null); setError(''); } }} dismissible={!busy} title="Review bitmap copy" className="max-w-4xl">{draft && <div className="space-y-4">
       {draft.report.map((s, i) => <p key={i} className="text-zinc-400">{s}</p>)}
       <div className="grid sm:grid-cols-2 gap-4">
-        {source && <div><p>Original native output</p>{oldProof && <img src={oldProof} alt="Original native proof" className="w-full bg-white" />}</div>}
-        <div><p>New bitmap proof</p>{proof ? <img src={proof} alt="New bitmap proof" className="w-full bg-white" style={{ imageRendering: 'pixelated' }} /> : <p className="text-zinc-500">{error ? 'Adjust the editable copy to resolve the issue below.' : 'Rendering…'}</p>}</div>
+        {source && <div className="space-y-2"><p className="section-title">Original native output</p>{oldProof && <img src={oldProof} alt="Original native proof" className="w-full bg-white" />}</div>}
+        <div className="space-y-2"><p className="section-title">New bitmap proof</p>{proof ? <img src={proof} alt="New bitmap proof" className="w-full bg-white" style={{ imageRendering: 'pixelated' }} /> : <p className="text-zinc-500">{error ? 'Adjust the editable copy to resolve the issue below.' : 'Rendering…'}</p>}</div>
       </div>
       {adjustments > 0 && <p className="text-amber-400">Adjusted {adjustments} text sizes once. These remain editable fixed sizes; longer product values may need further adjustment.</p>}
       {error && <p role="alert" className="text-red-400">{friendlyError(error)}</p>}
       <p className="text-zinc-500">{source ? 'You may create an editable draft to fix reported text or layout issues manually. Printing requires a valid proof. The original is unchanged.' : 'A valid bitmap proof is required before creating the copy. The original remains available unchanged.'}</p>
-      <button disabled={busy || !proof || !prepared} onClick={() => void create()} className="bg-amber-500 text-black rounded px-3 py-2">{busy ? 'Creating…' : 'Create editable bitmap copy'}</button>
-      <button type="button" disabled={busy} className="ml-3" onClick={() => { setDraft(null); setError(''); }}>Cancel</button>
+      <button disabled={busy || !proof || !prepared} onClick={() => void create()} className="btn btn-primary">{busy ? 'Creating…' : 'Create editable bitmap copy'}</button>
+      <button type="button" disabled={busy} className="btn btn-secondary ml-2" onClick={() => { setDraft(null); setError(''); }}>Cancel</button>
     </div>}</Dialog>
   </div>;
 }

@@ -81,30 +81,30 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const basePreviewWidth = Math.min(900, Math.max(520, format.width * (format.dpi || 203) * 1.25));
 
   return (
-    <div className="border-t border-zinc-800/50 flex flex-col shrink-0">
-      <div className={`flex items-center gap-2 px-6 py-3 flex-wrap ${expanded ? 'border-b border-zinc-800/50' : ''}`}>
-        <Printer className="w-4 h-4 text-amber-400" />
+    <div className="border-t border-zinc-800 flex flex-col shrink-0">
+      <div className="flex items-center gap-2 px-4 py-2 flex-wrap sm:px-6">
+        <Printer className="w-4 h-4 text-zinc-500" aria-hidden="true" />
         <button
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="flex flex-wrap items-center gap-2 text-left min-h-9"
+          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md text-left min-h-control-sm"
         >
-          <span className="text-xs text-zinc-400 font-semibold">Print Preview</span>
-          <span className="text-xs text-zinc-500">{template.thermalRenderMode === 'bitmap-v1' ? 'Exact bitmap proof — bundled fonts' : 'Actual ZPL output — open to check alignment'}</span>
-          <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          <span className="text-sm text-zinc-100 font-medium">Print preview</span>
+          <span className="text-xs text-zinc-400">{template.thermalRenderMode === 'bitmap-v1' ? 'Exact bitmap proof — bundled fonts' : 'Actual ZPL output — open to check alignment'}</span>
+          <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
 
-        {expanded && <div className="w-px h-4 bg-zinc-800 mx-2" />}
 
         {/* WebUSB test print controls — connect, print current template, calibration. */}
         {expanded && <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />}
         {expanded && <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />}
 
-        {expanded && <div className="ml-auto flex items-center gap-1">
+        {expanded && <div className="ml-auto flex items-center">
           <button
             onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
             title="Zoom out"
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Zoom out"
+            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
@@ -112,29 +112,34 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           <button
             onClick={() => setZoom((z) => Math.min(8, +(z + 0.25).toFixed(2)))}
             title="Zoom in"
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Zoom in"
+            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
           <button
             onClick={() => setZoom(1)}
             title="Fit to view"
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors"
+            aria-label="Fit to view"
+            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
           >
             <Maximize2 className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowOutlines((s) => !s)}
             title={showOutlines ? 'Hide label outlines' : 'Show label outlines'}
-            className={`p-1.5 rounded-md transition-colors ${showOutlines ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+            aria-label="Label outlines"
+            aria-pressed={showOutlines}
+            className={`btn btn-ghost btn-icon btn-sm ${showOutlines ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400'}`}
           >
             <SquareDashed className="w-4 h-4" />
           </button>
-          <div className="w-px h-4 bg-zinc-800 mx-1" />
           <button
             onClick={() => setShowZPL(!showZPL)}
             title="View ZPL code"
-            className={`p-1.5 rounded-md transition-colors ${showZPL ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+            aria-label="View ZPL code"
+            aria-pressed={showZPL}
+            className={`btn btn-ghost btn-icon btn-sm ${showZPL ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400'}`}
           >
             <Code2 className="w-4 h-4" />
           </button>
@@ -142,7 +147,8 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             onClick={fetchPreview}
             disabled={loading}
             title="Refresh preview"
-            className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50"
+            aria-label="Refresh preview"
+            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -150,12 +156,12 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       </div>
 
       {expanded && (
-        <div className="px-6 py-4 flex flex-col" style={{ minHeight: '320px', maxHeight: '65vh' }}>
+        <div className="px-4 pb-4 pt-1 flex flex-col sm:px-6" style={{ minHeight: '320px', maxHeight: '65vh' }}>
           {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Fix this before printing: {error}</p>}
           {/* ZPL Code view */}
           {showZPL && (
-            <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">
-              <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
+            <div className="mb-3 p-3 bg-zinc-950 rounded-lg max-h-[200px] overflow-auto">
+              <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
             </div>
           )}
 
@@ -181,7 +187,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             <img
               src={previewUrl}
               alt={error ? 'Editing preview with warnings' : 'ZPL Preview'}
-              className="rounded-lg border border-zinc-700/50"
+              className="rounded-md"
               style={{
                 // Native-DPI render — keep pixelated for sharp bitmap-font edges;
                 // zoom handles bigger size when user wants to inspect details.

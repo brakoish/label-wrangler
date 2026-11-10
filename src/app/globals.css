@@ -315,6 +315,13 @@ textarea:focus-visible {
   .segmented > [data-active="true"] {
     color: var(--color-zinc-50);
   }
+  /* Dense variant for narrow panels: smaller text, labels may wrap. */
+  .segmented-xs > button {
+    padding-inline: 0.375rem;
+    font-size: var(--text-xs);
+    line-height: 1rem;
+    text-align: center;
+  }
   .segmented-indicator {
     position: absolute;
     z-index: 0;

@@ -3,7 +3,8 @@
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Undo2, Redo2, Pencil } from 'lucide-react';
+import { Undo2, Redo2, Pencil, ChevronLeft } from 'lucide-react';
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
 import { useGlobalElementStore } from '@/lib/globalStore';
@@ -319,7 +320,6 @@ function DesignerContent() {
       <AppShell>
         {/* Template List */}
         <div className="flex-1 overflow-auto">
-          <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           <TemplateList
             templates={templates}
             onSelectTemplate={(id) => {
@@ -332,6 +332,9 @@ function DesignerContent() {
             onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
+          <div className="mx-auto w-full max-w-[1600px] pb-8">
+          <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
+          </div>
         </div>
 
         {/* New Template Dialog */}
@@ -584,32 +587,38 @@ function DesignerContent() {
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title="Designer" />
-      <div className="px-4 py-2 flex flex-wrap items-center gap-3 text-xs text-zinc-400 border-b border-zinc-800/50">
-        <span role="status" aria-live="polite" className={saveError ? 'text-red-400' : saving ? 'text-amber-400' : 'text-emerald-400'}>{saveError ? 'Not saved' : saving ? 'Saving…' : 'All changes saved'}</span>
-        <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="min-h-9 rounded-md border border-zinc-700 px-3 text-xs font-medium text-zinc-200 hover:border-amber-500/30 hover:text-amber-300 disabled:opacity-40">{saving ? 'Saving…' : 'Save now'}</button>
-        <span className="text-zinc-500">Changes save on their own.</span>
+      <div className="px-4 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-400 border-b border-zinc-800">
+        <span role="status" aria-live="polite" className={`inline-flex items-center gap-1.5 ${saveError ? 'text-red-400' : saving ? 'text-zinc-300' : 'text-emerald-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full bg-current ${!saving && !saveError ? 'animate-success' : ''}`} />{saveError ? 'Not saved' : saving ? 'Saving…' : 'All changes saved'}</span>
+        <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="btn btn-secondary btn-sm">{saving ? 'Saving…' : 'Save now'}</button>
+        <span className="text-zinc-500 max-sm:hidden">Changes save on their own.</span>
         {currentFormat.type === 'thermal' && <>
-        <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
+        <span className="sm:ml-auto">{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
         <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
         </>}
       </div>
-      {saveError && <p role="alert" className="text-red-400 px-6">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
-      {recovery.length > 0 && <div role="alert" className="px-6 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
+      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
-      {saveError && <button className="text-amber-300 underline px-6 text-left" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
-      <div role="tablist" aria-label="Designer panes" className="lg:hidden grid grid-cols-3 gap-1 p-2 border-b border-zinc-800/50">
+      {saveError && <button className="px-4 pb-2 text-left text-sm text-amber-300 underline" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
+      <div className="lg:hidden p-2 border-b border-zinc-800">
+      <div role="tablist" aria-label="Designer panes" className="segmented">
+        <SegmentedIndicator index={['label', 'layers', 'edit'].indexOf(phonePane)} count={3} />
         {([['label', 'Label'], ['layers', 'Layers & data'], ['edit', selectedIds.size ? 'Edit selected' : 'Edit']] as const).map(([pane, text]) => (
-          <button key={pane} type="button" role="tab" aria-selected={phonePane === pane} onClick={() => setPhonePane(pane)} className={`min-h-11 rounded-lg px-2 text-sm font-medium ${phonePane === pane ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>{text}</button>
+          <button key={pane} type="button" role="tab" aria-selected={phonePane === pane} onClick={() => setPhonePane(pane)} >{text}</button>
         ))}
+      </div>
       </div>
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className={`${phonePane === 'layers' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col border-b lg:border-b-0 lg:border-r border-zinc-800/50 lg:max-h-none`}>
-          <div className="grid grid-cols-2 gap-1 p-2 border-b border-zinc-800/50" aria-label="Designer panels">
-            <button aria-pressed={leftPanel === 'layers'} onClick={() => setLeftPanel('layers')} className={`rounded-lg px-3 py-2 text-sm font-medium ${leftPanel === 'layers' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>Layers <span className="text-zinc-400">{currentTemplate.elements.length}</span></button>
-            <button aria-pressed={leftPanel === 'data'} onClick={() => setLeftPanel('data')} className={`rounded-lg px-3 py-2 text-sm font-medium ${leftPanel === 'data' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900'}`}>Test data</button>
+        <div className={`${phonePane === 'layers' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col border-b lg:border-b-0 lg:border-r border-zinc-800 lg:max-h-none`}>
+          <div className="p-2 border-b border-zinc-800">
+          <div className="segmented" role="group" aria-label="Designer panels">
+            <SegmentedIndicator index={leftPanel === 'data' ? 1 : 0} count={2} />
+            <button aria-pressed={leftPanel === 'layers'} onClick={() => setLeftPanel('layers')}>Layers <span className="tabular-nums text-zinc-500">{currentTemplate.elements.length}</span></button>
+            <button aria-pressed={leftPanel === 'data'} onClick={() => setLeftPanel('data')}>Test data</button>
+          </div>
           </div>
           <div className={leftPanel === 'layers' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
           <ElementList
@@ -643,32 +652,32 @@ function DesignerContent() {
           {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
               so the round-trip feels like 'I edited this and came back'
               rather than 'I'm lost in the designer'. */}
-          <div className="px-4 py-3 border-b border-zinc-800/50 flex flex-wrap items-center gap-2 text-sm shrink-0">
+          <div className="px-4 py-2 border-b border-zinc-800 flex flex-wrap items-center gap-2 text-sm shrink-0">
             {returnTo ? (
               <a
                 href={returnTo}
                 onClick={e => { e.preventDefault(); void leaveEditor(); }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/10 transition-colors"
+                className="btn btn-primary btn-sm pl-2"
               >
-                ← Done editing
+                <ChevronLeft className="size-4" aria-hidden="true" /> Done editing
               </a>
             ) : (
               <a
                 href="/designer"
                 onClick={e => { e.preventDefault(); void leaveEditor(); }}
-                className="text-zinc-500 hover:text-amber-400 transition-colors"
+                className="inline-flex min-h-control-sm items-center text-zinc-400 hover:text-zinc-100 transition-colors"
               >
                 Designs
               </a>
             )}
-            <span className="text-zinc-500">/</span>
+            <span className="text-zinc-600" aria-hidden="true">/</span>
             <button
               onClick={() => setRenameSource(currentTemplate)}
-              className="flex min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 text-zinc-100 font-semibold hover:text-amber-400 transition-colors"
+              className="group flex min-h-control-sm min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 rounded-md text-zinc-100 font-semibold transition-colors"
               title="Rename template"
             >
               <span className="truncate">{currentTemplate.name}</span>
-              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-200" aria-hidden="true" />
             </button>
             {compatibleFormats.length > 1 && (
               <div className="w-44 shrink-0">
@@ -688,31 +697,23 @@ function DesignerContent() {
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {showThermalOrientationPicker && (
                 <>
-                  <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50 mr-1">
+                  <div className="segmented mr-2" role="group" aria-label="Edit orientation">
+                    <SegmentedIndicator index={thermalEditorOrientation === 'upright' ? 1 : 0} count={2} />
                     <button
                       onClick={() => updateThermalEditorOrientation('printer')}
                       title="Edit in printer orientation"
-                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                        thermalEditorOrientation === 'printer'
-                          ? 'bg-zinc-700 text-zinc-100'
-                          : 'text-zinc-500 hover:text-zinc-200'
-                      }`}
+                      aria-pressed={thermalEditorOrientation === 'printer'}
                     >
                       Printer
                     </button>
                     <button
                       onClick={() => updateThermalEditorOrientation('upright')}
                       title="Edit upright"
-                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                        thermalEditorOrientation === 'upright'
-                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                          : 'text-zinc-500 hover:text-zinc-200'
-                      }`}
+                      aria-pressed={thermalEditorOrientation === 'upright'}
                     >
                       Upright
                     </button>
                   </div>
-                  <div className="w-px h-4 bg-zinc-800 mx-1" />
                 </>
               )}
               <button
@@ -720,7 +721,7 @@ function DesignerContent() {
                 disabled={!canUndo()}
                 title="Undo (Ctrl+Z)"
                 aria-label="Undo"
-                className={`p-1.5 rounded-lg transition-colors ${canUndo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10' : 'text-zinc-500 cursor-not-allowed'}`}
+                className="btn btn-ghost btn-icon btn-sm"
               >
                 <Undo2 className="w-4 h-4" />
               </button>
@@ -729,7 +730,7 @@ function DesignerContent() {
                 disabled={!canRedo()}
                 title="Redo (Ctrl+Shift+Z)"
                 aria-label="Redo"
-                className={`p-1.5 rounded-lg transition-colors ${canRedo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10' : 'text-zinc-500 cursor-not-allowed'}`}
+                className="btn btn-ghost btn-icon btn-sm"
               >
                 <Redo2 className="w-4 h-4" />
               </button>
@@ -867,7 +868,7 @@ export default function DesignerPage() {
   return (
     <Suspense fallback={
       <div className="h-screen flex items-center justify-center bg-zinc-950">
-        <div className="text-zinc-400">Loading...</div>
+        <div className="text-sm text-zinc-400">Loading…</div>
       </div>
     }>
       <DesignerContent />
