@@ -458,12 +458,12 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             Print{labelQty > 1 && <span className="tabular-nums">×{labelQty}</span>}
           </button>
           {/* Calibrate button with adjacent options menu (style + copies). */}
-          <div className="relative flex items-center rounded-md border border-zinc-700 bg-zinc-800">
+          <div className="relative flex items-center gap-px">
             <button
               onClick={handlePrintCalibration}
               disabled={!!printing}
               title={`Print ${calibCount} calibration label${calibCount > 1 ? 's' : ''}`}
-              className="btn btn-sm rounded-r-none text-zinc-100 hover:bg-zinc-700"
+              className="btn btn-secondary btn-sm rounded-r-none"
             >
               {printing === 'calibration' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
               Calibrate {calibCount > 1 && <span className="text-zinc-400">×{calibCount}</span>}
@@ -474,7 +474,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
               aria-expanded={calibMenuOpen}
               aria-label="Calibration options"
               title="Calibration options"
-              className="btn btn-sm btn-icon rounded-l-none border-l border-l-zinc-700 text-zinc-300 hover:bg-zinc-700"
+              className="btn btn-secondary btn-sm btn-icon rounded-l-none text-zinc-300"
             >
               <ChevronDown className="size-4" />
             </button>

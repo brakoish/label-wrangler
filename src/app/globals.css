@@ -178,10 +178,12 @@ textarea:focus-visible,
   .btn-primary:hover:not(:disabled) {
     background: var(--color-amber-400);
   }
+  /* Secondary: one quiet filled button, no outline (an outlined box reads as
+     a bordered container next to the borderless cards). */
   .btn-secondary {
     background: var(--color-zinc-800);
     color: var(--color-zinc-100);
-    border-color: var(--color-zinc-700);
+    border-color: transparent;
   }
   .btn-secondary:hover:not(:disabled) {
     background: var(--color-zinc-700);
@@ -710,6 +712,13 @@ textarea:focus-visible,
 
 /* Segmented controls and filter bars: the surface alone, no outline. */
 .segmented { border-color: transparent; }
+
+/* One recovery block (components/ui/Recovery.tsx): icon and title, then the
+   body and the buttons lined up with the title's text (1rem icon + 0.5rem
+   gap), never with the icon. Buttons in one row, primary first. */
+.recovery-body { padding-inline-start: 1.5rem; padding-top: 0.25rem; color: var(--color-zinc-300); }
+.recovery-body > * + * { margin-top: 0.25rem; }
+.recovery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-inline-start: 1.5rem; padding-top: 0.625rem; }
 
 /* Shared motion: links, icons, arcs, the phone sheet, the nav ------------------
  * Run page, office panel, Runs list, scan page and shell, with the existing
