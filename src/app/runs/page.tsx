@@ -14,6 +14,8 @@ import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { previewLabelValues } from '@/lib/runBuilder';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import type { Run, RunPreset, RunStatus, LabelFormat, LabelTemplate } from '@/lib/types';
+import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
+import { friendlyError, runStatusLabel } from '@/lib/userMessages';
 
 type ViewMode = 'list' | 'grid';
 type StatusFilter = 'all' | 'active' | RunStatus;
@@ -51,7 +53,23 @@ export default function RunsPage() {
   const [templateFilter, setTemplateFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
-  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? 'Deleted template';
+  const runsHydrated = useRunStore((state) => state.hydrated);
+  const runsLoading = useRunStore((state) => state.loading);
+  const runsError = useRunStore((state) => state.error);
+  const requestDeleteRun = async (run: Run) => {
+    const ok = await confirmDialog({ title: `Delete “${run.name}”?`, body: 'Its print history goes too. This can’t be undone.', confirmLabel: 'Delete run', danger: true });
+    if (!ok) return;
+    const refused = await deleteRun(run.id);
+    if (refused) void alertDialog('This run can’t be deleted', friendlyError(refused));
+    else toast('Run deleted');
+  };
+  const requestDeletePreset = async (preset: RunPreset) => {
+    const ok = await confirmDialog({ title: `Delete the preset “${preset.name}”?`, body: 'Runs you already made from it are not affected.', confirmLabel: 'Delete preset', danger: true });
+    if (!ok) return;
+    const refused = await deletePreset(preset.id);
+    if (refused) void alertDialog('This preset can’t be deleted', friendlyError(refused));
+  };
+  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? 'Deleted design';
   const formatName = (templateId: string) => {
     const t = templates.find((x) => x.id === templateId);
     if (!t) return '';
@@ -99,7 +117,7 @@ export default function RunsPage() {
   // Build unique template list for the filter dropdown.
   const templateOptions = useMemo(() => {
     const seen = new Set<string>();
-    const opts: Array<{ value: string; label: string }> = [{ value: 'all', label: 'All templates' }];
+    const opts: Array<{ value: string; label: string }> = [{ value: 'all', label: 'All designs' }];
     for (const r of runs) {
       if (seen.has(r.templateId)) continue;
       seen.add(r.templateId);
@@ -171,7 +189,7 @@ export default function RunsPage() {
                   format={f}
                   templateName={templateName(r.templateId)}
                   formatName={formatName(r.templateId)}
-                  onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id).then(refused => { if (refused) alert(refused); }); }}
+                  onDelete={() => void requestDeleteRun(r)}
                   onTogglePin={() => void togglePin(r.id)}
                 />
               );
@@ -194,7 +212,7 @@ export default function RunsPage() {
                 format={f}
                 templateName={templateName(r.templateId)}
                 formatName={formatName(r.templateId)}
-                onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id).then(refused => { if (refused) alert(refused); }); }}
+                onDelete={() => void requestDeleteRun(r)}
                 onTogglePin={() => void togglePin(r.id)}
               />
             );
@@ -212,28 +230,30 @@ export default function RunsPage() {
           <section className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Print cockpit</p>
-                <h1 className="mt-1 text-xl font-semibold text-zinc-100">Start, resume, or review label runs</h1>
+                <h1 className="text-xl font-semibold text-zinc-100">Print runs</h1>
+                <p className="mt-1 text-sm text-zinc-500">Start a new run, or pick up where you left off.</p>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[620px]">
                 <QuickAction
                   href="/runs/new"
                   icon={<Plus className="h-4 w-4" />}
                   label="New run"
-                  detail="Manual, paste, CSV, or Manifest"
+                  detail="Type, paste, spreadsheet or Manifest"
                   primary
                 />
                 <QuickAction
                   href="/runs/new?source=manifest"
                   icon={<Search className="h-4 w-4" />}
-                  label="Manifest run"
+                  label="From Manifest"
                   detail="Search packages first"
+                  secondary
                 />
                 <QuickAction
                   href="/runs/new?source=csv"
                   icon={<FileSpreadsheet className="h-4 w-4" />}
-                  label="CSV run"
-                  detail="Upload row data"
+                  label="From a spreadsheet"
+                  detail="Upload a CSV file"
+                  secondary
                 />
               </div>
             </div>
@@ -242,13 +262,13 @@ export default function RunsPage() {
           {/* Stats strip — one glance summary at the top. Hidden when empty.
               Stacks to single column on phone, then a 3-wide grid. */}
           {runs.length > 0 && (
-            <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <section className="hidden sm:grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
               <StatCard
                 icon={<Loader2 className="w-4 h-4" />}
-                label="Active"
+                label="Not finished"
                 value={String(stats.active)}
                 accent={stats.active > 0 ? 'amber' : 'zinc'}
-                hint={stats.active > 0 ? 'Runs in progress' : 'Nothing running'}
+                hint={stats.active > 0 ? 'Runs still to print' : 'Nothing waiting'}
               />
               <StatCard
                 icon={<CheckCircle2 className="w-4 h-4" />}
@@ -274,7 +294,8 @@ export default function RunsPage() {
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search runs by name, template, format…"
+                  aria-label="Search runs"
+                  placeholder="Search runs by name, design or label size…"
                   className="w-full bg-zinc-900/60 border border-zinc-800 rounded-lg text-xs text-zinc-100 pl-8 pr-3 py-2 focus:outline-none focus:border-amber-500/40"
                 />
               </div>
@@ -282,14 +303,10 @@ export default function RunsPage() {
                 <CustomSelect
                   value={statusFilter}
                   onChange={(v) => setStatusFilter(v as StatusFilter)}
+                  aria-label="Filter by status"
                   options={[
                     { value: 'all', label: 'All statuses' },
-                    { value: 'completed', label: 'Completed' },
-                    { value: 'printing', label: 'Printing' },
-                    { value: 'paused', label: 'Paused' },
-                    { value: 'queued', label: 'Queued' },
-                    { value: 'draft', label: 'Draft' },
-                    { value: 'cancelled', label: 'Cancelled' },
+                    ...(['completed', 'printing', 'paused', 'queued', 'draft', 'cancelled'] as RunStatus[]).map((status) => ({ value: status, label: runStatusLabel(status) })),
                   ]}
                 />
               </div>
@@ -297,19 +314,26 @@ export default function RunsPage() {
                 <CustomSelect
                   value={templateFilter}
                   onChange={setTemplateFilter}
+                  aria-label="Filter by design"
                   options={templateOptions}
                 />
               </div>
               <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
                 <button
+                  type="button"
                   onClick={() => setViewMode('list')}
+                  aria-pressed={viewMode === 'list'}
+                  aria-label="Show as a list"
                   title="List view"
                   className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-zinc-800 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                 >
                   <List className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => setViewMode('grid')}
+                  aria-pressed={viewMode === 'grid'}
+                  aria-label="Show as a grid"
                   title="Grid view"
                   className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-zinc-800 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                 >
@@ -319,8 +343,21 @@ export default function RunsPage() {
             </section>
           )}
 
-          {/* Empty state: only show when we have nothing at all. */}
-          {runs.length === 0 && (
+          {!runsHydrated && runs.length === 0 && (
+            <div role="status" aria-label="Loading runs" className="space-y-2">
+              {[0, 1, 2, 3].map((i) => <div key={i} className="h-20 rounded-xl border border-zinc-800/50 bg-zinc-900/40 animate-pulse" />)}
+              <span className="sr-only">Loading runs…</span>
+            </div>
+          )}
+          {runsHydrated && runsError && runs.length === 0 && (
+            <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/5 p-6 text-center space-y-3">
+              <h2 className="text-base font-semibold text-zinc-100">We couldn&apos;t load your runs</h2>
+              <p className="text-sm text-zinc-400">{friendlyError(runsError, 'Something went wrong.')}</p>
+              <button type="button" disabled={runsLoading} onClick={() => void useRunStore.getState().loadAll()} className="min-h-10 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black disabled:opacity-40">{runsLoading ? 'Trying again…' : 'Try again'}</button>
+            </div>
+          )}
+          {/* Empty state: only once loading has finished and there really are no runs. */}
+          {runsHydrated && !runsError && runs.length === 0 && (
             <RunsEmptyState
               hasFormats={formats.length > 0}
               hasTemplates={templates.length > 0}
@@ -347,13 +384,13 @@ export default function RunsPage() {
             <section>
               <div className="flex items-baseline gap-3 mb-3">
                 <h2 className="text-sm font-semibold text-zinc-200 flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" /> Active
+                  <Loader2 className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" /> Not finished
                 </h2>
                 <span className="text-xs text-zinc-500">
                   {filteredRuns.active.length}{filteredRuns.active.length !== active.length ? ` of ${active.length}` : ''}
                 </span>
               </div>
-              {renderRunCollection(filteredRuns.active, 'No active runs match your filters.')}
+              {renderRunCollection(filteredRuns.active, 'No unfinished runs match your filters.')}
             </section>
           )}
 
@@ -364,8 +401,8 @@ export default function RunsPage() {
           {presets.length > 0 && presets.length <= 6 && (
             <section>
               <div className="flex items-baseline justify-between mb-3">
-                <h2 className="text-sm font-semibold text-zinc-200">Saved Presets</h2>
-                <span className="text-xs text-zinc-500">Click to start a run</span>
+                <h2 className="text-sm font-semibold text-zinc-200">Saved presets</h2>
+                <span className="text-xs text-zinc-500">Tap one to start a run</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {presets.map((p) => (
@@ -374,9 +411,7 @@ export default function RunsPage() {
                     preset={p}
                     templateName={templateName(p.templateId)}
                     formatName={formatName(p.templateId)}
-                    onDelete={() => {
-                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id).then(refused => { if (refused) alert(refused); });
-                    }}
+                    onDelete={() => void requestDeletePreset(p)}
                   />
                 ))}
               </div>
@@ -385,8 +420,8 @@ export default function RunsPage() {
           {presets.length > 6 && (
             <section>
               <div className="flex items-baseline justify-between mb-3">
-                <h2 className="text-sm font-semibold text-zinc-200">Saved Presets</h2>
-                <span className="text-xs text-zinc-500">Reusable recipes</span>
+                <h2 className="text-sm font-semibold text-zinc-200">Saved presets</h2>
+                <span className="text-xs text-zinc-500">Tap one to start a run</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {presets.map((p) => (
@@ -395,9 +430,7 @@ export default function RunsPage() {
                     preset={p}
                     templateName={templateName(p.templateId)}
                     formatName={formatName(p.templateId)}
-                    onDelete={() => {
-                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id).then(refused => { if (refused) alert(refused); });
-                    }}
+                    onDelete={() => void requestDeletePreset(p)}
                   />
                 ))}
               </div>
@@ -408,7 +441,7 @@ export default function RunsPage() {
           {runs.length > 0 && (
             <section>
               <div className="flex items-baseline gap-3 mb-3">
-                <h2 className="text-sm font-semibold text-zinc-200">History</h2>
+                <h2 className="text-sm font-semibold text-zinc-200">Finished and cancelled</h2>
                 <span className="text-xs text-zinc-500">
                   {filteredRuns.history.length}{filteredRuns.history.length !== history.length ? ` of ${history.length}` : ''}
                 </span>
@@ -433,17 +466,20 @@ function QuickAction({
   label,
   detail,
   primary = false,
+  secondary = false,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
   detail: string;
   primary?: boolean;
+  /** Hidden on phones so the run list is visible without scrolling. */
+  secondary?: boolean;
 }) {
   return (
     <Link
       href={href}
-      className={`flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+      className={`${secondary ? 'hidden sm:flex' : 'flex'} min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
         primary
           ? 'border-amber-500/40 bg-amber-500 text-black hover:bg-amber-400'
           : 'border-zinc-800 bg-zinc-900/70 text-zinc-200 hover:border-amber-500/30 hover:bg-zinc-900'
@@ -605,9 +641,11 @@ function PresetChip({
         </div>
       </Link>
       <button
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
-        className="ml-1 opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition"
+        type="button"
+        onClick={onDelete}
+        className="ml-1 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 min-h-10 min-w-10 grid place-items-center rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
         title="Delete preset"
+        aria-label={`Delete preset ${preset.name}`}
       >
         <Trash2 className="w-3 h-3" />
       </button>
@@ -634,9 +672,11 @@ function PresetCard({
           <p className="text-xs text-zinc-500 mt-0.5 truncate">{templateName} {formatName && <span className="text-zinc-600">· {formatName}</span>}</p>
         </div>
         <button
+          type="button"
           onClick={onDelete}
-          className="p-1 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          className="min-h-9 min-w-9 grid place-items-center rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
           title="Delete preset"
+          aria-label={`Delete preset ${preset.name}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -685,13 +725,12 @@ function RunRow({
     return cols;
   }, [run.fieldMappings]);
 
+  const actionClass = 'flex min-h-11 items-center gap-1.5 rounded-md px-2.5 text-xs sm:min-h-8 sm:px-1.5 transition-colors';
   return (
-    <Link
-      href={`/runs/${run.id}`}
-      className="flex flex-col gap-3 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group sm:flex-row sm:items-center sm:gap-4"
-    >
+    <div className="flex flex-col gap-2 p-3 rounded-xl bg-zinc-900/40 border border-zinc-800/50 hover:border-amber-500/30 hover:bg-zinc-900/60 transition-all group sm:flex-row sm:items-center sm:gap-4">
+      <Link href={`/runs/${run.id}`} className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
       {/* Thumbnail — first label, lazy WASM render. */}
-      <div className="shrink-0 w-20 h-14 rounded-md bg-zinc-950 border border-zinc-800 overflow-hidden flex items-center justify-center">
+      <div className="hidden sm:flex shrink-0 w-20 h-14 rounded-md bg-zinc-950 border border-zinc-800 overflow-hidden items-center justify-center">
         {template && format ? (
           <RunThumbnail run={run} template={template} format={format} />
         ) : (
@@ -701,11 +740,11 @@ function RunRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <h3 className="text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors">{run.name}</h3>
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_STYLES[run.status] || STATUS_STYLES.draft}`}>
-            {run.status}
+          <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_STYLES[run.status] || STATUS_STYLES.draft}`}>
+            {runStatusLabel(run.status)}
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+        <div className="flex items-center gap-3 text-[11px] text-zinc-500 min-w-0">
           <span className="truncate">{templateName}</span>
           {formatName && <span className="text-zinc-600 truncate">{formatName}</span>}
           <span className="flex items-center gap-1 whitespace-nowrap">
@@ -720,65 +759,60 @@ function RunRow({
       </div>
       <div className="w-full flex-shrink-0 text-left sm:w-auto sm:text-right">
         <div className="text-sm font-semibold text-zinc-200 tabular-nums">
-          {run.printedCount} / {run.totalLabels}
+          <span className="text-xs font-normal text-zinc-500">Printed </span>{run.printedCount.toLocaleString()} of {run.totalLabels.toLocaleString()}
         </div>
-        <div className="h-1 w-full rounded-full bg-zinc-800 mt-1 overflow-hidden sm:w-24">
+        <div className="h-1 w-full rounded-full bg-zinc-800 mt-1 overflow-hidden sm:w-24" aria-hidden="true">
           <div
             className="h-full bg-gradient-to-r from-amber-500 to-amber-400"
             style={{ width: `${pct}%` }}
           />
         </div>
       </div>
+      {resumable && (
+        <span className="flex items-center justify-center gap-1 min-h-11 sm:min-h-0 px-2 py-1 rounded-md text-xs sm:text-[10px] font-semibold bg-amber-500/15 text-amber-400 group-hover:bg-amber-500/25 transition-colors">
+          <Play className="w-3 h-3" /> Continue
+        </span>
+      )}
+      </Link>
       <div className="flex w-full items-center justify-end gap-1 sm:w-auto">
-        {resumable && (
-          <span
-            className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-400 group-hover:bg-amber-500/25 transition-colors"
-            title="Continue this run"
-          >
-            <Play className="w-3 h-3" /> Continue
-          </span>
-        )}
         {onTogglePin && (
           <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onTogglePin();
-            }}
-            className={`p-1.5 rounded-md transition-colors ${
+            type="button"
+            onClick={onTogglePin}
+            className={`${actionClass} ${
               pinned
                 ? 'text-amber-400 hover:bg-amber-500/20'
-                : 'text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10'
+                : 'text-zinc-400 sm:text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10'
             }`}
             title={pinned ? 'Unpin run' : 'Pin run to top'}
+            aria-label={`${pinned ? 'Unpin' : 'Pin'} ${run.name}`}
           >
             {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+            <span className="sm:hidden" aria-hidden="true">{pinned ? 'Unpin' : 'Pin'}</span>
           </button>
         )}
         <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            router.push(`/runs/new?duplicateFrom=${run.id}`);
-          }}
-          className="p-1.5 rounded-md text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-          title="Duplicate run"
+          type="button"
+          onClick={() => router.push(`/runs/new?duplicateFrom=${run.id}`)}
+          className={`${actionClass} text-zinc-400 sm:text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10`}
+          title="Start a new run like this one"
+          aria-label={`Duplicate ${run.name}`}
         >
           <Copy className="w-3.5 h-3.5" />
+          <span className="sm:hidden" aria-hidden="true">Duplicate</span>
         </button>
         <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="p-1.5 rounded-md text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          type="button"
+          onClick={onDelete}
+          className={`${actionClass} text-zinc-400 sm:text-zinc-600 hover:text-red-400 hover:bg-red-500/10`}
           title="Delete run"
+          aria-label={`Delete ${run.name}`}
         >
           <Trash2 className="w-3.5 h-3.5" />
+          <span className="sm:hidden" aria-hidden="true">Delete</span>
         </button>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -809,10 +843,8 @@ function RunCard({
   const resumable = run.status === 'paused' || run.status === 'draft' || (run.status === 'error' as RunStatus);
   const pinned = !!run.pinnedAt;
   return (
-    <Link
-      href={`/runs/${run.id}`}
-      className="glass rounded-2xl p-4 border border-zinc-800 hover:border-amber-500/30 transition-all group relative flex flex-col"
-    >
+    <div className="glass rounded-2xl p-4 border border-zinc-800 hover:border-amber-500/30 transition-all group relative flex flex-col">
+      <Link href={`/runs/${run.id}`} className="flex flex-1 flex-col">
       {/* Thumbnail band */}
       <div className="w-full h-28 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center mb-3 p-2">
         {template && format ? (
@@ -821,26 +853,12 @@ function RunCard({
           <Printer className="w-5 h-5 text-zinc-700" />
         )}
       </div>
-      {/* Pin button floats top-right */}
-      {onTogglePin && (
-        <button
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePin(); }}
-          className={`absolute top-2 right-2 p-1.5 rounded-md transition-colors ${
-            pinned
-              ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
-              : 'text-zinc-600 hover:text-amber-400 hover:bg-amber-500/10 bg-zinc-950/40 backdrop-blur'
-          }`}
-          title={pinned ? 'Unpin run' : 'Pin run to top'}
-        >
-          {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-        </button>
-      )}
       <div className="flex items-center gap-2 mb-1">
         <h3 className="flex-1 min-w-0 text-sm font-semibold text-zinc-100 truncate group-hover:text-amber-400 transition-colors">
           {run.name}
         </h3>
         <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_STYLES[run.status] || STATUS_STYLES.draft}`}>
-          {run.status}
+          {runStatusLabel(run.status)}
         </span>
       </div>
       <div className="text-[11px] text-zinc-500 truncate mb-3">
@@ -852,10 +870,10 @@ function RunCard({
             <Clock className="w-3 h-3 inline mr-1" />{formatDate(run.createdAt)}
           </span>
           <span className="text-xs font-semibold text-zinc-200 tabular-nums">
-            {run.printedCount} / {run.totalLabels}
+            Printed {run.printedCount.toLocaleString()} of {run.totalLabels.toLocaleString()}
           </span>
         </div>
-        <div className="h-1 rounded-full bg-zinc-800 overflow-hidden">
+        <div className="h-1 rounded-full bg-zinc-800 overflow-hidden" aria-hidden="true">
           <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400" style={{ width: `${pct}%` }} />
         </div>
         {resumable && (
@@ -864,25 +882,41 @@ function RunCard({
           </div>
         )}
       </div>
-      <button
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          router.push(`/runs/new?duplicateFrom=${run.id}`);
-        }}
-        className="absolute bottom-2 right-10 p-1.5 rounded-md text-zinc-700 hover:text-amber-400 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition"
-        title="Duplicate run"
-      >
-        <Copy className="w-3.5 h-3.5" />
-      </button>
-      <button
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
-        className="absolute bottom-2 right-2 p-1.5 rounded-md text-zinc-700 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition"
-        title="Delete run"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
-    </Link>
+      </Link>
+      <div className="mt-2 flex items-center justify-end gap-1">
+        {onTogglePin && (
+          <button
+            type="button"
+            onClick={onTogglePin}
+            className={`min-h-9 min-w-9 grid place-items-center rounded-md transition-colors ${
+              pinned ? 'text-amber-400 hover:bg-amber-500/20' : 'text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10'
+            }`}
+            title={pinned ? 'Unpin run' : 'Pin run to top'}
+            aria-label={`${pinned ? 'Unpin' : 'Pin'} ${run.name}`}
+          >
+            {pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => router.push(`/runs/new?duplicateFrom=${run.id}`)}
+          className="min-h-9 min-w-9 grid place-items-center rounded-md text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition"
+          title="Start a new run like this one"
+          aria-label={`Duplicate ${run.name}`}
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="min-h-9 min-w-9 grid place-items-center rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
+          title="Delete run"
+          aria-label={`Delete ${run.name}`}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
   );
 }
 
