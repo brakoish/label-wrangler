@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { LabelGlyph } from '@/components/LabelGlyph';
 import { LabelFormat, formatDimensions, COMMON_DPI_VALUES } from '@/lib/types';
 import { TrashIcon, EditIcon } from '@/app/icons';
+import { Menu } from '@/components/ui/Menu';
 import { Check, X } from 'lucide-react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { SizeInput } from '@/components/SizeInput';
@@ -109,13 +110,13 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <EditIcon className="w-4 h-4" />
                     Edit
                   </button>
-                  <button
-                    onClick={onDelete}
-                    className="btn btn-danger-ghost"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                    Delete
-                  </button>
+                  {/* Delete sits behind More, away from Edit; it still asks first. */}
+                  {onDelete && <Menu
+                    label="More"
+                    showLabel={false}
+                    className="size-control"
+                    items={[{ label: 'Delete label size…', icon: <TrashIcon className="w-4 h-4" />, danger: true, onSelect: onDelete }]}
+                  />}
                 </>
               )}
             </div>
