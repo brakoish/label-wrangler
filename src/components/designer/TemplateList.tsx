@@ -18,7 +18,7 @@ import { CountLabel, PageHeader, SearchField } from '@/components/ui/PageHeader'
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
 import { Menu } from '@/components/ui/Menu';
-import { EmptyState } from '@/components/EmptyState';
+import { EmptyState, ErrorState, StateActions } from '@/components/EmptyState';
 import { FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
 import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
 
@@ -77,16 +77,22 @@ export function TemplateList({
     }
   };
 
+  const newButton = (
+    <button type="button" onClick={onNewTemplate} className="btn btn-primary">
+      <Plus className="size-4" aria-hidden="true" /> New design
+    </button>
+  );
+
   return (
     <div className="page-container">
       {!(listError && templates.length === 0) && notice}
       <PageHeader
         className="mb-6"
         title="Designs"
-        subtitle={templates.length > 0 ? 'Open a design to change it, or make a new one.' : 'A design is the layout of one label: its text, barcodes and pictures.'}
-        action={<button type="button" onClick={onNewTemplate} className="btn btn-primary">
-          <Plus className="size-4" aria-hidden="true" /> New design
-        </button>}
+        subtitle="The layout of each label you print."
+        // With none yet, the one "New design" button is the empty state's;
+        // while the list failed to load, there is only Try again.
+        action={(listHydrated || listError) && templates.length === 0 ? undefined : newButton}
       />
       {templates.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2">
       <div className="segmented w-full sm:w-auto" role="group" aria-label="Show">
@@ -112,17 +118,16 @@ export function TemplateList({
           <span className="sr-only">Loading designs…</span>
         </div>
       ) : listError && templates.length === 0 ? (
-        <EmptyState
-          tone="error"
+        <ErrorState
           title={openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}
           body={friendlyError(listError, 'Something went wrong.')}
-          actions={<button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-secondary">{listLoading ? 'Trying again…' : 'Try again'}</button>}
+          actions={<StateActions retrying={listLoading} onRetry={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} />}
         />
       ) : visibleTemplates.length === 0 ? (
         <EmptyState
           title={isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}
           body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design, or start from the sample.'}
-          actions={templates.length === 0 ? extra : undefined}
+          actions={templates.length === 0 ? <>{newButton}{extra}</> : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
