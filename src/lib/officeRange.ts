@@ -400,3 +400,33 @@ export function partsAfterPrinted(parts: ReadonlyArray<OfficeSpan>, printedCount
   }
   return { parts: kept, trimmed: hi ? { from: lo, to: hi } : null };
 }
+
+/**
+ * Labels a "Print in order" fix cancelled for now, saved on this device so
+ * the panel can offer "Send labels 76–150 now" once the reprint is done.
+ * Bad or empty data reads as nothing held.
+ */
+export function readHeldSpans(raw: string | null, total = Infinity): OfficeSpan[] {
+  if (!raw) return [];
+  try {
+    const data = JSON.parse(raw) as unknown;
+    if (!Array.isArray(data)) return [];
+    const spans: OfficeSpan[] = [];
+    for (const item of data) {
+      const span = item as Partial<OfficeSpan>;
+      if (!span || !Number.isInteger(span.from) || !Number.isInteger(span.to)) return [];
+      if (span.from! < 1 || span.to! < span.from! || span.to! > total) return [];
+      spans.push({ from: span.from!, to: span.to! });
+    }
+    return spans.sort((a, b) => a.from - b.from);
+  } catch { return []; }
+}
+
+/** Held labels that still need sending: not printed yet and not already on their way again. */
+export function heldStillUnsent(held: ReadonlyArray<OfficeSpan>, jobs: ReadonlyArray<OfficeJobLike>, printedCount: number, total: number): OfficeSpan[] {
+  if (!held.length) return [];
+  const printed = Math.max(0, Math.floor(printedCount) || 0);
+  const covered = union(jobs.filter(jobCoversLabels), total);
+  const want = held.map(s => [Math.max(s.from, printed + 1), Math.min(s.to, total)] as [number, number]).filter(([a, b]) => a <= b);
+  return want.flatMap(span => minus([span], covered)).map(([from, to]) => ({ from, to }));
+}
