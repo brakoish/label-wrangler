@@ -170,3 +170,15 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.doesNotMatch(pageNow, /!isSheetFormat && transport !== 'office' && status !== 'completed'/, 'office and sheet runs can be cancelled');
   console.log('PASS run r6: shared problem words, refusal next step, paused in words, waiting on another run, fix asks what came out, progress counts every printed label, office runs cancel');
 }
+{
+  const { groupPrintHistory } = require('../../src/lib/printHistoryGroups.ts');
+  const at = (m) => new Date(Date.UTC(2026, 0, 1, 10, m)).toISOString();
+  const parts = Array.from({ length: 80 }, (_, i) => ({ id: `e${i}`, eventType: 'sent', output: 'office-pi', rangeFrom: i * 25 + 1, rangeTo: i * 25 + 25, message: null, createdAt: at(Math.floor(i / 10)) }));
+  const grouped = groupPrintHistory([...parts, { id: 'c', eventType: 'confirmed', output: 'office-pi', rangeFrom: 1, rangeTo: 50, message: null, createdAt: at(30) }]);
+  assert.equal(grouped.length, 2, 'one line for 80 parts, one for the confirmation');
+  assert.equal(grouped[1].parts, 80);
+  assert.equal(grouped[1].event.rangeFrom, 1);
+  assert.equal(grouped[1].event.rangeTo, 2000);
+  assert.equal(grouped[0].event.eventType, 'confirmed', 'newest first');
+  console.log('PASS run r6: print history groups the parts of one big office send');
+}

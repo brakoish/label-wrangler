@@ -12,6 +12,7 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, rewindEvent, REWIND_EVENT } from '@/lib/runRewind';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeWaitingSpans, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { RunProgress } from './RunProgress';
+import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
@@ -1795,7 +1796,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <LocalZplPreview zpl={previewZpl} format={format} showOutlines={showOutlines} />
               )}
             </div>
-            <p className="text-xs text-zinc-400">This run keeps the design it started with.{run.designSnapshot?.legacy ? ' (Older run: the design was saved during an update, not when the run was made.)' : ''}</p>
+            {/* Said once: the barcode check above says it when it shows. */}
+            {(calm || printCheck.blocking.length === 0 || !!run.designSnapshot?.legacy) && <p className="text-xs text-zinc-400">This run keeps the design it started with.{run.designSnapshot?.legacy ? ' (Older run: the design was saved during an update, not when the run was made.)' : ''}</p>}
           </div>
         </section>
 
@@ -1803,7 +1805,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <section className="px-1 space-y-2">
             <h2 className="section-title">Print history</h2>
             <ul className="space-y-1.5">
-              {eventsForRun.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5).map((event) => (
+              {groupPrintHistory(eventsForRun).slice(0, 5).map(({ event, parts }) => (
                 <li key={event.id} className="flex items-baseline justify-between gap-3 text-sm">
                   <span className="flex min-w-0 items-baseline gap-2 text-zinc-300">
                     <span aria-hidden="true" className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${
@@ -1812,7 +1814,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       event.eventType === 'cancelled' ? 'bg-amber-300' :
                       'bg-zinc-500'
                     }`} />
-                    {event.eventType === REWIND_EVENT ? `Went back to label ${event.rangeFrom.toLocaleString()}` : printEventLabel(event)}
+                    {event.eventType === REWIND_EVENT ? `Went back to label ${event.rangeFrom.toLocaleString()}` : printEventLabel(event)}{parts > 1 ? ` (${parts.toLocaleString()} parts)` : ''}
                   </span>
                   <span className="shrink-0 text-zinc-400 tabular-nums">{formatEventTime(event.createdAt)}</span>
                 </li>
