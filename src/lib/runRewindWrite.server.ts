@@ -8,6 +8,18 @@ import type { rewindEvent } from './runRewind';
  * the print-events route). Answers `updated` (0 or 1) and `written_at`: the
  * entry's time if it exists now (written here, or already under this key), or null.
  */
+/**
+ * Part of a keyed go-back's WHERE: true only while no history entry exists
+ * under its key. A go-back whose answer was lost can be sent again with the
+ * same key after another device printed back up to the count it saw; without
+ * this the guard (printed_count = expected) would match again and progress
+ * would drop a second time, with no new entry. With it the retry changes
+ * nothing and is answered as already applied.
+ */
+export function notAppliedYet(eventId: string) {
+  return sql`NOT EXISTS (SELECT 1 FROM run_print_events WHERE id = ${eventId})`;
+}
+
 export function goBackWithEntry(goBack: SQLWrapper, eventId: string, runId: string, entry: ReturnType<typeof rewindEvent>) {
   // getSQL(): embedded as is (a query builder would be wrapped in parentheses,
   // which isn't valid inside WITH ... AS (...)).

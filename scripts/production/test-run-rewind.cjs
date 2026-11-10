@@ -88,6 +88,26 @@ const R=require('../../src/lib/officeRange.ts');
   res=await put(goBack,{'x-lw-rewind-key':key});
   assert.equal(res.status,409);assert.equal((await res.json()).code,'progress_changed');
   assert.equal(res.headers.get('x-lw-rewind-event'),'none','nothing written, and the page shouldn’t send it either');
+  // A retry of a go-back that was already applied (its answer was lost), after
+  // another device printed back up to the count it saw: the update refuses a
+  // key that already has its entry, so progress never drops a second time.
+  {
+   const where=h.log.find((calls)=>calls[0][0]==='update')?.find((c)=>c[0]==='where')?.[1]?.[0];
+   const seen=new Set();const parts=[];
+   const walk=(node)=>{if(!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(Array.isArray(node.value)&&node.value.every((v)=>typeof v==='string'))parts.push(node.value.join(''));if(Array.isArray(node.queryChunks))node.queryChunks.forEach(walk);if(Array.isArray(node))node.forEach(walk);};
+   walk(where);const chunks=parts.join('?');
+   assert.match(chunks,/NOT EXISTS \(SELECT 1 FROM run_print_events WHERE id = /,'the go-back applies only while no entry exists under its key');
+  }
+  h.reset();
+  h.results.push([{totalLabels:200,printedCount:120}],{rows:[{updated:0,written_at:'2026-11-10T12:34:56.789Z'}]},[{printedCount:120}]);
+  res=await put(goBack,{'x-lw-rewind-key':key});
+  assert.equal(res.status,409,'answered like a moved run, which older pages of this build already settle on');
+  {
+   const body=await res.json();
+   assert.equal(body.code,'progress_changed');assert.equal(body.alreadyApplied,true,'and says it was already applied');
+   assert.equal(body.printedCount,120);
+  }
+  assert.equal(res.headers.get('x-lw-rewind-event'),'written','its entry exists, so the page settles and never sends it');
   // Without the header (an older page of this build): as before, no entry written here.
   h.reset();
   h.results.push([{totalLabels:200,printedCount:120}],[{id:'r',printedCount:39}]);

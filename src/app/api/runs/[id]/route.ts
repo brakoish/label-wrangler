@@ -8,7 +8,7 @@ import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
 import { and, eq, sql, getTableColumns } from "drizzle-orm";
 import { followsCurrentRules, keepsHighWater, REWIND_KEY_HEADER, REWIND_EVENT_HEADER, REWIND_AT_HEADER } from "@/lib/runClientVersion";
 import { rewindEvent } from "@/lib/runRewind";
-import { goBackWithEntry } from "@/lib/runRewindWrite.server";
+import { goBackWithEntry, notAppliedYet } from "@/lib/runRewindWrite.server";
 import { uuid } from "@/lib/office/http";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -85,7 +85,9 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     if (rewindKey && uuid(rewindKey)) {
       const eventId = `print-event-${rewindKey}`;
       const entry = rewindEvent(Number(body.printedCount) + 1, guarded ? Number(body.expectedPrintedCount) : Number(body.printedCount));
-      const goBack = db.update(runs).set(updates).where(where).returning({ id: runs.id });
+      // A key is applied at most once: a retry of a go-back that already
+      // happened never moves progress again (see notAppliedYet).
+      const goBack = db.update(runs).set(updates).where(and(where, notAppliedYet(eventId))).returning({ id: runs.id });
       const result = await db.execute(goBackWithEntry(goBack, eventId, id, entry));
       type Outcome = { updated: number; written_at: string | null };
       const outcome = (Array.isArray(result) ? result as Outcome[] : (result as unknown as { rows?: Outcome[] }).rows)?.[0];
@@ -93,6 +95,9 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
       const written: Record<string, string> = writtenAt ? { [REWIND_EVENT_HEADER]: 'written', [REWIND_AT_HEADER]: writtenAt } : { [REWIND_EVENT_HEADER]: 'none' };
       if (!Number(outcome?.updated)) {
         const [now] = await db.select({ printedCount: runs.printedCount }).from(runs).where(eq(runs.id, id));
+        // Same answer shape as a moved run (older tabs of this build settle on
+        // 409 progress_changed + written), plus alreadyApplied for clarity.
+        if (now && writtenAt) return NextResponse.json({ error: `Going back was already applied (now ${Number(now.printedCount).toLocaleString('en-US')} printed).`, code: 'progress_changed', alreadyApplied: true, printedCount: Number(now.printedCount) }, { status: 409, headers: written });
         if (now && guarded) return NextResponse.json({ error: `This run’s progress changed on another device (now ${Number(now.printedCount).toLocaleString('en-US')} printed), so going back wasn’t applied.`, code: 'progress_changed', printedCount: Number(now.printedCount) }, { status: 409, headers: written });
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
       }
