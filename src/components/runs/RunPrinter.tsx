@@ -17,6 +17,7 @@ import { useRunStore } from '@/lib/runStore';
 import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange, planRunStart } from '@/lib/runRanges';
+import { openInNewTab } from '@/lib/openTab';
 import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
@@ -671,8 +672,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const range = { from: reprintFrom, to: reprintTo };
     setErrorMsg(null);
     if (isSheetFormat) {
-      const opened = window.open(sheetPrintHref(range), '_blank', 'noopener,noreferrer');
-      if (!opened) { setErrorMsg('Popup blocked. Allow popups, then try again.'); return; }
+      if (!openInNewTab(sheetPrintHref(range))) { setErrorMsg('Popup blocked. Allow popups, then try again.'); return; }
       setShowReprint(false);
       void createPrintEvent(run.id, { eventType: 'opened', output: 'sheet-pdf', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName: null, message: 'Reprint (run progress unchanged)' });
       return;
@@ -750,8 +750,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const openSheetPrintRange = (range?: { from?: number; to?: number }) => {
     if (!range && !rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     const resolved = normalizeSheetRange(range);
-    const opened = window.open(sheetPrintHref(resolved), '_blank', 'noopener,noreferrer');
-    if (!opened) {
+    if (!openInNewTab(sheetPrintHref(resolved))) {
       setErrorMsg('Popup blocked. Allow popups, then try again.');
       return;
     }

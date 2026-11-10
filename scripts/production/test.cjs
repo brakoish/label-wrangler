@@ -11,6 +11,7 @@ for(const file of [
  'scripts/production/test-image-upload.cjs',
  'scripts/production/test-office-status.cjs',
  'scripts/production/test-sheet-svg.cjs',
+ 'scripts/production/test-open-tab.cjs',
  'scripts/production/test-run-images.cjs',
  'scripts/production/test-run-preview.cjs',
  'scripts/production/test-run-data-check.cjs',
