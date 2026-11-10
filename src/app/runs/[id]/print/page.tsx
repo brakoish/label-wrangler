@@ -5,7 +5,8 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRunStore } from '@/lib/runStore';
 import { buildSheetPrintHtml } from '@/lib/sheetPrint';
-import { checkRunData, describeBlankSummary, hasBlankChoice } from '@/lib/runDataCheck';
+import { blankCheckAllowsPrinting, checkRunData, describeBlankSummary, hasBlankChoice, rememberBlankChoice, type RunDataCheck } from '@/lib/runDataCheck';
+import { BlankValueCheck } from '@/components/runs/BlankValueCheck';
 import { friendlyError } from '@/lib/userMessages';
 
 export default function SheetRunPrintPage({
@@ -19,6 +20,11 @@ export default function SheetRunPrintPage({
   const query = use(searchParams);
   const wroteDocument = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  // Blank values this device hasn't confirmed yet. The choice is stored per
+  // device, so this page offers the same "leave blank" confirm as the run page.
+  const [blankCheck, setBlankCheck] = useState<RunDataCheck | null>(null);
+  const [leaveBlank, setLeaveBlank] = useState(false);
+  const [confirmedSignature, setConfirmedSignature] = useState<string | null>(null);
 
   const { runs, fetchRun } = useRunStore();
   const loadError = useRunStore((s) => s.runLoadErrors[id]);
@@ -58,10 +64,12 @@ export default function SheetRunPrintPage({
     const check = checkRunData(template, run);
     let remembered = false;
     try { remembered = hasBlankChoice(window.localStorage, run.id, check); } catch { remembered = false; }
-    if (check.issues.length && !remembered) {
+    if (check.issues.length && !remembered && confirmedSignature !== check.signature) {
+      if (check.canLeaveBlank) { setBlankCheck(check); return; }
       setError(`${describeBlankSummary(check)}. Go back to the run to fix them before printing.`);
       return;
     }
+    setBlankCheck(null);
 
     wroteDocument.current = true;
     void buildSheetPrintHtml(run, template, format, range)
@@ -74,7 +82,13 @@ export default function SheetRunPrintPage({
         wroteDocument.current = false;
         setError(friendlyError(err, 'The print page could not be prepared.'));
       });
-  }, [format, hydrated, range, run, template]);
+  }, [confirmedSignature, format, hydrated, range, run, template]);
+
+  const confirmBlanks = () => {
+    if (!blankCheck || !blankCheckAllowsPrinting(blankCheck, leaveBlank)) return;
+    try { rememberBlankChoice(window.localStorage, id, blankCheck.signature); } catch { /* the choice still applies to this page */ }
+    setConfirmedSignature(blankCheck.signature);
+  };
 
   if (!run && loadError) {
     return (
@@ -98,6 +112,21 @@ export default function SheetRunPrintPage({
           </div>
           <p className="mt-2 text-sm text-zinc-300">{error}</p>
           <a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-secondary mt-3">Back to the run</a>
+        </div>
+      </main>
+    );
+  }
+
+  if (blankCheck) {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
+        <div className="w-full max-w-md space-y-3">
+          <h1 className="text-lg font-semibold">Check blank values before printing</h1>
+          <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={confirmBlanks} disabled={!blankCheckAllowsPrinting(blankCheck, leaveBlank)} className="btn btn-primary">Continue to print</button>
+            <a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-secondary">Back to the run</a>
+          </div>
         </div>
       </main>
     );
