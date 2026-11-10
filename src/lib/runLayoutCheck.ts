@@ -101,8 +101,10 @@ export interface BarcodeVerdict {
   /** One plain line for why printing waits, next to the disabled button. */
   waitReason: string;
   /**
-   * False when a go-ahead given in the new-run wizard must not carry over to
-   * the run page: the run page asks again ('neither-scans').
+   * Whether a go-ahead given in the new-run wizard is kept for the run page.
+   * True unless nothing can print; the run page still asks again, item by
+   * item, for a barcode that prints over the next label's ("neither label
+   * will scan", see runBarcodeTicks.barcodeProblemSevere).
    */
   carriesOver: boolean;
   /** What to change: the spreadsheet rows, the design, or both. */
@@ -174,8 +176,8 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
     : fixIn === 'both' ? 'Fix the items listed above.' : 'Fix the design (see the list above).';
   const waitReason = stops
     ? `${heading}, so nothing can print. ${fixWords}`
-    : `${heading}. Fix it, or tick “Print anyway” for each problem.`;
-  return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: severity !== 'neither-scans', fixIn };
+    : `${heading}. Fix it, or tick each “Print … anyway”.`;
+  return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: !stops, fixIn };
 }
 
 /** The line under a stop: what has to change before anything prints. */

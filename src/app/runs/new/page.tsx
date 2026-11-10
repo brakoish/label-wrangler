@@ -22,7 +22,7 @@ import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
 import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
-import { barcodeWaitWords } from '@/lib/runBarcodeTicks';
+import { barcodeTickLabel, barcodeWaitWords } from '@/lib/runBarcodeTicks';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
 import { stopFixWords, LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
@@ -30,11 +30,13 @@ import { friendlyError, friendlyRenderError, isNetworkError, SEARCH_DETAILS_INCO
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
-import type { FieldMapping, RunDataSource } from '@/lib/types';
+import type { FieldMapping, RunDataSource, TemplateElement } from '@/lib/types';
 import { contentModeUpdates } from '@/lib/elementBinding';
 import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow, setSpreadsheetRowMap } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
+import { runBarcodeFixes } from '@/lib/runBarcodeFix';
+import type { BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
@@ -253,7 +255,7 @@ function NewRunContent() {
   // preserved too so same-batch re-prints are one click.
   const duplicateFrom = searchParams.get('duplicateFrom');
 
-  const { templates, addTemplate, updateElementLocal, saveTemplate } = useTemplateStore();
+  const { templates, addTemplate, updateElementLocal, saveTemplate, updateTemplate } = useTemplateStore();
   const templatesLoadError = useTemplateStore((state) => state.error);
   const templatesHydrated = useTemplateStore((state) => state.hydrated);
   const { formats, getFormatById } = useFormatStore();
@@ -919,6 +921,44 @@ function NewRunContent() {
   const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
   const barcodesClear = barcodeCheck.issues.length === 0;
   const barcodesOk = barcodesClear || barcodeGoAhead;
+  // "Fix it for me" / "Use a QR code instead" right here, offered only when
+  // the changed design prints that barcode whole on every label and lands on
+  // nothing. It changes the design's barcode only, is saved, and has Undo.
+  const barcodeFixes = useMemo(
+    () => (barcodeCheck.issues.some((issue) => issue.kind === 'too-long') && template && !template.summaryOnly
+      ? runBarcodeFixes(checkTemplate, runDataForCheck, format, barcodeCheck.issues, Math.min(labelCount || 1, 2000))
+      : null),
+    [barcodeCheck.issues, template, checkTemplate, runDataForCheck, format, labelCount],
+  );
+  const [runFixNote, setRunFixNote] = useState<{ templateId: string; text: string; before: TemplateElement[]; tone: 'ok' | 'error' } | null>(null);
+  const [runFixBusy, setRunFixBusy] = useState(false);
+  const applyRunFix = async (fix: BarcodeAutoFix, elementId: string) => {
+    if (!template || runFixBusy) return;
+    const changed = fix.elements.find((el) => el.id === elementId);
+    if (!changed) return;
+    const before = template.elements;
+    setRunFixBusy(true);
+    try {
+      await updateTemplate(template.id, { elements: before.map((el) => (el.id === elementId ? changed : el)) });
+      setRunFixNote({ templateId: template.id, text: `${fix.done} Saved to the design.`, before, tone: 'ok' });
+    } catch {
+      setRunFixNote({ templateId: template.id, text: 'The design couldn’t be saved, so nothing changed. Check your connection and try again.', before, tone: 'error' });
+    } finally {
+      setRunFixBusy(false);
+    }
+  };
+  const undoRunFix = async () => {
+    if (!runFixNote || runFixBusy) return;
+    setRunFixBusy(true);
+    try {
+      await updateTemplate(runFixNote.templateId, { elements: runFixNote.before });
+      setRunFixNote(null);
+    } catch {
+      setRunFixNote({ ...runFixNote, text: 'Undo couldn’t be saved. Check your connection and try again.', tone: 'error' });
+    } finally {
+      setRunFixBusy(false);
+    }
+  };
 
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
@@ -973,7 +1013,7 @@ function NewRunContent() {
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then choose the file again.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length)),
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then choose the file again.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
   ].filter((reason): reason is string => !!reason);
@@ -1886,6 +1926,12 @@ function NewRunContent() {
                       isTicked={barcodeItemTicked}
                       onTick={tickBarcodeItem}
                       fix={<>
+                        {barcodeFixes?.fix && (
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
+                        )}
+                        {!barcodeFixes?.fix && barcodeFixes?.qr && (
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>
+                        )}
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
@@ -1896,6 +1942,12 @@ function NewRunContent() {
                         )}
                       </>}
                     />
+                    {runFixNote && template && runFixNote.templateId === template.id && (
+                      <p role="status" className={`fold-reveal flex flex-wrap items-center gap-x-3 text-sm ${runFixNote.tone === 'ok' ? 'text-emerald-400' : 'text-red-300'}`}>
+                        <span>{runFixNote.text}</span>
+                        {runFixNote.tone === 'ok' && <button type="button" className="link inline-flex min-h-11 items-center" disabled={runFixBusy} onClick={() => void undoRunFix()}>Undo</button>}
+                      </p>
+                    )}
                     <ProblemList
                       heading="Barcodes close to the edge"
                       items={tightGroups.items}

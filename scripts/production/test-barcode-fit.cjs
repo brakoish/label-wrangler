@@ -166,7 +166,8 @@ async function renderNative(template, format, values) {
     const pairs = runPrintCheck({ ...run([TAGS[2], TAGS[2]]), totalLabels: 2, dataSource: 'csv' }, t, F.preroll);
     assert.equal(pairs.verdict.severity, 'neither-scans');
     assert.equal(pairs.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode prints over the next label’s, so neither label will scan');
-    assert.equal(pairs.verdict.carriesOver, false, 'a wizard tick for "neither label will scan" never carries over to the run page');
+    assert.equal(pairs.verdict.carriesOver, true, 'the wizard go-ahead is kept for the milder problems');
+    assert.equal(barcodeTicksAllow(pairs.blocking, [], true), false, 'a wizard tick for "neither label will scan" never covers it on the run page');
     assert.equal(pairs.blocking.length, 1);
     assert.equal(pairs.layout.length, 0, 'one problem, one tick: the overlap is not asked about again');
     const g = thermalRenderGeometry(F.preroll);
@@ -315,8 +316,8 @@ async function renderNative(template, format, values) {
       assert.equal(page.verdict.fixIn, 'data');
       assert.equal(page.verdict.goAheadLabel, c.go, `${c.name}: the wizard's tick says what will scan`);
       assert.match(page.verdict.heading, /won’t scan exactly as written/);
-      assert.match(page.verdict.waitReason, /tick “Print anyway”/);
-      // One tick wording everywhere; the plain sentence above it says what will scan.
+      assert.match(page.verdict.waitReason, /tick each “Print … anyway”/);
+      // One label: plain "Print anyway"; the plain sentence above it says what will scan.
       assert.equal(barcodeTickLabel(page.blocking[0]), 'Print anyway', `${c.name}: the run page's tick`);
       assert.match(barcodePlainSentence(page.blocking[0]) + ' ' + page.blocking[0], c.note, `${c.name}: the shown words say what will scan`);
       assert.match(barcodeDamage(page.blocking[0]), c.damage);

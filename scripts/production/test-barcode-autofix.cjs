@@ -112,6 +112,11 @@ assert.equal(barcodePlainSentence(full), 'The Package tag barcode is too wide fo
 assert.ok(!/\d"/.test(barcodePlainSentence(full)), 'no measurements in the sentence');
 assert.equal(PRINT_ANYWAY, 'Print anyway');
 assert.equal(barcodeTickLabel('anything'), PRINT_ANYWAY);
+// A tick that covers more than one label says how many.
+assert.equal(barcodeTickLabel('The Metrc barcode on all 20 labels prints 2.1″ wide.'), 'Print all 20 anyway');
+assert.equal(barcodeTickLabel('The Metrc barcode on both labels prints 2.1″ wide.'), 'Print both anyway');
+assert.equal(barcodeTickLabel('The Metrc barcode on labels 1, 3, 5 and 17 more (rows 2, 4, 6…) prints 2.1″ wide.'), 'Print these 20 anyway');
+assert.equal(barcodeTickLabel('The Metrc barcode on label 7 (row 8) prints 2.1″ wide.'), 'Print anyway');
 assert.equal(FIX_IN_DESIGNER, 'Fix in the designer');
 assert.match(barcodeWaitWords(false, 1), /tick “Print anyway”/);
 assert.match(barcodeWaitWords(true, 1), /can’t print/);
@@ -122,5 +127,32 @@ assert.match(read('src/app/runs/new/page.tsx'), /<BarcodeWarning/);
 assert.match(read('src/components/runs/RunBarcodeCheck.tsx'), /<BarcodeWarning/);
 assert.match(read('src/components/designer/DesignNotice.tsx'), /barcodePlainSentence/);
 assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
+
+// The new-run page offers the same fixes, checked on every label of the run:
+// a 24-character tag across 2" gets a QR code sized for the longest value.
+{
+  const { runBarcodeFixes } = require('../../src/lib/runBarcodeFix.ts');
+  const { checkRunBarcodes } = require('../../src/lib/barcodeCheck.ts');
+  const t = { elements: flower, thermalRenderMode: 'native-v1' };
+  const long = 'https://example.com/coa/1234567890abcdefghij';
+  const run = { sourceData: [{ Tag: tag, COA: 'https://example.com/coa/1' }, { Tag: tag + 'X', COA: long }], fieldMappings: { package_tag: { mode: 'column', csvColumn: 'Tag' }, coa_url: { mode: 'column', csvColumn: 'COA' } }, staticValues: {} };
+  const check = checkRunBarcodes(t, run, fmt);
+  assert.ok(check.issues.length > 0);
+  const fixes = runBarcodeFixes(t, run, fmt, check.issues);
+  assert.ok(fixes && !fixes.fix && fixes.qr, 'the QR swap is offered');
+  const after = { ...t, elements: fixes.qr.elements };
+  assert.equal(checkRunBarcodes(after, run, fmt).issues.length, 0, 'nothing left on any label');
+  assert.deepEqual(fixes.qr.elements.filter((e) => e.id !== 'bc'), flower.filter((e) => e.id !== 'bc'), 'only that barcode changes');
+  // A short code hanging off the edge on one row is moved, and checked on all.
+  const short = { elements: [{ ...flower[2], id: 'b3', x: 250, width: 150 }], thermalRenderMode: 'native-v1' };
+  const shortRun = { sourceData: [{ Tag: 'LCG1' }, { Tag: 'LCG1102' }], fieldMappings: { package_tag: { mode: 'column', csvColumn: 'Tag' } }, staticValues: {} };
+  const shortCheck = checkRunBarcodes(short, shortRun, fmt);
+  assert.ok(shortCheck.issues.length > 0);
+  const moveFix = runBarcodeFixes(short, shortRun, fmt, shortCheck.issues);
+  assert.equal(moveFix && moveFix.fix && moveFix.fix.kind, 'move');
+  assert.equal(checkRunBarcodes({ ...short, elements: moveFix.fix.elements }, shortRun, fmt).issues.length, 0);
+  // Nothing offered for a value problem.
+  assert.equal(runBarcodeFixes(short, shortRun, fmt, [{ field: 'package_tag', label: 1, value: 'é', problem: 'x', kind: 'characters', elementId: 'b3' }]), null);
+}
 
 console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Fix in the designer');

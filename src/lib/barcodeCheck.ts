@@ -76,7 +76,7 @@ interface RunData {
   mappedField?: string | null;
 }
 
-function valuesFor(run: RunData, index: number): Record<string, string> {
+export function valuesFor(run: RunData, index: number): Record<string, string> {
   const values: Record<string, string> = { ...(run.staticValues || {}) };
   const row = run.sourceData[index];
   const mappings = run.fieldMappings || {};

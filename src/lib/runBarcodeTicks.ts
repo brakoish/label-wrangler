@@ -9,7 +9,7 @@ const PREFIX = 'lw:run-barcode-ok:';
 
 /** True for a problem that spoils the next label too. */
 export function barcodeProblemSevere(item: string): boolean {
-  return /neither label would scan/i.test(item);
+  return /neither label (?:would|will) scan/i.test(item);
 }
 
 /** An exact design's value that prints, but scans differently (the words barcodeValue's drawnValueNote writes). */
@@ -40,9 +40,22 @@ export function runPageProblemText(item: string): string {
  */
 export const PRINT_ANYWAY = 'Print anyway';
 
-/** The tick's words for one problem (one wording everywhere). */
+/**
+ * The tick's words for one problem: plain "Print anyway" for one label, and
+ * the count when one tick covers more ("Print all 20 anyway"), so a tick
+ * never covers more than it says.
+ */
 export function barcodeTickLabel(item: string): string {
-  void item;
+  const all = item.match(/ on all ([\d,]+) labels /);
+  if (all) return `Print all ${all[1]} anyway`;
+  if (/ on both labels /.test(item)) return 'Print both anyway';
+  const some = item.match(/ on labels ([\d, ]+?)(?: and ([\d,]+) more| and (\d+))?(?: \(rows?|\s(?=prints |starts |needs |has |crosses |reaches |runs ))/);
+  if (some) {
+    const shown = some[1].split(',').map((n) => n.trim()).filter(Boolean).length + (some[3] ? 1 : 0);
+    const count = shown + (some[2] ? Number(some[2].replace(/,/g, '')) : 0);
+    if (count > 1) return `Print these ${count.toLocaleString()} anyway`;
+  }
+  if (/^The fixed barcode /.test(item)) return 'Print every label anyway';
   return PRINT_ANYWAY;
 }
 
@@ -105,9 +118,9 @@ export function barcodeHasDetails(item: string): boolean {
  * on the page (never "the list above"): the run waits for a fix, or for a
  * tick on each "Print anyway".
  */
-export function barcodeWaitWords(stops: boolean, problems: number): string {
+export function barcodeWaitWords(stops: boolean, problems: number, tickLabel: string = PRINT_ANYWAY): string {
   if (stops) return problems === 1 ? 'A barcode can’t print. Fix the design to go on.' : 'Some barcodes can’t print. Fix the design to go on.';
-  return problems === 1 ? 'A barcode won’t scan. Fix it, or tick “Print anyway”.' : 'Some barcodes won’t scan. Fix them, or tick “Print anyway” for each.';
+  return problems === 1 ? `A barcode won’t scan. Fix it, or tick “${tickLabel}”.` : 'Some barcodes won’t scan. Fix them, or tick each “Print … anyway”.';
 }
 
 export function readRunBarcodeTicks(storage: Pick<Storage, 'getItem'> | null | undefined, runId: string): string[] {
