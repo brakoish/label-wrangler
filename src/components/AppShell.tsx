@@ -7,6 +7,7 @@ import { LogOut } from 'lucide-react';
 import { pageHasOwnTitle } from '@/components/PageTitle';
 import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
+import { NewVersionNotice } from '@/components/NewVersionNotice';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -119,6 +120,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
       </header>
 
       {banners}
+      <NewVersionNotice />
       {/* Page content */}
       <main ref={mainRef} id="main" tabIndex={-1} className="flex-1 flex flex-col overflow-hidden outline-none">
         {needsHeading && <h1 data-fallback-heading className="sr-only">{activeLabel || 'Label Wrangler'}</h1>}

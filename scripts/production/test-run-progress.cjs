@@ -12,6 +12,33 @@ const route=require('../../src/app/api/runs/[id]/route.ts');
   const res=await route.PUT(h.request('PUT',body),h.params('r'));
   return {res,set:setArgs()};
  }
+ // Current code marks its updates (X-LW-Client: 2): the high-water mark
+ // applies to them. Tabs still running the code from before the rule send no
+ // header and keep their exact writes, so their "Reprint from label N"
+ // (status paused, N-1) and "Reprint all" (queued, 0) still go back.
+ async function putMarked(body,header='2'){
+  h.reset();
+  h.results.push([{totalLabels:100,printedCount:60}],[{id:'r',printedCount:60}]);
+  const req=new Request('https://example.test/api',{method:'PUT',headers:{'content-type':'application/json',...(header?{'X-LW-Client':header}:{})},body:JSON.stringify(body)});
+  const res=await route.PUT(req,h.params('r'));
+  return {res,set:setArgs()};
+ }
+ {
+  let r=await putMarked({status:'paused',printedCount:9});assert.equal(r.res.status,200);assert.ok(is(r.set.printedCount,SQL),'marked: a lower count never lowers progress');
+  r=await putMarked({status:'queued',printedCount:0});assert.ok(is(r.set.printedCount,SQL),'marked: "queued, 0" without a rewind flag is not a rewind');
+  r=await putMarked({status:'paused',printedCount:9,resetProgress:true});assert.equal(r.set.printedCount,9,'marked: an explicit rewind goes back');
+  r=await putMarked({printedCount:70,progressOnly:true});assert.ok(is(r.set.printedCount,SQL));
+  // Legacy (unmarked) tabs: main's exact write for a status update with a count.
+  r=await putMarked({status:'paused',printedCount:9},null);assert.equal(r.set.printedCount,9,'legacy "Reprint from label 10" still goes back to 9');
+  r=await putMarked({status:'queued',printedCount:0},null);assert.equal(r.set.printedCount,0,'legacy "Reprint all" still goes back to 0');
+  r=await putMarked({printedCount:30,progressOnly:true},null);assert.ok(is(r.set.printedCount,SQL),'legacy progress ticks were already "never lower" on main');
+  r=await putMarked({status:'paused',printedCount:30,completedAt:null},null);assert.ok(is(r.set.printedCount,SQL),'the sheet tab confirmation only ever moves forward');
+  r=await putMarked({status:'paused'},null);assert.equal('printedCount' in r.set,false);
+  // A rewind flag only exists in current code, header or not.
+  r=await putMarked({status:'paused',printedCount:9,resetProgress:true},null);assert.equal(r.set.printedCount,9);
+  r=await putMarked({status:'paused',printedCount:40},'1');assert.equal(r.set.printedCount,40,'an older client version number is legacy');
+  console.log('PASS run progress: marked updates keep the high-water mark; unmarked (older tab) updates keep main\u2019s exact writes, so their rewinds still apply');
+ }
  // Sheet tab confirming 1-30 after 61-90 sends an absolute 30 with a status.
  let {res,set}=await put({status:'paused',printedCount:30,completedAt:null});
  assert.equal(res.status,200);assert.ok(is(set.printedCount,SQL),'status update with printedCount must use greatest()');
@@ -58,6 +85,24 @@ const route=require('../../src/app/api/runs/[id]/route.ts');
  await useRunStore.getState().setRunStatus('r','paused',40);
  await useRunStore.getState().setRunStatus('r','paused',9,{resetProgress:true});
  assert.equal(sent[0].resetProgress,undefined);assert.equal(sent[1].resetProgress,true);
+ // Every update current code queues carries the marker; one an older tab
+ // left in this browser's outbox is sent without it, as that code meant it.
+ {
+  const headersSeen=[];const prev=global.fetch;
+  global.fetch=async(url,init)=>{headersSeen.push({url,h:init.headers,b:JSON.parse(init.body)});return Response.json({id:'r'});};
+  await useRunStore.getState().setRunStatus('r','paused',41);
+  assert.equal(headersSeen[0].h['X-LW-Client'],'2','current updates are marked');
+  values.set('lw:run-op:legacy-1',JSON.stringify({id:'legacy-1',createdAt:1,patch:{runId:'r',status:'paused',printedCount:9}}));
+  const {flushOfflineQueue}=require('../../src/lib/offlineQueue.ts');
+  await flushOfflineQueue();
+  const legacy=headersSeen.find(x=>x.b.printedCount===9);
+  assert.ok(legacy,'the older update was sent');assert.equal(legacy.h['X-LW-Client'],undefined,'an older tab\u2019s saved update is not marked');
+  values.set('lw:pending-run-ops',JSON.stringify({r:{runId:'r',status:'queued',printedCount:0}}));
+  await flushOfflineQueue();
+  const migrated=headersSeen.find(x=>x.b.status==='queued');
+  assert.ok(migrated);assert.equal(migrated.h['X-LW-Client'],undefined,'migrated old-format updates are not marked');
+  global.fetch=prev;
+ }
  // Run page "From" below progress, then pause: the start is an explicit rewind,
  // so the paused count is where printing really stopped and the next Resume
  // continues from there (no skipped labels). Fake server keeps the high-water mark.

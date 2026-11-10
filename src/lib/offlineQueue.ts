@@ -2,6 +2,7 @@
  * own operation; a reconnect can never erase a newer pending update. */
 import type { Run, RunStatus, RunPrintEvent } from './types';
 import { ORIGIN_NOT_ALLOWED } from './errorCodes';
+import { RUN_CLIENT_HEADER, RUN_CLIENT_VERSION } from './runClientVersion';
 
 const PREFIX = 'lw:run-op:';
 const DEAD = 'lw:run-op-dead:';
@@ -44,7 +45,9 @@ export interface RunPatch {
 }
 export interface QueuedRunPatch extends RunPatch { runId: string }
 type PrintEventData = Omit<RunPrintEvent,'id'|'runId'|'createdAt'>;
-type Operation = { id: string; createdAt: number; patch: QueuedRunPatch; event?: PrintEventData };
+/** v: the rules the update was written for (runClientVersion). Updates an
+ * older tab saved have none, and are sent as that code meant them. */
+type Operation = { id: string; createdAt: number; patch: QueuedRunPatch; event?: PrintEventData; v?: number };
 const syncedEvents = new Map<string,RunPrintEvent>();
 let flushing: Promise<{ flushed: number; remaining: number }> | null = null;
 let lastError = '';
@@ -124,10 +127,10 @@ export function discardDeadLetters(ids?: string[]) {
   for (const item of deadLetteredOps()) if (!ids || ids.includes(item.id)) window.localStorage.removeItem(DEAD + item.id);
   announce(lastError);
 }
-export function enqueueRunPatch(patch: QueuedRunPatch, event?: PrintEventData): string {
+export function enqueueRunPatch(patch: QueuedRunPatch, event?: PrintEventData, older = false): string {
   const id = crypto.randomUUID();
   try {
-    window.localStorage.setItem(PREFIX + id, JSON.stringify({ id, createdAt: (lastTime = Math.max(performance.timeOrigin + performance.now(), lastTime + 0.001)), patch, event }));
+    window.localStorage.setItem(PREFIX + id, JSON.stringify({ id, createdAt: (lastTime = Math.max(performance.timeOrigin + performance.now(), lastTime + 0.001)), patch, event, ...(older ? {} : { v: RUN_CLIENT_VERSION }) }));
     announce();
     return id;
   } catch {
@@ -139,7 +142,8 @@ function migrate() {
   const raw = window.localStorage.getItem(LEGACY);
   if (!raw) return;
   const queue = JSON.parse(raw);
-  for (const patch of Object.values(queue) as QueuedRunPatch[]) enqueueRunPatch(patch);
+  // Saved by older code: sent as that code meant it (exact counts).
+  for (const patch of Object.values(queue) as QueuedRunPatch[]) enqueueRunPatch(patch, undefined, true);
   window.localStorage.removeItem(LEGACY);
 }
 /** Live (still retrying) operations, optionally for one run only. Set-aside
@@ -183,7 +187,7 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
         let response: Response;
         try {
           response = await fetch(`/api/runs/${runId}${op.event ? '/print-events' : ''}`, {
-            method: op.event ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' },
+            method: op.event ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json', ...((op.v ?? 0) >= RUN_CLIENT_VERSION ? { [RUN_CLIENT_HEADER]: String(RUN_CLIENT_VERSION) } : {}) },
             body: JSON.stringify(op.event ? {...op.event,idempotencyKey:op.id} : { ...patch, progressOnly: !patch.status && patch.printedCount !== undefined }),
             signal: AbortSignal.timeout(15000),
           });
