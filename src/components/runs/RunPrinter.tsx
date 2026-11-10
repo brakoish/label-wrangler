@@ -1,6 +1,6 @@
 'use client';
 
-import { canLeaveLocalPrint, setLocalPrintRunning } from '@/lib/printNavigation';
+import { canLeaveLocalPrint, officeSeriesActive, setLocalPrintRunning, stopOfficeSeries } from '@/lib/printNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, SquareDashed, Pencil, PenTool, Copy, ScanBarcode, Download, FileText, FileCode2, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -10,7 +10,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
-import { askCancelRun, cancelEvents, stopProblem, stopWaitingAtOffice } from './officeCancel';
+import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from './officeCancel';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeWaitingSpans, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { RunProgress } from './RunProgress';
 import { printedSpans, stillToGo } from '@/lib/runProgress';
@@ -853,36 +853,49 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   const requestCancel = async () => {
+    // A "Send all in parts" going on here stops first, so no part is sent
+    // after the run is cancelled.
+    if (officeSeriesActive()) {
+      const stop = await confirmDialog({ title: 'Stop sending parts first?', body: 'Parts are still going to the office printer. Sending stops after the part on its way now, then you can choose what happens to the run.', confirmLabel: 'Stop sending', cancelLabel: 'Keep sending' });
+      if (!stop) return;
+      await stopOfficeSeries();
+    }
     // Labels still waiting at the office can be stopped with the run, or left
     // to print: the person chooses, and the history says what really happened.
-    const jobs = office.loaded ? office.jobs : [];
+    // Read fresh, so a page that just opened (or a slow connection) still
+    // offers the stop; an account that can't see the office has nothing there.
+    const fresh = run ? await readOfficeJobs(run.id) : null;
+    const denied = office.failed?.status === 401 || office.failed?.status === 403;
+    const jobs = fresh ?? (denied ? [] : null);
     const choice = await askCancelRun({ title: 'Cancel this run?', jobs, total, after: 'You can start a new run from the same data with Re-run.' });
-    if (choice) await handleCancel(choice === 'stop');
+    if (choice) await handleCancel(choice === 'stop', jobs);
   };
 
-  const handleCancel = async (stopAtOffice = false) => {
+  const handleCancel = async (stopAtOffice = false, known: OfficeJobBrief[] | null = office.loaded ? office.jobs : null) => {
     preparation.current?.abort();
     queueRef.current?.cancel();
     setStatus('cancelled');
     if (run) {
       await setRunStatus(run.id, 'cancelled', printedCount);
-      let jobs: OfficeJobBrief[] = office.loaded ? office.jobs : [];
+      let jobs: OfficeJobBrief[] | null = known;
       let stoppedJobIds = new Set<string>();
       if (stopAtOffice) {
         const result = await stopWaitingAtOffice(run.id, jobs);
         stoppedJobIds = result.stoppedJobIds;
-        if (result.jobs) jobs = result.jobs;
+        jobs = result.jobs ?? jobs;
         const problem = stopProblem(result);
         if (problem) setErrorMsg(problem);
         void office.refresh().catch(() => { /* shown by the panel */ });
       }
       const end = stopAt > 0 ? Math.min(stopAt, total) : total;
       const events = cancelEvents({
-        printedCount, end, jobs, stoppedJobIds, scanned: scannedLabels, confirmed: officeConfirmed,
+        printedCount, end, jobs: jobs ?? [], stoppedJobIds, scanned: scannedLabels, confirmed: officeConfirmed,
         output: isSheetFormat ? 'sheet-pdf' : transport === 'office' ? 'office-pi' : 'roll-zpl',
         printerName: transport === 'dazzle' ? dazzleSelected : transport === 'office' ? 'Office printer' : usbPrinter?.productName ?? null,
       });
-      for (const event of events) await createPrintEvent(run.id, event);
+      // Without the office queue, labels still at the office can't be told
+      // apart: the history names only what was stopped, never "not printed".
+      for (const event of events) if (jobs || event.message !== 'Run cancelled') await createPrintEvent(run.id, event);
     }
   };
 

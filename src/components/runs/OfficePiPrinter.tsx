@@ -14,10 +14,12 @@ import { choiceDialog, confirmDialog } from '@/components/ui/feedback';
 import { setOfficeSeriesRunning } from '@/lib/printNavigation';
 import { labelListWords, scannedSkipPlan } from '@/lib/scannedLabels';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
-import { parseLabelList, capAfterSizeError, firstUnsentLabel, isValidOfficeRange, officeProofKey, officeSendCap, officeSendParts, officeSendPlan, officeUnsentSpans, officeWaitingSpans, partsAfterPrinted, readPartsPlan, readHeldSpans, heldStillUnsent, remainingParts, spanWords, suggestOfficeRange, OFFICE_BITMAP_LABELS_PER_SEND, OFFICE_MAX_LABELS, type OfficeDeliverySummary, type OfficeFailedPart, type OfficePartsPlan, type OfficeSendPlan, type OfficeSpan } from '@/lib/officeRange';
+import { drawFailureWords } from '@/lib/officeSendOutcome';
+import { parseLabelList, officeQueuedRequestIds, capAfterSizeError, firstUnsentLabel, isValidOfficeRange, officeProofKey, officeSendCap, officeSendParts, officeSendPlan, officeUnsentSpans, officeWaitingSpans, partsAfterPrinted, readPartsPlan, readHeldSpans, heldStillUnsent, remainingParts, spanWords, suggestOfficeRange, OFFICE_BITMAP_LABELS_PER_SEND, OFFICE_MAX_LABELS, type OfficeDeliverySummary, type OfficeFailedPart, type OfficePartsPlan, type OfficeSendPlan, type OfficeSpan } from '@/lib/officeRange';
 import { officeFailureKind, officeStatusLine, plainJobReason, plainOfficeRefusal, queuedNotice, readPendingMeta, readRefusal, refusalNeedsSomeoneElse, refusalNextStep, refusalStillApplies, sendKeepsRequest, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { officeProblemWords } from '@/lib/officeProblem';
 import type { OfficeJobBrief, OfficeRequest } from './useOfficeRequests';
+import { readOfficeJobs } from './officeCancel';
 interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean; dispatch_hold_reason?:string|null; review_holds?:OfficeReviewHold[] }
 /** HTTP error that remembers its status, so a definite refusal reads differently from "not sure it arrived". */
 class OfficeRequestError extends Error { constructor(message:string, public status:number, public code?:string){ super(message); } }
@@ -72,9 +74,9 @@ type Series={total:number;index:number;part:OfficeSpan;phase:'checking'|'sending
 /** The person's answer in the fix dialog. */
 /**
  * seen: what the person saw come out after fixing the printer.
- * againFrom/againTo: with "some", the labels that didn't come out.
+ * againText: with "some", the labels that didn't come out, typed like every other "which labels" box.
  */
-type Fix={part:OfficeFailedPart;seen:''|'all'|'some'|'none';againFrom:string;againTo:string;note:string;order:'in-order'|'let-run'};
+type Fix={part:OfficeFailedPart;seen:''|'all'|'some'|'none';againText:string;note:string;order:'in-order'|'let-run'};
 /**
  * The one "which labels?" box: labels that didn't come out ("Some didn’t…"),
  * labels to print again (a finished run, or one send in the office queue).
@@ -85,7 +87,7 @@ const tone={bad:'text-red-400',warn:'text-amber-300',ok:'text-emerald-400'} as c
 /** Runs with a "Send all in parts" series going in this tab: one series per run at a time. */
 const seriesLocks=new Set<string>();
 const dotTone={bad:'bg-red-400',warn:'bg-amber-300',ok:'bg-emerald-400'} as const;
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,toGo}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,toGo,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -114,7 +116,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   /** Goes up when the run page's "Print some labels again…" asks this panel to start choosing labels. */
   openChooser?:number;
   /** Labels not counted as printed yet, as the run's progress names them (not repeated here). */
-  toGo?:ReadonlyArray<OfficeSpan>}){
+  toGo?:ReadonlyArray<OfficeSpan>;
+  /** Tells the run header what this panel says (a send it isn't sure arrived, a refused send, a paused printer), so both say the same. */
+  onPanelState?:(state:{unsure:OfficeSpan|null;refused:OfficeSpan|null;paused:boolean})=>void;
+  /** The labels the main button sends next (null when none), so the run page's "Print anyway" ticks name the same range. */
+  onRangeChange?:(span:OfficeSpan|null)=>void}){
   const uid=useId();
   const [printers,setPrinters]=useState<Printer[]>([]);const [selected,setSelected]=useState('');
   const [stationsLoaded,setStationsLoaded]=useState(false);const [canPrint,setCanPrint]=useState(false);
@@ -154,6 +160,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [preparationProgress,setPreparationProgress]=useState<{completed:number;total:number}|null>(null);
   const [series,setSeries]=useState<Series|null>(null);
   const seriesRunning=useRef(false);
+  const stopSeries=useRef(false);
   // A one-tap send (resend after a refusal, a reprint from the fix dialog or a
   // queue row) sets the range and checks it in the same tap: don't cancel that check.
   const directRunning=useRef(false);
@@ -170,6 +177,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const heldKey=`lw:office-held:${runId}`;
   const printedRef=useRef(printedCount);
   useEffect(()=>{printedRef.current=printedCount;},[printedCount]);
+  // The run's status as this page last read it: a "Send all in parts" never starts another part once it is cancelled.
+  const runStatusRef=useRef(runStatus);
+  useEffect(()=>{
+    runStatusRef.current=runStatus;
+    // Cancelled or finished while parts are going (here or on another device): stop after the part on its way now.
+    if((runStatus==='cancelled' || runStatus==='completed') && seriesRunning.current){stopSeries.current=true;preparationController.current?.abort();}
+  },[runStatus]);
   const clearRefusal=useCallback(()=>{setRefusal(null);try{localStorage.removeItem(refusedKey);}catch{/* nothing saved */}},[refusedKey]);
 
   // --- How many labels one send may hold -------------------------------------
@@ -213,7 +227,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       // in plain words, instead of showing the size error.
       const smaller=capAfterSizeError(e instanceof Error?e.message:'',target.from,across);
       if(smaller){setSizeCap({key:designKey,cap:Math.min(cap,smaller)});setError(`That’s too much printer data for one send, so the office printer now takes up to ${plural(smaller)} of this design at a time.`);}
-      else setError(friendlyRenderError(friendlyError(e,'Checking the labels failed.'),template.elements,format.labelsAcross||1));
+      else setError(drawFailureWords(e,target) ?? friendlyRenderError(friendlyError(e,'Checking the labels failed.'),template.elements,format.labelsAcross||1));
       return null;
     }finally{preparationController.current=null;}
   };
@@ -353,7 +367,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(!saved)return null;
     try{const data=JSON.parse(saved);return Number.isInteger(data?.from) && Number.isInteger(data?.to)?data:'unreadable';}catch{return 'unreadable';}
   };
-  const finishFirstWords=(saved:{from:number;to:number})=>`Nothing new was sent: we’re still not sure the office got ${range(saved.from,saved.to)}. Tap “Send again” to finish that first (it can’t print twice), or “Start over” if the office queue shows it arrived.`;
+  const finishFirstWords=(saved:{from:number;to:number})=>`Nothing new was sent: we’re still not sure the office got ${range(saved.from,saved.to)}. Press “Send again” to finish that first (it can’t print twice), or “Start over” if the office queue shows it arrived.`;
   /** True (and says why) when a saved request has to be sorted out before anything else is sent. */
   const blockedBySaved=():boolean=>{
     const saved=savedRequest();
@@ -474,7 +488,21 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // Each part is checked, then sent with its own saved key, one after another.
   // It stops at the first part that isn't clearly queued, and the plan is
   // kept on this device so a closed page can send the rest later.
-  const stopSeries=useRef(false);
+  /** Why the next part mustn't go (the run is cancelled or done, or couldn't be read), or null when it may. */
+  const runEndedWords=async(index:number,count:number):Promise<string|null>=>{
+    const where=`Stopped before part ${index+1} of ${count}`;
+    const ended=(state:string|undefined)=>state==='cancelled'?`${where}: this run was cancelled, so nothing more was sent.`:state==='completed'?`${where}: this run is marked done, so nothing more was sent.`:null;
+    const known=ended(runStatusRef.current);if(known)return known;
+    try{
+      const response=await fetch(`/api/runs/${encodeURIComponent(runId)}`,{cache:'no-store'});
+      if(!response.ok)throw new Error(String(response.status));
+      const fresh=await response.json().catch(()=>null) as {status?:string}|null;
+      if(fresh?.status){runStatusRef.current=fresh.status as RunStatus;}
+      return ended(fresh?.status);
+    }catch{
+      return `${where}: couldn’t check the run just now. The rest are kept on this device: send the remaining parts when the connection is back.`;
+    }
+  };
   const runSeries=async(start:OfficePartsPlan)=>{
     if(seriesRunning.current || !printer || seriesLocks.has(runId))return;
     seriesRunning.current=true;seriesLocks.add(runId);stopSeries.current=false;clearRefusal();setNotice(null);setError('');
@@ -482,6 +510,12 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     const leftOut:{span:OfficeSpan|null}={span:null};
     try{
       for(let i=current.next;i<current.parts.length;i++){
+        if(stopSeries.current)break;
+        // The run may have been cancelled or finished meanwhile (here, on the
+        // Runs list or on another device): read it again before every part,
+        // and never send another part for a run that isn't printing any more.
+        const ended=await runEndedWords(i,current.parts.length);
+        if(ended){setError(ended);break;}
         if(stopSeries.current)break;
         let part=current.parts[i];
         // A part this device already tried resends its saved request (same
@@ -507,6 +541,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           if(!checked){setError(e=>e || `Stopped before part ${i+1} of ${current.parts.length}: the labels changed while sending. Check the preview, then send the remaining parts.`);break;}
           setSeries(s=>s?{...s,phase:'sending',progress:undefined}:s);
         }
+        if(stopSeries.current)break;
+        if(runStatusRef.current==='cancelled' || runStatusRef.current==='completed'){setError(`Stopped before part ${i+1} of ${current.parts.length}: this run ${runStatusRef.current==='cancelled'?'was cancelled':'is marked done'}, so nothing more was sent.`);break;}
         const outcome=await submit(part);
         if(outcome!=='sent')break;
         current={...current,next:i+1};savePartsPlan(current);
@@ -586,7 +622,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const againOpen=!!again && !series && !pending && canPrint && !!printer;
   // Resume is the main action while the printer is paused and nothing else needs someone.
   // "Did they print?" shows only when nothing else is asking the person something.
-  const markShown=markRanges.length>0 && !series && !!onMarkPrinted && !fix && !pending && !reprintOf && !chooseAgain && !sendOther && !heldOffer && !failedParts.length && !directCheck;
+  // It stays until every sent label is confirmed (or cancelled), also while
+  // held labels or a reprint wait: those have their own button.
+  const markShown=markRanges.length>0 && !series && !!onMarkPrinted && !fix && !pending && !chooseAgain && !directCheck;
   const owner:'problem'|'pending'|'refusal'|'parts'|'mark'|'form'|'again'|'held'|'resume'|'none'=
     pending?'pending'
     :againOpen?'again'
@@ -605,7 +643,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :pending?'Send again'
     :plan.kind==='wait'?'Waiting for office printer…'
     :tooBig && parts.length>1?`Send all ${sendCount.toLocaleString()} in ${parts.length} parts`
-    :!proofCurrent?(plan.kind==='reprint'?'Check labels & print again':'Check labels & send')
+    :!proofCurrent?(plan.kind==='reprint'?'Check labels to print again':`Check ${plural(sendCount)}`)
     :plan.kind==='reprint'?`Print ${plural(sendCount)} again`
     :sendingHeld?`Send ${range(fromNumber,toNumber)} now`
     :sentThisVisit?`Send the next ${plural(sendCount)}`
@@ -648,8 +686,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
 
   // --- The printer: one status line ------------------------------------------
   const ownHold=!!status.hold && status.hold.run_id===runId;
-  const lineTone:keyof typeof tone=ownHold?(failedParts.some(p=>p.kind==='did-not-print')?'bad':'warn'):status.tone;
-  const lineText=ownHold?'Stopped until the labels below are checked.':status.text;
+  // A send just refused as offline wins over a "Ready" the last station read still shows.
+  const offlineRefused=!!shownRefusal && shownRefusal.reason==='printer-offline' && !status.stopped && !status.paused;
+  const lineTone:keyof typeof tone=ownHold?(failedParts.some(p=>p.kind==='did-not-print')?'bad':'warn'):offlineRefused?'warn':status.tone;
+  const lineText=ownHold?'Stopped until the labels below are checked.':offlineRefused?'Offline: the office printer didn’t take the last send.':status.text;
   const connection=<div className="space-y-3">
     {printers.length>1
       ? <div className="space-y-1"><span id={`${uid}-printer`} className="field-label">Office printer</span><CustomSelect aria-labelledby={`${uid}-printer`} value={selected} onChange={setSelected} options={printers.map(p=>({value:`${p.station_id}/${p.id}`,label:p.name}))} /></div>
@@ -666,7 +706,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
 
   // --- Fixing a part ----------------------------------------------------------
   const laterQueued=(part:OfficeFailedPart)=>{
-    const cancellable=requests.filter(r=>r.jobs.some(j=>j.state==='queued' && j.from>part.to));
+    // Grouped from every job of the run (not the latest 100 sends), so older sends are held too.
+    const cancellable=officeQueuedRequestIds(jobs.filter(j=>j.state==='queued' && j.from>part.to));
     const spans=jobs.filter(j=>j.state==='queued' && j.from>part.to).map(j=>({from:j.from,to:j.to}));
     const atOffice=jobs.filter(j=>['claimed','submitted'].includes(j.state) && !j.review && j.from>part.to).map(j=>({from:j.from,to:j.to}));
     return {cancellable,spans,atOffice};
@@ -682,7 +723,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const openFix=(part:OfficeFailedPart)=>{
     // A part already checked at the office goes straight to its reprint, after one confirm.
     if(part.kind==='print-again'){void printAgainNow(part);return;}
-    setFix({part,seen:'',againFrom:'',againTo:'',note:'',order:'in-order'});
+    setFix({part,seen:'',againText:'',note:'',order:'in-order'});
   };
   /** "Print 51–100 again": one confirm, then the check and the send in the same tap. */
   const printAgainNow=async(part:OfficeFailedPart)=>{
@@ -697,9 +738,18 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const fixAgain=(current:Fix|null):OfficeSpan|null=>{
     if(!current || !current.seen || current.seen==='all')return null;
     if(current.seen==='none')return {from:current.part.from,to:current.part.to};
-    const a=Number(current.againFrom),b=Number(current.againTo);
-    if(!Number.isInteger(a) || !Number.isInteger(b) || a<current.part.from || b>current.part.to || a>b)return null;
-    return {from:a,to:b};
+    return fixSome(current).span;
+  };
+  /** The "Some of them" box: one stretch inside the part, or what to fix (empty box: neither). */
+  const fixSome=(current:Fix):{span:OfficeSpan|null;error:string}=>{
+    const {part}=current;
+    const parsed=parseLabelList(current.againText,total);
+    if(parsed.error)return {span:null,error:parsed.error};
+    if(!parsed.spans.length)return {span:null,error:''};
+    const outside=parsed.spans.some(s=>s.from<part.from || s.to>part.to);
+    if(outside)return {span:null,error:`Use label numbers from ${nums(part.from,part.to)}.`};
+    if(parsed.spans.length>1)return {span:null,error:'Type one stretch, like the first and last label that didn’t come out. Print others again afterwards.'};
+    return {span:parsed.spans[0],error:''};
   };
   const saveFix=()=>void act(async()=>{
     const current=fix;if(!current || !current.seen)return;
@@ -712,12 +762,28 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     const later=laterQueued(part);
     // 1. Hold later parts of this run first, before the check lets the office
     //    carry on, so the reprint comes out in order.
+    // Read fresh from the office (every send, not only the latest 100), and
+    // remembered after each send taken out, so a cancel that fails partway
+    // never loses labels that were already taken out of the queue.
     let held:OfficeSpan[]=[];
+    const cancelledIds=new Set<string>();
     if(again && current.order==='in-order' && later.cancellable.length){
-      for(const r of later.cancellable)await api('/api/office/jobs/'+r.id,{method:'DELETE'});
-      held=later.spans;
-      // Remembered on this device so "Send labels 76–150 now" follows the reprint.
-      saveHeld([...heldSpans,...held]);
+      const all=await readOfficeJobs(runId);
+      if(!all){setError('Couldn’t read the office queue, so nothing was changed. Try again in a moment.');return;}
+      for(const requestId of officeQueuedRequestIds(all.filter(j=>j.state==='queued' && j.from>part.to))){
+        try{await api('/api/office/jobs/'+encodeURIComponent(requestId),{method:'DELETE'});}
+        catch(err){
+          if(!held.length)throw err;
+          setFix(null);
+          setError(`${capitalise(spanWords(held))} ${single(held)?'was':'were'} taken out of the office queue so the reprint comes out first, but the labels after ${single(held)?'it':'them'} couldn’t be (${officeMessage(err,'the office printer didn’t answer').replace(/\.$/,'')}). Nothing was printed again yet. The office queue below shows what is still waiting; press “${part.kind==='needs-check'?`Check ${nums(part.from,part.to)}…`:`Print ${nums(part.from,part.to)} again…`}” to try again.`);
+          return;
+        }
+        const these=all.filter(j=>j.state==='queued' && j.requestId===requestId);
+        for(const j of these)cancelledIds.add(j.id);
+        held=[...held,...these.map(j=>({from:j.from,to:j.to}))].sort((a,b)=>a.from-b.from);
+        // Remembered on this device so "Send labels 76–150 now" follows the reprint.
+        saveHeld([...heldSpans,...held]);
+      }
     }
     // 2. Record the check for each job that still needs one. A fresh read
     //    skips jobs already checked (by someone else, or by an earlier try).
@@ -743,7 +809,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       // again after the reprint.
       if(!held.length)throw err;
       setFix(null);
-      setError(`${capitalise(spanWords(held))} ${single(held)?'was':'were'} taken out of the office queue so the reprint comes out first, but your answer for ${range(part.from,part.to)} didn’t save (${officeMessage(err,'the office printer didn’t answer').replace(/\.$/,'')}). Tap “${part.kind==='needs-check'?`Check ${nums(part.from,part.to)}…`:`Print ${nums(part.from,part.to)} again…`}” to answer again. Nothing was printed again yet.`);
+      setError(`${capitalise(spanWords(held))} ${single(held)?'was':'were'} taken out of the office queue so the reprint comes out first, but your answer for ${range(part.from,part.to)} didn’t save (${officeMessage(err,'the office printer didn’t answer').replace(/\.$/,'')}). Press “${part.kind==='needs-check'?`Check ${nums(part.from,part.to)}…`:`Print ${nums(part.from,part.to)} again…`}” to answer again. Nothing was printed again yet.`);
       return;
     }
     // The reprint below plans from the queue, and the screen's copy still
@@ -751,7 +817,6 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // Bring it up to date with what the server just accepted; the refresh
     // after this tap replaces it with the real queue.
     const checkedIds=new Set(part.jobIds);
-    const cancelledIds=new Set(held.length?later.cancellable.flatMap(r=>r.jobs.filter(j=>j.state==='queued').map(j=>j.id)):[]);
     jobsRef.current=jobsRef.current.map(j=>checkedIds.has(j.id)?{...j,state:'resolved',review:false}:cancelledIds.has(j.id)?{...j,state:'cancelled'}:j);
     setFix(null);
     // 3. Labels the person saw come out are counted, only on this answer.
@@ -765,6 +830,19 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     await sendNow(again,part.requestId ?? undefined);
   });
 
+  /** A queue row's "Cancel what hasn't been picked up": asks first, naming the labels, then one DELETE. */
+  const cancelWaiting=async(r:OfficeRequest)=>{
+    const waitingHere=r.jobs.filter(j=>j.state==='queued').map(j=>({from:j.from,to:j.to})).sort((a,b)=>a.from-b.from);
+    if(!waitingHere.length)return;
+    const n=waitingHere.reduce((c,s)=>c+s.to-s.from+1,0);
+    const one=n===1;
+    const ok=await confirmDialog({title:`Cancel ${spanWords(waitingHere)}?`,body:`${one?'It hasn’t':`These ${n.toLocaleString()} labels haven’t`} been picked up by the office yet, so ${one?'it doesn’t':'they don’t'} print. Labels already picked up still print. You can send ${one?'it':'them'} again later.`,confirmLabel:one?'Cancel it':`Cancel ${n.toLocaleString()} labels`,cancelLabel:'Keep them',danger:true});
+    if(!ok)return;
+    await act(async()=>{
+      const result=await api('/api/office/jobs/'+encodeURIComponent(r.id),{method:'DELETE'});
+      setNotice({text:`${result.cancelled?`Cancelled ${spanWords(waitingHere)}.`:'Nothing was waiting any more, so nothing was cancelled.'} ${result.requires_review?`${result.requires_review} batch${result.requires_review===1?' was':'es were'} already picked up and need someone to check the printer.`:''}`.trim(),at:Date.now()});
+    });
+  };
   const pendingWords=uncertainSendWords(pending?.status,pending?.code);
   const waitingWords=waiting.length?spanWords(waiting):'';
   const ownBlocking=failedParts.find(p=>p.kind!=='print-again');
@@ -804,6 +882,18 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(rest.length)setAgain({...current,queue:rest,sent:againNext});
     else setAgain(null);
   };
+  // The run header says what this panel says.
+  const unsureFrom=pending?.from,unsureTo=pending?.to;
+  const refusedFrom=shownRefusal && !refusalCovered?shownRefusal.from:undefined,refusedTo=shownRefusal && !refusalCovered?shownRefusal.to:undefined;
+  const panelPaused=!!printer && status.paused && !status.stopped;
+  useEffect(()=>{onPanelState?.({
+    unsure:unsureFrom!==undefined && unsureTo!==undefined?{from:unsureFrom,to:unsureTo}:null,
+    refused:refusedFrom!==undefined && refusedTo!==undefined?{from:refusedFrom,to:refusedTo}:null,
+    paused:panelPaused});},[unsureFrom,unsureTo,refusedFrom,refusedTo,panelPaused,onPanelState]);
+  // The labels the main button sends next, for the run page's "Print anyway" words.
+  const nextFrom=againOpen && againNext?againNext.from:showForm && !pending && rangeValid?fromNumber:pending?pending.from:undefined;
+  const nextTo=againOpen && againNext?againNext.to:showForm && !pending && rangeValid?toNumber:pending?pending.to:undefined;
+  useEffect(()=>{onRangeChange?.(nextFrom!==undefined && nextTo!==undefined?{from:nextFrom,to:nextTo}:null);},[nextFrom,nextTo,onRangeChange]);
   const againEditor=again && againOpen ? (()=>{
     const scoped=again.requestId?requests.find(r=>r.id===again.requestId):undefined;
     const question=again.queue.length?null:again.mode==='missing'?'Which labels didn’t come out?':scoped?`Which of ${range(scoped.range_from,scoped.range_to)} do you want to print again?`:'Which labels do you want to print again?';
@@ -815,10 +905,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <p id={`${uid}-again-help`} className="text-zinc-400">Type label numbers. A dash means every label in between.</p></>
         : <p className="text-zinc-200">{again.sent?`${Range(again.sent.from,again.sent.to)} ${again.sent.from===again.sent.to?'is':'are'} queued. `:''}Next: {spanWords(again.queue)}.</p>}
       {againParsed.error && <p role="alert" className="text-amber-300">{againParsed.error}</p>}
-      {!again.queue.length && againNext && againSpans.length>1 && <p className="text-zinc-300">{capitalise(range(againNext.from,againNext.to))} go{one?'es':''} first, then {spanWords(againSpans.slice(1))}: one more tap each.</p>}
+      {!again.queue.length && againNext && againSpans.length>1 && <p className="text-zinc-300">{capitalise(range(againNext.from,againNext.to))} go{one?'es':''} first, then {spanWords(againSpans.slice(1))}: one more press each.</p>}
       {againWait && <p role="status" className="text-zinc-400">{againWait.why==='needs-check'?`${Range(againWait.overlap.from,againWait.overlap.to)} need${againWait.overlap.from===againWait.overlap.to?'s':''} a check first (see above).`:`${Range(againWait.overlap.from,againWait.overlap.to)} ${againWait.overlap.from===againWait.overlap.to?'is':'are'} still on the way to the office printer. Print ${againWait.overlap.from===againWait.overlap.to?'it':'them'} again once ${againWait.overlap.from===againWait.overlap.to?'it’s':'they’re'} done.`}</p>}
       {!printAllowed && <p className="text-amber-300">{printBlockedReason || 'Sending is off until the problems above are fixed.'}</p>}
-      {againNext && !againWait && printAllowed && <p className="text-zinc-400">One tap checks {one?'it':'them'} and sends {one?'it':'them'}. The run’s progress doesn’t change.</p>}
+      {againNext && !againWait && printAllowed && <p className="text-zinc-400">One press checks {one?'it':'them'} and sends {one?'it':'them'}. The run’s progress doesn’t change.</p>}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" disabled={busy || !againNext || !!againWait || !printAllowed || !requestsEverLoaded} onClick={()=>void sendAgainNext()} className="btn btn-primary">{busy?<Loader2 className="size-4 animate-spin" aria-hidden="true" />:<PrinterIcon className="size-4" aria-hidden="true" />}{againLabel}</button>
         {again.queue.length>0 && <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>setAgain(null)}>Don’t send {spanWords(again.queue)}</button>}
@@ -907,7 +997,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {again && !again.requestId && againEditor}
     {showForm && !refusalOwnsSend && <>
     {(reprintOf || sendOther) && !pending && <div className="flex items-center justify-between gap-2 text-sm text-zinc-300"><span>{reprintOf?'Print these labels again.':'Choose which labels to send.'}</span><button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setReprintOf('');setSendOther(false);rangeEdited.current=false;}}>Cancel</button></div>}
-    {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300">{capitalise(spanWords(heldUnsent))} {single(heldUnsent)?'was':'were'} held back so the reprint came out first.{sendingHeld?'':` Send ${range(heldOffer.from,heldOffer.to)} next.`} <button type="button" className="link" onClick={()=>saveHeld([])}>{`Send ${heldOffer.from===heldOffer.to?'it':'them'} later`}</button></p>}
+    {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300">{capitalise(spanWords(heldUnsent))} {single(heldUnsent)?'was':'were'} held back so the reprint came out first.{sendingHeld?'':` Send ${range(heldOffer.from,heldOffer.to)} next.`}</p>}
     {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(toGo && toGo.length>0 && (toGo.length>1 || toGo[0].from!==printedCount+1) && spanWords(toGo)===spanWords(unsentSpans)) && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
     {/* "Send again" resends the saved request, so the range boxes step aside. */}
     {!pending && <div className="grid grid-cols-3 gap-2">
@@ -934,11 +1024,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-zinc-300 tabular-nums">Checked {preparationProgress.completed.toLocaleString()} of {preparationProgress.total.toLocaleString()} labels… nothing is sent yet.<ProgressBar inline value={preparationProgress.completed} max={preparationProgress.total} label="Checking labels" /></p>
       <button type="button" onClick={()=>preparationController.current?.abort()} className="btn btn-secondary btn-sm">Stop checking</button>
     </div>}
-    {bitmap && showForm && !pending && !preparationProgress && proofCurrent && proof && <p className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="size-4 rounded-full animate-success" aria-hidden="true" />{plural(proof.count)} checked. Nothing is sent until you tap Send.</p>}
+    {bitmap && showForm && !pending && !preparationProgress && proofCurrent && proof && <p className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="size-4 rounded-full animate-success" aria-hidden="true" />{plural(proof.count)} checked. Nothing is sent until you press Send.</p>}
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     {requestsError && requestsError.status!==401 && requestsError.status!==403 && <p role="status" className="text-sm text-zinc-400">The office queue couldn’t be read just now. It tries again on its own.</p>}
     {/* The amber waiting line already says why queued labels aren't printing. */}
-    {notice && !(notice.queued && movingLine) && <p role="status" className={`text-sm ${notice.tone==='next'?'reveal text-zinc-200':'animate-enter text-emerald-400'}`}>{notice.text}</p>}
+    {notice && !(notice.queued && (movingLine || (markShown && !moving))) && <p role="status" className={`text-sm ${notice.tone==='next'?'reveal text-zinc-200':'animate-enter text-emerald-400'}`}>{notice.text}</p>}
     {requests.length>0 && <div>
       <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue <span className="tabular-nums">· {plural(summary.sent)} sent{queueCounts.failed?` · ${plural(queueCounts.failed)} didn’t print`:''}{queueCounts.check?` · ${plural(queueCounts.check)} to check`:''}{queueCounts.again?` · ${plural(queueCounts.again)} to print again`:''}</span></FoldToggle>
       <Fold open={queueOpen} id={`${uid}-queue`}>
@@ -957,13 +1047,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           return <li key={r.id} className="space-y-1">
           <p className="font-medium text-zinc-100">{Range(r.range_from,r.range_to)}{r.reprint_of?' · printed again':''}</p>
           <p className="text-zinc-400">{[formatWhen(r.created_at),r.username].filter(Boolean).join(' · ')}</p>
-          {many && <p className="text-zinc-300 tabular-nums">{r.jobs.length.toLocaleString()} parts · {tally}</p>}
+          {many && <p className="text-zinc-300 tabular-nums">{r.jobs.length.toLocaleString()} batches · {tally}</p>}
           {shown.length>0 && <ul className="space-y-1">{foldJobs(shown,attention).map(j=><li key={j.id} className="text-zinc-300"><span className="tabular-nums">{nums(j.from,j.to)}</span>: {j.review && j.state!=='rejected'?'Needs a check':labels[j.state] ?? 'Unknown'}{j.reason && (j.review || ['rejected','needs_review'].includes(j.state)) && <span className="block text-zinc-400">{capitalise(plainJobReason(j.reason))}.</span>}
             {canPrint && !pending && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-zinc-200" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
           </li>)}</ul>}
           <div className="flex flex-wrap gap-1 -ml-2">
-            {many && <button type="button" aria-expanded={open} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>setOpenSends(prev=>{const next=new Set(prev);if(next.has(r.id))next.delete(r.id);else next.add(r.id);return next;})}>{open?'Hide parts':`Show all ${r.jobs.length.toLocaleString()} parts`}</button>}
-            {canPrint && r.jobs.some(j=>j.state==='queued') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>void act(async()=>{const result=await api('/api/office/jobs/'+r.id,{method:'DELETE'});setNotice({text:`Cancelled ${result.cancelled} part${result.cancelled===1?'':'s'} that hadn’t been picked up. ${result.requires_review ? `${result.requires_review} part${result.requires_review===1?' was':'s were'} already picked up and need someone to check the printer; nothing was stopped at the office.` : ''}`.trim(),at:Date.now()});})}>Cancel what hasn&apos;t been picked up</button>}
+            {many && <button type="button" aria-expanded={open} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>setOpenSends(prev=>{const next=new Set(prev);if(next.has(r.id))next.delete(r.id);else next.add(r.id);return next;})}>{open?'Hide batches':`Show all ${r.jobs.length.toLocaleString()} batches`}</button>}
+            {canPrint && r.jobs.some(j=>j.state==='queued') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>void cancelWaiting(r)}>Cancel what hasn&apos;t been picked up</button>}
             {canPrint && !series && !pending && again?.requestId!==r.id && r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review','rejected'].includes(j.state)) && <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>openAgain('again',r.id)}><RotateCcw className="size-4" aria-hidden="true" />Print again…</button>}
           </div>
           {again?.requestId===r.id && againEditor && <div className="pt-1">{againEditor}</div>}
@@ -985,27 +1075,31 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <legend className="mb-1 text-sm text-zinc-100">Did any of {range(part.from,part.to)} come out?</legend>
           {([['none',one?'No, it didn’t come out':'None of them'],['some','Some of them'],['all',one?'Yes, it came out':'All of them']] as const).filter(([v])=>!(one && v==='some')).map(([value,text],i)=>(
             <label key={value} className="flex min-h-control cursor-pointer items-center gap-3 rounded-lg px-2 text-sm text-zinc-100 hover:bg-zinc-800">
-              <input type="radio" name={`${uid}-seen`} value={value} checked={fix.seen===value} data-autofocus={i===0?true:undefined} onChange={()=>setFix(f=>f?{...f,seen:value,...(value==='some' && !f.againFrom?{againFrom:String(part.from),againTo:String(part.to)}:{})}:f)} className="size-4 shrink-0 accent-amber-500" />{text}
+              <input type="radio" name={`${uid}-seen`} value={value} checked={fix.seen===value} data-autofocus={i===0?true:undefined} onChange={()=>setFix(f=>f?{...f,seen:value}:f)} className="size-4 shrink-0 accent-amber-500" />{text}
             </label>))}
         </fieldset>
-        {fix.seen==='some' && <div className="space-y-1 text-sm">
-          <p className="text-zinc-300">Which labels didn’t come out? The others are counted as printed.</p>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs font-medium text-zinc-400">From label<input className={inputClass+' mt-1'} inputMode="numeric" value={fix.againFrom} onChange={e=>setFix(f=>f?{...f,againFrom:e.target.value}:f)} /></label>
-            <label className="text-xs font-medium text-zinc-400">Stop after label<input className={inputClass+' mt-1'} inputMode="numeric" value={fix.againTo} onChange={e=>setFix(f=>f?{...f,againTo:e.target.value}:f)} /></label>
-          </div>
-          {!again && fix.againFrom.trim()!=='' && fix.againTo.trim()!=='' && <p role="alert" className="text-amber-300">Use label numbers from {nums(part.from,part.to)}.</p>}
-        </div>}
+        {fix.seen==='some' && (()=>{const some=fixSome(fix);return <div className="space-y-2 text-sm">
+          <label htmlFor={`${uid}-fix-some`} className="block font-medium text-zinc-100">Which labels didn’t come out?</label>
+          <input id={`${uid}-fix-some`} className={inputClass} inputMode="text" autoComplete="off" autoFocus placeholder={`For example ${nums(part.from,Math.min(part.to,part.from+4))}`} aria-describedby={`${uid}-fix-some-help`} value={fix.againText} onChange={e=>{const text=e.target.value;setFix(f=>f?{...f,againText:text}:f);}} />
+          <p id={`${uid}-fix-some-help`} className="text-zinc-400">The others are counted as printed.</p>
+          {some.error && <p role="alert" className="text-amber-300">{some.error}</p>}
+        </div>;})()}
         {fix.seen==='all' && <p className="text-sm text-zinc-300">{capitalise(range(part.from,part.to))} {one?'is':'are'} counted as printed. Nothing prints again.</p>}
         {again && fixLater && (fixLater.spans.length>0 || fixLater.atOffice.length>0) && <div className="space-y-1 text-sm">
           {fixLater.atOffice.length>0 && <p className="text-zinc-300">{capitalise(spanWords(fixLater.atOffice))} {single(fixLater.atOffice)?'is':'are'} already at the office and print{single(fixLater.atOffice)?'s':''} first.</p>}
           {fixLater.spans.length>0 && <fieldset className="space-y-1">
-            <legend className="text-zinc-300">{capitalise(spanWords(fixLater.spans))} {single(fixLater.spans)?'is':'are'} waiting behind this part.</legend>
-            {([['in-order',`Print in order: cancel ${spanWords(fixLater.spans)} for now, print ${range(fix.part.from,fix.part.to)} again, then offer to send ${single(fixLater.spans)?'it':'them'} after.`],['let-run',`Let ${spanWords(fixLater.spans)} print first. ${capitalise(range(fix.part.from,fix.part.to))} come${fix.part.from===fix.part.to?'s':''} out after.`]] as const).map(([value,text])=>(
-              <label key={value} className="flex min-h-control cursor-pointer items-start gap-3 rounded-lg px-2 py-2 text-zinc-100 hover:bg-zinc-800">
-                <input type="radio" name={`${uid}-order`} value={value} checked={fix.order===value} onChange={()=>setFix(f=>f?{...f,order:value}:f)} className="mt-0.5 size-4 shrink-0 accent-amber-500" />{text}
+            <legend className="mb-1 text-zinc-100">{capitalise(spanWords(fixLater.spans))} {single(fixLater.spans)?'is':'are'} waiting behind {single([again])?'it':'them'}</legend>
+            {([['in-order','Print in order',`Hold ${spanWords(fixLater.spans)} until the reprint is done.`],['let-run','Let them print first',`${capitalise(range(again.from,again.to))} come${again.from===again.to?'s':''} out after.`]] as const).map(([value,title,help])=>(
+              <label key={value} className="flex min-h-control cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-zinc-800">
+                <input type="radio" name={`${uid}-order`} value={value} checked={fix.order===value} onChange={()=>setFix(f=>f?{...f,order:value}:f)} className="mt-1 size-4 shrink-0 accent-amber-500" />
+                <span className="space-y-0.5"><span className="block text-zinc-100">{title}</span><span className="block text-zinc-400">{help}</span></span>
               </label>))}
           </fieldset>}
+          {fixLater.spans.length>0 && fix.order==='in-order' && <ol className="space-y-1 pl-2 text-zinc-300 tabular-nums">
+            <li>1. Hold {spanWords(fixLater.spans)}</li>
+            <li>2. Print {range(again.from,again.to)} again</li>
+            <li>3. Then send {spanWords(fixLater.spans)}</li>
+          </ol>}
         </div>}
         <label className="block text-sm text-zinc-300">Note for the print history (optional)
           <textarea className={inputClass+' mt-1 text-sm'} rows={2} maxLength={300} value={fix.note} onChange={e=>setFix(f=>f?{...f,note:e.target.value}:f)} />

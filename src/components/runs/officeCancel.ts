@@ -31,8 +31,14 @@ export interface OfficeStopResult {
   failed: number;
 }
 
-/** Stops every part of the run that is still waiting to be picked up: one DELETE per send that has one. */
-export async function stopWaitingAtOffice(runId: string, jobs: ReadonlyArray<OfficeJobBrief>): Promise<OfficeStopResult> {
+/**
+ * Stops every part of the run that is still waiting to be picked up: one
+ * DELETE per send that has one. Without the jobs (the queue couldn't be read
+ * when the person chose), it reads them first.
+ */
+export async function stopWaitingAtOffice(runId: string, known: ReadonlyArray<OfficeJobBrief> | null): Promise<OfficeStopResult> {
+  const jobs = known ?? await readOfficeJobs(runId);
+  if (!jobs) return { jobs: null, stoppedJobIds: new Set(), failed: 1 };
   const stoppedJobIds = new Set(jobs.filter((job) => job.state === 'queued').map((job) => job.id));
   let failed = 0;
   for (const requestId of officeQueuedRequestIds(jobs)) {
@@ -65,12 +71,27 @@ const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
  * print anyway, and the dialog says so. Resolves 'stop', 'let' or null (keep
  * the run).
  */
-export async function askCancelRun(input: { title: string; jobs: ReadonlyArray<OfficeJobBrief>; total: number; after?: string }): Promise<'stop' | 'let' | null> {
-  const queued = officeQueuedSpans(input.jobs, input.total);
+export async function askCancelRun(input: { title: string; jobs: ReadonlyArray<OfficeJobBrief> | null; total: number; after?: string }): Promise<'stop' | 'let' | null> {
+  const after = input.after ? ` ${input.after}` : '';
+  if (!input.jobs) {
+    // The office queue couldn't be read: still offer the stop (it reads the queue again first).
+    const choice = await choiceDialog({
+      title: input.title,
+      body: `Labels already printed stay printed and the print history is kept. The office queue couldn’t be checked just now, so labels may still be waiting at the office: stop them too, or let them print?${after}`,
+      confirmLabel: 'Cancel run and stop waiting labels',
+      altLabel: 'Cancel run, let them print',
+      cancelAlso: true,
+      cancelLabel: 'Keep run',
+      danger: true,
+    });
+    return choice === 'confirm' ? 'stop' : choice === 'alt' ? 'let' : null;
+  }
+  const jobs = input.jobs;
+  const queued = officeQueuedSpans(jobs, input.total);
   const queuedSet = new Set<number>();
   for (const span of queued) for (let n = span.from; n <= span.to; n++) queuedSet.add(n);
   const pickedUp: OfficeSpan[] = [];
-  for (const span of officeWaitingSpans(input.jobs, input.total)) {
+  for (const span of officeWaitingSpans(jobs, input.total)) {
     for (let n = span.from; n <= span.to; n++) {
       if (queuedSet.has(n)) continue;
       const last = pickedUp[pickedUp.length - 1];
@@ -79,7 +100,6 @@ export async function askCancelRun(input: { title: string; jobs: ReadonlyArray<O
   }
   const one = (spans: ReadonlyArray<OfficeSpan>) => count(spans) === 1;
   const pickedWords = pickedUp.length ? ` ${capital(spanWords(pickedUp))} ${one(pickedUp) ? 'was' : 'were'} already picked up by the office and ${one(pickedUp) ? 'prints' : 'print'} anyway.` : '';
-  const after = input.after ? ` ${input.after}` : '';
   if (!queued.length) {
     const ok = await confirmDialog({ title: input.title, body: `Labels already printed stay printed and the print history is kept.${pickedWords}${after}`, confirmLabel: 'Cancel run', cancelLabel: 'Keep run', danger: true });
     return ok ? 'let' : null;
@@ -100,7 +120,7 @@ export async function askCancelRun(input: { title: string; jobs: ReadonlyArray<O
 /** Words for a stop that didn't fully work, or null. */
 export function stopProblem(result: OfficeStopResult): string | null {
   if (!result.failed && result.jobs) return null;
-  if (!result.jobs) return 'The run was cancelled, but the office queue couldn’t be read afterwards. Open the run and check its office queue.';
+  if (!result.jobs) return 'The run was cancelled, but the office queue couldn’t be read, so labels waiting there may still print. Open the run and check its office queue.';
   const still = result.jobs.filter((job) => job.state === 'queued');
-  return still.length ? `The run was cancelled, but ${spanWords(still.map((job) => ({ from: job.from, to: job.to })))} could not be stopped at the office and may still print. Open the run and tap “Cancel what hasn’t been picked up” in its office queue.` : null;
+  return still.length ? `The run was cancelled, but ${spanWords(still.map((job) => ({ from: job.from, to: job.to })))} could not be stopped at the office and may still print. Open the run and press “Cancel what hasn’t been picked up” in its office queue.` : null;
 }
