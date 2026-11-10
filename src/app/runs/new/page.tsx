@@ -1579,7 +1579,7 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="space-y-4">
-                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} />}
+                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={barcodesOk && charactersOk} />}
                     <ProblemList
                       tone="error"
                       heading={`${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that' : 's have barcodes that'} can’t print`}

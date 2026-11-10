@@ -32,7 +32,13 @@ function unsupportedCharacters(value: string, allowed: (ch: string) => boolean):
 }
 
 function listCharacters(chars: string[]): string {
-  const shown = chars.slice(0, 4).map((ch) => (ch === ' ' ? 'space' : ch));
+  const shown = chars.slice(0, 4).map((ch) => {
+    if (ch === ' ') return 'space';
+    if (ch === '\t') return 'a tab';
+    if (/\s/u.test(ch)) return 'a special space (retype it as a plain space)';
+    if (/[\p{Cc}\p{Cf}]/u.test(ch)) return 'a hidden character';
+    return ch;
+  });
   return shown.join(', ') + (chars.length > 4 ? ' and others' : '');
 }
 

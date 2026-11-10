@@ -70,7 +70,7 @@ export function TemplateList({
       {notice}
       <div className="mb-5 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>
-        <button type="button" onClick={onNewTemplate} className="btn btn-primary">
+        <button type="button" onClick={onNewTemplate} className={`btn ${listError && templates.length === 0 ? 'btn-secondary' : 'btn-primary'}`}>
           <Plus className="size-4" aria-hidden="true" /> New design
         </button>
       </div>

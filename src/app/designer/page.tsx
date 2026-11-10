@@ -328,12 +328,12 @@ function DesignerContent() {
     return () => { active = false; };
   }, []);
   // A design link that can't open says so, instead of quietly showing the list.
-  const [openState, setOpenState] = useState<{ id: string; status: 'opening' | 'failed' } | null>(null);
+  const [openState, setOpenState] = useState<{ id: string; status: 'opening' | 'failed' | 'missing' } | null>(null);
   const openDesign = useCallback(async (id: string) => {
     setOpenState({ id, status: 'opening' });
-    await useTemplateStore.getState().fetchTemplate(id);
+    const result = await useTemplateStore.getState().fetchTemplate(id, { quiet: true });
     const opened = useTemplateStore.getState().getTemplateById(id);
-    setOpenState(opened && !opened.summaryOnly ? null : { id, status: 'failed' });
+    setOpenState(opened && !opened.summaryOnly ? null : { id, status: result === 'missing' ? 'missing' : 'failed' });
   }, []);
   useEffect(() => {
     if (templateId) void openDesign(templateId);
@@ -387,7 +387,9 @@ function DesignerContent() {
             notice={templateId && openState?.id === templateId ? (
               openState.status === 'opening'
                 ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
-                : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="text-amber-400 hover:underline">Try again</button></p>
+                : openState.status === 'missing'
+                  ? <p role="alert" className="mb-4 text-sm text-amber-300">That design link doesn’t go to a design any more — it may have been deleted. Pick one below.</p>
+                  : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="text-amber-400 hover:underline">Try again</button></p>
             ) : null}
             templates={templates}
             onSelectTemplate={(id) => {

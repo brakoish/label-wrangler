@@ -21,7 +21,8 @@ interface TemplateStore {
 
   // Template actions
   fetchTemplates: (more?: boolean) => Promise<void>;
-  fetchTemplate: (id: string) => Promise<void>;
+  /** With `quiet`, a failure is returned instead of shown as the page-wide store error. */
+  fetchTemplate: (id: string, options?: { quiet?: boolean }) => Promise<'ok' | 'missing' | 'failed'>;
   addTemplate: (data: Omit<LabelTemplate, 'id' | 'createdAt' | 'updatedAt'>) => Promise<LabelTemplate>;
   updateTemplate: (id: string, updates: Partial<LabelTemplate>) => Promise<void>;
   deleteTemplate: (id: string) => Promise<void>;
@@ -74,7 +75,7 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
 
   },
 
-  fetchTemplate: async (id) => {
+  fetchTemplate: async (id, options) => {
     try {
       const cached = get().templates.find(t=>t.id===id && !t.summaryOnly);
       const template = cached ?? await apiJson<LabelTemplate>(`/api/templates/${id}`);
@@ -83,7 +84,11 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
         const format=await apiJson<LabelFormat>(`/api/formats/${template.formatId}`);
         useFormatStore.setState(state=>({formats:[...state.formats.filter(f=>f.id!==format.id),format]}));
       }
-    } catch(error) { set({error:(error as Error).message}); }
+      return 'ok';
+    } catch(error) {
+      if (!options?.quiet) set({error:(error as Error).message});
+      return (error as { status?: number }).status === 404 ? 'missing' : 'failed';
+    }
   },
 
   addTemplate: async (templateData) => {

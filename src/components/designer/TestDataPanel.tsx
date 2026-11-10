@@ -151,8 +151,8 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                     if (e.key === 'Enter') void searchManifest();
                   }}
                   aria-label="Fill from a Manifest package"
-                  placeholder="Find a package"
-                  className="field field-sm w-full pl-7 pr-7"
+                  placeholder="Name or tag"
+                  className={`field field-sm w-full pl-7 ${manifestSearch ? 'pr-7' : ''}`}
                 />
                 {manifestSearch && (
                   <button
