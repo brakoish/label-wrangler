@@ -349,7 +349,7 @@ console.log('PASS field display names');
     assert.equal(officePrinterHeld([]), false, 'no printer');
     assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld \}/, 'the run header gets the station status');
     assert.match(page, /onHeldChange=\{setPanelHeld\}/, 'lifted from the office panel');
-    assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld\);\},\[printerHeld,onHeldChange\]\);/);
+    assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld,heldById\?\{runId:heldById,runName:heldByName\}:null\);\}/, 'the header also learns which other run holds the printer');
   }
   // Designer test print: a first send refused as signed out / no access queued nothing (plain refusal); a resend keeps its key.
   const preview = read('src/components/designer/OfficePreviewPrint.tsx');
