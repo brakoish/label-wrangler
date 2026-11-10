@@ -208,6 +208,12 @@ textarea:focus-visible {
   .btn-danger-ghost:hover:not(:disabled) {
     background: color-mix(in oklab, var(--color-red-500) 10%, transparent);
   }
+  .btn-primary:disabled,
+  .btn-danger:disabled {
+    background: var(--color-zinc-800);
+    color: var(--color-zinc-400);
+    opacity: 1;
+  }
 
   /* Form fields ----------------------------------------------------------- */
   .field {
@@ -296,7 +302,7 @@ textarea:focus-visible {
     align-items: center;
     justify-content: center;
     gap: 0.375rem;
-    min-height: calc(var(--control-h-sm) - 2px);
+    min-height: var(--control-h-sm);
     padding-inline: 0.75rem;
     border-radius: var(--radius-md);
     font-size: var(--text-sm);
