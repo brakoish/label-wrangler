@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback, useId } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff } from 'lucide-react';
+import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -662,6 +662,9 @@ function NewRunContent() {
   const sameRiskKey = sameValueRiskKey(sameRisks);
   const [sameConfirmedKey, setSameConfirmedKey] = useState('');
   const sameOk = !sameRisks.length || sameConfirmedKey === sameRiskKey;
+  // A field the person deliberately set to "Same on every label" is explained
+  // in its own row; don't also call it unmatched at the top.
+  const unmatchedShown = unmatchedCsvFields.filter((f) => !sameRisks.some((r) => r.field === f));
 
   // Every barcode value must be one its barcode type can hold; checked for
   // every label, so label 10 can't stop a run part-way.
@@ -1313,11 +1316,11 @@ function NewRunContent() {
                 {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
                   <div className="space-y-3 pt-2">
                     <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Manifest field' : 'column'}</h3>
-                    {inputMode === 'csv' && unmatchedCsvFields.length > 0 && (
+                    {inputMode === 'csv' && unmatchedShown.length > 0 && (
                       <div role="alert" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 font-medium text-amber-300">
                           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                          No column for {unmatchedCsvFields.map((f) => friendlyFieldName(f)).join(unmatchedCsvFields.length === 2 ? ' and ' : ', ')}
+                          No column for {unmatchedShown.map((f) => friendlyFieldName(f)).join(unmatchedShown.length === 2 ? ' and ' : ', ')}
                         </p>
                         <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, or choose &ldquo;Same on every label&rdquo; and type one value.</p>
                       </div>
@@ -1377,20 +1380,22 @@ function NewRunContent() {
                               )}
                             </div>
                             {risk && (
-                              <p className="mt-2 text-sm text-amber-300 sm:pl-43">
-                                Every label will get the same {friendlyFieldName(field)}{risk.value ? ` (${risk.value})` : ''}. Your {sheetWord} has {risk.everyRowDiffers ? `a different ${friendlyFieldName(field)} on each row` : `${risk.distinct.toLocaleString()} different values`} in “{risk.column}”{risk.scannable ? ', and each product usually needs its own barcode' : ''}. Choose {inputMode === 'manifest' ? 'From Manifest' : 'From spreadsheet'} instead, unless one value really is right.
-                              </p>
+                              <div className="mt-2 space-y-1 text-sm sm:pl-43">
+                                <p className="text-amber-300">
+                                  Every label gets the same {friendlyFieldName(field)}{risk.value ? ` (${risk.value})` : ''}, but your {sheetWord} has {risk.everyRowDiffers ? `a different one on each row` : `${risk.distinct.toLocaleString()} different values`} in “{risk.column}”.{risk.scannable ? ' Each product usually needs its own barcode.' : ''}
+                                </p>
+                                {risk.field === sameRisks[sameRisks.length - 1].field && (
+                                  <label className="flex min-h-control-sm items-start gap-2 text-zinc-200">
+                                    <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
+                                    <span>Yes, print the same {sameRisks.map((r) => friendlyFieldName(r.field)).join(' and ')} on every label</span>
+                                  </label>
+                                )}
+                              </div>
                             )}
                           </div>
                         );
                       })}
                     </div>
-                    {sameRisks.length > 0 && (
-                      <label className="flex min-h-control-sm items-start gap-2 text-sm text-zinc-200">
-                        <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
-                        <span>Yes, print the same {sameRisks.map((r) => friendlyFieldName(r.field)).join(' and ')} on every label</span>
-                      </label>
-                    )}
                   </div>
                 )}
 
@@ -1417,7 +1422,8 @@ function NewRunContent() {
 
                 {/* Leaving a field off this run (it prints the design's sample). */}
                 <details className="group text-sm" open={hiddenRunFields.length > 0 || undefined}>
-                  <summary className="flex min-h-control-sm cursor-pointer items-center text-zinc-400 hover:text-zinc-100">
+                  <summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 text-zinc-400 hover:text-zinc-100 [&::-webkit-details-marker]:hidden">
+                    <ChevronRight className="size-4 shrink-0 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />
                     Leave a part off this run{hiddenRunFields.length > 0 ? ` (${hiddenRunFields.length} left off)` : ''}
                   </summary>
                   <div className="flex flex-wrap gap-2 pt-2">
@@ -1508,7 +1514,7 @@ function NewRunContent() {
               )}
 
               <details className="group card p-4 sm:p-5 text-sm">
-                <summary className="flex min-h-control-sm cursor-pointer items-center font-medium text-zinc-300 hover:text-zinc-100">Save these settings for next time</summary>
+                <summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 font-medium text-zinc-300 hover:text-zinc-100 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 shrink-0 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />Save these settings for next time</summary>
                 <div className="flex items-center gap-2 pt-3">
                   <input
                     type="text"
