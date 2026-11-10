@@ -375,7 +375,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             </div>
             {!printerReady && (
               <p className="text-sm text-zinc-400">
-                Plug a label printer into this computer, or <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">use the office printer</Link> from the run page.
+                Plug a label printer into this computer, or <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">use the office printer</Link>{' '}from the run page.
               </p>
             )}
             {transportError && transport && <p role="alert" className="text-sm text-red-400">{transportError}</p>}

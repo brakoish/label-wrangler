@@ -1366,7 +1366,7 @@ function NewRunContent() {
           )}
           {template && allDynamicFields.length === 0 && flippable.length === 0 && (
             <p role="status" className="text-sm text-amber-300">
-              Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link> and set the parts that should change to &ldquo;Changes per label&rdquo;.
+              Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link>{' '}and set the parts that should change to &ldquo;Changes per label&rdquo;.
             </p>
           )}
 

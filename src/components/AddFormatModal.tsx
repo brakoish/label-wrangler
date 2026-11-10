@@ -636,7 +636,7 @@ function SheetPreview({
       </svg>
       <div className="mt-3 space-y-1 text-center">
         <div className="text-sm text-zinc-400">
-          {columns} × {rows} = <span className="text-zinc-100 font-medium">{totalLabels}</span> labels per sheet
+          {columns} × {rows} = <span className="text-zinc-100 font-medium">{totalLabels}</span>{' '}labels per sheet
         </div>
         <div className="text-xs text-zinc-500">
           {labelWidth}&quot; × {labelHeight}&quot; labels · {topMargin.toFixed(2)}&quot; top, {sideMargin.toFixed(2)}&quot; side

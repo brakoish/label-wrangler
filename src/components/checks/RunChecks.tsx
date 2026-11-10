@@ -124,6 +124,8 @@ function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, onC
   const options: Array<{ value: BlankChoice; label: string }> = [];
   if (skipCount > 0) options.push({ value: 'skip', label: `Leave ${one ? 'that label' : `those ${skipCount.toLocaleString()} labels`} out and print the other ${rest.toLocaleString()}` });
   if (check.canLeaveBlank) options.push({ value: 'blank', label: `Print ${check.blankLabels === 1 ? 'it' : `all ${check.blankLabels.toLocaleString()}`} with ${fieldWords} blank` });
+  // A part with no column at all is fixed in the matching above, not in the file.
+  if (check.issues.every((issue) => issue.kind === 'no-value')) return null;
   const fix = mode === 'csv' ? 'Or fill them in your spreadsheet and choose the file again.' : mode === 'manifest' ? 'Or pick another package.' : 'Or fill them in above.';
   return (
     <div className="space-y-1 pl-5.5">
