@@ -22,7 +22,7 @@ export function LabelGlyph({ format }: { format: LabelFormat | null }) {
           width={format.width}
           height={format.height}
           rx={Math.min(format.width, format.height) * 0.08}
-          fill="#e4e4e7"
+          fill="#a1a1aa"
         />
       ))}
     </svg>
