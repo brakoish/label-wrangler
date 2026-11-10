@@ -592,8 +592,8 @@ function DesignerContent() {
         <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="btn btn-secondary btn-sm">{saving ? 'Saving…' : 'Save now'}</button>
         <span className="text-zinc-500 max-sm:hidden">Changes save on their own.</span>
         {currentFormat.type === 'thermal' && <>
-        <span className="sm:ml-auto">{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
-        <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
+        <span className="ml-auto max-sm:hidden">{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
+        <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>
         </>}
       </div>
       {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
@@ -665,12 +665,12 @@ function DesignerContent() {
               <a
                 href="/designer"
                 onClick={e => { e.preventDefault(); void leaveEditor(); }}
-                className="inline-flex min-h-control-sm items-center text-zinc-400 hover:text-zinc-100 transition-colors"
+                className="inline-flex min-h-control-sm items-center text-zinc-400 hover:text-zinc-100 transition-colors max-sm:hidden"
               >
                 Designs
               </a>
             )}
-            <span className="text-zinc-600" aria-hidden="true">/</span>
+            <span className={`text-zinc-600 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
             <button
               onClick={() => setRenameSource(currentTemplate)}
               className="group flex min-h-control-sm min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 rounded-md text-zinc-100 font-semibold transition-colors"
@@ -680,7 +680,7 @@ function DesignerContent() {
               <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-200" aria-hidden="true" />
             </button>
             {compatibleFormats.length > 1 && (
-              <div className="w-44 shrink-0">
+              <div className="w-44 shrink-0 max-sm:hidden">
                 <CustomSelect
                   value={currentFormat.id}
                   onChange={(value) => void handleChangeFormat(value)}
