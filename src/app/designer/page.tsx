@@ -25,6 +25,7 @@ import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { ZPLPreview } from '@/components/designer/ZPLPreview';
 import { DesignNotice, problemText } from '@/components/designer/DesignNotice';
 import { barcodePlainSentence } from '@/lib/runBarcodeTicks';
+import { arcMove } from '@/components/motion/arc';
 import { PrinterCodeDialog } from '@/components/designer/PrinterCodeDialog';
 import { barcodeAutoFix, barcodeToQr, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
@@ -433,7 +434,7 @@ function DesignerContent() {
                 ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
                 : openState.status === 'missing'
                   ? <p role="alert" className="mb-4 text-sm text-amber-300">That design link doesn’t go to a design any more — it may have been deleted. Pick one below.</p>
-                  : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="text-amber-400 hover:underline">Try again</button></p>
+                  : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="link">Try again</button></p>
             ) : null}
             templates={templates}
             onSelectTemplate={(id) => {
@@ -447,7 +448,7 @@ function DesignerContent() {
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
           {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && !(templatesError && templates.length === 0) && <div className="page-container pt-0 sm:pt-0 lg:pt-0">
+          {isAdmin && !(templatesError && templates.length === 0) && <div className={`page-container pt-0 sm:pt-0 lg:pt-0 ${templates.length === 0 ? 'text-center [&_.flex-wrap]:justify-center' : ''}`}>
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           </div>}
         </div>
@@ -723,7 +724,15 @@ function DesignerContent() {
 
   // One edit to this design, so Undo takes it back; other designs and their runs are untouched.
   const applyFix = (fix: BarcodeAutoFix) => {
+    const before = currentTemplate.elements.find((e) => e.id === brokenBarcodeId);
+    const after = fix.elements.find((e) => e.id === brokenBarcodeId);
     commitEdit({ elements: fix.elements });
+    // The item travels to its new spot along an arc, so the change is seen.
+    if (before && after) {
+      const dx = (before.x + before.width / 2) - (after.x + after.width / 2);
+      const dy = (before.y + before.height / 2) - (after.y + after.height / 2);
+      requestAnimationFrame(() => arcMove(document.querySelector(`[data-designer-canvas] [data-element-id="${CSS.escape(after.id)}"]`), dx, dy));
+    }
     setFixNote({ templateId: currentTemplate.id, text: fix.done, elements: fix.elements });
     setSelectedIds(new Set(fix.elements.filter((e) => e.id === brokenBarcodeId).map((e) => e.id)));
   };
@@ -743,11 +752,11 @@ function DesignerContent() {
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title={`${currentTemplate.name} · Designer`} />
-      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlySaveError(saveError, currentTemplate.elements, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlySaveError(saveError, currentTemplate.elements, 'Your changes were not saved.')} <button type="button" className="link" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
-        {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
+        {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button type="button" className="link" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button type="button" className="link ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
-      {saveError && <button className="px-4 pb-2 text-left text-sm text-amber-300 underline" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
+      {saveError && <button type="button" className="link px-4 pb-2 text-left text-sm" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
       <div className="lg:hidden px-4 py-2">
       <div role="tablist" aria-label="Designer panes" className="segmented">
         <SegmentedIndicator index={['label', 'layers', 'data', 'edit'].indexOf(phonePane)} count={4} />

@@ -142,7 +142,7 @@ function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, onC
       )}
       <p className="flex flex-wrap items-center gap-x-3 text-zinc-400">
         <span>{options.length ? fix : fix.replace(/^Or f/, 'F').replace(/^Or p/, 'P')}</span>
-        {onChooseFile && mode === 'csv' && <button type="button" onClick={onChooseFile} className="inline-flex min-h-control-sm items-center text-amber-400 hover:underline">Choose another file</button>}
+        {onChooseFile && mode === 'csv' && <button type="button" onClick={onChooseFile} className="inline-flex min-h-control-sm items-center link">Choose another file</button>}
       </p>
     </div>
   );

@@ -62,11 +62,13 @@ export function BarcodeWarning({ items, stops, isTicked, onTick, fix, why, ticka
           const details = barcodeHasDetails(item) ? `${item}${why && i === shown.length - 1 && !rest.length ? ` ${why}` : ''}` : (why && i === shown.length - 1 && !rest.length ? why : '');
           return (
             <li key={item} className="space-y-1">
-              <p className="flex items-start gap-1.5 text-zinc-100">
+              <div className="flex items-start gap-1.5 text-zinc-100">
                 <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
-                <span>{barcodePlainSentence(item)}</span>
-              </p>
-              {details && <div className="pl-5.5"><WhyToggle>{details}</WhyToggle></div>}
+                <div className="min-w-0 flex-1">
+                  <span>{barcodePlainSentence(item)}</span>
+                  {details && <> <WhyToggle>{details}</WhyToggle></>}
+                </div>
+              </div>
               {canTick && (
                 <label htmlFor={`${uid}-${i}`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
                   <input id={`${uid}-${i}`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={ticked(item)} onChange={(e) => onTick!(item, e.target.checked)} />

@@ -288,21 +288,14 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           {/* Thermal Presets */}
           {type === 'thermal' && (
             <div>
-              <p className="field-label mb-1.5">
-                Common sizes
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {COMMON_THERMAL_SIZES.map((preset) => (
-                  <button
-                    key={preset.name}
-                    type="button"
-                    onClick={() => applyPreset(preset)}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    {preset.name}
-                  </button>
-                ))}
-              </div>
+              <p id={`${uid}-common`} className="field-label mb-1.5">Start from a common size</p>
+              <CustomSelect
+                aria-labelledby={`${uid}-common`}
+                value={COMMON_THERMAL_SIZES.find((p) => String(p.width) === width && String(p.height) === height)?.name ?? ''}
+                onChange={(value) => { const preset = COMMON_THERMAL_SIZES.find((p) => p.name === value); if (preset) applyPreset(preset); }}
+                placeholder="Pick one, or type the size below"
+                options={COMMON_THERMAL_SIZES.map((preset) => ({ value: preset.name, label: preset.name }))}
+              />
             </div>
           )}
 
@@ -523,7 +516,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
 
           {/* Actions */}
           {sizeError && <p role="alert" className="text-sm text-red-400">{sizeError}</p>}
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="dialog-actions pt-2">
             <button
               type="button"
               onClick={onClose}

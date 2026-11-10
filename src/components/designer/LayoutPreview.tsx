@@ -328,7 +328,7 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
         </svg>
         <figcaption className="flex flex-wrap items-center justify-center gap-x-3 text-sm text-zinc-400">
           <span>Label {selectedLabelOffset + 1} of the {perSheet.toLocaleString()} on this sheet</span>
-          <button type="button" className="inline-flex min-h-control-sm items-center text-amber-400 hover:underline" onClick={() => setView('sheet')}>Show the whole sheet</button>
+          <button type="button" className="inline-flex min-h-control-sm items-center link" onClick={() => setView('sheet')}>Show the whole sheet</button>
         </figcaption>
       </figure>
     );
@@ -380,7 +380,7 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
         </svg>
       <figcaption className="flex flex-wrap items-center justify-center gap-x-3 text-sm text-zinc-400">
         <span>{caption}</span>
-        {canFocus && <button type="button" className="inline-flex min-h-control-sm items-center text-amber-400 hover:underline" onClick={() => setView('label')}>Show one label</button>}
+        {canFocus && <button type="button" className="inline-flex min-h-control-sm items-center link" onClick={() => setView('label')}>Show one label</button>}
       </figcaption>
     </figure>
   );

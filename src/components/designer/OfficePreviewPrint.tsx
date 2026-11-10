@@ -167,12 +167,12 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       {shownRefusal && !pending && <p role="alert" className="text-amber-300">Your last test print wasn&apos;t sent. {shownRefusal.message}</p>}
       <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending ? 'Send again' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
       {error && <p role="alert" className="text-red-400">{error}</p>}
-      {pending && !busy && <p className="text-zinc-400"><Link href="/runs" className="underline underline-offset-2">Check Runs</Link> first, or <button type="button" className="underline underline-offset-2" onClick={async () => {
+      {pending && !busy && <p className="text-zinc-400"><Link href="/runs" className="link">Check Runs</Link> first, or <button type="button" className="link" onClick={async () => {
         const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first. The office may already have this test print, and starting over doesn’t cancel anything already sent.', confirmLabel: 'Start over' });
         if (!ok) return;
         localStorage.removeItem(storageKey); setPending(null); setError('');
       }}>start over</button>.</p>}
-      {runId && <p role="status" className="text-emerald-400">Test print sent to the office. <Link href={`/runs/${encodeURIComponent(runId)}`} className="underline underline-offset-2">See it or cancel it</Link></p>}
+      {runId && <p role="status" className="text-emerald-400">Test print sent to the office. <Link href={`/runs/${encodeURIComponent(runId)}`} className="link">See it or cancel it</Link></p>}
     </div>}
   </div>;
 }

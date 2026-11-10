@@ -34,7 +34,7 @@ export function PrinterCodeDialog({ open, onClose, template, format, values }: {
       {error ? <p role="alert" className="text-sm text-red-400">{error}</p> : (
         <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-zinc-950 p-3 font-mono text-xs text-zinc-300">{code || 'Making the commands…'}</pre>
       )}
-      <div className="flex justify-end pt-4">
+      <div className="dialog-actions pt-4">
         <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
       </div>
     </Dialog>
