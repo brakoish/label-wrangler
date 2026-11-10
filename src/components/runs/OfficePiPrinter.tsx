@@ -546,6 +546,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // A queue row's own "Print again" is the main action only while it is open.
   const rowOpen=!!rowAgain && !series && !pending && canPrint;
   // Resume is the main action while the printer is paused and nothing else needs someone.
+  // "Did they print?" shows only when nothing else is asking the person something.
+  const markShown=markRanges.length>0 && !series && !!onMarkPrinted && !fix && !pending && !rowOpen && !reprintOf && !chooseAgain && !sendOther && !heldOffer && !failedParts.length && !directCheck;
   const owner:'problem'|'pending'|'refusal'|'parts'|'mark'|'form'|'row'|'held'|'resume'|'none'=
     pending?'pending'
     :rowOpen?'row'
@@ -555,7 +557,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :heldBlock?'held'
     :status.paused && !status.stopped?'resume'
     :leftParts.length && planPrinterHere?'parts'
-    :markRanges.length && !moving?'mark'
+    :markShown && !moving?'mark'
     :showForm?'form':'none';
   const primaryLabel=busy
     ?(preparationProgress?'Checking labels…':'Sending to office printer…')
@@ -683,13 +685,20 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     const cameOut=again?[{from:part.from,to:again.from-1},{from:again.to+1,to:part.to}].filter(s=>s.from<=s.to):[{from:part.from,to:part.to}];
     const reason=(current.seen==='all'
       ?`They printed: ${range(part.from,part.to)} counted as printed.`
-      :`${capitalise(fixWhy(part))}. ${capitalise(range(again!.from,again!.to))} printed again${cameOut.length?`; ${spanWords(cameOut)} came out`:''}.`)+(note?` ${note}`:'');
+      :`${capitalise(fixWhy(part))}. ${capitalise(range(again!.from,again!.to))} sent to print again${cameOut.length?`; ${spanWords(cameOut)} came out`:''}.`)+(note?` ${note}`:'');
     for(const jobId of part.jobIds){
       const job=freshJobs.find(j=>j.id===jobId);
       if(job && !job.review && ['resolved','cancelled','sent_to_printer'].includes(job.state))continue;
       try{await api('/api/office/review',{method:'POST',body:JSON.stringify({jobId,pendingCupsResolved:true,reason:reason.slice(0,500)})});}
       catch(err){if(!(err instanceof OfficeRequestError && err.status===409))throw err;}
     }
+    // The reprint below plans from the queue, and the screen's copy still
+    // shows these jobs waiting for this check (and the later parts queued).
+    // Bring it up to date with what the server just accepted; the refresh
+    // after this tap replaces it with the real queue.
+    const checkedIds=new Set(part.jobIds);
+    const cancelledIds=new Set(held.length?later.cancellable.flatMap(r=>r.jobs.filter(j=>j.state==='queued').map(j=>j.id)):[]);
+    jobsRef.current=jobsRef.current.map(j=>checkedIds.has(j.id)?{...j,state:'resolved',review:false}:cancelledIds.has(j.id)?{...j,state:'cancelled'}:j);
     setFix(null);
     // 3. Labels the person saw come out are counted, only on this answer.
     const counted=cameOut.length?(await onRecordPrinted?.(cameOut,note) ?? false):true;
@@ -780,7 +789,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {moving && !movingLine && !ownBlocking && !series && <p role="status" className="flex items-center gap-2 text-sm text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{capitalise(waitingWords || plural(summary.onTheWay))} on {summary.onTheWay===1?'its':'their'} way to the office printer</p>}
 
     {/* Sent isn't printed: one question, one answer. */}
-    {markRanges.length>0 && !series && onMarkPrinted && !fix && !pending && !rowOpen && !reprintOf && !chooseAgain && !sendOther && !heldOffer && !failedParts.length && !directCheck && <div className="space-y-2 text-sm">
+    {markShown && <div className="space-y-2 text-sm">
       <p className="text-zinc-100">Sent to the office printer: {markWords}. Did {single(markRanges)?'it':'they all'} come out?</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} onClick={()=>void onMarkPrinted()} className={`btn ${owner==='mark'?'btn-primary':'btn-secondary btn-sm'}`}><CheckCircle2 className="size-4" aria-hidden="true" />Yes, mark printed</button>

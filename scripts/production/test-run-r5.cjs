@@ -182,3 +182,18 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.equal(grouped[0].event.eventType, 'confirmed', 'newest first');
   console.log('PASS run r6: print history groups the parts of one big office send');
 }
+{
+  // The fix dialog's reprint plans from a queue that already knows the check
+  // was recorded, so the one press really sends; the list and run page share
+  // one "waiting on another run" rule; one primary button after a reprint.
+  const office = read('src/components/runs/OfficePiPrinter.tsx');
+  const saveFix = office.slice(office.indexOf('const saveFix='), office.indexOf('const pendingWords='));
+  assert.ok(saveFix.indexOf('jobsRef.current=jobsRef.current.map(') > saveFix.indexOf("api('/api/office/review'"), 'queue copy updated after the check is recorded');
+  assert.ok(saveFix.indexOf('jobsRef.current=jobsRef.current.map(') < saveFix.indexOf('await sendNow(again'), 'and before the reprint is planned');
+  assert.match(office, /:markShown && !moving\?'mark'/, 'the mark answer owns the primary only when it is on screen');
+  assert.match(office, /\{markShown && <div/);
+  const list = read('src/app/runs/page.tsx');
+  assert.match(list, /localStorage\.getItem\('lw:last-transport'\)/, 'the list reads the same printer choice as the run page');
+  assert.match(list, /officeDefault && leftToSend/);
+  console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');
+}
