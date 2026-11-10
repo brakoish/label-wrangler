@@ -20,7 +20,7 @@ import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck } from './RunBarcodeCheck';
-import { barcodeItemTicked, barcodeTicksAllow, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
+import { barcodeItemTicked, barcodeTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
 import { labelListWords, scannedLabelNumbers, scannedSkipPlan, type LabelSpan } from '@/lib/scannedLabels';
 import { plainPrinterProblem } from '@/lib/printerWords';
 import { fieldDisplayName } from '@/lib/fieldDisplayName';
@@ -338,7 +338,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   });
   const checksOk = printCheckAllows(printCheck, { ...goAhead, barcode: barcodeOk ? printCheck.blockingKey : undefined });
   const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || !barcodeOk)
-    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : `${printCheck.verdict.heading}. Fix the design, or tick “Print anyway” above to print as it is.`)
+    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : barcodeWaitWords(false, printCheck.blocking.length, barcodeTickLabel(printCheck.blocking[0])))
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.
