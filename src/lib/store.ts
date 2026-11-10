@@ -1,4 +1,4 @@
-import { apiJson } from './apiClient';
+import { apiJson, ApiError } from './apiClient';
 import { create } from 'zustand';
 import { LabelFormat, calculateLabelsPerSheet } from './types';
 
@@ -95,7 +95,10 @@ export const useFormatStore = create<FormatStore>()((set, get) => ({
       method: 'DELETE',
     });
 
-    if (!res.ok) throw new Error('Failed to delete format');
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new ApiError(typeof data?.error === 'string' ? data.error : 'Failed to delete format', res.status);
+    }
 
     set((state) => ({
       formats: state.formats.filter((f) => f.id !== id),

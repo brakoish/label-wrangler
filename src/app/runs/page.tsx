@@ -171,7 +171,7 @@ export default function RunsPage() {
                   format={f}
                   templateName={templateName(r.templateId)}
                   formatName={formatName(r.templateId)}
-                  onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id); }}
+                  onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id).then(refused => { if (refused) alert(refused); }); }}
                   onTogglePin={() => void togglePin(r.id)}
                 />
               );
@@ -194,7 +194,7 @@ export default function RunsPage() {
                 format={f}
                 templateName={templateName(r.templateId)}
                 formatName={formatName(r.templateId)}
-                onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id); }}
+                onDelete={() => { if (confirm(`Delete run "${r.name}"?`)) void deleteRun(r.id).then(refused => { if (refused) alert(refused); }); }}
                 onTogglePin={() => void togglePin(r.id)}
               />
             );
@@ -375,7 +375,7 @@ export default function RunsPage() {
                     templateName={templateName(p.templateId)}
                     formatName={formatName(p.templateId)}
                     onDelete={() => {
-                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id);
+                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id).then(refused => { if (refused) alert(refused); });
                     }}
                   />
                 ))}
@@ -396,7 +396,7 @@ export default function RunsPage() {
                     templateName={templateName(p.templateId)}
                     formatName={formatName(p.templateId)}
                     onDelete={() => {
-                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id);
+                      if (confirm(`Delete preset "${p.name}"?`)) void deletePreset(p.id).then(refused => { if (refused) alert(refused); });
                     }}
                   />
                 ))}

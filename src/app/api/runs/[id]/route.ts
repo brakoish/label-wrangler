@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { withOfficeAuth, officeUserFor } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { runs } from "@/lib/db/schema";
+import { runs, runPrintEvents, officeRequests } from "@/lib/db/schema";
+import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
 import { eq, sql, getTableColumns } from "drizzle-orm";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -69,7 +70,14 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
 async function handleDELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    await db.delete(runs).where(eq(runs.id, id));
+    try { await db.delete(runs).where(eq(runs.id, id)); }
+    catch (error) {
+      if (!isForeignKeyViolation(error)) throw error;
+      const [events] = await db.select({ count: sql<number>`count(*)::int` }).from(runPrintEvents).where(eq(runPrintEvents.runId, id));
+      const [office] = await db.select({ count: sql<number>`count(*)::int` }).from(officeRequests).where(eq(officeRequests.runId, id));
+      const count = Number(events?.count ?? 0) + Number(office?.count ?? 0);
+      throw new OfficeError(`This run has print history (${count ? plural(count, 'print record') : 'saved print records'}), so it can't be deleted. It stays in your list so that history is kept.`, 409);
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});

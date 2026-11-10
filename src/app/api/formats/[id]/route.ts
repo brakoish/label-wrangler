@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { formats } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { formats, templates } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
+import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
 
 async function handleGET(
   request: NextRequest,
@@ -60,7 +61,13 @@ async function handleDELETE(
 ) {
   try {
     const { id } = await params;
-    await db.delete(formats).where(eq(formats.id, id));
+    try { await db.delete(formats).where(eq(formats.id, id)); }
+    catch (error) {
+      if (!isForeignKeyViolation(error)) throw error;
+      const [used] = await db.select({ count: sql<number>`count(*)::int`, archived: sql<number>`count(${templates.archivedAt})::int` }).from(templates).where(eq(templates.formatId, id));
+      const count = Number(used?.count ?? 0), archived = Number(used?.archived ?? 0);
+      throw new OfficeError(`This format is used by ${count ? plural(count, 'design') : 'saved designs'}${archived ? ` (${archived} archived)` : ''}. Delete or move those first.`, 409);
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});

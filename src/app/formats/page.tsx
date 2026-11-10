@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useFormatStore } from '@/lib/store';
+import type { ApiError } from '@/lib/apiClient';
 import { FormatCard } from '@/components/FormatCard';
 import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
@@ -172,7 +173,7 @@ export default function Home() {
               format={selectedFormat}
               onDelete={() => {
                 if (confirm(`Delete "${selectedFormat.name}"?`)) {
-                  void deleteFormat(selectedFormat.id).catch(error=>useFormatStore.setState({error:(error as Error).message}));
+                  void deleteFormat(selectedFormat.id).catch(error=>{ if ((error as ApiError).status === 409) alert((error as Error).message); else useFormatStore.setState({error:(error as Error).message}); });
                 }
               }}
               onUpdate={updateFormat}

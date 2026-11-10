@@ -1,9 +1,18 @@
 'use client';
-import { apiJson } from './apiClient';
+import { apiJson, ApiError } from './apiClient';
 import { updateRunWithQueue, savePrintEvent } from './offlineQueue';
 
 import { create } from 'zustand';
 import type { Run, RunPreset, RunPrintEvent, RunStatus } from './types';
+
+/** A refused delete keeps the item. A 409 (still in use) is returned for the
+ * page to show; other failures go to the store error banner as before. */
+function deleteRefused(error: unknown, set: (partial: { error: string }) => void): string | null {
+  const message = (error as Error).message;
+  if (error instanceof ApiError && error.status === 409) return message;
+  set({ error: message });
+  return null;
+}
 
 interface RunStore {
   runs: Run[];
@@ -21,7 +30,8 @@ interface RunStore {
   createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections }) => Promise<Run>;
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean }) => Promise<Run | null>;
-  deleteRun: (id: string) => Promise<void>;
+  /** Resolves to a plain-language message when the server refuses (the item is kept). */
+  deleteRun: (id: string) => Promise<string | null>;
   /** Toggle the pinned state of a run. Server stamps pinnedAt. */
   togglePin: (id: string) => Promise<Run | null>;
   fetchPrintEvents: (runId: string) => Promise<RunPrintEvent[]>;
@@ -33,7 +43,7 @@ interface RunStore {
   // Presets
   createPreset: (data: Partial<RunPreset> & { name: string; templateId: string }) => Promise<RunPreset>;
   updatePreset: (id: string, updates: Partial<RunPreset> & { touch?: boolean }) => Promise<RunPreset | null>;
-  deletePreset: (id: string) => Promise<void>;
+  deletePreset: (id: string) => Promise<string | null>;
 }
 
 async function loadPresets() {
@@ -116,8 +126,9 @@ export const useRunStore = create<RunStore>((set, get) => ({
   },
 
   deleteRun: async (id) => {
-    try { await apiJson(`/api/runs/${id}`, { method: 'DELETE' }); } catch(error) { set({error:(error as Error).message}); return; }
+    try { await apiJson(`/api/runs/${id}`, { method: 'DELETE' }); } catch(error) { return deleteRefused(error, set); }
     set((state) => ({ runs: state.runs.filter((r) => r.id !== id) }));
+    return null;
   },
 
   togglePin: async (id) => {
@@ -182,7 +193,8 @@ export const useRunStore = create<RunStore>((set, get) => ({
   },
 
   deletePreset: async (id) => {
-    try { await apiJson(`/api/presets/${id}`, { method: 'DELETE' }); } catch(error) { set({error:(error as Error).message}); return; }
+    try { await apiJson(`/api/presets/${id}`, { method: 'DELETE' }); } catch(error) { return deleteRefused(error, set); }
     set((state) => ({ presets: state.presets.filter((p) => p.id !== id) }));
+    return null;
   },
 }));

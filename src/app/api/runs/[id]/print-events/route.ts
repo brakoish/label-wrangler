@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runPrintEvents } from "@/lib/db/schema";
 import { desc, eq, and } from "drizzle-orm";
+import { isForeignKeyViolation } from "@/lib/dbErrors";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -49,7 +50,8 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: 
       message: typeof body.message === 'string' ? body.message : null,
       createdAt: now,
     };
-    await db.insert(runPrintEvents).values(event).onConflictDoNothing();
+    try { await db.insert(runPrintEvents).values(event).onConflictDoNothing(); }
+    catch (error) { if (isForeignKeyViolation(error)) throw new OfficeError('Run not found', 404); throw error; }
     const [saved] = await db.select().from(runPrintEvents).where(and(eq(runPrintEvents.id,event.id),eq(runPrintEvents.runId,id)));
     if (!saved || ['eventType','output','rangeFrom','rangeTo','labelCount','printedCountAfter','printerName','message'].some(key => saved[key as keyof typeof saved] !== event[key as keyof typeof event])) throw new OfficeError('Print event key already used for another event',409);
     return NextResponse.json(saved, { status: 201 });

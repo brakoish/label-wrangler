@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { withOfficeAuth } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { runPresets } from "@/lib/db/schema";
+import { runPresets, runs } from "@/lib/db/schema";
+import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
 import { eq, sql } from "drizzle-orm";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,7 +46,13 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
 async function handleDELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    await db.delete(runPresets).where(eq(runPresets.id, id));
+    try { await db.delete(runPresets).where(eq(runPresets.id, id)); }
+    catch (error) {
+      if (!isForeignKeyViolation(error)) throw error;
+      const [used] = await db.select({ count: sql<number>`count(*)::int` }).from(runs).where(eq(runs.presetId, id));
+      const count = Number(used?.count ?? 0);
+      throw new OfficeError(`This preset was used by ${count ? plural(count, 'run') : 'saved runs'}, so it can't be deleted. Runs keep a link to the preset they were made from.`, 409);
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof OfficeError) return NextResponse.json({error: error.message}, {status: error.status});
