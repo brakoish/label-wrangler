@@ -4,7 +4,7 @@
 require('../thermal/register.cjs');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
-const {buildChanged}=require('../../src/lib/buildCheck.ts');
+const {buildChanged,builtInBuild}=require('../../src/lib/buildCheck.ts');
 assert.equal(buildChanged('a','a'),false);
 assert.equal(buildChanged('a','b'),true);
 assert.equal(buildChanged(null,'b'),false,'unknown when loaded: no prompt');
@@ -26,5 +26,25 @@ assert.equal(buildChanged(undefined,undefined),false);
  assert.match(notice,/A new version is ready — reload/);
  assert.match(notice,/if \(canLeaveLocalPrint\(\)\) window\.location\.reload\(\)/,'a reload never cuts off a print in progress');
  assert.doesNotMatch(notice,/location\.reload\(\);?\s*\}\s*,\s*\d/,'nothing reloads on its own');
- console.log('PASS build check: the server names its build (hashed); open pages ask for a reload after a deploy, never on their own');
+ // The build is built into the page (next.config env) with the same value the
+ // server reports, so a deploy before the first check is still announced.
+ const config=require('../../next.config.ts').default;
+ assert.equal(config.env.LW_BUILD_STAMP,body.build,'the page carries the same stamp /api/version reports');
+ assert.equal(builtInBuild(config.env.LW_BUILD_STAMP),body.build);
+ assert.equal(builtInBuild(''),undefined,'a build that could not tell: learn from the first check');
+ assert.equal(builtInBuild(undefined),undefined);
+ assert.equal(builtInBuild('not-a-stamp'),undefined);
+ const stampFile=require.resolve('../../src/lib/buildStamp.server.ts');
+ delete require.cache[stampFile];
+ process.env.LW_BUILD_STAMP='fedcba9876543210';
+ assert.equal(require(stampFile).buildStamp(),'fedcba9876543210','the server reports the built-in stamp first');
+ delete process.env.LW_BUILD_STAMP;
+ delete require.cache[stampFile];
+ assert.equal(require(stampFile).buildStamp(),body.build,'without one, the runtime ids give the same hash');
+ assert.match(notice,/let pageBuild: string \| null \| undefined = builtInBuild\(process\.env\.LW_BUILD_STAMP\);/,'the page compares against its built-in build');
+ assert.match(notice,/if \(pageBuild === undefined\) \{ pageBuild = build; return; \}/,'first-check fallback only when the build could not tell');
+ const configSrc=fs.readFileSync(path.join(__dirname,'../../next.config.ts'),'utf8');
+ assert.match(configSrc,/env: \{ LW_BUILD_STAMP: buildStamp \}/);
+ assert.doesNotMatch(configSrc,/deploymentId|generateBuildId/,'asset URLs and the build id are left as they were');
+ console.log('PASS build check: the server names its build (hashed); open pages ask for a reload after a deploy (the build is built into the page), never on their own');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -3,10 +3,14 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { canLeaveLocalPrint } from '@/lib/printNavigation';
-import { buildChanged } from '@/lib/buildCheck';
+import { buildChanged, builtInBuild } from '@/lib/buildCheck';
 
-/** Only the first answer counts as this page's build; later ones are compared to it. */
-let pageBuild: string | null | undefined;
+/**
+ * This page's build, built in by next.config, so a deploy that lands before
+ * the first check is still announced. A build that couldn't tell (local
+ * builds) learns it from the first answer instead.
+ */
+let pageBuild: string | null | undefined = builtInBuild(process.env.LW_BUILD_STAMP);
 
 /**
  * After a deploy, a page that stayed open keeps running the old code. It
