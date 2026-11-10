@@ -88,6 +88,9 @@ assert.equal(O.uncertainSendWords(403, 'origin_not_allowed').cause, 'address');
 assert.equal(O.uncertainSendWords(403).cause, 'no-access');
 assert.equal(O.uncertainSendWords(429).cause, 'busy');
 assert.match(O.uncertainSendWords(undefined).message, /same request, so it won’t print twice/);
+assert.match(O.uncertainSendWords(undefined).message, /connection dropped/);
+assert.match(O.uncertainSendWords(503).message, /^The server had a problem/);
+assert.doesNotMatch(O.uncertainSendWords(503).message, /503|Service/);
 for (const status of [401, 403, 429, undefined]) assert.match(O.uncertainSendWords(status).message, /Send again/);
 
 const pairing = O.plainOfficeRefusal('Office Pi is awaiting verified pairing. Job creation is disabled.', 409);

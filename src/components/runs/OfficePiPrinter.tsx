@@ -102,6 +102,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   useEffect(()=>()=>{preparationController.current?.abort();},[proofKey]);
   const inFlight=useRef(false);
   const rangeEdited=useRef(false);
+  /** The range someone just checked in the "Print again" dialog: that dialog was the ask. */
+  const fixedRange=useRef('');
   const fromNumber=Number(from),toNumber=Number(to);
   const rangeValid=isValidOfficeRange(from,to,total);
   const refusedKey=`lw:office-refused:${runId}`;
@@ -286,9 +288,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       // Ask once per range before anything long starts: printing labels the
       // office already got again, and a design that has layout problems.
       if(askedKey!==rangeKey){
-        if(plan.kind==='reprint'){
+        if(plan.kind==='reprint' && fixedRange.current!==`${fromNumber}-${toNumber}`){
           const one=fromNumber===toNumber;
-          const ok=await confirmDialog({title:`Print ${range(fromNumber,toNumber)} again?`,body:`The office printer already got ${range(plan.overlap.from,plan.overlap.to)}. ${one?'It prints':'They print'} again and ${one?'is':'are'} logged as a reprint. The run’s progress doesn’t change.`,confirmLabel:'Print again'});
+          const ok=await confirmDialog({title:`Print ${range(fromNumber,toNumber)} again?`,body:`${Range(plan.overlap.from,plan.overlap.to)} went to the office printer before. ${one?'It prints':'They print'} again and ${one?'is':'are'} logged as a reprint. The run’s progress doesn’t change.`,confirmLabel:'Print again'});
           if(!ok)return;
         }
         if(layoutWarnings.length){
@@ -330,6 +332,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       catch(err){if(!(err instanceof OfficeRequestError && err.status===409))throw err;}
     }
     setFixPart(null);
+    fixedRange.current=`${part.from}-${Math.min(part.to,part.from+cap-1)}`;
     rangeEdited.current=true;setChooseAgain(false);setFrom(String(part.from));setTo(String(Math.min(part.to,part.from+cap-1)));
     if(part.requestId)setReprintOf(part.requestId);
     setNotice({text:`Saved. ${Range(part.from,part.to)} ${part.from===part.to?'is':'are'} ready to print again: check, then send.`,at:Date.now()});
@@ -371,8 +374,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     </div>
     {!pending && !rangeValid && <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total.toLocaleString()}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
     {tooBig && <div className="space-y-1 text-sm text-amber-300"><p>The office printer takes up to {plural(cap)} of this design in one send.</p><button type="button" className="btn btn-ghost btn-sm -ml-2 text-amber-300" onClick={()=>{rangeEdited.current=true;setTo(String(fromNumber+cap-1));}}>Send {fromNumber.toLocaleString()}–{(fromNumber+cap-1).toLocaleString()} now</button></div>}
+    {!pending && rangeValid && !tooBig && plan.kind==='new' && toNumber<total && total-fromNumber+1>cap && <p className="text-sm text-zinc-400">This run is too big for one send, so it goes {plural(cap)} at a time. After each send, tap Send the next {cap.toLocaleString()}.</p>}
     {!pending && rangeValid && plan.kind==='wait' && <p role="status" className="text-sm text-zinc-400">{plan.why==='needs-check'?`${Range(plan.overlap.from,plan.overlap.to)} need someone to check the office printer first (see above).`:`${Range(plan.overlap.from,plan.overlap.to)} ${plan.overlap.from===plan.overlap.to?'is':'are'} still on the way to the office printer. Send these once ${plan.overlap.from===plan.overlap.to?'it’s':'they’re'} sent.`}</p>}
-    {!pending && rangeValid && plan.kind==='reprint' && !tooBig && <p className="text-sm text-amber-300">The office printer already got {range(plan.overlap.from,plan.overlap.to)}. Sending prints {plan.overlap.from===plan.overlap.to?'it':'them'} again as a reprint.</p>}
+    {!pending && rangeValid && plan.kind==='reprint' && !tooBig && <p className="text-sm text-amber-300">{Range(plan.overlap.from,plan.overlap.to)} went to the office printer before, so this is logged as a reprint.</p>}
     {alreadyPrinted && <div className="space-y-1 text-sm text-amber-300"><p>{Range(fromNumber,Math.min(toNumber,printedCount))} {fromNumber===Math.min(toNumber,printedCount)?'is':'are'} already counted as printed.</p>{printedCount<toNumber && <button type="button" className="btn btn-ghost btn-sm -ml-2 text-amber-300" onClick={()=>{rangeEdited.current=true;setFrom(String(printedCount+1));}}>Send {printedCount+1}–{toNumber} instead</button>}</div>}
     {!printAllowed && <p className="text-sm text-amber-300">Sending is off until every label has a value (see the list above).</p>}
     <button type="button" disabled={disabled} onClick={()=>void onPrimary()} className="btn btn-primary w-full">{busy?<Loader2 className="size-4 animate-spin" />:<PrinterIcon className="size-4" />}{primaryLabel}</button>

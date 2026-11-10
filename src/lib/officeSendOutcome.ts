@@ -51,7 +51,8 @@ export function uncertainSendWords(status: number | undefined, code?: string): {
   if (status === 403 && code === 'origin_not_allowed') return { cause: 'address', message: 'This page was opened at an address the server doesn’t accept. Open Label Wrangler at its usual address, then tap “Send again”.' };
   if (status === 403) return { cause: 'no-access', message: 'Your account can’t send to the office printer right now. Ask your admin for print access, then tap “Send again”.' };
   if (status === 429) return { cause: 'busy', message: 'The server is busy. Wait a moment, then tap “Send again”.' };
-  return { cause: 'no-answer', message: 'Tap “Send again”. It’s the same request, so it won’t print twice.' };
+  if (status !== undefined && status >= 500) return { cause: 'no-answer', message: 'The server had a problem. Tap “Send again”. It’s the same request, so it won’t print twice.' };
+  return { cause: 'no-answer', message: 'The connection dropped before the server answered. Tap “Send again”. It’s the same request, so it won’t print twice.' };
 }
 
 const REFUSALS: Array<[RegExp, OfficeRefusalReason, string]> = [
