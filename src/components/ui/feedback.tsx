@@ -138,7 +138,7 @@ export function FeedbackHost() {
     </Dialog>
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[110] flex flex-col items-center gap-2 px-4" role="status" aria-live="polite">
       {current.toasts.map((item) => (
-        <div key={item.id} data-state={item.closing ? 'closed' : 'open'} className="toast-layer pointer-events-auto flex max-w-md items-center gap-2.5 rounded-xl bg-zinc-800 py-1.5 pl-4 pr-1.5 text-sm text-zinc-100 shadow-xl shadow-black/40 ring-1 ring-zinc-700">
+        <div key={item.id} data-state={item.closing ? 'closed' : 'open'} className="toast-layer pointer-events-auto flex max-w-md items-center gap-2.5 rounded-xl bg-zinc-800 py-1.5 pl-4 pr-1.5 text-sm text-zinc-100 shadow-xl shadow-black/40">
           {item.tone === 'success' ? <CheckCircle2 className="h-4 w-4 shrink-0 rounded-full text-emerald-400 animate-success" /> : item.tone === 'error' ? <AlertCircle className="h-4 w-4 shrink-0 text-red-400" /> : <Info className="h-4 w-4 shrink-0 text-zinc-400" />}
           <span>{item.message}</span>
           <button type="button" aria-label="Dismiss" onClick={() => dismissToast(item.id)} className="btn btn-ghost btn-icon btn-sm text-zinc-400"><X className="h-3.5 w-3.5" /></button>

@@ -187,7 +187,7 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
           }}
           className={pos.sheet
             ? 'menu-sheet outline-none rounded-t-2xl bg-zinc-900 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl shadow-black/50'
-            : 'pop-layer outline-none min-w-[220px] max-w-[calc(100vw-1.5rem)] rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/50 ring-1 ring-zinc-700'}
+            : 'pop-layer outline-none min-w-[220px] max-w-[calc(100vw-1.5rem)] rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/50'}
         >
           {pos.sheet && <div className="flex h-6 touch-none cursor-grab items-center justify-center" onPointerDown={onSheetDown} onPointerMove={onSheetMove} onPointerUp={onSheetUp} onPointerCancel={onSheetUp}>
             <span aria-hidden="true" className="h-1 w-10 rounded-full bg-zinc-700" />
