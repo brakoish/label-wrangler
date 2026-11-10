@@ -237,29 +237,38 @@ export function barcodeFitProblem(fit: BarcodeFit, value: string): string {
       const room = Math.max(0, fit.labelDots - Math.max(0, fit.startDots));
       return fit.startDots < 0
         ? 'starts off the label, so the printer cuts it off and it won’t scan'
-        : `prints ${width} wide for ${characters(value)}, but only ${inches(room, fit.dpi)} fits from where it starts, so the printer cuts it off and it won’t scan`;
+        : `prints ${width} wide for ${characters(value)} but only ${inches(room, fit.dpi)} fits, so the printer cuts it off and it won’t scan`;
     }
     case 'into-next-label':
-      return `prints ${width} wide for ${characters(value)} and runs onto the next label${fit.overNextBarcode ? ', over its barcode' : ''}, so neither label would scan`;
+      return fit.overNextBarcode
+        ? `prints ${width} wide for ${characters(value)} and runs over the next label’s barcode, so neither label will scan`
+        : `prints ${width} wide for ${characters(value)} and runs onto the next label, so it won’t scan`;
     case 'quiet-zone': return 'reaches the label edge with almost no clear space beside the bars; some scanners may not read it';
     default: return '';
   }
 }
 
+/**
+ * Where the fix is read: inside the designer, the notice carries a "Make an
+ * exact-print copy" button, so the words point at it rather than at a menu;
+ * elsewhere (new run, run page) they say it is done in the designer.
+ */
+export type BarcodeFixPlace = 'designer' | 'elsewhere';
+
 /** The layout change that fixes it, as an instruction. Never "shorten it". */
-export function barcodeFitFix(fit: BarcodeFit): string {
+export function barcodeFitFix(fit: BarcodeFit, place: BarcodeFixPlace = 'elsewhere'): string {
   if (fit.reason === 'characters') return '';
   const label = inches(fit.labelDots, fit.dpi);
   const width = inches(fit.barsDots, fit.dpi);
   const options: string[] = [];
   for (const fix of fit.fixes) {
     if (fix === 'wider-box') options.push(`make the barcode box at least ${width} wide in the design`);
-    if (fix === 'wider-label') options.push(`this needs ${width} and the label is ${label}: use a wider label or a QR code`);
+    if (fix === 'wider-label') options.push(`use a label at least ${width} wide, or a QR code`);
     if (fix === 'taller-box') options.push('make the barcode box taller in the design');
     if (fix === 'move-inside') options.push('move the barcode box fully onto the label in the design');
     if (fix === 'move') options.push(fit.reason === 'quiet-zone' ? 'move it in from the edge a little in the design' : `move it in the design so the ${width} of bars fit on the ${label} label`);
     if (fix === 'turn') options.push('turn it sideways in the design');
-    if (fix === 'exact-copy') options.push('make an exact-print copy of the design (More menu in the designer), which draws thinner bars');
+    if (fix === 'exact-copy') options.push(place === 'designer' ? 'make an exact-print copy, which draws thinner bars that fit' : 'make an exact-print copy of the design in the designer, which draws thinner bars that fit');
   }
   if (!options.length) return '';
   const joined = options.length === 1 ? options[0] : `${options.slice(0, -1).join(', ')} or ${options[options.length - 1]}`;

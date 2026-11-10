@@ -311,6 +311,28 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
   const pad = 0.2;
   const viewW = sheetW + pad * 2;
   const viewH = sheetH + pad * 2;
+  const perSheet = cols * rows;
+  // A whole sheet of 30 is too small to check: with a label picked, show
+  // that one label large first, and the sheet on request.
+  const [view, setView] = useState<'label' | 'sheet'>('label');
+  const canFocus = selectedLabelOffset !== undefined && perSheet > 1;
+  const focusOne = canFocus && view === 'label';
+  const caption = `${perSheet.toLocaleString()} label${perSheet === 1 ? '' : 's'} a sheet, ${cols} across and ${rows} down`;
+
+  if (focusOne) {
+    const cellData = testDataByLabel ? testDataByLabel[selectedLabelOffset] : testData;
+    return (
+      <figure className="space-y-2">
+        <svg viewBox={`0 0 ${contentW} ${contentH}`} className="mx-auto block h-auto max-h-[420px] w-full max-w-xl rounded-md bg-white" role="img" aria-label={`Label ${selectedLabelOffset + 1} on this sheet`} style={{ aspectRatio: `${labelW} / ${labelH}` }}>
+          <SheetLabelCell elements={elements} format={format} values={cellData} contentW={contentW} contentH={contentH} />
+        </svg>
+        <figcaption className="flex flex-wrap items-center justify-center gap-x-3 text-sm text-zinc-400">
+          <span>Label {selectedLabelOffset + 1} of the {perSheet.toLocaleString()} on this sheet</span>
+          <button type="button" className="inline-flex min-h-control-sm items-center text-amber-400 hover:underline" onClick={() => setView('sheet')}>Show the whole sheet</button>
+        </figcaption>
+      </figure>
+    );
+  }
 
   return (
     <figure className="space-y-2">
@@ -356,7 +378,10 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
             })
           )}
         </svg>
-      <figcaption className="text-center text-xs text-zinc-500">{cols}×{rows} = {cols * rows} labels on the sheet</figcaption>
+      <figcaption className="flex flex-wrap items-center justify-center gap-x-3 text-sm text-zinc-400">
+        <span>{caption}</span>
+        {canFocus && <button type="button" className="inline-flex min-h-control-sm items-center text-amber-400 hover:underline" onClick={() => setView('label')}>Show one label</button>}
+      </figcaption>
     </figure>
   );
 }

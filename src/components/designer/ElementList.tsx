@@ -5,6 +5,7 @@ import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
 import { elementTypeName, friendlyFieldName } from '@/lib/fieldLabels';
 import { Menu } from '@/components/ui/Menu';
+import { useLayoutEffect, useRef } from 'react';
 
 interface ElementListProps {
   elements: TemplateElement[];
@@ -37,6 +38,28 @@ export function ElementList({
 
   // Layer actions apply to the whole selection when the row is part of it.
   const targets = (id: string) => (selectedElementIds.has(id) ? selectedElementIds : new Set([id]));
+
+  // One selected layer: its highlight is a single shape that slides from the
+  // old row to the new one (a shared layout move), instead of a hard cut.
+  const single = selectedElementIds.size === 1 ? [...selectedElementIds][0] : null;
+  const listRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const shownFor = useRef<string | null>(null);
+  const order = sortedElements.map((e) => e.id).join(',');
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const highlight = highlightRef.current;
+    if (!list || !highlight) return;
+    const row = single ? list.querySelector<HTMLElement>(`[data-layer-id="${CSS.escape(single)}"]`) : null;
+    if (!row) { highlight.style.opacity = '0'; shownFor.current = null; return; }
+    const appearing = shownFor.current === null;
+    if (appearing) highlight.style.transition = 'none';
+    highlight.style.transform = `translateY(${row.offsetTop}px)`;
+    highlight.style.height = `${row.offsetHeight}px`;
+    highlight.style.opacity = '1';
+    if (appearing) { void highlight.offsetHeight; highlight.style.transition = ''; }
+    shownFor.current = single;
+  }, [single, order]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -86,7 +109,8 @@ export function ElementList({
       </div>
 
       {/* Element list */}
-      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-px">
+      <div ref={listRef} className="relative flex-1 overflow-y-auto px-2 pb-3 space-y-px">
+        <div ref={highlightRef} aria-hidden="true" className="layer-highlight pointer-events-none absolute inset-x-2 top-0 rounded-lg bg-zinc-800 opacity-0 shadow-[inset_2px_0_0_var(--color-amber-500)]" />
         {sortedElements.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-zinc-100 text-sm font-medium">Nothing on this label yet</p>
@@ -98,6 +122,7 @@ export function ElementList({
               key={element.id}
               element={element}
               isSelected={selectedElementIds.has(element.id)}
+              slidingHighlight={single === element.id}
               onSelect={(additive) => onSelectElement(element.id, additive)}
               onDelete={() => onDeleteElement(element.id)}
               onDuplicate={() => onDuplicateElement(element.id)}
@@ -122,9 +147,12 @@ function ElementItem({
   onToggleLock,
   onMove,
   canMove,
+  slidingHighlight = false,
 }: {
   element: TemplateElement;
   isSelected: boolean;
+  /** The list draws this row's highlight as the sliding shape, so the row itself stays clear. */
+  slidingHighlight?: boolean;
   onSelect: (additive: boolean) => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -142,10 +170,12 @@ function ElementItem({
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
       role="group"
       aria-label={`${typeLabel} layer ${label}`}
-      className={`group/layer flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
-        isSelected
-          ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
-          : 'hover:bg-zinc-900'
+      className={`group/layer relative flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
+        slidingHighlight
+          ? ''
+          : isSelected
+            ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
+            : 'hover:bg-zinc-900'
       }`}
     >
       {/* Type icon */}
@@ -156,7 +186,7 @@ function ElementItem({
       {/* Label */}
       <div className="flex-1 min-w-0">
         <button aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
-        {(label !== typeLabel || !element.isStatic) && <p className="truncate text-xs text-zinc-500">{label !== typeLabel ? typeLabel : ''}{!element.isStatic ? `${label !== typeLabel ? ', c' : 'C'}hanges per label` : ''}</p>}
+        {(label !== typeLabel || !element.isStatic) && <p className="text-xs text-zinc-500">{label !== typeLabel ? typeLabel : ''}{!element.isStatic ? `${label !== typeLabel ? ', c' : 'C'}hanges per label` : ''}</p>}
       </div>
       {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 

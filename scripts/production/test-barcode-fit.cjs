@@ -10,7 +10,7 @@ const sharp = require('sharp');
 const { barcodeFit, nativeBarcodeFootprint, barcodeFitProblem, barcodeFitFix } = require('../../src/lib/barcodeFit.ts');
 const { checkRunBarcodes, describeBarcodeGroups } = require('../../src/lib/barcodeCheck.ts');
 const { layoutProblems } = require('../../src/lib/designerLayout.ts');
-const { runPrintCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, BARCODE_GO_AHEAD, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
+const { runPrintCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, barcodeVerdict, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
 const fs = require('node:fs');
 const path = require('node:path');
 const { generateZPL } = require('../../src/lib/zplGenerator.ts');
@@ -115,8 +115,12 @@ async function renderNative(template, format, values) {
     assert.ok(ink.lastIndexOf(1) - ink.indexOf(1) + 1 < fit.barsDots, 'the renderer really loses the end of the bars');
     assert.equal(decodeRow(ink), null, 'and what is left does not scan');
     const message = `${barcodeFitProblem(fit, T24)}. ${barcodeFitFix(fit)}.`;
-    assert.match(message, /prints 2\.95" wide for 24 characters, but only 1\.93" fits/);
-    assert.match(message, /exact-print copy/);
+    assert.match(message, /prints 2\.95" wide for 24 characters but only 1\.93" fits/);
+    assert.match(message, /exact-print copy of the design in the designer/);
+    assert.doesNotMatch(message, /More menu/, 'no directions to a menu');
+    const inDesigner = barcodeFitFix(fit, 'designer');
+    assert.match(inDesigner, /make an exact-print copy/i);
+    assert.doesNotMatch(inDesigner, /designer|More menu/, 'inside the designer, never "go to the designer"');
     assert.doesNotMatch(message, /shorten/i, 'never tell anyone to shorten a package tag');
     // The designer, the wizard and the run page say the same thing.
     const designer = layoutProblems(t.elements, F['2x1'], { 'Package Tag': T24, Product: 'x' });
@@ -135,8 +139,9 @@ async function renderNative(template, format, values) {
     // Operational rule: an emulated "won't print whole" never hard-stops. It is
     // shown first, in red, with its fix, and printing takes an explicit go-ahead.
     assert.equal(page.verdict.stops, false, 'a native barcode the printer cuts off is not a stop');
-    assert.equal(page.verdict.goAheadLabel, BARCODE_GO_AHEAD);
-    assert.equal(BARCODE_GO_AHEAD, 'Print anyway — the barcode may be cut off');
+    assert.equal(page.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode will be cut off and won’t scan', 'the go-ahead says what will happen');
+    assert.equal(page.verdict.carriesOver, true);
+    assert.equal(page.barcodeElementIds.join(), 'tag');
     assert.match(page.verdict.heading, /^40 labels have a barcode that won’t print whole$/);
     assert.equal(printCheckAllows(page, {}), false, 'printing waits for the go-ahead');
     assert.equal(printCheckAllows(page, { barcode: page.blockingKey }), true, 'and goes ahead once given');
@@ -155,7 +160,14 @@ async function renderNative(template, format, values) {
     const fit = barcodeFit(t.elements[1], TAGS[2], F.preroll, false);
     assert.equal(fit.reason, 'into-next-label');
     assert.equal(fit.overNextBarcode, true);
-    assert.match(barcodeFitProblem(fit, TAGS[2]), /runs onto the next label, over its barcode/);
+    assert.match(barcodeFitProblem(fit, TAGS[2]), /runs over the next label’s barcode, so neither label will scan/);
+    // The go-ahead names that damage, and is asked again on the run page.
+    const pairs = runPrintCheck({ ...run([TAGS[2], TAGS[2]]), totalLabels: 2, dataSource: 'csv' }, t, F.preroll);
+    assert.equal(pairs.verdict.severity, 'neither-scans');
+    assert.equal(pairs.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode prints over the next label’s, so neither label will scan');
+    assert.equal(pairs.verdict.carriesOver, false, 'a wizard tick for "neither label will scan" never carries over to the run page');
+    assert.equal(pairs.blocking.length, 1);
+    assert.equal(pairs.layout.length, 0, 'one problem, one tick: the overlap is not asked about again');
     const g = thermalRenderGeometry(F.preroll);
     const ink = (await rows(await renderNative(t, F.preroll, [{ 'Package Tag': TAGS[2] }, null]))).row(150);
     assert.ok(ink.lastIndexOf(1) > g.effectiveSideMDots + g.labelWDots + Math.round(0.125 * 300), 'lane 1 ink lands on lane 2');
@@ -226,7 +238,7 @@ async function renderNative(template, format, values) {
     const full = barcode({ x: 0, width: 406 });
     const fit = barcodeFit(full, forty, F['2x1'], true);
     assert.equal(fit.reason, 'box-too-small');
-    assert.match(barcodeFitFix(fit), /use a wider label or a QR code/);
+    assert.match(barcodeFitFix(fit), /use a label at least [0-9.]+" wide, or a QR code/i);
     await assert.rejects(renderThermalBitmap(design('2x1', 'bitmap-v1', full), F['2x1'], { 'Package Tag': forty, Product: 'x' }), /Barcode box is too small/);
     const check = checkRunBarcodes(design('2x1', 'bitmap-v1', full), run([T24, forty]), F['2x1']);
     assert.equal(check.badLabels, 1, 'only the impossible label is held back');
@@ -239,6 +251,34 @@ async function renderNative(template, format, values) {
     const valuePage = runPrintCheck({ ...run([accented]), totalLabels: 1, dataSource: 'csv' }, design('4x6', 'native-v1', barcode()), F['4x6']);
     assert.equal(valuePage.verdict.stops, false);
     assert.equal(valuePage.verdict.goAheadLabel, BARCODE_VALUE_GO_AHEAD);
+    // A value only the spreadsheet can fix says so, consistently, in the heading and the bottom bar.
+    const exactValue = runPrintCheck({ ...run([accented]), totalLabels: 1, dataSource: 'csv' }, design('4x6', 'bitmap-v1', barcode()), F['4x6']);
+    assert.equal(exactValue.verdict.stops, true);
+    assert.equal(exactValue.verdict.fixIn, 'data');
+    assert.match(exactValue.verdict.waitReason, /Fix the spreadsheet rows listed above, then choose the file again\./);
+    assert.doesNotMatch(exactValue.verdict.waitReason, /Fix the design/);
+    assert.match(exactValue.blocking[0], /Fix row 2 of your spreadsheet/);
+    assert.match(exactValue.verdict.heading, /barcode value it can’t print/);
+    const typed = barcodeVerdict(exactValue.verdict.stops ? [{ kind: 'characters', fit: { bitmap: true, level: 'blocked', reason: 'characters' }, field: 'Package Tag', label: 1 }] : [], 1, F['4x6'], () => false);
+    assert.equal(typed.fixIn, 'design', 'a typed value is not a spreadsheet fix');
+  }
+  // A barcode cut off over a QR code: one line names both, and the go-ahead says both won't scan.
+  {
+    const qr = { id: 'coa', type: 'qr', fieldName: 'COA link', isStatic: false, x: 300, y: 80, width: 100, height: 100, rotation: 0, zIndex: 3, errorCorrection: 'M' };
+    const t = { ...design('2x1', 'native-v1', barcode({ x: 14, y: 80, width: 260, height: 50 })), elements: [barcode({ x: 14, y: 80, width: 260, height: 50 }), qr] };
+    const data = { sourceData: [{ 'Package Tag': T24, 'COA link': 'https://lab.example/1' }], fieldMappings: { 'Package Tag': { mode: 'column', csvColumn: 'Package Tag' }, 'COA link': { mode: 'column', csvColumn: 'COA link' } }, staticValues: {}, totalLabels: 1, dataSource: 'csv' };
+    const page = runPrintCheck(data, t, F['2x1']);
+    assert.match(page.blocking[0], /It also prints over the COA link QR code, so that won’t scan either\./);
+    assert.equal(page.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode and the COA link QR code won’t scan');
+    assert.equal(page.layout.length, 0, 'the overlap is part of the barcode problem, not a second tick');
+    // Over a QR code and a text: the code is named as the one that won't scan, never "the code it covers".
+    const batch = { id: 'batch', type: 'text', fieldName: 'Batch', isStatic: false, x: 230, y: 60, width: 60, height: 90, rotation: 0, zIndex: 4, fontSize: 10, fontFamily: 'Arial', fontWeight: 'normal', textAlign: 'left', color: '#000000', lineHeight: 1.2 };
+    const t2 = { ...t, elements: [...t.elements, batch] };
+    const data2 = { ...data, sourceData: [{ ...data.sourceData[0], Batch: 'B-1102' }], fieldMappings: { ...data.fieldMappings, Batch: { mode: 'column', csvColumn: 'Batch' } } };
+    const page2 = runPrintCheck(data2, t2, F['2x1']);
+    assert.doesNotMatch(page2.blocking[0] + page2.verdict.goAheadLabel, /code it covers/);
+    assert.match(page2.blocking[0], /so the COA link QR code won’t scan either\./);
+    assert.equal(page2.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode and the COA link QR code won’t scan');
   }
   // The wizard and the run page use the same verdict and the same go-ahead words, and neither hard-stops on it.
   {
@@ -246,6 +286,7 @@ async function renderNative(template, format, values) {
     const wizard = read('src/app/runs/new/page.tsx');
     assert.match(wizard, /const barcodesOk = barcodesClear \|\| barcodeGoAhead;/, 'the wizard goes ahead on an explicit tick');
     assert.match(wizard, /confirmLabel=\{barcodeWords\.stops \? undefined : barcodeWords\.goAheadLabel\}/);
+    assert.match(wizard, /saved\.verdict\.carriesOver/, 'the wizard keeps a go-ahead for the run page only when it may carry over');
     const page = read('src/components/runs/RunPrinter.tsx');
     assert.match(page, /runPrintCheck\(run, template, format\)/, 'the run page checks with runPrintCheck');
     assert.match(page, /printAllowed=\{blanksOk && checksOk\}/, 'office sends wait for the same check');

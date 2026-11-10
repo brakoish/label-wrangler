@@ -16,7 +16,8 @@ import { Dialog } from '@/components/ui/Dialog';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
-import { friendlyError } from '@/lib/userMessages';
+import { Menu } from '@/components/ui/Menu';
+import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -28,6 +29,9 @@ interface TemplateListProps {
   onNewTemplate: () => void;
   /** Shown above the list, e.g. when a design link couldn't open. */
   notice?: ReactNode;
+  /** When the whole list failed while a design link was opening: one error, one Try again for both. */
+  openingName?: string;
+  onRetryOpen?: () => void;
 }
 
 export function TemplateList({
@@ -39,6 +43,8 @@ export function TemplateList({
   onRenameTemplate,
   onNewTemplate,
   notice,
+  openingName,
+  onRetryOpen,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
   const listHydrated = useTemplateStore((state) => state.hydrated);
@@ -67,7 +73,7 @@ export function TemplateList({
 
   return (
     <div className="page-container">
-      {notice}
+      {!(listError && templates.length === 0) && notice}
       <div className="mb-5 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>
         <button type="button" onClick={onNewTemplate} className={`btn ${listError && templates.length === 0 ? 'btn-secondary' : 'btn-primary'}`}>
@@ -99,9 +105,9 @@ export function TemplateList({
         </div>
       ) : listError && templates.length === 0 ? (
         <div role="alert" className="py-16 text-center space-y-3">
-          <h2 className="text-zinc-100 font-semibold text-lg">We couldn’t load your designs</h2>
+          <h2 className="text-zinc-100 font-semibold text-lg">{openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}</h2>
           <p className="text-zinc-400 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
-          <button type="button" disabled={listLoading} onClick={() => void useTemplateStore.getState().fetchTemplates()} className="btn btn-primary">{listLoading ? 'Trying again…' : 'Try again'}</button>
+          <button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-primary">{listLoading ? 'Trying again…' : 'Try again'}</button>
         </div>
       ) : visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
@@ -205,7 +211,8 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       : generateZPLWithImages(template, format, sampleData).then(zpl => renderZplToDataUrl(zpl, format));
     preview
       .then((url) => { if (active) setThermalUrl(url); })
-      .catch(() => { if (active) setPreviewError('The preview could not be drawn.'); });
+      // A box the renderer refuses is named ("Barcode 1 has no width…").
+      .catch((error) => { if (active) setPreviewError(friendlyRenderFailure(error, 'The preview could not be drawn.', template.elements, format.labelsAcross || 1, sampleData, format)); });
 
     return () => { active = false; };
   }, [format, sampleData, template, attempt]);
@@ -278,52 +285,25 @@ function TemplateCard({
 
       {/* Info area */}
       <div className="p-3 pl-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-start justify-between gap-2">
           <h3 className="min-w-0 flex-1 text-sm font-semibold text-zinc-100">
-            <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} className="flex min-h-control-sm max-w-full items-center truncate rounded-sm text-left">
+            <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} title={template.name} className="min-h-control-sm max-w-full rounded-sm py-1.5 text-left break-words line-clamp-2">
               {template.name}
             </button>
           </h3>
-          <div className="flex items-center flex-shrink-0 -mr-1">
-            {onRename && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRename();
-                }}
-                className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-                title="Rename design"
-                aria-label={`Rename ${template.name}`}
-              >
-                <Pencil className="size-4" />
-              </button>
-            )}
-            {onDuplicate && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDuplicate();
-                }}
-                className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-                title="Duplicate (optionally to another label size)"
-                aria-label={`Duplicate ${template.name}`}
-              >
-                <Copy className="size-4" />
-              </button>
-            )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (template.archivedAt) { onDelete(); return; }
-                void confirmDialog({ title: `Archive “${template.name}”?`, body: 'It leaves the active list. Runs that used it keep working, and you can restore it from Archived.', confirmLabel: 'Archive' }).then((ok) => { if (ok) onDelete(); });
-              }}
-              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-              disabled={pending}
-              title={template.archivedAt ? "Restore design" : "Archive design"}
-              aria-label={`${template.archivedAt ? "Restore" : "Archive"} ${template.name}`}
-            >
-              {template.archivedAt ? <RotateCcw className="size-4" /> : <Archive className="size-4" />}
-            </button>
+          {/* One menu instead of three icon buttons on every card. */}
+          <div className="-mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <Menu
+              label={`More for ${template.name}`}
+              showLabel={false}
+              items={[
+                ...(onRename ? [{ label: 'Rename', icon: <Pencil className="size-4" aria-hidden="true" />, onSelect: onRename }] : []),
+                ...(onDuplicate ? [{ label: 'Duplicate', icon: <Copy className="size-4" aria-hidden="true" />, onSelect: onDuplicate }] : []),
+                template.archivedAt
+                  ? { label: 'Restore', icon: <RotateCcw className="size-4" aria-hidden="true" />, onSelect: onDelete, disabled: pending }
+                  : { label: 'Archive', icon: <Archive className="size-4" aria-hidden="true" />, disabled: pending, onSelect: () => { void confirmDialog({ title: `Archive “${template.name}”?`, body: 'It leaves the active list. Runs that used it keep working, and you can restore it from Archived.', confirmLabel: 'Archive' }).then((ok) => { if (ok) onDelete(); }); } },
+              ]}
+            />
           </div>
         </div>
 
@@ -332,7 +312,7 @@ function TemplateCard({
         </p>
         <p className="mt-0.5 truncate text-xs text-zinc-500">
           {partCount} {partCount === 1 ? 'item' : 'items'}
-          {dynamicCount > 0 && <> · {dynamicCount === partCount ? (dynamicCount === 1 ? 'it changes' : 'all change') : `${dynamicCount} change`} per label</>}
+          {dynamicCount > 0 && <> · {dynamicCount === partCount ? (dynamicCount === 1 ? 'changes per label' : 'all change per label') : `${dynamicCount} of them change per label`}</>}
           {' · '}{new Date(template.updatedAt).toLocaleDateString()}
         </p>
       </div>
@@ -478,7 +458,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             <label id={`${fieldId}-size`} className="field-label mb-1.5">Label size</label>
             {formats.length === 0 ? (
               <p className="text-sm text-zinc-500 py-2">
-                No label sizes yet — <Link href="/formats" className="text-amber-300 underline underline-offset-2">add a label size</Link> first
+                No label sizes yet — <Link href="/formats" className="text-amber-300 underline underline-offset-2">add a label size</Link>{' '}first
               </p>
             ) : (
               <CustomSelect

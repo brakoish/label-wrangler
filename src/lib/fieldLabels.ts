@@ -119,9 +119,21 @@ export function setSpreadsheetHeaderRow(row: number): void {
   headerRow = Number.isFinite(row) && row >= 1 ? Math.floor(row) : 1;
 }
 
+let rowMap: ReadonlyArray<number> | null = null;
+
+/**
+ * When New run leaves some rows out (blank cells), label N is no longer row
+ * N of the file: `map[label - 1]` is the 0-based data row it came from.
+ * Null when every row is a label.
+ */
+export function setSpreadsheetRowMap(map: ReadonlyArray<number> | null): void {
+  rowMap = map && map.length ? map : null;
+}
+
 /** Spreadsheet row the person sees for a label: the row after the headings. */
 export function spreadsheetRow(labelNumber: number): number {
-  return labelNumber + headerRow;
+  const dataRow = rowMap && labelNumber >= 1 && labelNumber <= rowMap.length ? rowMap[labelNumber - 1] + 1 : labelNumber;
+  return dataRow + headerRow;
 }
 
 /**

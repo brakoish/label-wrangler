@@ -31,8 +31,9 @@ import { safeNextPath } from '@/lib/safeRedirect';
 import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
 import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
+import { barcodeFitFix } from '@/lib/barcodeFit';
 import { elementTypeName } from '@/lib/fieldLabels';
-import { friendlyError } from '@/lib/userMessages';
+import { friendlySaveError } from '@/lib/userMessages';
 
 type NewTemplateElement = TemplateElement extends infer T
   ? T extends TemplateElement
@@ -319,9 +320,24 @@ function DesignerContent() {
     setSaveError('');
     setSaving(false);
   }, [selectedTemplateId, clearUndo]);
+  // "Fix in the designer" links name the item to fix (?select=<id>): select it once it has loaded.
+  const selectParam = searchParams.get('select');
+  const selectedFromLink = useRef('');
+  const linkTemplateReady = !!currentTemplate && !currentTemplate.summaryOnly && currentTemplate.id === templateId;
+  useEffect(() => {
+    if (!selectParam || !linkTemplateReady || !templateId) return;
+    const key = `${templateId}:${selectParam}`;
+    if (selectedFromLink.current === key) return;
+    selectedFromLink.current = key;
+    if (useTemplateStore.getState().getTemplateById(templateId)?.elements.some((e) => e.id === selectParam)) {
+      setSelectedIds(new Set([selectParam]));
+      setPhonePane('edit');
+    }
+  }, [selectParam, linkTemplateReady, templateId]);
 
   const [recovery, setRecovery] = useState<Array<TemplateDraft & {key:string}>>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const templatesError = useTemplateStore((state) => state.error);
   useEffect(() => {
     let active = true;
     fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
@@ -362,9 +378,15 @@ function DesignerContent() {
   }, [currentTemplate, inks]);
   const designProblems = useMemo(() => (
     currentTemplate && currentFormat && !currentTemplate.summaryOnly && currentTemplate.thermalRenderMode !== 'bitmap-v1'
-      ? layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured)
+      // Inside the designer the fix is a button here, not "go to the designer".
+      ? layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured).map((p) => (
+        p.barcodeFit ? { ...p, fix: barcodeFitFix(p.barcodeFit, 'designer') || p.fix } : p
+      ))
       : []
   ), [currentTemplate, currentFormat, previewValues, measured]);
+  // A barcode that only fits as an exact-print copy gets that action right in the notice.
+  const canExactCopy = currentFormat?.type === 'thermal' && designProblems.some((p) => p.barcodeFit?.fixes.includes('exact-copy'));
+  const [exactCopyRequest, setExactCopyRequest] = useState(0);
   // Characters the printer's own font can't print, outlined on the canvas too.
   const canvasProblems = useMemo<LayoutProblem[]>(() => {
     if (!currentTemplate || currentTemplate.summaryOnly || !usesPrinterFont(currentFormat, currentTemplate)) return designProblems;
@@ -384,6 +406,8 @@ function DesignerContent() {
         {/* Template List */}
         <div className="flex-1 overflow-auto">
           <TemplateList
+            openingName={templateId && openState?.id === templateId && openState.status === 'failed' ? designLabel(templates.find((t) => t.id === templateId)?.name) : undefined}
+            onRetryOpen={templateId ? () => void openDesign(templateId) : undefined}
             notice={templateId && openState?.id === templateId ? (
               openState.status === 'opening'
                 ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
@@ -403,7 +427,7 @@ function DesignerContent() {
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
           {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && <div className="page-container pt-0 sm:pt-0 lg:pt-0">
+          {isAdmin && !(templatesError && templates.length === 0) && <div className="page-container pt-0 sm:pt-0 lg:pt-0">
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           </div>}
         </div>
@@ -679,7 +703,7 @@ function DesignerContent() {
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title={`${currentTemplate.name} · Designer`} />
-      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlySaveError(saveError, currentTemplate.elements, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
@@ -822,7 +846,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
@@ -860,6 +884,7 @@ function DesignerContent() {
             onGestureCancel={cancelGesture}
             testData={previewValues}
             layoutProblems={canvasProblems}
+            noticeAction={canExactCopy ? <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Make an exact-print copy</button> : null}
           />
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (

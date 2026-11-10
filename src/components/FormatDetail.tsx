@@ -6,6 +6,7 @@ import { LabelFormat, formatDimensions, COMMON_DPI_VALUES } from '@/lib/types';
 import { TrashIcon, EditIcon } from '@/app/icons';
 import { Check, X } from 'lucide-react';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { SizeInput } from '@/components/SizeInput';
 
 interface FormatDetailProps {
   format: LabelFormat;
@@ -128,9 +129,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
           <SpecCard label="Label size" editing={editing}>
             {editing ? (
               <div className="flex items-center gap-1">
-                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="field w-20 text-lg font-semibold" />
+                <SizeInput what="Width" min={0.1} max={20} value={d('width') as number} onChange={(v) => setD('width', v)} className="field w-20 text-lg font-semibold" />
                 <span className="text-base font-normal text-zinc-400">×</span>
-                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="field w-20 text-lg font-semibold" />
+                <SizeInput what="Height" min={0.1} max={40} value={d('height') as number} onChange={(v) => setD('height', v)} className="field w-20 text-lg font-semibold" />
                 <span className="text-base font-normal text-zinc-400">&quot;</span>
               </div>
             ) : (
@@ -200,7 +201,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <div className="space-y-3">
                 <DetailRow label="Label gap" hint="Space between labels on the roll" editing={editing}>
                   {editing ? (
-                    <EditNum value={d('labelGap') as number || 0} onChange={(v) => setD('labelGap', v)} />
+                    <EditNum what="The gap between labels" value={d('labelGap') as number || 0} onChange={(v) => setD('labelGap', v)} />
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.labelGap || 0}&quot;</span>
                   )}
@@ -209,14 +210,14 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   <>
                     <DetailRow label="Gap across" hint="Space between labels side by side" editing={editing}>
                       {editing ? (
-                        <EditNum value={d('horizontalGapThermal') as number || 0} onChange={(v) => setD('horizontalGapThermal', v)} />
+                        <EditNum what="The gap between labels across" value={d('horizontalGapThermal') as number || 0} onChange={(v) => setD('horizontalGapThermal', v)} />
                       ) : (
                         <span className="text-zinc-100 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
                       )}
                     </DetailRow>
                     <DetailRow label="Side margin" hint="Backing paper left of the first label" editing={editing}>
                       {editing ? (
-                        <EditNum value={d('sideMarginThermal') as number || 0} onChange={(v) => setD('sideMarginThermal', v)} />
+                        <EditNum what="The side margin" value={d('sideMarginThermal') as number || 0} onChange={(v) => setD('sideMarginThermal', v)} />
                       ) : (
                         <span className="text-zinc-100 font-medium">{format.sideMarginThermal || 0}&quot;</span>
                       )}
@@ -225,7 +226,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                 )}
                 <DetailRow label="Backing width" hint="Width of the paper the labels sit on. Auto works for most rolls." editing={editing}>
                   {editing ? (
-                    <EditNum value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} emptyLabel="Auto" />
+                    <EditNum what="The roll width" value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} emptyLabel="Auto" />
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.linerWidth ? `${format.linerWidth}"` : 'Auto'}</span>
                   )}
@@ -244,15 +245,15 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
         {!isThermal && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Sheet dimensions */}
-            <div className="card p-4 sm:p-5">
+            <div className="card card-flat p-4 sm:p-5">
               <h3 className="section-title mb-3">Sheet dimensions</h3>
               <div className="space-y-3">
                 <DetailRow label="Sheet size" editing={editing}>
                   {editing ? (
                     <div className="flex items-center gap-1">
-                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="field w-20" />
+                      <SizeInput what="The sheet width" min={1} max={20} value={d('sheetWidth') as number} onChange={(v) => setD('sheetWidth', v)} />
                       <span className="text-zinc-500">×</span>
-                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="field w-20" />
+                      <SizeInput what="The sheet height" min={1} max={30} value={d('sheetHeight') as number} onChange={(v) => setD('sheetHeight', v)} />
                       <span className="text-zinc-500">&quot;</span>
                     </div>
                   ) : (
@@ -261,28 +262,28 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                 </DetailRow>
                 <DetailRow label="Top margin" editing={editing}>
                   {editing ? (
-                    <EditNum value={d('topMargin') as number} onChange={(v) => setD('topMargin', v)} />
+                    <EditNum what="The top margin" value={d('topMargin') as number} onChange={(v) => setD('topMargin', v)} />
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.topMargin}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Side margin" editing={editing}>
                   {editing ? (
-                    <EditNum value={d('sideMargin') as number} onChange={(v) => setD('sideMargin', v)} />
+                    <EditNum what="The side margin" value={d('sideMargin') as number} onChange={(v) => setD('sideMargin', v)} />
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.sideMargin}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Gap across" editing={editing}>
                   {editing ? (
-                    <EditNum value={d('horizontalGap') as number} onChange={(v) => setD('horizontalGap', v)} />
+                    <EditNum what="The gap across" value={d('horizontalGap') as number} onChange={(v) => setD('horizontalGap', v)} />
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.horizontalGap}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Gap down" editing={editing}>
                   {editing ? (
-                    <EditNum value={d('verticalGap') as number} onChange={(v) => setD('verticalGap', v)} />
+                    <EditNum what="The gap down" value={d('verticalGap') as number} onChange={(v) => setD('verticalGap', v)} />
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.verticalGap}&quot;</span>
                   )}
@@ -291,7 +292,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
             </div>
 
             {/* Visual preview */}
-            <div className="card p-4 sm:p-5">
+            <div className="card card-flat p-4 sm:p-5">
               <h3 className="section-title mb-3">Layout preview</h3>
               <SheetPreview format={editing ? { ...format, ...draft } as LabelFormat : format} />
             </div>
@@ -327,18 +328,11 @@ function DetailRow({ label, hint, editing, children }: { label: string; hint?: s
   );
 }
 
-function EditNum({ value, onChange, emptyLabel }: { value: number; onChange: (v: number) => void; emptyLabel?: string }) {
+function EditNum({ value, onChange, emptyLabel, what }: { value: number; onChange: (v: number) => void; emptyLabel?: string; what: string }) {
   return (
-    <div className="flex items-center gap-1">
-      <input
-        type="number"
-        value={emptyLabel && !value ? '' : value}
-        placeholder={emptyLabel}
-        onChange={(e) => onChange(e.target.value === '' && emptyLabel ? 0 : parseFloat(e.target.value))}
-        step="0.001"
-        className="field w-24 text-right"
-      />
-      <span className="text-zinc-500">&quot;</span>
+    <div className="flex items-start gap-1">
+      <SizeInput what={what} min={emptyLabel ? 0.1 : 0} max={20} value={value} onChange={onChange} emptyLabel={emptyLabel} className="field w-24 text-right" />
+      <span className="pt-2 text-zinc-500">&quot;</span>
     </div>
   );
 }

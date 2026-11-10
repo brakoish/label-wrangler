@@ -133,6 +133,22 @@ export function checkRunData(template: Pick<LabelTemplate, 'elements'>, run: Run
   };
 }
 
+/**
+ * Every label (0-based) with a blank in a field that comes from the rows,
+ * for "Leave those labels out". Null when leaving labels out can't fix the
+ * check: a field with no column at all is blank on every label.
+ */
+export function blankLabelIndexes(template: Pick<LabelTemplate, 'elements'>, run: RunDataLike, check: RunDataCheck): number[] | null {
+  if (!check.issues.length || check.issues.some((issue) => issue.kind !== 'empty-rows')) return null;
+  const fields = check.issues.map((issue) => issue.field);
+  const out: number[] = [];
+  for (let index = 0; index < run.sourceData.length; index++) {
+    const values = labelValues(run, index);
+    if (fields.some((field) => (values[field] ?? '').trim() === '')) out.push(index);
+  }
+  return out.length && out.length < run.sourceData.length ? out : null;
+}
+
 /** "7, 212, 1500 (and 3 more)" */
 export function describeRowList(rows: number[], count: number, shown = 3): string {
   const head = rows.slice(0, shown).join(', ');

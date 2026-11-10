@@ -14,6 +14,7 @@ import { contentModeUpdates } from '@/lib/elementBinding';
 import { elementTypeName, friendlyFieldName, nextFieldName } from '@/lib/fieldLabels';
 import { Menu } from '@/components/ui/Menu';
 import { describeUnprintable, elementUnprintable, plainPrinterText } from '@/lib/printerCharacters';
+import { parseSizeInput, sizeProblem } from '@/lib/sizeInput';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -77,7 +78,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   if (!element) {
     return (
       <div className={`${PANEL} min-h-20 lg:min-h-0`}>
-        <div className="p-4 space-y-2 text-sm text-zinc-400"><h2 className="text-sm font-semibold text-zinc-100">Nothing selected</h2><p>Click an item to change it, or double-click text to type. Arrow keys move the selected item; Shift-click picks several.</p></div>
+        <p className="p-4 text-sm text-zinc-400">Pick an item on the label to change it.</p>
       </div>
     );
   }
@@ -91,6 +92,11 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   const step = 0.01;
   const labelW = isThermal ? format.width * dpi : format.width;
   const labelH = isThermal ? format.height * dpi : format.height;
+  // Sizes that can be used: at least a dot, at most the label. A position may
+  // put part of an item off the label, but not the whole item.
+  const smallest = isThermal ? Math.ceil((1 / dpi) * 100) / 100 : 0.01;
+  const owner = !element.isStatic && element.fieldName ? friendlyFieldName(element.fieldName) : elementTypeName(element.type);
+  const whose = (box: string) => `${owner}’s ${box}`;
 
   // The thermal printer's built-in font only has plain keyboard characters.
   const printerFont = isThermal && !bitmap;
@@ -140,6 +146,10 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           <div className="grid grid-cols-1">
             <CompactInput
               label="S"
+              min={smallest}
+              max={Math.min(format.width, format.height)}
+              unit={'"'}
+              what={whose('size')}
               value={toInches(element.width)}
               onChange={(v) => {
                 const qr = element as QRElement;
@@ -152,15 +162,15 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1.5">
-            <CompactInput label="W" value={toInches(element.width)} onChange={(v) => onUpdate({ width: fromInches(v) })} step={step} />
-            <CompactInput label="H" value={toInches(element.height)} onChange={(v) => onUpdate({ height: fromInches(v) })} step={step} />
+            <CompactInput label="W" min={smallest} max={Math.max(format.width, format.height)} unit={'"'} what={whose('width')} value={toInches(element.width)} onChange={(v) => onUpdate({ width: fromInches(v) })} step={step} />
+            <CompactInput label="H" min={element.type === 'line' ? 0 : smallest} max={Math.max(format.width, format.height)} unit={'"'} what={whose('height')} value={toInches(element.height)} onChange={(v) => onUpdate({ height: fromInches(v) })} step={step} />
           </div>
         )}
 
         {/* ── Position ── */}
         <div className="grid grid-cols-2 gap-1.5">
-          <CompactInput label="X" value={toInches(element.x)} onChange={(v) => onUpdate({ x: fromInches(v) })} step={step} />
-          <CompactInput label="Y" value={toInches(element.y)} onChange={(v) => onUpdate({ y: fromInches(v) })} step={step} />
+          <CompactInput label="X" min={-format.width} max={format.width} unit={'"'} what={whose('distance from the left')} value={toInches(element.x)} onChange={(v) => onUpdate({ x: fromInches(v) })} step={step} />
+          <CompactInput label="Y" min={-format.height} max={format.height} unit={'"'} what={whose('distance from the top')} value={toInches(element.y)} onChange={(v) => onUpdate({ y: fromInches(v) })} step={step} />
         </div>
 
         {/* ── Rotation and alignment ── */}
@@ -227,8 +237,14 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
-            <StackedField label="Field name" hint="New run fills it from the spreadsheet column with this name.">
-              {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />}
+            <StackedField label="Spreadsheet column" hint="Each label takes its value from the column with this name. Capitals and spaces don’t matter.">
+              {(id) => <>
+                <input id={id} type="text" list={`${id}-columns`} className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />
+                {/* Columns other items already use, to pick from instead of retyping. */}
+                <datalist id={`${id}-columns`}>
+                  {[...new Set(allElements.filter((e) => e.id !== element.id && !e.isStatic && e.fieldName).map((e) => e.fieldName!))].map((name) => <option key={name} value={name}>{friendlyFieldName(name)}</option>)}
+                </datalist>
+              </>}
             </StackedField>
             {(showManifest || usesManifest(allElements, element)) ? (
               <StackedField label="Or a Manifest field">
@@ -313,10 +329,10 @@ function TextStyleControls({ first, onUpdate, format, bitmap }: { first: TextEle
   return (
     <>
       <div className="grid grid-cols-2 gap-1.5">
-        <CompactInput label="Pt" value={first.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
+        <CompactInput label="Pt" min={1} max={500} what="Text size" value={first.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
         <div className="min-w-0"><span className="block pb-1 text-sm text-zinc-400" aria-hidden="true">Weight</span><CompactSelect ariaLabel="Weight" value={first.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
       </div>
-      <CompactInput label="LH" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
+      <CompactInput label="LH" min={0.5} max={5} what="Line spacing" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
       {isThermal && (
         <>
           <Row label="Letter width" id="letter-width-label" stacked>
@@ -331,12 +347,12 @@ function TextStyleControls({ first, onUpdate, format, bitmap }: { first: TextEle
             <button type="button" role="switch" aria-checked={autoFit} onClick={() => onUpdate({ autoFit: !autoFit })} aria-labelledby="autofit-label" className="switch" />
             <span id="autofit-label" className="text-sm text-zinc-300">Shrink long text to fit</span>
           </div>
-          {autoFit && <CompactInput label="Min" value={first.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />}
+          {autoFit && <CompactInput label="Min" min={1} max={500} what="Smallest size" value={first.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />}
         </>
       )}
       {bitmap && <>
         <Row label="Style"><CompactSelect ariaLabel="Style" value={first.fontStyle ?? 'normal'} options={['normal', 'italic']} labels={['Regular', 'Italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} /></Row>
-        <CompactInput label="Track" value={first.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} labelRight />
+        <CompactInput label="Track" min={-50} max={200} what="Letter spacing" value={first.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} labelRight />
         <Row label="Sits at"><CompactSelect ariaLabel="Where the text sits in its box" value={first.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} labels={['Top', 'Middle', 'Bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} /></Row>
       </>}
       {isThermal && !bitmap ? (
@@ -409,7 +425,7 @@ function LineProps({ element, onUpdate }: { element: LineElement; onUpdate: (u: 
     <>
       <SectionLabel icon={<span className="w-3 h-0.5 bg-current rounded" />} label="Line" />
       <Row label="Style"><CompactSelect ariaLabel="Line style" value={element.lineStyle || 'solid'} options={['solid', 'dotted', 'dashed']} labels={['Solid', 'Dotted', 'Dashed']} onChange={(v) => onUpdate({ lineStyle: v as LineElement['lineStyle'] })} /></Row>
-      <CompactInput label="Wt" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} labelRight />
+      <CompactInput label="Wt" min={0} max={1000} what="Thickness" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} labelRight />
       <ColorRow label="Color" value={element.color} onChange={(v) => onUpdate({ color: v })} />
     </>
   );
@@ -420,8 +436,8 @@ function RectProps({ element, onUpdate }: { element: RectangleElement; onUpdate:
     <>
       <SectionLabel icon={<Square className="w-3 h-3" />} label="Box" />
       <div className="grid grid-cols-2 gap-1.5">
-        <CompactInput label="Bdr" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} labelRight />
-        <CompactInput label="Rad" value={element.borderRadius} onChange={(v) => onUpdate({ borderRadius: v })} step={1} labelRight />
+        <CompactInput label="Bdr" min={0} max={1000} what="Border" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} labelRight />
+        <CompactInput label="Rad" min={0} max={1000} what="Corners" value={element.borderRadius} onChange={(v) => onUpdate({ borderRadius: v })} step={1} labelRight />
       </div>
       <ColorRow label="Border" value={element.strokeColor} onChange={(v) => onUpdate({ strokeColor: v })} />
       <ColorRow label="Fill" value={element.fillColor || '#000000'} onChange={(v) => onUpdate({ fillColor: v })} />
@@ -512,25 +528,42 @@ function usesManifest(elements: TemplateElement[], current: TemplateElement): bo
   return [...elements, current].some((el) => !!el.fieldName && names.has(el.fieldName));
 }
 
-function CompactInput({ label, value, onChange, step }: {
+function CompactInput({ label, value, onChange, step, min, max, unit = '', what }: {
   label: string; value: number; onChange: (v: number) => void; step: number; labelRight?: boolean;
+  /** The values that can be used; anything else is refused with a plain message. */
+  min?: number; max?: number; unit?: string;
+  /** Whose value this is, for the message: "Barcode 1’s width". */
+  what?: string;
 }) {
   const accessibleLabel = ({ S: 'QR size', W: 'Width', H: 'Height', X: 'Distance from left edge', Y: 'Distance from top edge', Pt: 'Font size in points', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest font size for auto-fit', Track: 'Letter spacing', Wt: 'Line thickness in dots', Bdr: 'Border thickness in dots', Rad: 'Corner rounding in dots' } as Record<string, string>)[label] || label;
   const visibleLabel = VISIBLE_LABELS[label] || label;
   const [draft, setDraft] = useState(() => formatInputNumber(value));
   const [isFocused, setIsFocused] = useState(false);
+  const [problem, setProblem] = useState('');
+  const errorId = useId();
 
   useEffect(() => {
     if (!isFocused) setDraft(formatInputNumber(value));
   }, [isFocused, value]);
 
+  const range = { min, max, unit, what: what ?? visibleLabel };
+  // A usable value, or the reason it can't be used (never a silent 0 or 112).
+  const read = (text: string): { value: number } | { problem: string } => {
+    const parsed = parseSizeInput(text);
+    const reason = sizeProblem(text, parsed, range);
+    return reason || !parsed.ok ? { problem: reason || '' } : { value: parsed.value };
+  };
+
   const commit = (nextDraft: string) => {
-    const next = Number(nextDraft);
-    if (Number.isFinite(next)) {
-      onChange(next);
-      setDraft(formatInputNumber(next));
+    const result = read(nextDraft);
+    if ('value' in result) {
+      setProblem('');
+      if (result.value !== value) onChange(result.value);
+      setDraft(formatInputNumber(result.value));
       return;
     }
+    // Keep the last good value and say why the typed one wasn't used.
+    setProblem(result.problem);
     setDraft(formatInputNumber(value));
   };
 
@@ -538,16 +571,23 @@ function CompactInput({ label, value, onChange, step }: {
     <label className="block min-w-0">
       <span className="block pb-1 text-sm text-zinc-400">{visibleLabel}</span>
       <input
-        type="number"
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        spellCheck={false}
         aria-label={accessibleLabel}
+        aria-invalid={problem ? true : undefined}
+        aria-describedby={problem ? errorId : undefined}
         title={accessibleLabel}
         value={draft}
         onFocus={() => setIsFocused(true)}
         onChange={(e) => {
           const nextDraft = e.target.value;
           setDraft(nextDraft);
-          const next = Number(nextDraft);
-          if (nextDraft !== '' && nextDraft !== '-' && Number.isFinite(next)) onChange(next);
+          setProblem('');
+          // Live preview only for a value that can be used.
+          const result = read(nextDraft);
+          if ('value' in result && result.value !== value) onChange(result.value);
         }}
         onBlur={() => {
           setIsFocused(false);
@@ -558,12 +598,22 @@ function CompactInput({ label, value, onChange, step }: {
             e.currentTarget.blur();
           } else if (e.key === 'Escape') {
             setDraft(formatInputNumber(value));
+            setProblem('');
             e.currentTarget.blur();
+          } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const delta = (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);
+            let next = Math.round((value + delta) * 1000) / 1000;
+            if (min !== undefined) next = Math.max(min, next);
+            if (max !== undefined) next = Math.min(max, next);
+            setProblem('');
+            setDraft(formatInputNumber(next));
+            if (next !== value) onChange(next);
           }
         }}
-        step={step}
-        className="field field-sm w-full tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className={`field field-sm w-full tabular-nums ${problem ? 'border-red-500/70' : ''}`}
       />
+      {problem && <span id={errorId} role="alert" className="block pt-1 text-sm text-red-400">{problem}</span>}
     </label>
   );
 }

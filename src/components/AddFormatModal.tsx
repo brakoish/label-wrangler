@@ -8,6 +8,10 @@ import { parsePDFFile, generateFormatName } from '@/lib/pdfParser';
 import { PlusIcon, FileIcon } from '@/app/icons';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { parseSizeInput, sizeProblem } from '@/lib/sizeInput';
+
+/** A typed size ("1 1/2", "1,5", "1.5in") as a number, or NaN when it isn't one. */
+const num = (raw: string) => { const parsed = parseSizeInput(raw); return parsed.ok ? parsed.value : NaN; };
 
 interface AddFormatModalProps {
   isOpen: boolean;
@@ -42,15 +46,29 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
   const [parseError, setParseError] = useState<string | null>(null);
   const [pdfUploaded, setPdfUploaded] = useState(false);
 
+  // One plain sentence for the first size that can't be used, naming the box.
+  const sizeError = (() => {
+    const boxes: Array<[string, string, number, number, boolean?]> = [['Width', width, 0.1, 20], ['Height', height, 0.1, 40]];
+    if (type === 'thermal') boxes.push(['The gap between labels across', horizontalGapThermal, 0, 5], ['The side margin', sideMarginThermal, 0, 5], ['The gap between labels', labelGap, 0, 5], ['The roll width', linerWidth, 0.1, 20, true]);
+    else boxes.push(['The top margin', topMargin, 0, 5], ['The side margin', sideMargin, 0, 5], ['The gap across', horizontalGap, 0, 5], ['The gap down', verticalGap, 0, 5]);
+    for (const [what, raw, min, max, optional] of boxes) {
+      if (optional && !raw.trim()) continue;
+      const problem = sizeProblem(raw, parseSizeInput(raw), { min, max, unit: '"', what });
+      if (problem) return problem;
+    }
+    return '';
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sizeError) return;
 
     const baseFormat = {
       name: name || (type === 'thermal' ? 'Custom Thermal' : 'Custom Sheet'),
       description: description || undefined,
       type,
-      width: parseFloat(width) || 2,
-      height: parseFloat(height) || 1,
+      width: num(width) || 2,
+      height: num(height) || 1,
     };
 
     if (type === 'thermal') {
@@ -58,10 +76,10 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
         ...baseFormat,
         dpi,
         labelsAcross,
-        linerWidth: parseFloat(linerWidth) || undefined,
-        horizontalGapThermal: parseFloat(horizontalGapThermal) || 0,
-        sideMarginThermal: parseFloat(sideMarginThermal) || 0,
-        labelGap: parseFloat(labelGap) || 0,
+        linerWidth: num(linerWidth) || undefined,
+        horizontalGapThermal: num(horizontalGapThermal) || 0,
+        sideMarginThermal: num(sideMarginThermal) || 0,
+        labelGap: num(labelGap) || 0,
       });
     } else {
       const cols = parseInt(columns) || 1;
@@ -73,10 +91,10 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
         sheetHeight: 11,
         columns: cols,
         rows: rowCount,
-        topMargin: parseFloat(topMargin) || 0,
-        sideMargin: parseFloat(sideMargin) || 0,
-        horizontalGap: parseFloat(horizontalGap) || 0,
-        verticalGap: parseFloat(verticalGap) || 0,
+        topMargin: num(topMargin) || 0,
+        sideMargin: num(sideMargin) || 0,
+        horizontalGap: num(horizontalGap) || 0,
+        verticalGap: num(verticalGap) || 0,
       });
     }
 
@@ -221,20 +239,20 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           )}
 
           {/* Preview - for sheet labels */}
-          {type === 'sheet' && pdfUploaded && !isParsing && parseInt(columns) > 0 && parseInt(rows) > 0 && parseFloat(width) > 0 && parseFloat(height) > 0 && (
+          {type === 'sheet' && pdfUploaded && !isParsing && parseInt(columns) > 0 && parseInt(rows) > 0 && num(width) > 0 && num(height) > 0 && (
             <div className="rounded-lg bg-zinc-950 p-4">
               <p className="field-label mb-1.5">
                 Layout preview
               </p>
               <SheetPreview
-                labelWidth={parseFloat(width) || 1}
-                labelHeight={parseFloat(height) || 1}
+                labelWidth={num(width) || 1}
+                labelHeight={num(height) || 1}
                 columns={parseInt(columns) || 1}
                 rows={parseInt(rows) || 1}
-                topMargin={parseFloat(topMargin) || 0}
-                sideMargin={parseFloat(sideMargin) || 0}
-                horizontalGap={parseFloat(horizontalGap) || 0}
-                verticalGap={parseFloat(verticalGap) || 0}
+                topMargin={num(topMargin) || 0}
+                sideMargin={num(sideMargin) || 0}
+                horizontalGap={num(horizontalGap) || 0}
+                verticalGap={num(verticalGap) || 0}
               />
             </div>
           )}
@@ -295,8 +313,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 Width <span className="font-normal text-zinc-500">(inches)</span>
               </label>
               <input id={`${uid}-4`}
-                type="number"
-                step="0.001"
+                type="text"
+                inputMode="decimal"
                 min="0.1"
                 value={width}
                 onChange={(e) => setWidth(e.target.value)}
@@ -308,8 +326,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 Height <span className="font-normal text-zinc-500">(inches)</span>
               </label>
               <input id={`${uid}-5`}
-                type="number"
-                step="0.001"
+                type="text"
+                inputMode="decimal"
                 min="0.1"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
@@ -356,8 +374,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     Gap between labels
                   </label>
                   <input id={`${uid}-8`}
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     value={horizontalGapThermal}
                     onChange={(e) => setHorizontalGapThermal(e.target.value)}
                     placeholder="0"
@@ -369,8 +387,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     Side margin
                   </label>
                   <input id={`${uid}-9`}
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     value={sideMarginThermal}
                     onChange={(e) => setSideMarginThermal(e.target.value)}
                     placeholder="0"
@@ -386,8 +404,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   Label gap <span className="font-normal text-zinc-500">(inches)</span>
                 </label>
                 <input id={`${uid}-10`}
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={labelGap}
                   onChange={(e) => setLabelGap(e.target.value)}
                   placeholder="0.125"
@@ -400,8 +418,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   Backing width <span className="font-normal text-zinc-500">(optional)</span>
                 </label>
                 <input id={`${uid}-11`}
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={linerWidth}
                   onChange={(e) => setLinerWidth(e.target.value)}
                   placeholder="Auto"
@@ -449,8 +467,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     Top margin <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-14`}
-                    type="number"
-                    step="0.001"
+                    type="text"
+                    inputMode="decimal"
                     min="0"
                     value={topMargin}
                     onChange={(e) => setTopMargin(e.target.value)}
@@ -462,8 +480,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     Side margin <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-15`}
-                    type="number"
-                    step="0.001"
+                    type="text"
+                    inputMode="decimal"
                     min="0"
                     value={sideMargin}
                     onChange={(e) => setSideMargin(e.target.value)}
@@ -478,8 +496,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     Horizontal gap <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-16`}
-                    type="number"
-                    step="0.001"
+                    type="text"
+                    inputMode="decimal"
                     min="0"
                     value={horizontalGap}
                     onChange={(e) => setHorizontalGap(e.target.value)}
@@ -491,8 +509,8 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     Vertical gap <span className="font-normal text-zinc-500">(in)</span>
                   </label>
                   <input id={`${uid}-17`}
-                    type="number"
-                    step="0.001"
+                    type="text"
+                    inputMode="decimal"
                     min="0"
                     value={verticalGap}
                     onChange={(e) => setVerticalGap(e.target.value)}
@@ -504,6 +522,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           )}
 
           {/* Actions */}
+          {sizeError && <p role="alert" className="text-sm text-red-400">{sizeError}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -514,6 +533,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             </button>
             <button
               type="submit"
+              disabled={!!sizeError}
               className="btn btn-primary"
             >
               <PlusIcon className="w-4 h-4" />
@@ -616,7 +636,7 @@ function SheetPreview({
       </svg>
       <div className="mt-3 space-y-1 text-center">
         <div className="text-sm text-zinc-400">
-          {columns} × {rows} = <span className="text-zinc-100 font-medium">{totalLabels}</span> labels per sheet
+          {columns} × {rows} = <span className="text-zinc-100 font-medium">{totalLabels}</span>{' '}labels per sheet
         </div>
         <div className="text-xs text-zinc-500">
           {labelWidth}&quot; × {labelHeight}&quot; labels · {topMargin.toFixed(2)}&quot; top, {sideMargin.toFixed(2)}&quot; side

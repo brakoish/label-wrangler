@@ -136,7 +136,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           const match = saved ? ps.find((p) => p.name === saved) : undefined;
           setDazzleSelected(match?.name ?? ps.find((p) => p.is_default)?.name ?? ps[0]?.name ?? null);
         } catch {
-          setTransportError('Couldn\u2019t get the printer list from the Dazzle app. Check it\u2019s open, then reload this page.');
+          setTransportError('Couldn\u2019t get the printer list from the label printer app on this computer. Check it\u2019s open, then reload this page.');
         }
       } else if (webUsbSupported) {
         setTransport('webusb');
@@ -148,7 +148,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           }
         } catch { /* soft fail */ }
       } else {
-        setTransportError('No printer on this computer. Open the Dazzle app, or use Chrome or Edge to connect a USB printer.');
+        setTransportError('No printer on this computer. Open your desktop label printer app, or use Chrome or Edge to connect a USB printer.');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,7 +334,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
 
           {officeOnly && (
             <section role="status" className="space-y-3" aria-label="Office printer">
-              <p className="text-sm text-zinc-300">This run prints on the office printer, which can’t take scans. Scan mode prints one label at a time on a printer plugged into this computer.</p>
+              <p className="text-sm text-zinc-300">The office printer can’t print from scans. Scans print one label at a time on a printer plugged into this computer.</p>
               <div className="flex flex-wrap gap-2">
                 <Link href={`/runs/${run.id}`} className="btn btn-primary">Print on the office printer</Link>
                 {transport === 'webusb' && (
@@ -352,10 +352,10 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
               <ScanBarcode className={`size-5 shrink-0 ${printerReady ? 'text-emerald-400' : 'text-zinc-500'}`} aria-hidden="true" />
               <div className="min-w-0 flex-1">
                 {transport === 'dazzle' && dazzlePrinters.length > 0 && (
-                  <span className="text-zinc-300">Prints on <span className="text-zinc-100">{dazzleSelected}</span> (Dazzle app on this computer)</span>
+                  <span className="text-zinc-300">Prints on <span className="text-zinc-100">{dazzleSelected}</span> (through the printer app on this computer)</span>
                 )}
                 {transport === 'dazzle' && dazzlePrinters.length === 0 && (
-                  <span className="text-zinc-300">The Dazzle app shows no printers. Turn the printer on and check it&apos;s set up in Dazzle.</span>
+                  <span className="text-zinc-300">The printer app on this computer shows no printers. Turn the printer on and check it’s set up there.</span>
                 )}
                 {transport === 'webusb' && usbPrinter && (
                   <span className="text-zinc-300">Prints on <span className="text-zinc-100">{usbPrinter.productName}</span> (USB)</span>
@@ -375,7 +375,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             </div>
             {!printerReady && (
               <p className="text-sm text-zinc-400">
-                Scan mode prints on a printer plugged into this computer. <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">Print from the run page</Link> to use the office printer.
+                Plug a label printer into this computer, or <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">use the office printer</Link>{' '}from the run page.
               </p>
             )}
             {transportError && transport && <p role="alert" className="text-sm text-red-400">{transportError}</p>}
@@ -424,7 +424,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 ? 'border-emerald-500'
                 : flash === 'error'
                   ? 'border-red-500'
-                  : 'border-zinc-700 focus-within:border-amber-500'
+                  : 'border-transparent focus-within:border-amber-500'
             }`}>
               <input
                 ref={inputRef}
@@ -435,7 +435,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 placeholder={waitingFor}
                 autoFocus
                 disabled={!canPrint || busy}
-                className="w-full bg-zinc-950 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
+                className="w-full bg-zinc-900 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-5">
                 <span key={busy ? 'busy' : flash ?? 'idle'} className={`block ${flash === 'ok' && !busy ? 'animate-success' : 'animate-icon'}`}>

@@ -198,7 +198,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
       if (e?.name === 'NotFoundError') {
         // User cancelled — not really an error.
       } else if (e?.message?.includes('Access denied') || e?.name === 'SecurityError') {
-        setError('Windows has the printer claimed. Install Dazzle to print without a driver swap.');
+        setError('Windows is using this printer. Install the desktop printer app to print to it from here.');
       } else {
         setError(e?.message || 'Failed to connect');
       }
@@ -343,10 +343,10 @@ export function PrintControls({ format, template, testData, proofReady = true }:
           <SegmentedIndicator index={transport === 'webusb' ? 1 : 0} count={2} />
           <button
             onClick={() => setTransport('dazzle')}
-            title="Use Dazzle (local desktop app) — works even when Windows owns the printer"
+            title="Print through the desktop printer app on this computer"
             aria-pressed={transport === 'dazzle'}
           >
-            Dazzle
+            Printer app
           </button>
           <button
             onClick={() => setTransport('webusb')}
@@ -399,10 +399,10 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             target="_blank"
             rel="noreferrer"
             className="btn btn-secondary btn-sm"
-            title="Download and install the Dazzle desktop app"
+            title="Download the free desktop printer app"
           >
             <Download className="w-3.5 h-3.5" />
-            Install Dazzle
+            Get the printer app
           </a>
         )
       ) : !webUsbSupported ? (

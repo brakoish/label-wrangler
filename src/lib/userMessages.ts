@@ -125,10 +125,53 @@ const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record
 ];
 
 /**
+ * The exact renderer refuses a box under 1 dot or over 12,000 dots with a
+ * bare "Invalid element width": name the item and say what to do ("Barcode
+ * 1 has no width. Open the design and set its width.").
+ */
+function namedSizeError(message: string, elements: TemplateElement[], format?: RenderFormat): string | null {
+  const match = /^\s*Invalid element (width|height)\.?\s*$/i.exec(message);
+  if (!match) return null;
+  const dim = match[1].toLowerCase() as 'width' | 'height';
+  const bad = elements.find((el) => !(Number.isFinite(el[dim]) && el[dim] >= 1 && el[dim] <= 12000));
+  if (!bad) return `One item has a ${dim} that can’t be used. Open the design and check each item’s ${dim}.`;
+  const owner = !bad.isStatic && bad.fieldName ? friendlyFieldName(bad.fieldName) : elementTypeLabel(bad.type);
+  const dpi = format?.dpi || 203;
+  if (!Number.isFinite(bad[dim]) || bad[dim] < 1) return `${owner} has no ${dim}. Open the design and set its ${dim}.`;
+  return `${owner}’s ${dim} (${Math.round((bad[dim] / dpi) * 100) / 100}") is far bigger than the label. Open the design and set its ${dim}.`;
+}
+
+/**
+ * A design that wouldn't save because one item's number was refused ("Invalid
+ * width"): name that item. `fallback` is used for anything else.
+ */
+export function friendlySaveError(message: string, elements: TemplateElement[], fallback: string): string {
+  const match = /^\s*Invalid (width|height|x|y|fontSize|minFontSize|lineHeight|strokeWidth|borderRadius)\.?\s*$/i.exec(message);
+  if (match) {
+    const key = match[1] as 'width' | 'height' | 'x' | 'y' | 'fontSize' | 'minFontSize' | 'lineHeight' | 'strokeWidth' | 'borderRadius';
+    const words: Record<string, string> = { width: 'width', height: 'height', x: 'distance from the left', y: 'distance from the top', fontSize: 'text size', minFontSize: 'smallest text size', lineHeight: 'line spacing', strokeWidth: 'thickness', borderRadius: 'corners' };
+    const limits: Record<string, [number, number]> = { width: [0, 100000], height: [0, 100000], x: [-100000, 100000], y: [-100000, 100000], fontSize: [0.01, 10000], minFontSize: [0.01, 10000], lineHeight: [0.01, 10000], strokeWidth: [0, 10000], borderRadius: [0, 10000] };
+    const [min, max] = limits[key];
+    const bad = elements.find((el) => { const v = (el as unknown as Record<string, unknown>)[key]; return v !== undefined && !(typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max); });
+    if (bad) {
+      const owner = !bad.isStatic && bad.fieldName ? friendlyFieldName(bad.fieldName) : elementTypeLabel(bad.type);
+      return `${owner}’s ${words[key]} can’t be used, so your changes weren’t saved. Select it and type a new ${words[key]}.`;
+    }
+  }
+  return friendlyError(message, fallback);
+}
+
+function elementTypeLabel(type: string): string {
+  return ({ text: 'A text box', qr: 'The QR code', barcode: 'The barcode', line: 'A line', rectangle: 'A box', image: 'A picture' } as Record<string, string>)[type] ?? 'One item';
+}
+
+/**
  * Turn "Lane 1, 087b8c70-…: Image is missing" (render server wording) into
  * "The picture box has no picture yet — choose a file or delete the box."
  */
 export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1, values?: Record<string, string>, format?: RenderFormat): string {
+  const size = namedSizeError(message, elements, format);
+  if (size) return size;
   return message.replace(/Lane (\d+), ([^:]+): ([^\n]+)/g, (_match, lane: string, ref: string, detail: string) => {
     const element = elements.find((el) => el.id === ref.trim()) ?? elements.find((el) => el.fieldName === ref.trim());
     const subject = element ? elementNoun(element) : UUID.test(ref) ? 'One item' : `The ${friendlyFieldName(ref.trim())} item`;
@@ -161,6 +204,8 @@ export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output
  */
 export function friendlyRenderFailure(error: unknown, fallback: string, elements: TemplateElement[], labelsAcross = 1, values?: Record<string, string>, format?: RenderFormat): string {
   const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  const size = namedSizeError(raw, elements, format);
+  if (size) return size;
   if (/Lane \d+, [^:]+: /.test(raw)) return friendlyRenderError(raw, elements, labelsAcross, values, format);
   return friendlyError(error, fallback);
 }

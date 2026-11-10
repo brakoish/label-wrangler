@@ -1,6 +1,7 @@
 import type { BarcodeElement, FieldMapping, LabelFormat, LabelTemplate, TemplateElement } from './types';
 import { friendlyFieldName, spreadsheetRow } from './fieldLabels';
 import { barcodeFit, barcodeFitFix, barcodeFitProblem, type BarcodeFit } from './barcodeFit';
+import { itemName, layoutProblems } from './designerLayout';
 
 /**
  * Whole-run check that every barcode will print, label by label, with the
@@ -30,6 +31,17 @@ export interface BarcodeIssue {
   offLabel?: boolean;
   /** The shared verdict behind this issue. */
   fit?: BarcodeFit;
+  /** The barcode on the design this issue is about. */
+  elementId?: string;
+  /**
+   * Native labels: what else the too-long bars print over on that label, as
+   * the preview shows it ("the COA link QR code", "the Batch text").
+   */
+  overprints?: string[];
+  /** Some of `overprints` is a QR code or barcode, so it won't scan either. */
+  overprintsCode?: boolean;
+  /** The barcodes and QR codes among them, by name: they won’t scan either. */
+  overprintedCodes?: string[];
 }
 
 type FitFormat = Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'> & Partial<Pick<LabelFormat, 'labelsAcross' | 'horizontalGapThermal'>>;
@@ -91,8 +103,46 @@ function issueFor(el: BarcodeElement, label: number, value: string, format: FitF
   const fit = barcodeFit(el, value, format, bitmap);
   if (fit.level === 'ok') return null;
   const field = el.isStatic ? '' : el.fieldName || '';
-  if (fit.reason === 'characters') return { field, label, value, problem: fit.problem || 'can’t be drawn with this value', kind: 'characters', fit };
-  return { field, label, value, problem: barcodeFitProblem(fit, value), kind: fit.level === 'tight' ? 'tight' : 'too-long', offLabel: fit.reason === 'off-label' || fit.reason === 'into-next-label', fit };
+  if (fit.reason === 'characters') return { field, label, value, problem: fit.problem || 'can’t be drawn with this value', kind: 'characters', fit, elementId: el.id };
+  return { field, label, value, problem: barcodeFitProblem(fit, value), kind: fit.level === 'tight' ? 'tight' : 'too-long', offLabel: fit.reason === 'off-label' || fit.reason === 'into-next-label', fit, elementId: el.id };
+}
+
+/**
+ * What a too-long native barcode prints over on its label, from the same
+ * footprints the preview and the designer outline use. Only the issues kept
+ * for the list are looked at (at most MAX_ISSUES labels).
+ */
+function addOverprints(template: Pick<LabelTemplate, 'elements'>, run: RunData, format: FitFormat | null | undefined, issues: BarcodeIssue[]): void {
+  if (!format || format.type !== 'thermal') return;
+  const byLabel = new Map<number, ReturnType<typeof layoutProblems>>();
+  for (const issue of issues) {
+    if (issue.kind !== 'too-long' || !issue.elementId || issue.fit?.bitmap) continue;
+    let problems = byLabel.get(issue.label);
+    if (!problems) {
+      problems = layoutProblems(template.elements, format as LabelFormat, valuesFor(run, Math.max(0, issue.label - 1)));
+      byLabel.set(issue.label, problems);
+    }
+    const others = new Set<string>();
+    for (const problem of problems) if (problem.ids.includes(issue.elementId)) for (const id of problem.ids) if (id !== issue.elementId) others.add(id);
+    const items = template.elements.filter((el) => others.has(el.id));
+    if (!items.length) continue;
+    issue.overprints = items.map(itemName);
+    const codes = items.filter((el) => el.type === 'qr' || el.type === 'barcode');
+    issue.overprintsCode = codes.length > 0;
+    if (codes.length) issue.overprintedCodes = codes.map(itemName);
+  }
+}
+
+function listNames(names: string[]): string {
+  return names.length <= 1 ? names[0] ?? '' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** " It also prints over the COA link QR code, so that won’t scan either." */
+export function describeOverprints(issue: Pick<BarcodeIssue, 'overprints' | 'overprintsCode' | 'overprintedCodes'>): string {
+  if (!issue.overprints?.length) return '';
+  const codes = issue.overprintedCodes ?? [];
+  const lost = !issue.overprintsCode ? '' : issue.overprints.length === 1 ? ', so that won’t scan either' : codes.length ? `, so ${listNames(codes)} won’t scan either` : ', so the code it covers won’t scan either';
+  return ` It also prints over ${listNames(issue.overprints)}${lost}.`;
 }
 
 export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format?: FitFormat | null): BarcodeCheck {
@@ -128,6 +178,7 @@ export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Par
     }
     if (bad && badLabels < total) badLabels++;
   }
+  addOverprints(template, run, format, issues);
   return { issues, badLabels, warnings, checkedLabels: total, fitCounts };
 }
 
@@ -147,7 +198,7 @@ export function describeBarcodeIssue(issue: BarcodeIssue, fromSpreadsheet: boole
     const fix = issue.fit ? barcodeFitFix(issue.fit) : '';
     const name = issue.label ? `${friendlyFieldName(issue.field)} barcode` : 'fixed barcode';
     const where = issue.label ? ` on label ${issue.label.toLocaleString()}${fromSpreadsheet ? ` (row ${spreadsheetRow(issue.label).toLocaleString()})` : ''}` : '';
-    return `The ${name}${where} ${issue.problem}.${fix ? ` ${fix}.` : ''}`;
+    return `The ${name}${where} ${issue.problem}.${describeOverprints(issue)}${fix ? ` ${fix}.` : ''}`;
   }
   if (!issue.label) return `The fixed barcode "${shorten(issue.value)}" ${issue.problem}. Change it in the design.`;
   const name = friendlyFieldName(issue.field);
@@ -157,7 +208,7 @@ export function describeBarcodeIssue(issue: BarcodeIssue, fromSpreadsheet: boole
 
 /** "label 3 (row 4)", "labels 3, 7 and 9", "all 40 labels". */
 function whichLabels(labels: number[], count: number, total: number, fromSpreadsheet: boolean): string {
-  if (count >= total) return total === 1 ? 'the label' : `all ${total.toLocaleString()} labels`;
+  if (count >= total) return total === 1 ? 'the label' : total === 2 ? 'both labels' : `all ${total.toLocaleString()} labels`;
   const shown = labels.slice(0, 3);
   const rows = fromSpreadsheet ? ` (row${shown.length === 1 ? '' : 's'} ${shown.map((l) => spreadsheetRow(l).toLocaleString()).join(', ')}${count > shown.length ? '…' : ''})` : '';
   const list = count > shown.length ? `${shown.join(', ')} and ${(count - shown.length).toLocaleString()} more` : shown.length === 1 ? String(shown[0]) : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
@@ -190,7 +241,8 @@ export function describeBarcodeGroups(issues: ReadonlyArray<BarcodeIssue>, total
     const labels = list.map((i) => i.label);
     const count = Math.max(list.length, fitCounts[`${widest.field}|${widest.fit?.reason}`] ?? 0);
     const fix = widest.fit ? barcodeFitFix(widest.fit) : '';
-    grouped.push(`The ${friendlyFieldName(widest.field)} barcode on ${whichLabels(labels, Math.min(count, totalLabels), totalLabels, fromSpreadsheet(widest.field))} ${widest.problem}.${fix ? ` ${fix}.` : ''}`);
+    const over = list.find((i) => i.overprints?.length) ?? widest;
+    grouped.push(`The ${friendlyFieldName(widest.field)} barcode on ${whichLabels(labels, Math.min(count, totalLabels), totalLabels, fromSpreadsheet(widest.field))} ${widest.problem}.${describeOverprints(over)}${fix ? ` ${fix}.` : ''}`);
   }
   const all = [...grouped, ...lines];
   return { items: all.slice(0, limit), more: Math.max(0, all.length - limit) };
