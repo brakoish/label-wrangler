@@ -902,7 +902,9 @@ function NewRunContent() {
                       : !examplesOk
                         ? `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`
                       : !barcodesOk
-                        ? `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode value' : 's have barcode values'} that can’t print. See the list above.`
+                        ? barcodeCheck.issues.every((issue) => issue.kind === 'characters')
+                          ? `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode value' : 's have barcode values'} its barcode type can’t hold. See the list above.`
+                          : `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that won’t' : 's have barcodes that won’t'} print whole. See the list above.`
                         : !charactersOk
                           ? `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`
                         : !layoutOk
@@ -1558,7 +1560,7 @@ function NewRunContent() {
                           <div key={field} className={`py-3 first:pt-0 ${risk ? 'pl-3 shadow-[inset_2px_0_0_var(--color-amber-500)]' : ''}`}>
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                               <div id={`${formId}-map-${field}`} className="w-40 shrink-0 text-sm font-medium text-zinc-100 break-words">{friendlyFieldName(field)}</div>
-                              <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="segmented w-full sm:w-auto sm:shrink-0">
+                              <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="segmented map-mode w-full sm:w-auto sm:shrink-0">
                                 <SegmentedIndicator index={mapping.mode === 'column' ? 1 : 0} count={2} />
                                 <button
                                   type="button"

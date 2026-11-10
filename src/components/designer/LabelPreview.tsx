@@ -7,7 +7,7 @@ import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorG
 import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
-import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
+import { friendlyRenderError, friendlyRenderFailure } from '@/lib/userMessages';
 import { friendlyFieldName } from '@/lib/fieldLabels';
 import { plainRenderWarning, type Box, type LayoutProblem } from '@/lib/designerLayout';
 
@@ -58,7 +58,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
         .then(result => { if (active) setBitmapProof({ advisories: result.advisories || [], key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
-        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements, 1, testData, format)); });
+        .catch(error => { if (active) setBitmapError(friendlyRenderFailure(error, 'The preview could not be drawn.', elements, 1, testData, format)); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
   }, [bitmap, bitmapKey, elements, format, testData]);

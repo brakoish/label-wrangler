@@ -157,3 +157,17 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   assert.equal(scanCheck({ batch: 'B-123' }).issues.length, 0);
   console.log('PASS: scan mode blocks a scan that would print another field\'s sample');
 }
+
+// A failed render names the design's item, not "The SKU item".
+{
+  const um = require('../../src/lib/userMessages.ts');
+  const els = [{ id: 'b1', type: 'barcode', isStatic: false, fieldName: 'SKU', barcodeFormat: 'CODE128', x: 0, y: 0, width: 200, height: 60, rotation: 0, zIndex: 1 }];
+  const said = um.friendlyRenderFailure(new Error('Lane 1, SKU: Artwork failed'), 'x', els, 1, { SKU: 'ABC-12 é' });
+  assert.doesNotMatch(said, /Lane|Artwork failed|The SKU item/);
+  assert.match(said, /é/);
+  const small = um.friendlyRenderFailure(new Error('Lane 1, SKU: Barcode box is too small for this value'), 'x', els, 1, { SKU: '1A4FF0100000022000012345' }, { type: 'thermal', width: 2, height: 1, dpi: 203 });
+  assert.match(small, /needs a box at least 1\.14" wide/);
+  assert.match(small, /make the barcode box at least 1\.14" wide/i);
+  assert.doesNotMatch(small, /shorten/i);
+  console.log('PASS render failures name the item and the box width');
+}

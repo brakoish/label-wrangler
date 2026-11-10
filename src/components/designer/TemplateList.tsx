@@ -66,7 +66,7 @@ export function TemplateList({
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto w-full p-4 sm:p-6 lg:p-8">
+    <div className="page-container py-4 sm:py-6 lg:py-8">
       {notice}
       <div className="mb-5 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>

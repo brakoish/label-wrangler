@@ -154,3 +154,13 @@ export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output
   if (reprint) return `Reprinted ${range} on the ${where}`;
   return `Sent ${range} to the ${where}`;
 }
+
+/**
+ * A failed artwork render in plain words, naming the item from the design
+ * (friendlyError alone can't see the design, so it says "The SKU item").
+ */
+export function friendlyRenderFailure(error: unknown, fallback: string, elements: TemplateElement[], labelsAcross = 1, values?: Record<string, string>, format?: RenderFormat): string {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (/Lane \d+, [^:]+: /.test(raw)) return friendlyRenderError(raw, elements, labelsAcross, values, format);
+  return friendlyError(error, fallback);
+}

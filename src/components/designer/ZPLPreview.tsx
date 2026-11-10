@@ -10,7 +10,7 @@ import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
 import { OfficePreviewPrint } from './OfficePreviewPrint';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
-import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
+import { friendlyRenderError, friendlyRenderFailure } from '@/lib/userMessages';
 
 interface ZPLPreviewProps {
   format: LabelFormat;
@@ -53,7 +53,7 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
-      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData, format)));
+      setError(plainRenderWarning(friendlyRenderFailure(err, 'The preview could not be drawn.', template.elements, format.labelsAcross || 1, testData, format), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData, format)));
       setPreviewUrl(null); setZpl('');
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {

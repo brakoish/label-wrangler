@@ -403,7 +403,7 @@ function DesignerContent() {
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
           {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && <div className="mx-auto w-full max-w-[1600px] pb-8">
+          {isAdmin && <div className="page-container pb-8">
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           </div>}
         </div>
@@ -822,7 +822,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
