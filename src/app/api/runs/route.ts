@@ -42,13 +42,6 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
     (async () => {
       if (!user) return;
       try {
-        const sql = officeSql();
-        const found = await sql`SELECT r.run_id, r.id AS request_id, r.created_at AS request_created_at, j.id, j.range_from, j.range_to, j.state, j.reason,
-            (j.review_required OR (j.state='claimed' AND j.claimed_at<now()-interval '5 minutes') OR (j.state='submitted' AND j.submitted_at<now()-interval '30 minutes')) AS review
-          FROM office_requests r
-          JOIN office_printer_access a ON a.station_id=r.station_id AND a.printer_id=r.printer_id AND a.user_id=${user.id}
-          JOIN office_jobs j ON j.request_id=r.id
-          WHERE r.run_id = ANY(${ids}::text[])`;
         // Ranges a person already confirmed as printed after the office sent
         // them (read-only), so checked-off parts and "mark printed" agree
         // with the run page.
@@ -64,11 +57,49 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
           if (row.type !== 'confirmed' || !afterRewind(row.createdAt, rewound.get(row.runId) ?? 0)) continue;
           const list = confirmed.get(row.runId) ?? []; list.push({ from: Number(row.from), to: Number(row.to) }); confirmed.set(row.runId, list);
         }
-        const byRun = new Map<string, Array<OfficeJobLike & { requestCreatedAt: string | null }>>();
+        // The office's work, summed up in the database instead of one row per
+        // job (a job holds at most 25 labels, so months of history is
+        // thousands of rows). Jobs that only count as labels (sent, on their
+        // way, checked off, cancelled) come back as merged stretches per run,
+        // state and side of the latest rewind: every summary below reads them
+        // only as a union of labels, so the answer is the same. Jobs that
+        // didn't print or need a check come back one by one, as before,
+        // because each is named with its send and reason. "After the rewind"
+        // is the same test as afterRewind(), at the same millisecond precision.
+        const rewindRuns = Array.from(rewound.keys()).filter((id) => rewound.get(id)! > 0);
+        const rewindTimes = rewindRuns.map((id) => new Date(rewound.get(id)!).toISOString());
+        const sql = officeSql();
+        const found = await sql`WITH jobs AS (
+            SELECT r.run_id, r.created_at AS request_created_at, j.id, j.request_id, j.sequence, j.range_from, j.range_to, j.state, j.reason,
+              (j.review_required OR (j.state='claimed' AND j.claimed_at<now()-interval '5 minutes') OR (j.state='submitted' AND j.submitted_at<now()-interval '30 minutes')) IS TRUE AS review,
+              (c.cutoff IS NULL OR date_trunc('milliseconds', r.created_at) > c.cutoff) AS after_rewind
+            FROM office_requests r
+            JOIN office_printer_access a ON a.station_id=r.station_id AND a.printer_id=r.printer_id AND a.user_id=${user.id}
+            JOIN office_jobs j ON j.request_id=r.id
+            LEFT JOIN unnest(${rewindRuns}::text[], ${rewindTimes}::timestamptz[]) AS c(run_id, cutoff) ON c.run_id=r.run_id
+            WHERE r.run_id = ANY(${ids}::text[])
+          ), plain AS (
+            SELECT run_id, state, after_rewind, range_from, range_to,
+              CASE WHEN range_from <= max(range_to) OVER (PARTITION BY run_id, state, after_rewind ORDER BY range_from, range_to ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 THEN 0 ELSE 1 END AS starts
+            FROM jobs WHERE NOT review AND state NOT IN ('needs_review','rejected')
+          ), islands AS (
+            SELECT run_id, state, after_rewind, range_from, range_to,
+              sum(starts) OVER (PARTITION BY run_id, state, after_rewind ORDER BY range_from, range_to ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS island
+            FROM plain
+          )
+          SELECT run_id, state, after_rewind, range_from, range_to, review, id, request_id, reason FROM (
+            SELECT run_id, state, after_rewind, min(range_from) AS range_from, max(range_to) AS range_to, false AS review,
+              NULL::uuid AS id, NULL::uuid AS request_id, NULL::text AS reason, NULL::timestamptz AS request_created_at, NULL::bigint AS sequence
+            FROM islands GROUP BY run_id, state, after_rewind, island
+            UNION ALL
+            SELECT run_id, state, after_rewind, range_from, range_to, review, id, request_id, reason, request_created_at, sequence
+            FROM jobs WHERE review OR state IN ('needs_review','rejected')
+          ) parts
+          ORDER BY run_id, range_from, request_created_at, sequence`;
+        const byRun = new Map<string, Array<OfficeJobLike & { afterRewind: boolean }>>();
         for (const job of found as Array<Record<string, unknown>>) {
           const list = byRun.get(String(job.run_id)) ?? [];
-          const created = job.request_created_at instanceof Date ? job.request_created_at.toISOString() : typeof job.request_created_at === 'string' ? job.request_created_at : null;
-          list.push({ id: String(job.id), requestId: String(job.request_id), from: Number(job.range_from), to: Number(job.range_to), state: String(job.state), review: job.review === true, reason: typeof job.reason === 'string' ? job.reason : null, requestCreatedAt: created });
+          list.push({ ...(job.id ? { id: String(job.id), requestId: String(job.request_id) } : {}), from: Number(job.range_from), to: Number(job.range_to), state: String(job.state), review: job.review === true, reason: typeof job.reason === 'string' ? job.reason : null, afterRewind: job.after_rewind !== false });
           byRun.set(String(job.run_id), list);
         }
         for (const row of rows) {
@@ -77,7 +108,7 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; totalL
           const printedSpans = confirmed.get(row.id) ?? [];
           const summary = officeDeliverySummary(jobs, row.totalLabels, { printedCount: row.printedCount ?? 0, printedSpans });
           const first = summary.failed[0];
-          const sinceRewind = jobs.filter((job) => afterRewind(job.requestCreatedAt, rewound.get(row.id) ?? 0));
+          const sinceRewind = jobs.filter((job) => job.afterRewind);
           office.set(row.id, { sent: summary.sent, onTheWay: summary.onTheWay, failed: summary.failed.length, failedLabels: summary.failedLabels,
             firstFailed: first ? { from: first.from, to: first.to, reason: first.reason, didNotPrint: first.didNotPrint, kind: first.kind } : null,
             markable: officeMarkPlan(row.printedCount ?? 0, sinceRewind, printedSpans, row.totalLabels),

@@ -6,7 +6,8 @@ const h=require('./route-harness.cjs');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
 const officeRows=[];
-{const file=path.resolve('src/lib/office/db.ts');require.cache[file]={id:file,filename:file,loaded:true,exports:{officeSql:()=>async()=>officeRows},children:[],paths:[]};}
+const officeCalls=[];
+{const file=path.resolve('src/lib/office/db.ts');require.cache[file]={id:file,filename:file,loaded:true,exports:{officeSql:()=>async(strings,...values)=>{officeCalls.push([strings.join('?'),values]);return officeRows;}},children:[],paths:[]};}
 const {lastRewindAt,afterRewind,rewindEvent,REWIND_EVENT}=require('../../src/lib/runRewind.ts');
 const R=require('../../src/lib/officeRange.ts');
 (async()=>{
@@ -31,8 +32,10 @@ const R=require('../../src/lib/officeRange.ts');
  const rewindAt='2026-11-10T12:00:00.000Z';
  officeRows.length=0;
  officeRows.push(
-  {run_id:'r1',request_id:'before',request_created_at:new Date('2026-11-10T11:00:00.000Z'),id:'j1',range_from:1,range_to:100,state:'sent_to_printer',reason:null,review:false},
-  {run_id:'r1',request_id:'after',request_created_at:new Date('2026-11-10T12:30:00.000Z'),id:'j2',range_from:40,range_to:60,state:'sent_to_printer',reason:null,review:false},
+  // Rows as the aggregate query returns them: stretches per run, state and
+  // side of the rewind (the database works out after_rewind from the cutoff).
+  {run_id:'r1',state:'sent_to_printer',after_rewind:false,range_from:1,range_to:100,review:false,id:null,request_id:null,reason:null},
+  {run_id:'r1',state:'sent_to_printer',after_rewind:true,range_from:40,range_to:60,review:false,id:null,request_id:null,reason:null},
  );
  h.reset();
  // Queries run side by side, so each answer is picked by what was asked.
@@ -51,6 +54,10 @@ const R=require('../../src/lib/officeRange.ts');
  assert.deepEqual(office.markable.ranges,[{from:40,to:60}],'only the stretch sent after the rewind is offered; the confirmation from before it is not counted');
  assert.equal(office.markable.through,60);
  assert.deepEqual(office.unsent,[{from:101,to:2000}],'labels the office has none of are named on every device');
+ // The query gets each run's latest rewind (server time), summed up in SQL rather than a row per job.
+ const [text,values]=officeCalls[officeCalls.length-1];
+ assert.match(text,/GROUP BY run_id, state, after_rewind, island/,'office jobs are aggregated in the database');
+ assert.deepEqual(values.slice(1,3),[['r1'],[rewindAt]],'the rewind cutoff is passed per run');
  console.log('PASS rewind: kept as a print event once accepted; the Runs list offers only office work sent after it');
 
  // --- The run page never stamps a rewind with this device's clock ---
