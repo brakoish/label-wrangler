@@ -237,7 +237,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     <AppShell>
       <PageTitle title={`Scan \u00b7 ${run.name}`} />
       <div className={`flex-1 flex flex-col items-center justify-center p-8 transition-colors ${
-        flash === 'ok' ? 'bg-emerald-500/5' : flash === 'error' ? 'bg-red-500/10' : ''
+        flash === 'ok' ? 'bg-emerald-500/10' : flash === 'error' ? 'bg-red-500/10' : ''
       }`}>
         <div className="w-full max-w-xl">
           <div className="flex items-center justify-between mb-6">
@@ -253,8 +253,8 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           </div>
 
           {/* Transport status strip */}
-          <section className="mb-6 p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800 flex items-center gap-3">
-            <ScanBarcode className={`w-5 h-5 ${canPrint ? 'text-amber-400' : 'text-zinc-600'}`} />
+          <section className="mb-6 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 flex items-center gap-3">
+            <ScanBarcode className={`w-5 h-5 ${canPrint ? 'text-amber-400' : 'text-zinc-500'}`} />
             <div className="flex-1 text-xs">
               {transport === 'dazzle' && dazzlePrinters.length > 0 && (
                 <span className="text-zinc-400">Printing on this computer (Dazzle app) → <span className="text-zinc-200">{dazzleSelected}</span></span>
@@ -286,7 +286,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
               {!transport && <span className="text-red-400">{transportError || 'No printer available'}</span>}
             </div>
             {targetField && (
-              <span className="text-[11px] text-zinc-500">
+              <span className="text-xs text-zinc-500">
                 Each scan fills: <span className="text-amber-400 font-mono">{targetField}</span>
               </span>
             )}
@@ -298,14 +298,14 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             className="mb-4"
           >
             {blankCheck && blankCheck.issues.length > 0 && <div className="mb-3"><BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact remedy={`Each scan only fills ${targetField}. To scan with this design, open it and set the other field${blankCheck.issues.length === 1 ? '' : 's'} to "Same on every label", or print this run from the run page instead.`} /></div>}
-            <label htmlFor="scan-input" className="text-xs text-zinc-500 uppercase tracking-wider font-semibold mb-2 block">
+            <label htmlFor="scan-input" className="text-xs text-zinc-500 font-semibold mb-2 block">
               Scan or type, then press Enter
             </label>
-            <div className={`relative rounded-2xl border-2 transition-colors ${
+            <div className={`relative rounded-xl border-2 transition-colors ${
               flash === 'ok'
-                ? 'border-emerald-500/40'
+                ? 'border-emerald-500/30'
                 : flash === 'error'
-                  ? 'border-red-500/40'
+                  ? 'border-red-500/30'
                   : 'border-amber-500/30'
             }`}>
               <input
@@ -317,7 +317,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 placeholder={canPrint ? 'Waiting for a scan…' : !blanksOk ? 'Fill the missing values first' : 'Connect a printer first'}
                 autoFocus
                 disabled={!canPrint || busy}
-                className="w-full bg-zinc-950 rounded-2xl text-2xl font-mono text-zinc-100 px-5 py-5 pr-16 focus:outline-none disabled:opacity-40"
+                className="w-full bg-zinc-950 rounded-xl text-2xl font-mono text-zinc-100 px-5 py-5 pr-16 disabled:opacity-40"
               />
               <div className="absolute right-5 top-1/2 -translate-y-1/2">
                 {busy ? (
@@ -327,7 +327,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 ) : flash === 'error' ? (
                   <AlertCircle className="w-6 h-6 text-red-400" />
                 ) : (
-                  <ScanBarcode className="w-6 h-6 text-zinc-600" />
+                  <ScanBarcode className="w-6 h-6 text-zinc-500" />
                 )}
               </div>
             </div>
@@ -342,22 +342,22 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           {/* History \u2014 newest first, 10 entries. */}
           {history.length > 0 && (
             <section className="mt-6 space-y-1.5">
-              <h3 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold mb-2">Recent scans</h3>
+              <h3 className="text-xs text-zinc-500 font-semibold mb-2">Recent scans</h3>
               {history.map((h) => (
                 <div
                   key={h.id}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono ${
                     h.status === 'ok'
-                      ? 'bg-emerald-500/5 border border-emerald-500/15 text-zinc-300'
-                      : 'bg-red-500/5 border border-red-500/20 text-red-300'
+                      ? 'bg-emerald-500/10 border border-emerald-500/30 text-zinc-300'
+                      : 'bg-red-500/10 border border-red-500/30 text-red-400'
                   }`}
                 >
                   {h.status === 'ok'
                     ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     : <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
                   <span className="flex-1 truncate">{h.value}</span>
-                  {h.message && <span className="text-[10px] text-red-400 truncate max-w-[180px]">{h.message}</span>}
-                  <span className="text-[10px] text-zinc-500 tabular-nums shrink-0">
+                  {h.message && <span className="text-xs text-red-400 truncate max-w-[180px]">{h.message}</span>}
+                  <span className="text-xs text-zinc-500 tabular-nums shrink-0">
                     {new Date(h.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
                   </span>
                 </div>

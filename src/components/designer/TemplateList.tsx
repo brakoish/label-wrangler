@@ -80,7 +80,7 @@ export function TemplateList({
       {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
       {!listHydrated && templates.length === 0 ? (
         <div role="status" aria-label="Loading designs" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {[0, 1, 2].map((i) => <div key={i} className="min-h-[240px] rounded-2xl border border-zinc-800 bg-zinc-900/40 animate-pulse" />)}
+          {[0, 1, 2].map((i) => <div key={i} className="min-h-[240px] rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse" />)}
           <span className="sr-only">Loading designs…</span>
         </div>
       ) : listError && templates.length === 0 ? (
@@ -92,8 +92,8 @@ export function TemplateList({
       ) : visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
           <div className="text-center max-w-sm">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
-              <FileText className="w-10 h-10 text-zinc-600" />
+            <div className="w-20 h-20 mx-auto mb-6 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
+              <FileText className="w-10 h-10 text-zinc-500" />
             </div>
             <h3 className="text-zinc-300 font-semibold text-lg">{isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}</h3>
             <p className="text-zinc-500 text-sm mt-2">
@@ -113,9 +113,9 @@ export function TemplateList({
           {/* New Template card */}
           <button
             onClick={onNewTemplate}
-            className="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-amber-500/30 p-6 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-amber-400 transition-all min-h-[240px] group"
+            className="rounded-xl border-2 border-dashed border-zinc-800 hover:border-amber-500/30 p-6 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-amber-400 transition-colors min-h-[240px] group"
           >
-            <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-amber-500/30 group-hover:bg-amber-500/5 flex items-center justify-center transition-all">
+            <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-amber-500/30 group-hover:bg-amber-500/10 flex items-center justify-center transition-colors">
               <Plus className="w-6 h-6" />
             </div>
             <span className="text-sm font-medium">New design</span>
@@ -242,7 +242,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
           className="max-w-full max-h-full object-contain"
           style={{ imageRendering: 'pixelated' }}
         />
-        {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-amber-950 px-1 text-xs text-amber-300">Draft · needs attention</span>}
+        {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-zinc-950 px-1 text-xs text-amber-300">Draft · needs attention</span>}
       </div>
     );
   }
@@ -518,7 +518,7 @@ function TemplateCard({
   return (
     <div
       onClick={onSelect}
-      className="glass rounded-2xl border border-zinc-800 hover:border-amber-500/30 transition-all cursor-pointer group overflow-hidden"
+      className="bg-zinc-900 rounded-xl border border-zinc-800 hover:border-amber-500/30 transition-colors cursor-pointer group overflow-hidden"
     >
       {/* Preview area */}
       <div className="h-[140px] bg-zinc-950 p-3 border-b border-zinc-800/50">
@@ -538,7 +538,7 @@ function TemplateCard({
                   e.stopPropagation();
                   onRename();
                 }}
-                className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-600 hover:text-amber-400 transition-colors"
+                className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-500 hover:text-amber-400 transition-colors"
                 title="Rename design"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -550,7 +550,7 @@ function TemplateCard({
                   e.stopPropagation();
                   onDuplicate();
                 }}
-                className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-600 hover:text-amber-400 transition-colors"
+                className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-500 hover:text-amber-400 transition-colors"
                 title="Duplicate (optionally to another label size)"
               >
                 <Copy className="w-3.5 h-3.5" />
@@ -562,7 +562,7 @@ function TemplateCard({
                 if (template.archivedAt) { onDelete(); return; }
                 void confirmDialog({ title: `Archive “${template.name}”?`, body: 'It leaves the active list. Runs that used it keep working, and you can restore it from Archived.', confirmLabel: 'Archive' }).then((ok) => { if (ok) onDelete(); });
               }}
-              className="p-1 rounded-lg hover:bg-red-600/20 text-zinc-600 hover:text-red-400 transition-colors"
+              className="p-1 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"
               disabled={pending}
               title={template.archivedAt ? "Restore design" : "Archive design"}
               aria-label={`${template.archivedAt ? "Restore" : "Archive"} ${template.name}`}
@@ -574,15 +574,15 @@ function TemplateCard({
 
         {/* Format badge */}
         <div className="flex items-center gap-2 mb-3">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
             formatType === 'thermal'
-              ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
-              : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+              ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+              : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
           }`}>
             {formatName}
           </span>
           {format && (
-            <span className="text-[10px] text-zinc-600">{format.width}&quot; × {format.height}&quot;</span>
+            <span className="text-xs text-zinc-500">{format.width}&quot; × {format.height}&quot;</span>
           )}
         </div>
 
@@ -592,16 +592,16 @@ function TemplateCard({
             {Object.entries(typeCounts).map(([type, count]) => (
               <span key={type} className="flex items-center gap-0.5 text-zinc-500" title={`${count} ${type}`}>
                 {typeIcons[type]}
-                <span className="text-[10px]">{count}</span>
+                <span className="text-xs">{count}</span>
               </span>
             ))}
             {dynamicCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 ml-1">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 ml-1">
                 {dynamicCount} dynamic
               </span>
             )}
           </div>
-          <span className="text-[10px] text-zinc-600">{new Date(template.updatedAt).toLocaleDateString()}</span>
+          <span className="text-xs text-zinc-500">{new Date(template.updatedAt).toLocaleDateString()}</span>
         </div>
       </div>
     </div>
@@ -648,7 +648,7 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Product Label"
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30"
               data-autofocus
             />
           </div>
@@ -661,7 +661,7 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this design for?"
               rows={3}
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50 resize-none"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30 resize-none"
             />
           </div>
 
@@ -676,7 +676,7 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
             <button
               type="submit"
               disabled={!name.trim()}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed "
             >
               Save
             </button>
@@ -725,7 +725,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Product Label"
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30"
               data-autofocus
             />
           </div>
@@ -738,7 +738,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this design for?"
               rows={3}
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50 resize-none"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30 resize-none"
             />
           </div>
 
@@ -781,7 +781,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             <button
               type="submit"
               disabled={!name.trim() || !formatId}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed "
             >
               Create
             </button>
@@ -848,7 +848,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
+              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30"
               data-autofocus
             />
           </div>
@@ -900,7 +900,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
             <button
               type="submit"
               disabled={!name.trim() || !formatId}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-amber-500/20"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed "
             >
               Duplicate
             </button>

@@ -78,7 +78,7 @@ export function FeedbackHost() {
           type="button"
           data-autofocus={confirm?.danger ? undefined : true}
           onClick={() => settle(true)}
-          className={`min-h-10 px-4 py-2 rounded-lg text-sm font-semibold ${confirm?.danger ? 'bg-red-500 text-white hover:bg-red-400' : 'bg-amber-500 text-black hover:bg-amber-400'}`}
+          className={`min-h-10 px-4 py-2 rounded-lg text-sm font-semibold ${confirm?.danger ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-amber-500 text-black hover:bg-amber-400'}`}
         >
           {confirm?.confirmLabel ?? 'OK'}
         </button>

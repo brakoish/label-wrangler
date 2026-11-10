@@ -113,11 +113,11 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
     <div className="flex-1 min-h-0 border-t border-zinc-800/50 flex flex-col">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-zinc-800/30 transition-all"
+        className="w-full shrink-0 flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-zinc-800/30 transition-colors"
       >
         <FlaskConical className="w-4 h-4 text-amber-400" />
         <span className="text-zinc-300 font-medium flex-1 text-left">Test Data</span>
-        <span className="text-[10px] text-zinc-500 mr-1">{dynamicFields.length} field{dynamicFields.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-zinc-500 mr-1">{dynamicFields.length} field{dynamicFields.length !== 1 ? 's' : ''}</span>
         <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
@@ -126,7 +126,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
           <div className="space-y-2 rounded-lg border border-zinc-800/50 bg-zinc-950/30 p-2">
             <div className="flex gap-1">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
                 <input
                   type="text"
                   value={manifestSearch}
@@ -139,7 +139,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                   }}
                   aria-label="Search Manifest package"
                   placeholder="Search Manifest package"
-                  className="h-7 w-full rounded-lg border border-zinc-800/50 bg-zinc-900/60 pl-7 pr-7 text-xs text-zinc-100 outline-none transition-all placeholder-zinc-600 focus:border-amber-500/30"
+                  className="h-7 w-full rounded-lg border border-zinc-800/50 bg-zinc-900/60 pl-7 pr-7 text-xs text-zinc-100 transition-colors placeholder-zinc-500 focus:border-amber-500/30"
                 />
                 {manifestSearch && (
                   <button
@@ -151,7 +151,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       setManifestError(null);
                       setHasSearchedManifest(false);
                     }}
-                    className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-800 hover:text-zinc-300"
+                    className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                     aria-label="Clear Manifest search"
                   >
                     <X className="h-3 w-3" />
@@ -162,23 +162,23 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                 type="button"
                 onClick={() => void searchManifest()}
                 disabled={manifestSearch.trim().length < 2 || isSearchingManifest}
-                className="h-7 rounded-lg border border-zinc-800/50 bg-zinc-900 px-2 text-[10px] font-medium text-zinc-300 transition-all hover:border-amber-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-7 rounded-lg border border-zinc-800/50 bg-zinc-900 px-2 text-xs font-medium text-zinc-300 transition-colors hover:border-amber-500/30 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isSearchingManifest ? 'Searching' : 'Search'}
               </button>
             </div>
 
-            {manifestError && <p className="text-[10px] text-amber-400">{manifestError}</p>}
+            {manifestError && <p className="text-xs text-amber-400">{manifestError}</p>}
             {selectedManifest && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5">
-                <p className="truncate text-xs font-medium text-amber-100" title={selectedManifest.row.itemName}>
+                <p className="truncate text-xs font-medium text-amber-300" title={selectedManifest.row.itemName}>
                   {selectedManifest.row.itemName || '(no item)'}
                 </p>
                 <div className="mt-0.5 flex items-center justify-between gap-2">
-                  <p className="truncate font-mono text-[10px] text-amber-200/70" title={selectedManifest.row.tag}>
+                  <p className="truncate font-mono text-xs text-amber-300" title={selectedManifest.row.tag}>
                     {selectedManifest.row.tag || '(no tag)'}
                   </p>
-                  <span className="shrink-0 text-[10px] text-amber-200/70">
+                  <span className="shrink-0 text-xs text-amber-300">
                     {selectedManifest.labelRows.toLocaleString()} label{selectedManifest.labelRows === 1 ? '' : 's'}
                   </span>
                 </div>
@@ -195,18 +195,18 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       key={key}
                       type="button"
                       onClick={() => selectManifestPackage(key)}
-                      className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 border-b border-zinc-900 px-2 py-1.5 text-left text-[10px] transition-colors last:border-b-0 ${
-                        isSelected ? 'bg-amber-500/10 text-amber-200' : 'text-zinc-500 hover:bg-zinc-900/70'
+                      className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 border-b border-zinc-900 px-2 py-1.5 text-left text-xs transition-colors last:border-b-0 ${
+                        isSelected ? 'bg-amber-500/10 text-amber-300' : 'text-zinc-500 hover:bg-zinc-900/70'
                       }`}
                     >
-                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-700'}>
+                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-500'}>
                         {isSelected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-zinc-300" title={row.itemName}>{row.itemName || '(no item)'}</span>
-                        <span className="block truncate font-mono text-zinc-600" title={row.tag}>{row.tag || '(no tag)'}</span>
+                        <span className="block truncate font-mono text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
                       </span>
-                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-600'}>{labelRows}</span>
+                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-500'}>{labelRows}</span>
                     </button>
                   );
                 })}
@@ -214,16 +214,16 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             )}
 
             {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
-              <p className="text-[10px] text-zinc-600">No Manifest packages found.</p>
+              <p className="text-xs text-zinc-500">No Manifest packages found.</p>
             )}
           </div>
 
           {dynamicFields.map((field) => (
             <div key={field.fieldName}>
               <div className="flex items-center gap-1 mb-1">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">{field.fieldName}</span>
+                <span className="text-xs text-zinc-500 font-medium">{field.fieldName}</span>
                 {(field.prefix || field.suffix) && (
-                  <span className="text-[10px] text-zinc-600">
+                  <span className="text-xs text-zinc-500">
                     {field.prefix && `"${field.prefix}"`}
                     {field.prefix && field.suffix && ' · '}
                     {field.suffix && `"${field.suffix}"`}
@@ -235,7 +235,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                 value={testData[field.fieldName] ?? ''}
                 onChange={(e) => onTestDataChange(field.fieldName, e.target.value)}
                 placeholder={field.defaultValue || `Enter ${field.fieldName}...`}
-                className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2.5 h-7 focus:outline-none focus:border-amber-500/30 placeholder-zinc-600 transition-all"
+                className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2.5 h-7 focus:border-amber-500/30 placeholder-zinc-500 transition-colors"
               />
             </div>
           ))}
@@ -243,7 +243,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
           {Object.values(testData).some((v) => v) && (
             <button
               onClick={() => dynamicFields.forEach((f) => onTestDataChange(f.fieldName, ''))}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               Clear test data
             </button>

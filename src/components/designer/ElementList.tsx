@@ -42,7 +42,7 @@ export function ElementList({
       {onBackToTemplates && (
         <button
           onClick={onBackToTemplates}
-          className="flex items-center gap-2 px-4 py-2.5 text-zinc-400 hover:text-zinc-200 text-sm border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-all"
+          className="flex items-center gap-2 px-4 py-2.5 text-zinc-400 hover:text-zinc-200 text-sm border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           All Templates
@@ -53,7 +53,7 @@ export function ElementList({
       <div className="p-3 space-y-1">
         <button
           onClick={onAddElement}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-xl hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-black text-sm font-semibold rounded-xl hover:bg-amber-400 transition-colors "
         >
           <Plus className="w-4 h-4" />
           Add Element
@@ -62,7 +62,7 @@ export function ElementList({
         {onInsertGlobal && (
           <button
             onClick={onInsertGlobal}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-all"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-colors"
           >
             <Globe className="w-4 h-4" />
             Insert reusable element
@@ -72,7 +72,7 @@ export function ElementList({
           <button
             onClick={onSaveAsGlobal}
             disabled={selectedElementIds.size === 0}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-400 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-all"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-400 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-colors"
           >
             <Save className="w-4 h-4" />
             Save selection for reuse
@@ -96,11 +96,11 @@ export function ElementList({
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
         {sortedElements.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
-              <Square className="w-8 h-8 text-zinc-600" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
+              <Square className="w-8 h-8 text-zinc-500" />
             </div>
             <p className="text-zinc-400 text-sm font-medium">No elements yet</p>
-            <p className="text-zinc-600 text-xs mt-1">Add elements to build your template</p>
+            <p className="text-zinc-500 text-xs mt-1">Add elements to build your template</p>
           </div>
         ) : (
           sortedElements.map((element) => (
@@ -146,16 +146,16 @@ function ElementItem({
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
       role="group"
       aria-label={`${typeLabel} layer ${label}`}
-      className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-all card-hover ${
+      className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors ${
         isSelected
-          ? 'bg-amber-500/10 border border-amber-500/30 shadow-sm shadow-amber-500/10'
+          ? 'bg-amber-500/10 border border-amber-500/30'
           : 'bg-zinc-900/50 border border-zinc-800/50 hover:border-zinc-700'
       }`}
     >
       {/* Type icon */}
       <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
         isSelected
-          ? 'bg-amber-500/20'
+          ? 'bg-amber-500/10'
           : 'bg-zinc-800/80'
       }`}>
         {icon}
@@ -167,7 +167,7 @@ function ElementItem({
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-xs text-zinc-500">{typeLabel}</span>
           {!element.isStatic && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
               Dynamic
             </span>
           )}

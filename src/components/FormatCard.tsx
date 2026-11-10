@@ -15,9 +15,9 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
     <button
       onClick={onClick}
       className={`
-        w-full text-left p-4 rounded-xl border transition-all duration-200 card-hover
+        w-full text-left p-4 rounded-xl border transition-colors duration-200 
         ${isSelected
-          ? 'bg-zinc-800/80 border-amber-500/50 shadow-lg shadow-amber-500/10'
+          ? 'bg-zinc-800/80 border-amber-500/30'
           : 'bg-zinc-900/40 border-zinc-800/50 hover:border-zinc-700 hover:bg-zinc-900/60'
         }
       `}
@@ -27,12 +27,12 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
         <div className={`
           w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
           ${isThermal
-            ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10'
+            ? 'bg-gradient-to-br from-amber-500/10 to-amber-500/10'
             : 'bg-gradient-to-br from-blue-500/20 to-blue-600/10'
           }
         `}>
           {isThermal ? (
-            <svg className="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="w-5 h-5 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="4" y="6" width="16" height="12" rx="2" />
               <circle cx="12" cy="12" r="3" />
               <path d="M8 6V4M16 6V4" />

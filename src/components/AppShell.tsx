@@ -25,10 +25,10 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   const banners = useShellBanners();
 
   return (
-    <div className="h-screen flex flex-col bg-[#0c0c0e]">
+    <div className="h-screen flex flex-col bg-zinc-950">
       {/* Shared Header — tighter padding + smaller logo on mobile so the
           nav tabs and any headerAction fit without wrapping below. */}
-      <header className="glass sticky top-0 z-40" onClickCapture={event => {
+      <header className="bg-zinc-900 sticky top-0 z-40" onClickCapture={event => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         const link = (event.target as HTMLElement).closest('a[href]');
         if (!link) return;
@@ -44,13 +44,13 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               <img
                 src="/logo.png"
                 alt="Label Wrangler"
-                className="w-10 h-10 sm:w-14 sm:h-14 transition-transform duration-300 hover:animate-buck cursor-pointer"
+                className="w-10 h-10 sm:w-14 sm:h-14 transition-transform duration-300 cursor-pointer"
                 style={{ filter: 'brightness(0) invert(1)' }}
               />
             </Link>
             <div className="min-w-0">
               {/* Hide the wordmark below sm so the logo + nav don't collide. */}
-              <h1 className="hidden sm:block text-xl font-bold tracking-tight truncate">
+              <h1 className="hidden sm:block text-xl font-bold truncate">
                 <span className="gradient-text">Label</span>
                 <span className="text-white">Wrangler</span>
               </h1>
@@ -63,7 +63,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               <Link
                 href="/runs"
                 aria-current={isRuns ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   isRuns
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -74,7 +74,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               <Link
                 href="/nabis"
                 aria-current={isNabis ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   isNabis
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -85,7 +85,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               <Link
                 href="/designer"
                 aria-current={isDesigner ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   isDesigner
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -96,7 +96,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               <Link
                 href="/formats"
                 aria-current={isFormats ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   isFormats
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -126,7 +126,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
 
       {/* Footer */}
       <div className="h-8 flex items-center justify-center border-t border-zinc-800/30">
-        <p className="text-xs text-zinc-600">Label Wrangler v1.0</p>
+        <p className="text-xs text-zinc-500">Label Wrangler v1.0</p>
       </div>
     </div>
   );

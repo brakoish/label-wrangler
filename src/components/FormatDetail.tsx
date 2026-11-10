@@ -49,15 +49,15 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
       {saveError && <p role="alert" className="p-4 text-red-400">{saveError}</p>}
       {/* Hero header */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-amber-500/10 to-transparent" />
         <div className="relative px-8 py-8">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-4">
               <div className={`
-                w-14 h-14 rounded-2xl flex items-center justify-center
+                w-14 h-14 rounded-xl flex items-center justify-center
                 ${isThermal
-                  ? 'bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg shadow-orange-500/20'
-                  : 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20'
+                  ? 'bg-gradient-to-br from-orange-500 to-orange-600'
+                  : 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/20'
                 }
               `}>
                 {isThermal ? (
@@ -79,7 +79,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   <input
                     value={d('name') as string}
                     onChange={(e) => setD('name', e.target.value)}
-                    className="text-2xl font-bold text-white bg-zinc-900/50 border border-zinc-700 rounded-lg px-3 py-1 focus:outline-none focus:border-amber-500/50"
+                    className="text-2xl font-bold text-white bg-zinc-900/50 border border-zinc-700 rounded-lg px-3 py-1 focus:border-amber-500/30"
                   />
                 ) : (
                   <h2 className="text-2xl font-bold text-white">{format.name}</h2>
@@ -89,7 +89,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     value={(d('description') as string) || ''}
                     onChange={(e) => setD('description', e.target.value)}
                     placeholder="Description (optional)"
-                    className="text-zinc-400 mt-1 bg-zinc-900/50 border border-zinc-700 rounded-lg px-3 py-1 text-sm w-full focus:outline-none focus:border-amber-500/50"
+                    className="text-zinc-400 mt-1 bg-zinc-900/50 border border-zinc-700 rounded-lg px-3 py-1 text-sm w-full focus:border-amber-500/30"
                   />
                 ) : (
                   format.description && <p className="text-zinc-400 mt-1">{format.description}</p>
@@ -98,8 +98,8 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   <span className={`
                     text-xs px-2.5 py-1 rounded-full font-medium
                     ${isThermal
-                      ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
-                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                      ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                      : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
                     }
                   `}>
                     {isThermal ? 'Thermal Roll' : 'Sheet Labels'}
@@ -120,7 +120,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   </button>
                   <button
                     onClick={()=>void saveEdit()} disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 rounded-xl transition-colors shadow-lg shadow-amber-500/20"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-black bg-amber-500 hover:bg-amber-400 rounded-xl transition-colors "
                   >
                     <Check className="w-4 h-4" />
                     Save
@@ -137,7 +137,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   </button>
                   <button
                     onClick={onDelete}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-xl transition-colors border border-red-500/20"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/10 rounded-xl transition-colors border border-red-500/30"
                   >
                     <TrashIcon className="w-4 h-4" />
                     Delete
@@ -156,9 +156,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
           <SpecCard label="Label Size" editing={editing}>
             {editing ? (
               <div className="flex items-center gap-1">
-                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                 <span className="text-lg text-zinc-400">×</span>
-                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                 <span className="text-lg text-zinc-400">&quot;</span>
               </div>
             ) : (
@@ -171,7 +171,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Resolution" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <select value={d('dpi') as number || 203} onChange={(e) => setD('dpi', parseInt(e.target.value))} className="text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50">
+                    <select value={d('dpi') as number || 203} onChange={(e) => setD('dpi', parseInt(e.target.value))} className="text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30">
                       <option value="203">203</option>
                       <option value="300">300</option>
                     </select>
@@ -184,7 +184,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Across" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                    <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                     <span className="text-lg text-zinc-400">labels</span>
                   </div>
                 ) : (
@@ -207,9 +207,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Grid" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={d('columns') as number || 1} onChange={(e) => setD('columns', parseInt(e.target.value))} min="1" className="w-12 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                    <input type="number" value={d('columns') as number || 1} onChange={(e) => setD('columns', parseInt(e.target.value))} min="1" className="w-12 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                     <span className="text-lg text-zinc-400">×</span>
-                    <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="w-12 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                    <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="w-12 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                   </div>
                 ) : (
                   <div className="text-2xl font-bold text-white">{format.columns} × {format.rows}</div>
@@ -222,7 +222,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
         {/* Thermal-specific details */}
         {isThermal && (
           <div className="grid grid-cols-2 gap-6">
-            <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+            <div className="p-6 rounded-xl bg-zinc-900/30 border border-zinc-800/50">
               <h3 className="text-sm font-semibold text-zinc-300 mb-4">Roll Spacing</h3>
               <div className="space-y-3">
                 <DetailRow label="Label gap" editing={editing}>
@@ -260,7 +260,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               </div>
             </div>
 
-            <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+            <div className="p-6 rounded-xl bg-zinc-900/30 border border-zinc-800/50">
               <h3 className="text-sm font-semibold text-zinc-300 mb-4">Roll Preview</h3>
               <RollPreview format={editing ? { ...format, ...draft } as LabelFormat : format} />
             </div>
@@ -271,15 +271,15 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
         {!isThermal && (
           <div className="grid grid-cols-2 gap-6">
             {/* Sheet dimensions */}
-            <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+            <div className="p-6 rounded-xl bg-zinc-900/30 border border-zinc-800/50">
               <h3 className="text-sm font-semibold text-zinc-300 mb-4">Sheet Dimensions</h3>
               <div className="space-y-3">
                 <DetailRow label="Sheet size" editing={editing}>
                   {editing ? (
                     <div className="flex items-center gap-1">
-                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="w-14 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="w-14 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                       <span className="text-zinc-500">×</span>
-                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="w-14 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50" />
+                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="w-14 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
                       <span className="text-zinc-500">&quot;</span>
                     </div>
                   ) : (
@@ -318,7 +318,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
             </div>
 
             {/* Visual preview */}
-            <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/50">
+            <div className="p-6 rounded-xl bg-zinc-900/30 border border-zinc-800/50">
               <h3 className="text-sm font-semibold text-zinc-300 mb-4">Layout Preview</h3>
               <SheetPreview format={editing ? { ...format, ...draft } as LabelFormat : format} />
             </div>
@@ -333,8 +333,8 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
 
 function SpecCard({ label, editing, children }: { label: string; editing: boolean; children: React.ReactNode }) {
   return (
-    <div className={`p-5 rounded-2xl border ${editing ? 'bg-zinc-900/70 border-amber-500/20' : 'bg-zinc-900/50 border-zinc-800/50'}`}>
-      <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">{label}</div>
+    <div className={`p-5 rounded-xl border ${editing ? 'bg-zinc-900/70 border-amber-500/30' : 'bg-zinc-900/50 border-zinc-800/50'}`}>
+      <div className="text-xs font-medium text-zinc-500 mb-2">{label}</div>
       {children}
     </div>
   );
@@ -357,7 +357,7 @@ function EditNum({ value, onChange }: { value: number; onChange: (v: number) => 
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         step="0.001"
-        className="w-20 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50 text-right"
+        className="w-20 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30 text-right"
       />
       <span className="text-zinc-500">&quot;</span>
     </div>

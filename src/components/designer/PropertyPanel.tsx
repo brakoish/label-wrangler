@@ -39,7 +39,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     return (
       <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
         <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+          <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
             <Type className="w-3 h-3" />
           </div>
           <span className="text-sm font-medium text-zinc-200">
@@ -48,7 +48,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         </div>
 
         {format.type === 'thermal' && onArrange && <div className="p-3 grid grid-cols-3 gap-1">
-          {(['left', 'center', 'right', 'top', 'middle', 'bottom', 'distribute-x', 'distribute-y'] as AlignAction[]).map(action => <button key={action} title={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} onClick={() => onArrange(action)} className="text-[10px] text-zinc-300 bg-zinc-800 rounded p-1 disabled:opacity-30">{action.replace('distribute-', 'Space ')}</button>)}
+          {(['left', 'center', 'right', 'top', 'middle', 'bottom', 'distribute-x', 'distribute-y'] as AlignAction[]).map(action => <button key={action} title={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} onClick={() => onArrange(action)} className="text-xs text-zinc-300 bg-zinc-800 rounded p-1 disabled:opacity-30">{action.replace('distribute-', 'Space ')}</button>)}
         </div>}
         {canEditTextGroup ? (
           <div className="p-3 space-y-1">
@@ -61,7 +61,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           </div>
         ) : (
           <div className="min-h-20 flex items-center justify-center px-4">
-            <p className="text-zinc-600 text-xs">Mixed selection</p>
+            <p className="text-zinc-500 text-xs">Mixed selection</p>
           </div>
         )}
       </div>
@@ -96,11 +96,11 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800/50 overflow-y-auto">
       {/* Element type header */}
       <div className="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-        <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+        <div className="w-6 h-6 rounded-md bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
           {typeIcons[element.type]}
         </div>
         <span className="text-sm font-medium text-zinc-200 capitalize">{element.type}</span>
-        <span className="ml-auto text-[10px] text-zinc-500">{isThermal ? `Sizes in dots (${dpi} per inch)` : 'Sizes in inches'}</span>
+        <span className="ml-auto text-xs text-zinc-500">{isThermal ? `Sizes in dots (${dpi} per inch)` : 'Sizes in inches'}</span>
       </div>
 
       <div className="p-3 space-y-1">
@@ -126,7 +126,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
             <CompactInput label="H" value={element.height} onChange={(v) => onUpdate({ height: v })} step={step} />
           </div>
         )}
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-xs text-zinc-500">
           {element.type === 'qr'
             ? `Size ${physicalSize(element.width, isThermal, dpi)}`
             : `Width ${physicalSize(element.width, isThermal, dpi)} · Height ${physicalSize(element.height, isThermal, dpi)}`}
@@ -150,9 +150,9 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
                   onClick={() => onUpdate({ rotation: deg })}
                   aria-label={`Rotate ${deg} degrees`}
                   aria-pressed={element.rotation === deg}
-                  className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
                     element.rotation === deg
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                       : 'text-zinc-500 hover:text-zinc-200'
                   }`}
                 >
@@ -180,14 +180,14 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {/* Images are selected once per run, never bound to source rows. */}
         {element.type !== 'image' && <div className="flex items-center justify-between py-1">
-          <span id="content-mode-label" className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Content</span>
+          <span id="content-mode-label" className="text-xs text-zinc-500 font-medium">Content</span>
           <div role="radiogroup" aria-labelledby="content-mode-label" className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
             <button
               type="button"
               role="radio"
               aria-checked={element.isStatic}
               onClick={() => onUpdate(contentModeUpdates(element, true))}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
                 element.isStatic ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
@@ -200,8 +200,8 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
               // Keeps what was typed as the preview sample and picks a
               // column name if there isn't one yet (renamable below).
               onClick={() => onUpdate(contentModeUpdates(element, false))}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
-                !element.isStatic ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
+              className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                !element.isStatic ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
               Changes per label
@@ -258,7 +258,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
         onChange={(e) => onUpdate(element.isStatic ? { content: e.target.value } : { defaultValue: e.target.value })}
         placeholder={element.isStatic ? 'Type the text' : 'Sample text for the preview'}
         rows={3}
-        className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:outline-none focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-600"
+        className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-500"
       />
       <div className="grid grid-cols-2 gap-1">
         <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
@@ -286,7 +286,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
               <button
                 key={p.label}
                 onClick={() => onUpdate({ charWidth: p.value })}
-                className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+                className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
                   (element.charWidth ?? 0.5) === p.value
                     ? 'bg-zinc-700 text-zinc-100'
                     : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
@@ -308,7 +308,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
             >
               <span className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${(element.autoFit ?? bitmap) ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
             </button>
-            <span className="text-[10px] text-zinc-400">Auto-fit text</span>
+            <span className="text-xs text-zinc-400">Auto-fit text</span>
             {(element.autoFit ?? bitmap) && (
               <div className="ml-auto w-32">
                 <CompactInput label="Min" value={element.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />
@@ -327,7 +327,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
           <button
             key={a}
             onClick={() => onUpdate({ textAlign: a })}
-            className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+            className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
               element.textAlign === a ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
             }`}
           >
@@ -337,7 +337,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
       </div>
       {format.type === 'sheet' && (
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wider w-10">Color</span>
+          <span className="text-xs text-zinc-500 w-10">Color</span>
           <input
             type="color"
             value={element.color}
@@ -384,7 +384,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
               <button
                 key={p.label}
                 onClick={() => onUpdate({ charWidth: p.value })}
-                className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+                className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
                   (first.charWidth ?? 0.5) === p.value
                     ? 'bg-zinc-700 text-zinc-100'
                     : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
@@ -399,7 +399,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
           <button
             type="button"
             onClick={() => onUpdate({ autoFit: !(first.autoFit ?? bitmap) })}
-            className={`w-full rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors ${(first.autoFit ?? bitmap) ? 'bg-amber-500/15 text-amber-300' : 'bg-zinc-900/50 text-zinc-500'}`}
+            className={`w-full rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${(first.autoFit ?? bitmap) ? 'bg-amber-500/10 text-amber-300' : 'bg-zinc-900/50 text-zinc-500'}`}
           >
             Auto-fit text {(first.autoFit ?? bitmap) ? 'on' : 'off'}
           </button>
@@ -416,7 +416,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
           <button
             key={a}
             onClick={() => onUpdate({ textAlign: a })}
-            className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-all ${
+            className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${
               first.textAlign === a ? 'bg-zinc-700 text-zinc-100' : 'bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'
             }`}
           >
@@ -426,7 +426,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
       </div>
       {format.type === 'sheet' && (
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wider w-10">Color</span>
+          <span className="text-xs text-zinc-500 w-10">Color</span>
           <input
             type="color"
             value={first.color}
@@ -446,7 +446,7 @@ function QRProps({ element, onUpdate }: { element: QRElement; onUpdate: (u: Part
       <SectionLabel icon={<QrCode className="w-3 h-3" />} label="QR Code" />
       {element.isStatic
         ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Web address or text to encode" full />
-        : <p className="text-[10px] text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
+        : <p className="text-xs text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
       <CompactSelect
         value={element.errorCorrection}
         options={['L', 'M', 'Q', 'H']}
@@ -463,14 +463,14 @@ function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate
       <SectionLabel icon={<Barcode className="w-3 h-3" />} label="Barcode" />
       {element.isStatic
         ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Number or text to encode" full />
-        : <p className="text-[10px] text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
+        : <p className="text-xs text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
       <CompactSelect
         value={element.barcodeFormat}
         options={['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14']}
         onChange={(v) => onUpdate({ barcodeFormat: v as BarcodeFormat })}
       />
       <div className="flex items-center justify-between py-0.5">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Text</span>
+        <span className="text-xs text-zinc-500 ">Text</span>
         <Toggle checked={element.showText} onChange={(v) => onUpdate({ showText: v })} />
       </div>
     </>
@@ -522,16 +522,16 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
         accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
         disabled={uploading}
         onChange={e => void handleUpload(e)}
-        className="text-[10px] text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:cursor-pointer w-full"
+        className="text-xs text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:cursor-pointer w-full"
       />
-      {uploading && <p className="text-[10px] text-zinc-500">Preparing image…</p>}
-      {uploadError && <p role="alert" className="text-[10px] text-red-400">{uploadError}</p>}
-      <p className="text-[10px] text-zinc-500">Large images are scaled down to 1200 px on the longest side.</p>
+      {uploading && <p className="text-xs text-zinc-500">Preparing image…</p>}
+      {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
+      <p className="text-xs text-zinc-500">Large images are scaled down to 1200 px on the longest side.</p>
       <label className="flex items-center gap-2 text-xs text-zinc-300">
         <input type="checkbox" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
         Choose image during run setup
       </label>
-      <p className="text-[10px] text-zinc-500">One image per run, not per data row. This image remains the default; position, size and fit stay fixed.</p>
+      <p className="text-xs text-zinc-500">One image per run, not per data row. This image remains the default; position, size and fit stay fixed.</p>
       <CompactSelect value={element.objectFit} options={['contain', 'cover', 'fill']} onChange={(v) => onUpdate({ objectFit: v as ImageElement['objectFit'] })} />
     </>
   );
@@ -543,7 +543,7 @@ function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string })
   return (
     <div className="flex items-center gap-1.5 pt-2 pb-1">
       <span className="text-zinc-500">{icon}</span>
-      <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">{label}</span>
+      <span className="text-xs text-zinc-500 font-medium">{label}</span>
     </div>
   );
 }
@@ -577,7 +577,7 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
   return (
     <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
       {!labelRight && (
-        <span aria-hidden="true" className="text-[10px] text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-r border-zinc-800/40">{visibleLabel}</span>
+        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-r border-zinc-800/40">{visibleLabel}</span>
       )}
       <input
         type="number"
@@ -604,10 +604,10 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
           }
         }}
         step={step}
-        className="flex-1 bg-transparent text-xs text-zinc-100 px-1.5 h-full focus:outline-none min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className="flex-1 bg-transparent text-xs text-zinc-100 px-1.5 h-full min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
       {labelRight && (
-        <span aria-hidden="true" className="text-[10px] text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-l border-zinc-800/40">{visibleLabel}</span>
+        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-l border-zinc-800/40">{visibleLabel}</span>
       )}
     </div>
   );
@@ -632,7 +632,7 @@ function CompactTextInput({ label, value, onChange, placeholder, full }: {
   return (
     <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
       {label && (
-        <span aria-hidden="true" className="text-[10px] text-zinc-500 font-medium px-2 flex-shrink-0 border-r border-zinc-800/40">{label}</span>
+        <span aria-hidden="true" className="text-xs text-zinc-500 font-medium px-2 flex-shrink-0 border-r border-zinc-800/40">{label}</span>
       )}
       <input
         type="text"
@@ -640,7 +640,7 @@ function CompactTextInput({ label, value, onChange, placeholder, full }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`${full ? 'w-full' : 'flex-1'} bg-transparent text-xs text-zinc-100 px-2 h-full focus:outline-none placeholder-zinc-600 min-w-0`}
+        className={`${full ? 'w-full' : 'flex-1'} bg-transparent text-xs text-zinc-100 px-2 h-full placeholder-zinc-500 min-w-0`}
       />
     </div>
   );
@@ -662,14 +662,14 @@ function CompactSelect({ value, options, labels, onChange }: {
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center gap-2 h-7">
-      <span className="text-[10px] text-zinc-500 uppercase tracking-wider w-8 flex-shrink-0">{label}</span>
+      <span className="text-xs text-zinc-500 w-8 flex-shrink-0">{label}</span>
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-5 h-5 rounded border border-zinc-700 bg-transparent cursor-pointer flex-shrink-0"
       />
-      <span className="text-[10px] text-zinc-400 font-mono">{value}</span>
+      <span className="text-xs text-zinc-400 font-mono">{value}</span>
     </div>
   );
 }
@@ -678,7 +678,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   return (
     <button
       onClick={() => onChange(!checked)}
-      className={`w-7 h-4 rounded-full transition-all flex-shrink-0 ${checked ? 'bg-amber-500' : 'bg-zinc-700'}`}
+      className={`w-7 h-4 rounded-full transition-colors flex-shrink-0 ${checked ? 'bg-amber-500' : 'bg-zinc-700'}`}
     >
       <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
     </button>
@@ -690,7 +690,7 @@ function AlignBtn({ icon, tip, onClick }: { icon: React.ReactNode; tip: string; 
     <button
       onClick={onClick}
       title={tip}
-      className="flex items-center justify-center w-7 h-7 rounded-md text-zinc-500 hover:text-amber-400 hover:bg-amber-500/5 transition-all"
+      className="flex items-center justify-center w-7 h-7 rounded-md text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
     >
       {icon}
     </button>

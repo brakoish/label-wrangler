@@ -490,7 +490,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         width={svgW}
         height={svgH}
         viewBox={`${-padX} ${-padY} ${totalW} ${totalH}`}
-        className="rounded-2xl"
+        className="rounded-xl"
         style={{
           filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
           userSelect: 'none',

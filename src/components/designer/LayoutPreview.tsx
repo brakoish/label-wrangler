@@ -314,8 +314,8 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
   return (
     <div className="border-t border-zinc-800/50 px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Sheet Layout</span>
-        <span className="text-[10px] text-zinc-600">{cols}×{rows} = {cols * rows} labels</span>
+        <span className="text-xs text-zinc-500 font-medium">Sheet Layout</span>
+        <span className="text-xs text-zinc-500">{cols}×{rows} = {cols * rows} labels</span>
       </div>
       <div className="flex justify-center">
         <svg
@@ -391,8 +391,8 @@ function RollLayout({ format, elements, testData }: LayoutPreviewProps) {
   return (
     <div className="border-t border-zinc-800/50 px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Roll Layout</span>
-        <span className="text-[10px] text-zinc-600">{across} across, {linerW.toFixed(2)}&quot; liner</span>
+        <span className="text-xs text-zinc-500 font-medium">Roll Layout</span>
+        <span className="text-xs text-zinc-500">{across} across, {linerW.toFixed(2)}&quot; liner</span>
       </div>
       <div className="flex justify-center">
         <svg

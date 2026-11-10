@@ -65,7 +65,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-xl hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-black text-sm font-semibold rounded-xl hover:bg-amber-400 transition-colors "
             >
               <PlusIcon className="w-4 h-4" />
               New label size
@@ -92,7 +92,7 @@ export default function Home() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 aria-label="Search label sizes"
                 placeholder="Search label sizes…"
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
+                className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
               />
             </div>
 
@@ -100,7 +100,7 @@ export default function Home() {
             <div className="flex gap-1 p-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${
                   activeTab === 'all'
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -110,9 +110,9 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setActiveTab('thermal')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${
                   activeTab === 'thermal'
-                    ? 'bg-orange-500/20 text-orange-400 shadow-sm'
+                    ? 'bg-amber-500/10 text-amber-300 shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -120,7 +120,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setActiveTab('sheet')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${
                   activeTab === 'sheet'
                     ? 'bg-blue-500/20 text-blue-400 shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -146,8 +146,8 @@ export default function Home() {
               </div>
             ) : filteredFormats.length === 0 ? (
               <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
-                  <svg className="w-8 h-8 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
+                  <svg className="w-8 h-8 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <rect x="4" y="3" width="16" height="18" rx="2" />
                     <path d="M4 9h16M4 15h16M12 3v18" />
                   </svg>
@@ -157,7 +157,7 @@ export default function Home() {
                     ? 'No label sizes match'
                     : 'No label sizes yet'}
                 </p>
-                <p className="text-zinc-600 text-xs mt-1">
+                <p className="text-zinc-500 text-xs mt-1">
                   {searchQuery || activeTab !== 'all'
                     ? 'Try adjusting your search or filter'
                     : 'Add the size of the labels you print on to get started'}
@@ -199,9 +199,9 @@ export default function Home() {
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center max-w-sm">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
                   <svg
-                    className="w-10 h-10 text-zinc-600"
+                    className="w-10 h-10 text-zinc-500"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"

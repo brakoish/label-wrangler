@@ -68,7 +68,7 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const signedOut = (message: string) => /sign in|signed in|unauthori[sz]ed|401|session/i.test(message);
-  const banners = pathname !== '/login' ? <div className="text-xs bg-zinc-950 text-amber-200" aria-live="polite">
+  const banners = pathname !== '/login' ? <div className="text-xs bg-zinc-950 text-amber-300" aria-live="polite">
       {collections.map(({name,store,load,count}) => store.error ? (ownsEmptyList(name, count) ? null : <div role="alert" className="px-4 py-2" key={name}>Couldn&apos;t load {name.toLowerCase()}: {friendlyError(store.error)} <button type="button" className="underline" onClick={()=>void load()}>Try again</button>{signedOut(store.error) && <a className="underline ml-2" href="/login">Sign in</a>}</div>) : store.hasMore ? <button type="button" key={name} className="px-4 py-1 underline" disabled={store.loading} onClick={()=>void load(true)}>{store.loading ? `Loading the rest of your ${name.toLowerCase()}…` : `Load more ${name.toLowerCase()}`}</button> : null)}
       {(sync.count > 0 || sync.error) && <div role="alert" className="px-4 py-2">{sync.error ? friendlyError(sync.error) : `${sync.count === 1 ? '1 print update hasn\u2019t' : `${sync.count} print updates haven\u2019t`} reached the server yet. They\u2019ll send when you\u2019re back online — don\u2019t clear this browser\u2019s data.`} <button type="button" className="underline" onClick={()=>void flushOfflineQueue()}>Send now</button></div>}
       {sync.dead.length > 0 && <div role="alert" className="px-4 py-2">

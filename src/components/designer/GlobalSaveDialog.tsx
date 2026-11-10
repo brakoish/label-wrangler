@@ -35,7 +35,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Compliance Header, Footer Block"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-amber-500/40 placeholder:text-zinc-600"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:border-amber-500/30 placeholder:text-zinc-500"
             />
           </div>
           <div>
@@ -46,7 +46,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional note about what this contains"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-amber-500/40 placeholder:text-zinc-600"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:border-amber-500/30 placeholder:text-zinc-500"
             />
           </div>
         </div>

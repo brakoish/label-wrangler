@@ -1033,7 +1033,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               <span className={`mr-2 font-medium ${
                 run.status === 'completed' ? 'text-emerald-400' :
                 run.status === 'printing' ? 'text-amber-400' :
-                run.status === 'paused' ? 'text-yellow-400' :
+                run.status === 'paused' ? 'text-amber-300' :
                 run.status === 'cancelled' ? 'text-red-400' : 'text-zinc-300'
               }`}>{runStatusLabel(run.status)}</span>
               <span className="whitespace-nowrap">{template.name}</span> · <span className="whitespace-nowrap">{format.name}{/["″]/.test(format.name) ? '' : ` · ${format.width}″ × ${format.height}″`}</span> · <span className="whitespace-nowrap">{total.toLocaleString()} label{total === 1 ? '' : 's'}</span>
@@ -1043,7 +1043,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             {/* Quick actions keep their words on phones, with 44px targets. */}
             <Link
               href={`/runs/${run.id}/scan`}
-              className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors sm:min-h-9"
+              className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/10 transition-colors sm:min-h-9"
               title="One label per scan, hands-free"
             >
               <ScanBarcode className="w-4 h-4" />
@@ -1082,10 +1082,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="order-2 space-y-6 lg:order-1">
 
         {/* Run summary: how fields are mapped + a live label preview. */}
-        <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+        <section className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Label {Math.min(previewIndex + 1, Math.max(1, total))} data</h2>
-            <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+            <h2 className="text-xs text-zinc-500 font-semibold">Label {Math.min(previewIndex + 1, Math.max(1, total))} data</h2>
+            <span className="text-xs text-zinc-500 flex items-center gap-1.5">
               {(() => {
                 const SourceIcon = runSourceMeta(run.dataSource).icon;
                 return <SourceIcon className="w-3 h-3" />;
@@ -1100,10 +1100,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               {mappingRows.map((m) => (
                 <div key={m.field} className="flex items-center gap-3 text-xs py-1.5 px-2 rounded-md bg-zinc-950/40">
                   <span className="w-28 shrink-0 font-medium text-zinc-200 truncate">{m.field}</span>
-                  <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${m.source === 'same on every label' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                  <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded ${m.source === 'same on every label' ? 'bg-zinc-800 text-zinc-400' : 'bg-amber-500/10 text-amber-400'}`}>
                     {m.source}
                   </span>
-                  <span className="flex-1 min-w-0 truncate text-zinc-400 font-mono text-[10.5px]" title={m.sample}>
+                  <span className="flex-1 min-w-0 truncate text-zinc-400 font-mono text-xs" title={m.sample}>
                     {m.sample || <span className="text-amber-400">(empty)</span>}
                   </span>
                 </div>
@@ -1115,7 +1115,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               say, label 1 and label 543 really do have different QR codes. */}
           <div className="pt-2 border-t border-zinc-800/60 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Preview</h3>
+              <h3 className="text-xs text-zinc-500 font-semibold">Preview</h3>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1128,7 +1128,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <SquareDashed className="w-3.5 h-3.5" />
                 </button>
               {total > 0 && (
-                <div className="flex items-center gap-1.5 text-[11px]">
+                <div className="flex items-center gap-1.5 text-xs">
                   <button
                     onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
                     disabled={previewIndex === 0}
@@ -1145,7 +1145,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       const n = parseInt(e.target.value, 10);
                       if (Number.isFinite(n)) setPreviewIndex(Math.max(0, Math.min(total - 1, n - 1)));
                     }}
-                    className="w-14 text-center bg-zinc-950 border border-zinc-800 rounded text-[11px] text-zinc-200 tabular-nums py-0.5 focus:outline-none focus:border-amber-500/40"
+                    className="w-14 text-center bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums py-0.5 focus:border-amber-500/30"
                   />
                   <span className="text-zinc-500">/ {total}</span>
                   <button
@@ -1185,16 +1185,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           <div className="order-1 space-y-6 lg:order-2 lg:sticky lg:top-24 lg:self-start">
 
         {/* Transport setup */}
-        <section className="glass rounded-xl p-5 border border-zinc-800 space-y-3">
-          <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">{isSheetFormat ? 'Sheet Output' : 'Printer'}</h2>
+        <section className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-3">
+          <h2 className="text-xs text-zinc-500 font-semibold">{isSheetFormat ? 'Sheet Output' : 'Printer'}</h2>
           {isSheetFormat ? (
             <div className="space-y-2">
               <p className="text-xs text-zinc-400 leading-relaxed">
                 Sheets open as a print-ready page for regular printers or Save as PDF.
               </p>
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Important print setting</p>
-                <p className="mt-1 text-xs text-amber-100">Set scale to 100% / Actual size. Do not use Fit to page or Shrink to printable area.</p>
+                <p className="text-xs font-semibold text-amber-300">Important print setting</p>
+                <p className="mt-1 text-xs text-amber-300">Set scale to 100% / Actual size. Do not use Fit to page or Shrink to printable area.</p>
               </div>
             </div>
           ) : (
@@ -1213,10 +1213,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       disabled={!available || status === 'running' || !!reprinting}
                       title={available ? undefined : TRANSPORT_LABELS[option].unavailable}
                       onClick={() => setTransport(option)}
-                      className={`min-h-10 px-3 py-1.5 rounded text-left text-xs font-medium disabled:cursor-not-allowed ${selected ? 'bg-amber-500/20 text-amber-300' : available ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-600'}`}
+                      className={`min-h-10 px-3 py-1.5 rounded text-left text-xs font-medium disabled:cursor-not-allowed ${selected ? 'bg-amber-500/10 text-amber-300' : available ? 'text-zinc-300 hover:bg-zinc-800' : 'text-zinc-500'}`}
                     >
                       {TRANSPORT_LABELS[option].label}
-                      {!available && <span id={`transport-why-${option}`} className="block text-[11px] font-normal text-zinc-500">{TRANSPORT_LABELS[option].unavailable}</span>}
+                      {!available && <span id={`transport-why-${option}`} className="block text-xs font-normal text-zinc-500">{TRANSPORT_LABELS[option].unavailable}</span>}
                     </button>
                   );
                 })}
@@ -1239,7 +1239,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                         </option>
                       ))}
                     </select>
-                    <p className="text-[11px] leading-relaxed text-zinc-500">
+                    <p className="text-xs leading-relaxed text-zinc-500">
                       The Dazzle app can&apos;t tell us if the printer is out of labels or ribbon. Watch the printer, or use &ldquo;USB printer (Chrome)&rdquo; for live checks.
                     </p>
                   </div>
@@ -1253,7 +1253,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     <div className="flex items-center gap-1.5 text-xs text-emerald-400">
                       <CheckCircle2 className="w-4 h-4" /> {usbPrinter.productName}
                     </div>
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-xs text-zinc-500">
                       {usbPrinter.endpointIn
                         ? 'The printer is checked for paper and ribbon before each batch.'
                         : 'This printer can\'t report paper or ribbon problems, so watch it while it prints.'}
@@ -1270,13 +1270,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                             setPrinterStatusMessage((err as Error)?.message || 'Status check failed');
                           }
                         }}
-                        className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-[11px] text-zinc-400 hover:text-amber-400"
+                        className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-400 hover:text-amber-400"
                       >
                         Check printer
                       </button>
                     )}
                     {printerStatusMessage && (
-                      <p className="text-[11px] text-zinc-400">{printerStatusMessage}</p>
+                      <p className="text-xs text-zinc-400">{printerStatusMessage}</p>
                     )}
                   </div>
                 ) : (
@@ -1307,34 +1307,34 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         </section>
 
         {/* Progress */}
-        <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+        <section className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-4">
           {blankCheck && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact />}
           {(isSheetFormat || transport !== 'office') && <>
           <div className="flex items-center justify-between">
-            <h2 className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">Progress</h2>
+            <h2 className="text-xs text-zinc-500 font-semibold">Progress</h2>
             <span className="text-sm font-semibold text-zinc-100 tabular-nums">
               {progressLabel} {printedCount.toLocaleString()} of {total.toLocaleString()} · {pct}%
             </span>
           </div>
           <div className="h-3 rounded-full bg-zinc-900 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-amber-500 transition-colors" style={{ width: `${pct}%` }} />
           </div>
           {isSheetFormat && pendingSheetRange && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 space-y-2">
-              <p className="text-xs text-amber-100">
+              <p className="text-xs text-amber-300">
                 Opened labels {pendingSheetRange.from}-{pendingSheetRange.to}. This run stays in progress until the printed sheet is confirmed.
               </p>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => void markSheetRangePrinted()}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-amber-500 text-black hover:bg-amber-400 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-amber-500 text-black hover:bg-amber-400 transition-colors"
                 >
                   <CheckCircle2 className="w-3 h-3" />
                   Mark printed
                 </button>
                 <button
                   onClick={() => void dismissPendingSheetRange()}
-                  className="px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950/60 border border-zinc-800"
+                  className="px-3 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-950/60 border border-zinc-800"
                 >
                   Not printed
                 </button>
@@ -1352,13 +1352,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <div className="space-y-2 text-xs text-zinc-400">
               <div className="grid grid-cols-3 gap-2">
                 <label>From label
-                  <input type="number" inputMode="numeric" min={1} max={total} value={fromValue} onChange={e => { setFromDraft(e.target.value); setCountDraft(null); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                  <input type="number" inputMode="numeric" min={1} max={total} value={fromValue} onChange={e => { setFromDraft(e.target.value); setCountDraft(null); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:border-amber-500/30" />
                 </label>
                 <label>Stop after label
-                  <input type="number" inputMode="numeric" min={selectedFrom || 1} max={total} value={throughValue} onChange={e => { setThroughDraft(e.target.value); setCountDraft(null); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                  <input type="number" inputMode="numeric" min={selectedFrom || 1} max={total} value={throughValue} onChange={e => { setThroughDraft(e.target.value); setCountDraft(null); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:border-amber-500/30" />
                 </label>
                 <label>How many
-                  <input type="number" inputMode="numeric" min={1} max={total-selectedFrom+1} value={countDraft ?? (rangeValid ? selectedThrough-selectedFrom+1 : '')} onChange={e => { setCountDraft(e.target.value); if (e.target.value.trim() && Number.isInteger(Number(e.target.value)) && Number(e.target.value) > 0) setThroughDraft(String(selectedFrom + Number(e.target.value) - 1)); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-amber-500/50" />
+                  <input type="number" inputMode="numeric" min={1} max={total-selectedFrom+1} value={countDraft ?? (rangeValid ? selectedThrough-selectedFrom+1 : '')} onChange={e => { setCountDraft(e.target.value); if (e.target.value.trim() && Number.isInteger(Number(e.target.value)) && Number(e.target.value) > 0) setThroughDraft(String(selectedFrom + Number(e.target.value) - 1)); }} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:border-amber-500/30" />
                 </label>
               </div>
               {!rangeValid && <p role="alert" className="text-amber-400">Enter whole label numbers from 1 to {total}, with the stop number at or after the start.</p>}
@@ -1369,7 +1369,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             {isSheetFormat && pendingSheetRange && (
               <button
                 onClick={() => void markSheetRangePrinted()}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500 text-black hover:bg-emerald-400 transition-all"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500 text-black hover:bg-emerald-400 transition-colors"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 Confirm printed
@@ -1378,7 +1378,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             {isSheetFormat && !pendingSheetRange && printedCount < total && (
               <button
                 onClick={() => openSheetPrintRange()}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-amber-500 text-black hover:bg-amber-400 transition-colors disabled:opacity-40"
               >
                 <FileText className="w-4 h-4" />
                 Open Print / PDF
@@ -1388,7 +1388,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               <button
                 onClick={startOrResume}
                 disabled={!canStart || !rangeValid}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-40"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-amber-500 text-black hover:bg-amber-400 transition-colors disabled:opacity-40"
               >
                 {status === 'paused' ? <Play className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
                 {status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
@@ -1410,7 +1410,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <button
                   type="button"
                   onClick={onDone}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/40 transition-colors"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Done
                 </button>
@@ -1470,10 +1470,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <legend className="px-1 text-xs font-semibold text-zinc-300">Reprint labels</legend>
                   <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400">
                     <label>From label
-                      <input type="number" inputMode="numeric" min={1} max={total} value={reprintFromDraft} onChange={(e) => setReprintFromDraft(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 tabular-nums focus:outline-none focus:border-amber-500/50" />
+                      <input type="number" inputMode="numeric" min={1} max={total} value={reprintFromDraft} onChange={(e) => setReprintFromDraft(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 tabular-nums focus:border-amber-500/30" />
                     </label>
                     <label>To label
-                      <input type="number" inputMode="numeric" min={reprintFrom || 1} max={total} value={reprintToDraft} onChange={(e) => setReprintToDraft(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 tabular-nums focus:outline-none focus:border-amber-500/50" />
+                      <input type="number" inputMode="numeric" min={reprintFrom || 1} max={total} value={reprintToDraft} onChange={(e) => setReprintToDraft(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 tabular-nums focus:border-amber-500/30" />
                     </label>
                   </div>
                   {reprintValid
@@ -1491,7 +1491,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     <button type="button" onClick={() => setShowReprint(false)} className="min-h-10 px-3 rounded-md text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
                   </div>
                   {!isSheetFormat && reprintValid && reprintFrom <= printedCount && (
-                    <button type="button" onClick={() => void handleReprintFromHereAndContinue()} className="text-left text-[11px] text-zinc-500 underline hover:text-zinc-300">
+                    <button type="button" onClick={() => void handleReprintFromHereAndContinue()} className="text-left text-xs text-zinc-500 underline hover:text-zinc-300">
                       Or go back to label {reprintFrom} and continue the run from there…
                     </button>
                   )}
@@ -1507,43 +1507,43 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             {!showExport ? (
               <button
                 onClick={() => { setExportFrom(1); setExportTo(total); setShowExport(true); }}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors border border-zinc-800"
               >
                 <Download className="w-3 h-3" /> Save labels as a file…
               </button>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-zinc-400 whitespace-nowrap">Labels</span>
+                  <span className="text-xs text-zinc-400 whitespace-nowrap">Labels</span>
                   <input
                     aria-label="Save from label"
                     type="number" min={1} max={total} value={exportFrom}
                     onChange={(e) => setExportFrom(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
+                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:border-amber-500/30"
                   />
-                  <span className="text-[11px] text-zinc-500">–</span>
+                  <span className="text-xs text-zinc-500">–</span>
                   <input
                     aria-label="Save to label"
                     type="number" min={1} max={total} value={resolvedExportTo}
                     onChange={(e) => setExportTo(Math.min(total, parseInt(e.target.value, 10) || total))}
-                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:outline-none focus:border-amber-500/40"
+                    className="w-20 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-200 tabular-nums px-2 py-1 focus:border-amber-500/30"
                   />
-                  <span className="text-[11px] text-zinc-500">/ {total}</span>
+                  <span className="text-xs text-zinc-500">/ {total}</span>
                 </div>
                 {(() => {
                   const count = resolvedExportTo - exportFrom + 1;
-                  if (isSheetFormat) return <p className="text-[10px] text-zinc-500">Sheets open in a print-ready tab. Choose Save as PDF in the browser print dialog.</p>;
+                  if (isSheetFormat) return <p className="text-xs text-zinc-500">Sheets open in a print-ready tab. Choose Save as PDF in the browser print dialog.</p>;
                   if (exporting === 'pdf') return null;
-                  if (count > 500) return <p className="text-[10px] text-amber-400/80">Large ranges download as consecutive PDF files of up to 500 labels each. Your browser may ask to allow multiple downloads.</p>;
-                  if (count > 100) return <p className="text-[10px] text-yellow-500/80">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
+                  if (count > 500) return <p className="text-xs text-amber-400">Large ranges download as consecutive PDF files of up to 500 labels each. Your browser may ask to allow multiple downloads.</p>;
+                  if (count > 100) return <p className="text-xs text-amber-400">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
                   return null;
                 })()}
                 {exporting === 'pdf' && (
                   <div className="space-y-1">
                     <div className="h-1.5 rounded-full bg-zinc-900 overflow-hidden">
-                      <div className="h-full bg-amber-500 transition-all" style={{ width: `${exportProgress}%` }} />
+                      <div className="h-full bg-amber-500 transition-colors" style={{ width: `${exportProgress}%` }} />
                     </div>
-                    <p className="text-[10px] text-zinc-500 text-right">{exportProgress}%</p>
+                    <p className="text-xs text-zinc-500 text-right">{exportProgress}%</p>
                   </div>
                 )}
                 <div className="flex items-center gap-2">
@@ -1551,7 +1551,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     <button
                       onClick={() => void handleExportZPL()}
                       disabled={!!exporting}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
                     >
                       {exporting === 'zpl' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileCode2 className="w-3 h-3" />}
                       Printer file (ZPL)
@@ -1560,7 +1560,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   {isSheetFormat ? (
                     <button
                       onClick={() => openSheetPrintRange({ from: exportFrom, to: resolvedExportTo })}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
                     >
                       <FileText className="w-3 h-3" />
                       Print / PDF
@@ -1569,7 +1569,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     <button
                       onClick={() => void handleExportPDF()}
                       disabled={!!exporting}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-40"
                     >
                       {exporting === 'pdf' ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
                       PDF
@@ -1577,7 +1577,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   )}
                   <button
                     onClick={() => { setShowExport(false); setExporting(null); }}
-                    className="px-2 py-1.5 rounded-md text-[11px] text-zinc-500 hover:text-zinc-300"
+                    className="px-2 py-1.5 rounded-md text-xs text-zinc-500 hover:text-zinc-300"
                   >
                     Cancel
                   </button>
@@ -1588,19 +1588,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
           {eventsForRun.length > 0 && (
             <div className="pt-3 border-t border-zinc-800/60 space-y-2">
-              <h3 className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Print history</h3>
+              <h3 className="text-xs text-zinc-500 font-semibold">Print history</h3>
               <div className="space-y-1">
                 {eventsForRun.slice(0, 5).map((event) => (
-                  <div key={event.id} className="flex items-center justify-between gap-3 rounded-md bg-zinc-950/40 px-2 py-1.5 text-[11px]">
+                  <div key={event.id} className="flex items-center justify-between gap-3 rounded-md bg-zinc-950/40 px-2 py-1.5 text-xs">
                     <span className={
                       event.eventType === 'confirmed' ? 'text-emerald-400' :
                       event.eventType === 'failed' ? 'text-red-400' :
-                      event.eventType === 'cancelled' ? 'text-yellow-400' :
+                      event.eventType === 'cancelled' ? 'text-amber-300' :
                       'text-zinc-300'
                     }>
                       {printEventLabel(event)}
                     </span>
-                    <span className="shrink-0 text-zinc-600">{formatEventTime(event.createdAt)}</span>
+                    <span className="shrink-0 text-zinc-500">{formatEventTime(event.createdAt)}</span>
                   </div>
                 ))}
               </div>
@@ -1621,7 +1621,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               id="edit-run-name"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:border-amber-500/30"
             />
           </div>
 
@@ -1636,7 +1636,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       id={`edit-static-${field}`}
                       value={editStatic[field] ?? ''}
                       onChange={(e) => setEditStatic((prev) => ({ ...prev, [field]: e.target.value }))}
-                      className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
+                      className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-100 focus:border-amber-500/30"
                     />
                   </div>
                 ))}
@@ -1647,7 +1647,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {sourceEditFields.length > 0 && (
             <fieldset className="space-y-2">
               <legend className="text-xs text-zinc-400">Label {editRowIndex + 1}</legend>
-              <p className="text-[11px] leading-relaxed text-zinc-500">
+              <p className="text-xs leading-relaxed text-zinc-500">
                 If a value is the same on every label, saving changes all of them; otherwise only label {editRowIndex + 1} changes.
               </p>
               <div className="space-y-2">
@@ -1655,13 +1655,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <div key={item.field} className="space-y-1">
                     <div className="flex items-center justify-between gap-2">
                       <label htmlFor={`edit-source-${item.field}`} className="text-xs text-zinc-300 truncate">{item.field}</label>
-                      <span className="text-[11px] text-zinc-500 truncate">{item.source}</span>
+                      <span className="text-xs text-zinc-500 truncate">{item.source}</span>
                     </div>
                     <input
                       id={`edit-source-${item.field}`}
                       value={editSourceValues[item.field] ?? ''}
                       onChange={(e) => setEditSourceValues((prev) => ({ ...prev, [item.field]: e.target.value }))}
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-amber-500/50"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm text-zinc-100 focus:border-amber-500/30"
                     />
                   </div>
                 ))}
@@ -1677,7 +1677,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               onChange={(e) => setEditNotes(e.target.value)}
               rows={2}
               placeholder="Optional notes…"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 resize-none"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-amber-500/30 resize-none"
             />
           </div>
 
@@ -1686,7 +1686,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               type="button"
               onClick={() => void handleSaveEdit()}
               disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 disabled:opacity-40 transition-all"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40 transition-colors"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? 'Saving…' : 'Save changes'}
@@ -1725,8 +1725,8 @@ function LocalZplPreview({ zpl, format, showOutlines }: { zpl: string; format: L
     return () => { cancelled = true; };
   }, [zpl, format]);
 
-  if (err) return <p role="alert" className="text-[11px] text-red-400">{friendlyError(err)}</p>;
-  if (!url) return <p role="status" className="text-[11px] text-zinc-500">Rendering…</p>;
+  if (err) return <p role="alert" className="text-xs text-red-400">{friendlyError(err)}</p>;
+  if (!url) return <p role="status" className="text-xs text-zinc-500">Rendering…</p>;
   return (
     <div className="relative inline-block">
       <img

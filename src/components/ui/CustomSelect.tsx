@@ -183,7 +183,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
               option.value === value
                 ? 'bg-amber-500/10 text-amber-400'
                 : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
-            } ${index === active ? 'ring-1 ring-inset ring-amber-500/50' : ''}`}
+            } ${index === active ? 'ring-1 ring-inset ring-amber-500/30' : ''}`}
           >
             <span className="truncate flex-1 text-left">{option.label}</span>
             {option.value === value && <Check className="w-3 h-3 text-amber-400 flex-shrink-0" />}
@@ -198,7 +198,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
           type="button"
           {...triggerA11y}
           onClick={() => setOpen(!open)}
-          className="w-full flex items-center justify-between bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 h-7 hover:border-zinc-700 focus:outline-none focus:border-amber-500/30 transition-all"
+          className="w-full flex items-center justify-between bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 h-7 hover:border-zinc-700 focus:border-amber-500/30 transition-colors"
         >
           <span className="truncate">{selected?.label || placeholder}</span>
           <ChevronDown className={`w-3 h-3 text-zinc-500 flex-shrink-0 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -209,7 +209,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   }
 
   const fullMenu = (
-    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden">
+    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden">
       {options.map((option, index) => (
         <div
           key={option.value}
@@ -223,7 +223,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
             option.value === value
               ? 'bg-amber-500/10 text-amber-400'
               : 'text-zinc-300 hover:bg-zinc-800/80 hover:text-zinc-100'
-          } ${index === active ? 'ring-1 ring-inset ring-amber-500/50' : ''}`}
+          } ${index === active ? 'ring-1 ring-inset ring-amber-500/30' : ''}`}
         >
           {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
           <div className="flex-1 text-left truncate">
@@ -245,7 +245,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
         type="button"
         {...triggerA11y}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 px-4 py-3 hover:border-zinc-700 focus:outline-none focus:border-amber-500/50 transition-all"
+        className="w-full flex items-center justify-between bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 px-4 py-3 hover:border-zinc-700 focus:border-amber-500/30 transition-colors"
       >
         <div className="flex items-center gap-3 truncate">
           {selected?.icon}

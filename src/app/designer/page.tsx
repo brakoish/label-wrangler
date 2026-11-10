@@ -586,7 +586,7 @@ function DesignerContent() {
       <PageTitle title="Designer" />
       <div className="px-4 py-2 flex flex-wrap items-center gap-3 text-xs text-zinc-400 border-b border-zinc-800/50">
         <span role="status" aria-live="polite" className={saveError ? 'text-red-400' : saving ? 'text-amber-400' : 'text-emerald-400'}>{saveError ? 'Not saved' : saving ? 'Saving…' : 'All changes saved'}</span>
-        <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="min-h-9 rounded-md border border-zinc-700 px-3 text-xs font-medium text-zinc-200 hover:border-amber-500/50 hover:text-amber-300 disabled:opacity-40">{saving ? 'Saving…' : 'Save now'}</button>
+        <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="min-h-9 rounded-md border border-zinc-700 px-3 text-xs font-medium text-zinc-200 hover:border-amber-500/30 hover:text-amber-300 disabled:opacity-40">{saving ? 'Saving…' : 'Save now'}</button>
         <span className="text-zinc-500">Changes save on their own.</span>
         {currentFormat.type === 'thermal' && <>
         <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
@@ -648,7 +648,7 @@ function DesignerContent() {
               <a
                 href={returnTo}
                 onClick={e => { e.preventDefault(); void leaveEditor(); }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/10 text-amber-400 hover:bg-amber-500/10 transition-colors"
               >
                 ← Done editing
               </a>
@@ -661,14 +661,14 @@ function DesignerContent() {
                 Designs
               </a>
             )}
-            <span className="text-zinc-700">/</span>
+            <span className="text-zinc-500">/</span>
             <button
               onClick={() => setRenameSource(currentTemplate)}
               className="flex min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 text-zinc-100 font-semibold hover:text-amber-400 transition-colors"
               title="Rename template"
             >
               <span className="truncate">{currentTemplate.name}</span>
-              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-600" />
+              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
             </button>
             {compatibleFormats.length > 1 && (
               <div className="w-44 shrink-0">
@@ -692,7 +692,7 @@ function DesignerContent() {
                     <button
                       onClick={() => updateThermalEditorOrientation('printer')}
                       title="Edit in printer orientation"
-                      className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
                         thermalEditorOrientation === 'printer'
                           ? 'bg-zinc-700 text-zinc-100'
                           : 'text-zinc-500 hover:text-zinc-200'
@@ -703,9 +703,9 @@ function DesignerContent() {
                     <button
                       onClick={() => updateThermalEditorOrientation('upright')}
                       title="Edit upright"
-                      className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${
+                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
                         thermalEditorOrientation === 'upright'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                           : 'text-zinc-500 hover:text-zinc-200'
                       }`}
                     >
@@ -720,7 +720,7 @@ function DesignerContent() {
                 disabled={!canUndo()}
                 title="Undo (Ctrl+Z)"
                 aria-label="Undo"
-                className={`p-1.5 rounded-lg transition-colors ${canUndo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5' : 'text-zinc-700 cursor-not-allowed'}`}
+                className={`p-1.5 rounded-lg transition-colors ${canUndo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10' : 'text-zinc-500 cursor-not-allowed'}`}
               >
                 <Undo2 className="w-4 h-4" />
               </button>
@@ -729,7 +729,7 @@ function DesignerContent() {
                 disabled={!canRedo()}
                 title="Redo (Ctrl+Shift+Z)"
                 aria-label="Redo"
-                className={`p-1.5 rounded-lg transition-colors ${canRedo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/5' : 'text-zinc-700 cursor-not-allowed'}`}
+                className={`p-1.5 rounded-lg transition-colors ${canRedo() ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10' : 'text-zinc-500 cursor-not-allowed'}`}
               >
                 <Redo2 className="w-4 h-4" />
               </button>
@@ -866,7 +866,7 @@ function DesignerContent() {
 export default function DesignerPage() {
   return (
     <Suspense fallback={
-      <div className="h-screen flex items-center justify-center bg-[#0c0c0e]">
+      <div className="h-screen flex items-center justify-center bg-zinc-950">
         <div className="text-zinc-400">Loading...</div>
       </div>
     }>

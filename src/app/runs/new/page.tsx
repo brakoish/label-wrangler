@@ -807,7 +807,7 @@ function NewRunContent() {
         <div className="max-w-[1180px] mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-5 pb-48 sm:pb-28">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Print workflow</p>
+              <p className="text-xs font-semibold text-zinc-500">Print workflow</p>
               <h1 className="mt-1 text-2xl font-bold text-zinc-100">New print run</h1>
             </div>
             <ol className="grid grid-cols-4 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
@@ -815,11 +815,11 @@ function NewRunContent() {
                 <li
                   key={step.label}
                   className={`flex min-w-0 items-center gap-2 border-r border-zinc-800 px-3 py-2 last:border-r-0 ${
-                    step.done ? 'text-emerald-300' : index === workflowSteps.findIndex((s) => !s.done) ? 'text-amber-300' : 'text-zinc-600'
+                    step.done ? 'text-emerald-400' : index === workflowSteps.findIndex((s) => !s.done) ? 'text-amber-300' : 'text-zinc-500'
                   }`}
                 >
                   <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                    step.done ? 'bg-emerald-500/20' : 'bg-zinc-900'
+                    step.done ? 'bg-emerald-500/10' : 'bg-zinc-900'
                   }`}>
                     <span aria-hidden="true">{step.done ? '✓' : index + 1}</span>
                   </span>
@@ -845,7 +845,7 @@ function NewRunContent() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Jack Herer 3.5g — Apr 21 batch"
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
                 />
               </div>
               <div>
@@ -857,7 +857,7 @@ function NewRunContent() {
                     {template && (
                       <Link
                         href={`/designer?id=${template.id}&returnTo=${encodeURIComponent('/runs/new')}`}
-                        className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-amber-400 transition-colors"
+                        className="flex items-center gap-1 text-xs text-zinc-500 hover:text-amber-400 transition-colors"
                         title="Open this design in the designer"
                       >
                         <Pencil className="w-3 h-3" /> Edit design
@@ -868,7 +868,7 @@ function NewRunContent() {
                       onClick={() => setShowNewTemplateDialog(true)}
                       disabled={formats.length === 0}
                       title={formats.length === 0 ? 'Create a label size first' : 'Create a new label design'}
-                      className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-amber-400 transition-colors disabled:opacity-40 disabled:hover:text-zinc-500"
+                      className="flex items-center gap-1 text-xs text-zinc-500 hover:text-amber-400 transition-colors disabled:opacity-40 disabled:hover:text-zinc-500"
                     >
                       <Plus className="w-3 h-3" /> New design
                     </button>
@@ -901,7 +901,7 @@ function NewRunContent() {
             {template && format && (
               <div className="border-t border-zinc-800/60 pt-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Design preview</span>
+                  <span className="text-xs font-semibold text-zinc-500">Design preview</span>
                   <span className="truncate text-xs text-zinc-500" title={`${template.name} · ${format.name}`}>
                     {template.name} · {format.name}
                   </span>
@@ -916,15 +916,15 @@ function NewRunContent() {
           {template && <RunImagePicker key={template.id} template={template} selections={imageSelections} onBusyChange={setImageBusy} onChange={value => setImagesByTemplate(current => ({ ...current, [template.id]: value }))} />}
 
           {template && unnamedDynamic.length > 0 && (
-            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
-              <h2 className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Unnamed Fields</h2>
+            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/10 space-y-3">
+              <h2 className="text-xs text-amber-400 font-semibold">Unnamed Fields</h2>
               <p className="text-xs text-zinc-400">
                 {unnamedDynamic.length === 1 ? '1 dynamic element has' : `${unnamedDynamic.length} dynamic elements have`} no field name, so {unnamedDynamic.length === 1 ? 'it' : 'they'} can&apos;t be filled in this run. Naming them saves the shared design.
               </p>
               <button
                 onClick={() => void nameUnnamedFields()}
                 disabled={namingFields}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
               >
                 {namingFields ? 'Saving design…' : 'Name fields and save design'}
               </button>
@@ -933,8 +933,8 @@ function NewRunContent() {
           )}
 
           {template && flippable.length > 0 && (
-            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
-              <h2 className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Make it change per label</h2>
+            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/10 space-y-3">
+              <h2 className="text-xs text-amber-400 font-semibold">Make it change per label</h2>
               <p className="text-xs text-zinc-400">
                 These are set to &ldquo;Same on every label&rdquo;. Switch one to &ldquo;Changes per label&rdquo; to fill it from your spreadsheet. What it shows now stays as the preview sample.
               </p>
@@ -949,17 +949,17 @@ function NewRunContent() {
                       updateElementLocal(template.id, f.id, current ? { ...contentModeUpdates({ ...current, fieldName: '' }, false, () => f.suggestedName) } : { isStatic: false, fieldName: f.suggestedName });
                       await saveTemplate(template.id);
                     }}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 transition-colors"
                   >
                     Make the <span className="font-semibold">{f.type === 'qr' ? 'QR code' : f.type}</span> change per label
-                    <span className="text-[10px] text-amber-500/70">→ {f.suggestedName}</span>
+                    <span className="text-xs text-amber-400">→ {f.suggestedName}</span>
                   </button>
                 ))}
               </div>
             </section>
           )}
           {template && allDynamicFields.length === 0 && flippable.length === 0 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-300">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-300">
               Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link> and set the parts that should change to &ldquo;Changes per label&rdquo;.
             </div>
           )}
@@ -974,7 +974,7 @@ function NewRunContent() {
                     detail="Hide anything that should not be filled for this run."
                   />
                   {hiddenRunFields.length > 0 && (
-                    <span className="text-[11px] text-zinc-500">
+                    <span className="text-xs text-zinc-500">
                       {hiddenRunFields.length} hidden
                     </span>
                   )}
@@ -991,7 +991,7 @@ function NewRunContent() {
                         className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                           hidden
                             ? 'border-zinc-800 bg-zinc-950 text-zinc-500 hover:text-zinc-300'
-                            : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15'
+                            : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/10'
                         }`}
                       >
                         {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -1013,25 +1013,25 @@ function NewRunContent() {
                   <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 sm:flex sm:items-center">
                     <button
                       onClick={() => setInputMode('manual')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manual' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manual' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                     >
                       <Pencil className="w-3 h-3" /> Manual
                     </button>
                     <button
                       onClick={() => setInputMode('paste')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'paste' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'paste' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                     >
                       <Clipboard className="w-3 h-3" /> Paste
                     </button>
                     <button
                       onClick={() => setInputMode('csv')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'csv' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'csv' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                     >
                       <FileSpreadsheet className="w-3 h-3" /> CSV
                     </button>
                     <button
                       onClick={() => setInputMode('manifest')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manifest' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manifest' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                     >
                       <Search className="w-3 h-3" /> Manifest
                     </button>
@@ -1053,7 +1053,7 @@ function NewRunContent() {
                             value={staticValues[field] ?? ''}
                             onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
                             placeholder={`Value for ${field}`}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
                           />
                         </div>
                       ))}
@@ -1081,7 +1081,7 @@ function NewRunContent() {
                             e.currentTarget.blur();
                           }
                         }}
-                        className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40 tabular-nums"
+                        className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30 tabular-nums"
                       />
                       <span className="text-xs text-zinc-500">labels</span>
                     </div>
@@ -1096,7 +1096,7 @@ function NewRunContent() {
                         onChange={(e) => setPasteText(e.target.value)}
                         rows={7}
                         placeholder={'HTTPS://1A4.COM/5LO1I9DSOPW43WR19JI8\nHTTPS://1A4.COM/5LO1I9DSOPW43WR19JI9\n...'}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-100 font-mono px-3 py-2 focus:outline-none focus:border-amber-500/40 resize-y"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-100 font-mono px-3 py-2 focus:border-amber-500/30 resize-y"
                       />
                     </div>
                     <div>
@@ -1157,7 +1157,7 @@ function NewRunContent() {
                         }}
                         placeholder="Search package tag, item, or batch"
                         aria-label="Search Manifest packages"
-                        className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                        className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
                       />
                       <button
                         onClick={handleManifestSearch}
@@ -1167,23 +1167,23 @@ function NewRunContent() {
                         <Search className="w-4 h-4" /> {isSearchingManifest ? 'Searching' : 'Search'}
                       </button>
                     </div>
-                    {manifestError && <p className="text-xs text-amber-500">{manifestError}</p>}
+                    {manifestError && <p className="text-xs text-amber-400">{manifestError}</p>}
                     {selectedManifestPackageSummary && (
                       <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-amber-100" title={selectedManifestPackageSummary.row.itemName}>
+                            <p className="truncate text-sm font-medium text-amber-300" title={selectedManifestPackageSummary.row.itemName}>
                               {selectedManifestPackageSummary.row.itemName || '(no item)'}
                             </p>
-                            <p className="truncate font-mono text-[11px] text-amber-200/70" title={selectedManifestPackageSummary.row.tag}>
+                            <p className="truncate font-mono text-xs text-amber-300" title={selectedManifestPackageSummary.row.tag}>
                               {selectedManifestPackageSummary.row.tag || '(no tag)'}
                             </p>
                           </div>
-                          <span className="shrink-0 rounded-md border border-amber-500/30 px-2 py-1 text-[11px] font-medium text-amber-200">
+                          <span className="shrink-0 rounded-md border border-amber-500/30 px-2 py-1 text-xs font-medium text-amber-300">
                             {selectedManifestPackageSummary.labelRows.toLocaleString()} label{selectedManifestPackageSummary.labelRows === 1 ? '' : 's'}
                           </span>
                         </div>
-                        <div className="mt-1 flex items-center gap-2 text-[11px] text-amber-200/60">
+                        <div className="mt-1 flex items-center gap-2 text-xs text-amber-300">
                           <span className="truncate" title={selectedManifestPackageSummary.row.lotNumber || selectedManifestPackageSummary.row.batch}>
                             Lot {selectedManifestPackageSummary.row.lotNumber || selectedManifestPackageSummary.row.batch || '-'}
                           </span>
@@ -1195,8 +1195,8 @@ function NewRunContent() {
                     {manifestRows.length > 0 && (
                       <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/50">
                         <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-                          <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Select Package</span>
-                          <span className="text-[11px] text-zinc-500">
+                          <span className="text-xs font-medium text-zinc-500">Select Package</span>
+                          <span className="text-xs text-zinc-500">
                             {manifestPackageSummaries.length.toLocaleString()} package{manifestPackageSummaries.length === 1 ? '' : 's'}
                           </span>
                         </div>
@@ -1214,16 +1214,16 @@ function NewRunContent() {
                               }}
                               className={`grid w-full grid-cols-[auto_minmax(0,1.6fr)_minmax(0,1fr)_auto] gap-3 border-b px-3 py-2.5 text-left text-xs transition-colors last:border-b-0 ${
                                 isSelected
-                                  ? 'border-amber-500/20 bg-amber-500/10'
+                                  ? 'border-amber-500/30 bg-amber-500/10'
                                   : 'border-zinc-900 hover:bg-zinc-900/80'
                               }`}
                             >
-                              <span className={`mt-0.5 ${isSelected ? 'text-amber-300' : 'text-zinc-600'}`}>
+                              <span className={`mt-0.5 ${isSelected ? 'text-amber-300' : 'text-zinc-500'}`}>
                                 {isSelected ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
                               </span>
                               <span className="min-w-0">
                                 <span className="block truncate text-zinc-200" title={row.itemName}>{row.itemName || '(no item)'}</span>
-                                <span className="block truncate font-mono text-[11px] text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
+                                <span className="block truncate font-mono text-xs text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
                               </span>
                               <span className="min-w-0 truncate text-zinc-500" title={row.lotNumber || row.batch}>
                                 {row.lotNumber || row.batch || '(no batch)'}
@@ -1255,8 +1255,8 @@ function NewRunContent() {
                     detail={`Match each field on the label to a ${inputMode === 'manifest' ? 'Manifest field' : 'column in your spreadsheet'}.`}
                   />
                   {inputMode === 'csv' && unmatchedCsvFields.length > 0 && (
-                    <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-1">
-                      <p className="text-sm font-semibold text-amber-200">
+                    <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 space-y-1">
+                      <p className="text-sm font-semibold text-amber-300">
                         We couldn&apos;t find {unmatchedCsvFields.length === 1 ? 'a column' : 'columns'} called {unmatchedCsvFields.map((f) => `"${f}"`).join(unmatchedCsvFields.length === 2 ? ' and ' : ', ')} in your file.
                       </p>
                       <p>Your file has: {csvHeaders.join(', ') || '(no columns)'}.</p>
@@ -1271,7 +1271,7 @@ function NewRunContent() {
                       const mapping = fieldMappings[field] ?? { mode: 'static' };
                       const needsChoice = mapping.mode === 'column' ? !mapping.csvColumn : !(staticValues[field] ?? '').trim();
                       return (
-                        <div key={field} className={`flex flex-col gap-2 p-3 rounded-lg bg-zinc-950 border sm:flex-row sm:items-center sm:gap-3 ${needsChoice ? 'border-amber-500/40' : 'border-zinc-800/60'}`}>
+                        <div key={field} className={`flex flex-col gap-2 p-3 rounded-lg bg-zinc-950 border sm:flex-row sm:items-center sm:gap-3 ${needsChoice ? 'border-amber-500/30' : 'border-zinc-800/60'}`}>
                           <div id={`${formId}-map-${field}`} className="w-36 shrink-0 font-medium text-sm text-zinc-200 break-words">{field}</div>
                           <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="flex w-fit items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
                             <button
@@ -1288,7 +1288,7 @@ function NewRunContent() {
                               role="radio"
                               aria-checked={mapping.mode === 'column'}
                               onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? '' } }))}
-                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
+                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500'}`}
                             >
                               {fromSheetLabel}
                             </button>
@@ -1310,7 +1310,7 @@ function NewRunContent() {
                               value={staticValues[field] ?? ''}
                               onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
                               placeholder="Type the value for every label"
-                              className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:border-amber-500/40"
+                              className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-1.5 focus:border-amber-500/30"
                             />
                           )}
                         </div>
@@ -1337,7 +1337,7 @@ function NewRunContent() {
                           type="text"
                           value={staticValues[f] ?? ''}
                           onChange={(e) => setStaticValues((s) => ({ ...s, [f]: e.target.value }))}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
                         />
                       </div>
                     ))}
@@ -1377,7 +1377,7 @@ function NewRunContent() {
                         </button>
                       </div>
                     ) : (
-                      <span className="text-[11px] text-zinc-500">Showing the design&apos;s sample text — add data to see each label</span>
+                      <span className="text-xs text-zinc-500">Showing the design&apos;s sample text — add data to see each label</span>
                     )}
                   </div>
                   <div className="rounded-xl bg-zinc-950/60 p-4">
@@ -1408,7 +1408,7 @@ function NewRunContent() {
                     value={saveAsPresetName}
                     onChange={(e) => setSaveAsPresetName(e.target.value)}
                     placeholder="Save as preset..."
-                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
+                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
                   />
                   <button
                     onClick={handleSaveAsPreset}
@@ -1431,7 +1431,7 @@ function NewRunContent() {
                   </p>
                 )}
               </section>
-              <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-[#0c0c0e]/95 px-4 py-3 backdrop-blur">
+              <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-zinc-950 px-4 py-3 backdrop-blur">
                 <div className="mx-auto flex max-w-[1180px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-zinc-100">
@@ -1499,12 +1499,12 @@ function SectionHeader({
 }) {
   return (
     <div className="flex min-w-0 items-start gap-3">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-[11px] font-bold text-amber-300 ring-1 ring-zinc-800">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-xs font-bold text-amber-300 ring-1 ring-zinc-800">
         {number}
       </span>
       <div className="min-w-0">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
-        <p className="mt-0.5 text-xs text-zinc-600">{detail}</p>
+        <h2 className="text-xs font-semibold text-zinc-400">{title}</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">{detail}</p>
       </div>
     </div>
   );

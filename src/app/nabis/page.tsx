@@ -133,7 +133,7 @@ function FittedText({
   return (
     <p
       ref={textRef}
-      className={`w-full text-center tracking-normal ${className}`}
+      className={`w-full text-center ${className}`}
       style={{
         fontFamily,
         fontSize: maxPx,
@@ -184,26 +184,26 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
         onChange={(event) => setItemName(event.target.value)}
         placeholder="Item name"
         aria-label="Item name"
-        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
+        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
       />
       <input
         value={tag}
         onChange={(event) => setTag(event.target.value)}
         placeholder="Package tag"
         aria-label="Package tag"
-        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
+        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
       />
       <input
         value={batch}
         onChange={(event) => setBatch(event.target.value)}
         placeholder="Batch"
         aria-label="Batch"
-        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
+        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
       />
       <button
         type="submit"
         disabled={!canAdd}
-        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
       >
         <Plus className="h-4 w-4" />
         Add
@@ -441,7 +441,7 @@ export default function NabisPage() {
             <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Search className="h-4 w-4 text-amber-400" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-200">Find Package</h2>
+                <h2 className="text-sm font-semibold text-zinc-200">Find Package</h2>
               </div>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
@@ -450,7 +450,7 @@ export default function NabisPage() {
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search item name or tag"
                   aria-label="Search packages by item name or tag"
-                  className="h-12 w-full rounded-lg border border-zinc-800 bg-zinc-950 pl-10 pr-10 text-sm text-white outline-none focus:border-amber-500/70"
+                  className="h-12 w-full rounded-lg border border-zinc-800 bg-zinc-950 pl-10 pr-10 text-sm text-white focus:border-amber-500/30"
                 />
                 {query && (
                   <button
@@ -486,7 +486,7 @@ export default function NabisPage() {
                     onClick={() => selectPackage(pkg)}
                     className={`w-full rounded-lg border p-4 text-left transition ${
                       active
-                        ? 'border-amber-500/70 bg-amber-500/10'
+                        ? 'border-amber-500/30 bg-amber-500/10'
                         : 'border-zinc-800/70 bg-zinc-950/40 hover:border-zinc-700 hover:bg-zinc-900/70'
                     }`}
                   >
@@ -510,7 +510,7 @@ export default function NabisPage() {
             <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Plus className="h-4 w-4 text-zinc-400" />
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-200">Manual Package</h2>
+                <h2 className="text-sm font-semibold text-zinc-200">Manual Package</h2>
               </div>
               <ManualPackageForm
                 onAdd={(pkg) => {
@@ -526,13 +526,13 @@ export default function NabisPage() {
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Edit3 className="h-4 w-4 text-amber-400" />
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-200">Confirm Label</h2>
+                  <h2 className="text-sm font-semibold text-zinc-200">Confirm Label</h2>
                 </div>
                 <button
                   type="button"
                   disabled={!canPrint}
                   onClick={() => window.print()}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
                 >
                   <Printer className="h-4 w-4" />
                   Print
@@ -552,11 +552,11 @@ export default function NabisPage() {
                   ] as const
                 ).map(([field, labelText]) => (
                   <label key={field} className="block">
-                    <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">{labelText}</span>
+                    <span className="mb-1 block text-xs font-medium text-zinc-500">{labelText}</span>
                     <input
                       value={label[field]}
                       onChange={(event) => setLabelField(field, event.target.value)}
-                      className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
+                      className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
                     />
                   </label>
                 ))}

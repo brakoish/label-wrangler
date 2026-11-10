@@ -48,7 +48,7 @@ export function RunImagePicker({ template, selections, onChange, onBusyChange }:
         <input ref={node => { inputs.current[slot.id] = node; }} type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} className="hidden" aria-label={'Choose image for ' + (slot.fieldName || ('slot ' + (index + 1)))} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(slot.id, file); }} />
         <button type="button" disabled={busy} className="block rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-700 disabled:opacity-40" onClick={() => inputs.current[slot.id]?.click()}>{Object.hasOwn(selections, slot.id) ? 'Replace image' : 'Choose image'}</button>
         <button type="button" disabled={busy} className="block text-xs text-amber-400" onClick={() => { setLibrarySlot(slot.id); if (!hydrated) void fetchGlobals(); }}>Choose from saved blocks</button>
-        <p className="text-[10px] text-zinc-500">{Object.hasOwn(selections, slot.id) ? 'Selected for this run' : 'Using template image'}</p>
+        <p className="text-xs text-zinc-500">{Object.hasOwn(selections, slot.id) ? 'Selected for this run' : 'Using template image'}</p>
         <button type="button" disabled={busy || !Object.hasOwn(selections, slot.id)} className="text-xs text-amber-400 disabled:opacity-40" onClick={() => { const next = { ...selections }; delete next[slot.id]; onChange(next); setError(''); }}>Reset to template image</button>
       </div>
     </div>)}

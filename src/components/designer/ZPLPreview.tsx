@@ -89,7 +89,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           aria-expanded={expanded}
           className="flex flex-wrap items-center gap-2 text-left min-h-9"
         >
-          <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Print Preview</span>
+          <span className="text-xs text-zinc-400 font-semibold">Print Preview</span>
           <span className="text-xs text-zinc-500">{template.thermalRenderMode === 'bitmap-v1' ? 'Exact bitmap proof — bundled fonts' : 'Actual ZPL output — open to check alignment'}</span>
           <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </button>
@@ -155,7 +155,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           {/* ZPL Code view */}
           {showZPL && (
             <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">
-              <pre className="text-[10px] text-green-400 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
+              <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
             </div>
           )}
 
@@ -200,7 +200,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-center text-zinc-600 text-sm">
+          <div className="flex items-center justify-center text-zinc-500 text-sm">
             No preview available
           </div>
         )}

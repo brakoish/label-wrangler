@@ -123,7 +123,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-xl bg-[#151518] rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-xl bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
           <h2 className="text-lg font-bold text-white">Import from PDF</h2>
@@ -143,9 +143,9 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`
-                relative border-2 border-dashed rounded-2xl p-12 text-center transition-all
+                relative border-2 border-dashed rounded-xl p-12 text-center transition-colors
                 ${isDragging
-                  ? 'border-indigo-500 bg-indigo-500/10'
+                  ? 'border-amber-500 bg-amber-500/10'
                   : 'border-zinc-700 hover:border-zinc-600'
                 }
               `}
@@ -157,7 +157,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
 
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-800 flex items-center justify-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-zinc-800 flex items-center justify-center">
                 <UploadIcon className="w-8 h-8 text-zinc-400" />
               </div>
 
@@ -167,20 +167,20 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               <p className="text-sm text-zinc-500 mb-4">
                 or click to browse
               </p>
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-zinc-500">
                 Supports PDF templates with visible label outlines
               </p>
             </div>
           ) : isParsing ? (
             // Loading state
             <div className="py-12 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
               <p className="text-zinc-400">Analyzing PDF...</p>
             </div>
           ) : error ? (
             // Error state
             <div className="py-8 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-500/10 flex items-center justify-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <XIcon className="w-8 h-8 text-red-400" />
               </div>
               <h3 className="text-lg font-semibold text-red-400 mb-2">Failed to parse PDF</h3>
@@ -196,7 +196,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
             // Results state
             <div className="space-y-6">
               <div className="flex items-center gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
@@ -205,9 +205,9 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                   <h3 className="font-semibold text-white">Format Detected</h3>
                   <p className="text-sm text-zinc-500">
                     Confidence: <span className={`
-                      ${parseResult.spec.confidence === 'high' ? 'text-green-400' : ''}
-                      ${parseResult.spec.confidence === 'medium' ? 'text-yellow-400' : ''}
-                      ${parseResult.spec.confidence === 'low' ? 'text-orange-400' : ''}
+                      ${parseResult.spec.confidence === 'high' ? 'text-emerald-400' : ''}
+                      ${parseResult.spec.confidence === 'medium' ? 'text-amber-300' : ''}
+                      ${parseResult.spec.confidence === 'low' ? 'text-amber-300' : ''}
                     `}>{parseResult.spec.confidence}</span>
                   </p>
                 </div>
@@ -216,11 +216,11 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               {/* Detected specs */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
-                  <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Type</div>
+                  <div className="text-xs text-zinc-500 mb-1">Type</div>
                   <div className="font-medium text-zinc-200 capitalize">{parseResult.spec.type}</div>
                 </div>
                 <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
-                  <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Label Size</div>
+                  <div className="text-xs text-zinc-500 mb-1">Label Size</div>
                   <div className="font-medium text-zinc-200">
                     {parseResult.spec.width.toFixed(3)}&quot; × {parseResult.spec.height.toFixed(3)}&quot;
                   </div>
@@ -229,13 +229,13 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                 {parseResult.spec.type === 'sheet' && (
                   <>
                     <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
-                      <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Grid</div>
+                      <div className="text-xs text-zinc-500 mb-1">Grid</div>
                       <div className="font-medium text-zinc-200">
                         {parseResult.spec.columns} × {parseResult.spec.rows}
                       </div>
                     </div>
                     <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
-                      <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Per Sheet</div>
+                      <div className="text-xs text-zinc-500 mb-1">Per Sheet</div>
                       <div className="font-medium text-zinc-200">
                         {(parseResult.spec.columns || 1) * (parseResult.spec.rows || 1)} labels
                       </div>
@@ -247,26 +247,26 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               {/* Editable fields */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
+                  <label className="block text-xs font-medium text-zinc-500 mb-2">
                     Format Name
                   </label>
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500 focus:bg-zinc-900 transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
-                    Description <span className="text-zinc-600 normal-case">(optional)</span>
+                  <label className="block text-xs font-medium text-zinc-500 mb-2">
+                    Description <span className="text-zinc-500 normal-case">(optional)</span>
                   </label>
                   <input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="e.g., Imported from PDF template"
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 focus:bg-zinc-900 transition-all"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:border-amber-500 focus:bg-zinc-900 transition-colors"
                   />
                 </div>
               </div>

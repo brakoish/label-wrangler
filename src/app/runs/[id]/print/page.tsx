@@ -92,11 +92,11 @@ export default function SheetRunPrintPage({
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
         <div className="max-w-md rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-red-300">
+          <div className="flex items-center gap-2 text-sm font-semibold text-red-400">
             <AlertCircle className="w-4 h-4" />
             Can&apos;t print yet
           </div>
-          <p className="mt-2 text-sm text-red-100/80">{error}</p>
+          <p className="mt-2 text-sm text-zinc-300">{error}</p>
           <a href={`/runs/${encodeURIComponent(id)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-zinc-700 px-4 text-sm text-zinc-100">Back to the run</a>
         </div>
       </main>
@@ -106,7 +106,7 @@ export default function SheetRunPrintPage({
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
       <div className="grid gap-2 text-center text-sm">
-        <Loader2 className="w-5 h-5 animate-spin justify-self-center text-amber-500" />
+        <Loader2 className="w-5 h-5 animate-spin justify-self-center text-amber-400" />
         <div className="font-semibold text-amber-400">Preparing the print page…</div>
         <div className="text-zinc-500">{run?.name || 'Loading run'}</div>
       </div>

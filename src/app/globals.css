@@ -1,99 +1,418 @@
 @import "tailwindcss";
 
-:root {
-  --background: #0c0c0e;
-  --foreground: #fafafa;
-  --accent: #d97706;
-  --accent-glow: rgba(217, 119, 6, 0.15);
-  --surface: #151518;
-  --surface-elevated: #1e1e23;
-  --border: #27272f;
-}
+/*
+ * Label Wrangler design tokens.
+ *
+ * Neutrals: the zinc scale is the only neutral scale. Use it like this:
+ *   page  zinc-950   surface  zinc-900   raised/hover  zinc-800   border  zinc-800 (strong: zinc-700)
+ *   text  zinc-100 primary · zinc-300 body · zinc-400 secondary · zinc-500 tertiary (AA on every surface)
+ * Accent: amber, four steps only — amber-500 (fill), amber-400 (hover, accent text),
+ *   amber-300 (text on accent-subtle), amber-500/10 (subtle fill) + amber-500/30 (subtle border).
+ * Status: success = emerald-400, warning = amber-300, danger = red-400, each with a /10 fill and /30 border.
+ * Radii: 6px small (chips, inline buttons), 8px controls, 12px cards and dialogs. rounded-full only for dots, switches, spinners.
+ * Controls: 40px tall (h-control); 44px on phones and touch screens. Compact: 32px (h-control-sm), 44px on touch.
+ * Type: 12px minimum for anything a person reads (text-xs), 14px body (text-sm), 16/18/20/24 headings.
+ */
+@theme {
+  --color-zinc-950: #0c0c0e;
+  /* Tertiary text: 4.7:1 on zinc-800, 5.6:1 on zinc-900, 6.2:1 on the page. */
+  --color-zinc-500: #909099;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-success: var(--color-emerald-400);
+  --color-warning: var(--color-amber-300);
+  --color-danger: var(--color-red-400);
+  --color-accent: var(--color-amber-500);
+
+  --radius: 6px;
+  --radius-xs: 6px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 12px;
+
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Motion: strong ease-out for things arriving, ease-in-out for things moving on screen. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --default-transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  --default-transition-duration: 150ms;
+
+  --animate-enter: enter 200ms var(--ease-out) both;
+  --animate-pop: pop 180ms var(--ease-out) both;
+  --animate-fade: fade 200ms var(--ease-out) both;
+  --animate-icon: icon-in 180ms var(--ease-out) both;
+  --animate-success: success-pulse 600ms var(--ease-out) 1;
 }
 
-html.dark {
-  --background: #0c0c0e;
-  --foreground: #fafafa;
+:root {
+  --control-h: 2.5rem;
+  --control-h-sm: 2rem;
+  color-scheme: dark;
+}
+
+@media (max-width: 639.98px), (pointer: coarse) {
+  :root {
+    --control-h: 2.75rem;
+    --control-h-sm: 2.75rem;
+  }
+}
+
+@utility h-control { height: var(--control-h); }
+@utility min-h-control { min-height: var(--control-h); }
+@utility size-control { height: var(--control-h); width: var(--control-h); }
+@utility h-control-sm { height: var(--control-h-sm); }
+@utility min-h-control-sm { min-height: var(--control-h-sm); }
+@utility size-control-sm { height: var(--control-h-sm); width: var(--control-h-sm); }
+
+@keyframes enter { from { opacity: 0; transform: translateY(4px); } }
+@keyframes pop { from { opacity: 0; transform: scale(0.95); } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes pop-out { to { opacity: 0; transform: scale(0.97); } }
+@keyframes icon-in { from { opacity: 0; filter: blur(2px); transform: scale(0.85); } }
+@keyframes success-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-emerald-400) 55%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+
+html {
+  background: var(--color-zinc-950);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(217, 119, 6, 0.07), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(180, 83, 9, 0.04), transparent);
-  background-attachment: fixed;
+  background: var(--color-zinc-950);
+  color: var(--color-zinc-100);
+  font-size: var(--text-sm);
+  line-height: 1.5;
 }
 
-/* Modern scrollbar */
+/* One visible focus ring for every keyboard-focusable thing. */
+:focus-visible {
+  outline: 2px solid var(--color-amber-500);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+/* Containers that only receive focus programmatically (dialog panels) don't need a ring. */
+[tabindex="-1"]:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-amber-500) 35%, transparent);
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 3px;
+  background: var(--color-zinc-700);
+  border-radius: 4px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--color-zinc-600);
 }
 
-/* Smooth transitions */
-* {
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+@layer components {
+  /* Buttons ------------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: var(--control-h);
+    padding-inline: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid transparent;
+    font-size: var(--text-sm);
+    line-height: 1.25rem;
+    font-weight: 500;
+    white-space: nowrap;
+    user-select: none;
+    transition-property: background-color, border-color, color, box-shadow, transform, opacity;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-out);
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn svg {
+    flex-shrink: 0;
+  }
+  .btn-sm {
+    min-height: var(--control-h-sm);
+    padding-inline: 0.75rem;
+    border-radius: var(--radius-md);
+    gap: 0.375rem;
+  }
+  .btn-icon {
+    padding-inline: 0;
+    width: var(--control-h);
+  }
+  .btn-icon.btn-sm {
+    width: var(--control-h-sm);
+  }
+  .btn-primary {
+    background: var(--color-amber-500);
+    color: #000;
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-amber-400);
+  }
+  .btn-secondary {
+    background: var(--color-zinc-800);
+    color: var(--color-zinc-100);
+    border-color: var(--color-zinc-700);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-zinc-700);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-zinc-300);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-zinc-800);
+    color: var(--color-zinc-100);
+  }
+  .btn-danger {
+    background: var(--color-red-600);
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--color-red-700);
+  }
+  .btn-danger-ghost {
+    background: transparent;
+    color: var(--color-red-400);
+  }
+  .btn-danger-ghost:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--color-red-500) 10%, transparent);
+  }
+
+  /* Form fields ----------------------------------------------------------- */
+  .field {
+    width: 100%;
+    min-height: var(--control-h);
+    padding-inline: 0.75rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-zinc-700);
+    background: var(--color-zinc-950);
+    color: var(--color-zinc-100);
+    font-size: var(--text-sm);
+    transition-property: border-color, background-color;
+    transition-duration: 150ms;
+  }
+  textarea.field {
+    padding-block: 0.5rem;
+  }
+  .field::placeholder {
+    color: var(--color-zinc-500);
+  }
+  .field:hover:not(:disabled) {
+    border-color: var(--color-zinc-600);
+  }
+  .field:focus {
+    border-color: var(--color-amber-500);
+  }
+  .field:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .field-sm {
+    min-height: var(--control-h-sm);
+    padding-inline: 0.5rem;
+    border-radius: var(--radius-md);
+  }
+  @media (max-width: 639.98px) {
+    /* 16px stops iOS zooming the page when a field is focused. */
+    .field {
+      font-size: 1rem;
+    }
+  }
+
+  .field-label {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-zinc-300);
+  }
+  .field-help {
+    font-size: var(--text-xs);
+    line-height: 1.125rem;
+    color: var(--color-zinc-400);
+  }
+
+  /* Surfaces -------------------------------------------------------------- */
+  .card {
+    background: var(--color-zinc-900);
+    border: 1px solid var(--color-zinc-800);
+    border-radius: var(--radius-xl);
+  }
+
+  /* Section heading inside a card: sentence case, no caps, no tracking. */
+  .section-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-zinc-200);
+  }
+
+  /* Segmented control with a sliding indicator (equal-width segments). */
+  .segmented {
+    position: relative;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    padding: 3px;
+    border-radius: var(--radius-lg);
+    background: var(--color-zinc-950);
+    border: 1px solid var(--color-zinc-800);
+    isolation: isolate;
+  }
+  .segmented > button,
+  .segmented > a {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: calc(var(--control-h-sm) - 2px);
+    padding-inline: 0.75rem;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-zinc-400);
+    white-space: nowrap;
+    transition: color 150ms var(--ease-out);
+  }
+  .segmented > button:hover,
+  .segmented > a:hover {
+    color: var(--color-zinc-100);
+  }
+  .segmented > [aria-pressed="true"],
+  .segmented > [aria-selected="true"],
+  .segmented > [aria-current="page"],
+  .segmented > [data-active="true"] {
+    color: var(--color-zinc-50);
+  }
+  .segmented-indicator {
+    position: absolute;
+    z-index: 0;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    border-radius: var(--radius-md);
+    background: var(--color-zinc-800);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    transition: transform 220ms var(--ease-in-out);
+    pointer-events: none;
+  }
+
+  /* Switch: 44×24, the knob stretches a little while pressed. */
+  .switch {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 1.5rem;
+    border-radius: 9999px;
+    background: var(--color-zinc-700);
+    transition: background-color 150ms var(--ease-out);
+  }
+  .switch[aria-checked="true"] {
+    background: var(--color-amber-500);
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+    transition: transform 200ms var(--ease-in-out), width 150ms var(--ease-out);
+  }
+  .switch[aria-checked="true"]::after {
+    transform: translateX(1.25rem);
+  }
+  .switch:active::after {
+    width: 1.4rem;
+  }
+  .switch[aria-checked="true"]:active::after {
+    transform: translateX(1.1rem);
+  }
+
+  /* Popovers and menus scale in from their trigger. Set --origin per use. */
+  .popover-enter {
+    animation: pop 160ms var(--ease-out) both;
+    transform-origin: var(--origin, top);
+  }
+
+  /* First-load list entrance: 30ms stagger, capped at the 10th item. */
+  .stagger > * {
+    animation: enter 220ms var(--ease-out) both;
+  }
+  .stagger > :nth-child(2) { animation-delay: 30ms; }
+  .stagger > :nth-child(3) { animation-delay: 60ms; }
+  .stagger > :nth-child(4) { animation-delay: 90ms; }
+  .stagger > :nth-child(5) { animation-delay: 120ms; }
+  .stagger > :nth-child(6) { animation-delay: 150ms; }
+  .stagger > :nth-child(7) { animation-delay: 180ms; }
+  .stagger > :nth-child(8) { animation-delay: 210ms; }
+  .stagger > :nth-child(9) { animation-delay: 240ms; }
+  .stagger > :nth-child(n + 10) { animation-delay: 270ms; }
+
+  /* Dialogs: fade + scale in; exits are ~20% shorter. */
+  .dialog-backdrop {
+    animation: fade 200ms var(--ease-out) both;
+  }
+  .dialog-panel {
+    animation: pop 200ms var(--ease-out) both;
+  }
+  .dialog-backdrop[data-closing] {
+    animation: fade-out 160ms var(--ease-in) both;
+    pointer-events: none;
+  }
+  .dialog-backdrop[data-closing] .dialog-panel {
+    animation: pop-out 160ms var(--ease-in) both;
+  }
 }
 
-/* Glass effect utility */
-.glass {
-  background: rgba(21, 21, 24, 0.8);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Glow effect */
-.glow {
-  box-shadow: 0 0 20px rgba(217, 119, 6, 0.15);
-}
-
-/* Card hover lift */
-.card-hover {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-}
-
-/* Gentle bronco wave animation */
-@keyframes buck {
-  0% { transform: rotate(0deg) translateY(0); }
-  20% { transform: rotate(-3deg) translateY(-2px); }
-  40% { transform: rotate(2deg) translateY(0); }
-  60% { transform: rotate(-2deg) translateY(-1px); }
-  80% { transform: rotate(1.5deg) translateY(0); }
-  100% { transform: rotate(0deg) translateY(0); }
-}
-
-.hover\:animate-buck:hover {
-  animation: buck 1.2s ease-in-out infinite;
+/* Motion off for anyone who asks for less of it — spinners included. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
 }

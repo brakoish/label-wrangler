@@ -85,7 +85,7 @@ export function Dialog({ open, onClose, title, description, children, className 
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`w-full ${className} max-h-[calc(100vh-2rem)] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl p-6 space-y-5 focus:outline-none`}
+        className={`w-full ${className} max-h-[calc(100vh-2rem)] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl p-6 space-y-5 `}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
