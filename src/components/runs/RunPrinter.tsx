@@ -9,6 +9,7 @@ import { BlankValueCheck } from './BlankValueCheck';
 import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { lastRewindAt, rewindEvent, REWIND_EVENT } from '@/lib/runRewind';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { useOfficeRequests } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
@@ -226,12 +227,35 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     void fetchPrintEvents(runId);
   }, [fetchPrintEvents, runId]);
 
-  // A deliberate "Go back" on this device: office work from before it is no
-  // longer offered as "mark printed", so the offer can't undo the rewind.
+  // A deliberate "Go back" that the server accepted: office work from before
+  // it is no longer offered as "mark printed", so the offer can't undo the
+  // rewind. Each accepted rewind is kept in the print history (a 'rewind'
+  // event), so every device and the Runs list respect it too; this device
+  // also remembers its own, for the moment before that event is read back.
   const rewindKey = `lw:run-rewound:${runId}`;
-  const [rewoundAt, setRewoundAt] = useState(0);
-  useEffect(() => { try { setRewoundAt(Number(localStorage.getItem(rewindKey)) || 0); } catch { setRewoundAt(0); } }, [rewindKey]);
-  const noteRewind = () => { const at = Date.now(); setRewoundAt(at); try { localStorage.setItem(rewindKey, String(at)); } catch { /* this page still knows */ } };
+  const [localRewoundAt, setLocalRewoundAt] = useState(0);
+  useEffect(() => { try { setLocalRewoundAt(Number(localStorage.getItem(rewindKey)) || 0); } catch { setLocalRewoundAt(0); } }, [rewindKey]);
+  const serverRewoundAt = useMemo(() => lastRewindAt(eventsForRun), [eventsForRun]);
+  const rewoundAt = Math.max(localRewoundAt, serverRewoundAt);
+  /** Only after the server accepted the rewind (never before, never when it was refused). */
+  const recordRewind = (goBackTo: number, before: number) => {
+    const at = Date.now(); setLocalRewoundAt(at);
+    try { localStorage.setItem(rewindKey, String(at)); } catch { /* the print history still says it */ }
+    void createPrintEvent(runId, rewindEvent(goBackTo, before));
+  };
+  // A rewind saved while offline counts once the server takes it.
+  const pendingRewind = useRef<{ goBackTo: number; before: number } | null>(null);
+  useEffect(() => {
+    const onSynced = (event: Event) => {
+      const run = (event as CustomEvent<{ id?: string; printedCount?: number }>).detail;
+      const waiting = pendingRewind.current;
+      if (!waiting || run?.id !== runId || run.printedCount !== waiting.goBackTo - 1) return;
+      pendingRewind.current = null;
+      recordRewind(waiting.goBackTo, waiting.before);
+    };
+    window.addEventListener('lw:run-synced', onSynced);
+    return () => window.removeEventListener('lw:run-synced', onSynced);
+  });
   // Ranges people confirmed came out of the office printer (print history).
   const officeConfirmed = useMemo<OfficeSpan[]>(() => eventsForRun
     .filter((event) => event.eventType === 'confirmed' && event.output === 'office-pi' && Date.parse(event.createdAt) > rewoundAt)
@@ -655,7 +679,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       });
       if (!ok) { setFromDraft(null); setCountDraft(null); return; }
       setPrintedCount(plan.startCount);
-      noteRewind();
     }
     const startCount = plan.startCount;
     setStatus('running');
@@ -665,7 +688,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try { await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
-    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (pendingPatchCount(run.id)) { if (plan.rewind) pendingRewind.current = { goBackTo: selectedFrom, before: printedCount }; setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (plan.rewind) recordRewind(selectedFrom, printedCount);
     if (!mounted.current || controller.signal.aborted) return;
 
     const sender = makeSender(controller);
@@ -852,7 +876,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setPrintedCount(n - 1);
     setStatus('paused');
     setShowReprint(false);
-    noteRewind();
     const refused = { reason: '' };
     const before = printedCount;
     await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason) => { refused.reason = reason; } });
@@ -863,7 +886,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0);
       return;
     }
-    if (pendingPatchCount(run.id)) setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
+    if (pendingPatchCount(run.id)) {
+      pendingRewind.current = { goBackTo: n, before };
+      setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
+      return;
+    }
+    recordRewind(n, before);
   };
 
   const normalizeSheetRange = (range?: { from?: number; to?: number }) => normalizeLabelRange({
@@ -1684,7 +1712,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       event.eventType === 'cancelled' ? 'bg-amber-300' :
                       'bg-zinc-500'
                     }`} />
-                    {printEventLabel(event)}
+                    {event.eventType === REWIND_EVENT ? `Went back to label ${event.rangeFrom.toLocaleString()}` : printEventLabel(event)}
                   </span>
                   <span className="shrink-0 text-zinc-400 tabular-nums">{formatEventTime(event.createdAt)}</span>
                 </li>

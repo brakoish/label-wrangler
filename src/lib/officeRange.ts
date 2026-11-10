@@ -368,3 +368,35 @@ export function skippedLabels(printedCount: number, from: number): { from: numbe
   const next = Math.max(0, Math.floor(printedCount) || 0) + 1;
   return from > next ? { from: next, to: from - 1 } : null;
 }
+
+/**
+ * Labels after the printed progress that no office send covers yet (not
+ * sent, not on the way, not waiting for a check), as merged spans. Read from
+ * the office's own records, so every device sees what a stopped "Send all in
+ * parts" left unsent. None when the office has nothing of this run.
+ */
+export function officeUnsentSpans(jobs: ReadonlyArray<OfficeJobLike>, total: number, printedCount = 0): OfficeSpan[] {
+  const covered = union(jobs.filter(jobCoversLabels), total);
+  if (!covered.length) return [];
+  const printed = Math.max(0, Math.min(total, Math.floor(printedCount) || 0));
+  if (printed >= total) return [];
+  return minus([[printed + 1, total]], covered).map(([from, to]) => ({ from, to }));
+}
+
+/**
+ * A saved "Send all in parts" plan, minus what is already counted as printed:
+ * parts at or below printedCount drop out, a part that straddles it starts
+ * after it. `trimmed` is the stretch that was taken out (for "Labels A–B are
+ * already counted as printed"), or null.
+ */
+export function partsAfterPrinted(parts: ReadonlyArray<OfficeSpan>, printedCount: number): { parts: OfficeSpan[]; trimmed: OfficeSpan | null } {
+  const printed = Math.max(0, Math.floor(printedCount) || 0);
+  const kept: OfficeSpan[] = [];
+  let lo = Infinity, hi = 0;
+  for (const part of parts) {
+    if (part.to <= printed) { lo = Math.min(lo, part.from); hi = Math.max(hi, part.to); continue; }
+    if (part.from <= printed) { lo = Math.min(lo, part.from); hi = Math.max(hi, printed); kept.push({ from: printed + 1, to: part.to }); continue; }
+    kept.push({ from: part.from, to: part.to });
+  }
+  return { parts: kept, trimmed: hi ? { from: lo, to: hi } : null };
+}
