@@ -15,19 +15,25 @@ const TOOLBAR_STYLE = `
     .toolbar button, .toolbar .back { min-height: 44px; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
     .toolbar .back, .toolbar button.done { background: #27272a; color: #f4f4f5; border: 0; }
     /* One main button at a time: print first, then mark it printed once the print dialog closes. */
-    .toolbar button.secondary { background: #f59e0b; color: #18181b; }
+    .toolbar button.secondary { background: #f59e0b; color: #18181b; border: 0; }
     .toolbar.lw-printed button.secondary { background: #27272a; color: #f4f4f5; }
     .toolbar.lw-printed button.done { background: #f59e0b; color: #18181b; }
     .toolbar button:focus-visible, .toolbar .back:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
-    .toolbar .back { display: inline-flex; align-items: center; text-decoration: none; }
+    .toolbar .back { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
+    .toolbar .back svg { flex: none; }
     .track-status { font-size: 13px; color: #a1a1aa; }
     @media screen {
       .sheet-page { zoom: var(--sheet-zoom, 1); }
     }
+    /* Phones: the title on top, then one row of buttons (Back is just its
+       arrow there), then the status line. Screen only. */
     @media screen and (max-width: 640px) {
-      .toolbar { flex-direction: column; align-items: stretch; }
-      .toolbar-actions { justify-content: flex-start; }
-      .track-status { text-align: left; }
+      .toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
+      .toolbar-actions { display: grid; grid-template-columns: 44px auto auto; justify-content: start; gap: 8px; }
+      .toolbar-actions button { white-space: normal; line-height: 1.2; padding-inline: 12px; }
+      .toolbar .back { width: 44px; padding: 0; }
+      .toolbar .back-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      .track-status { grid-column: 1 / -1; text-align: left; }
     }
   </style>
 `;
@@ -38,9 +44,17 @@ function fitScript(sheetWidthInches: number): string {
   return `
   <script data-lw-fit>
     (function () {
-      function fit() { document.documentElement.style.setProperty('--sheet-zoom', String(Math.min(1, (window.innerWidth - 24) / ${px}))); }
+      function fit() {
+        var root = document.documentElement;
+        var width = Math.min(window.innerWidth || Infinity, root.clientWidth || Infinity);
+        if (isFinite(width) && width > 0) root.style.setProperty('--sheet-zoom', String(Math.min(1, (width - 24) / ${px})));
+      }
       fit();
+      // A phone can settle its width after the page is written: fit again then.
+      document.addEventListener('DOMContentLoaded', fit);
+      window.addEventListener('load', fit);
       window.addEventListener('resize', fit);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
     })();
   </script>
 `;
@@ -61,7 +75,7 @@ const enDash = (text: string) => text.replace(/(\d)-(\d)/g, '$1–$2');
 
 export function restyleSheetPrintToolbar(html: string, runId: string): string {
   if (html.includes('data-lw-toolbar')) return html;
-  const back = `<a class="back" href="/runs/${encodeURIComponent(runId)}">Back to run</a>`;
+  const back = `<a class="back" href="/runs/${encodeURIComponent(runId)}" aria-label="Back to run"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><span class="back-text">Back to run</span></a>`;
   const sheetWidth = Number(/\.sheet-page \{\s*position: relative;\s*width: ([\d.]+)in;/.exec(html)?.[1] ?? '8.5') || 8.5;
   return html
     .replace('<html>', '<html lang="en">')
