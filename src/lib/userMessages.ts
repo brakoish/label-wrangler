@@ -191,6 +191,7 @@ export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output
   if (event.eventType === 'opened') return reprint ? `Opened a reprint of ${range} for the ${where}` : `Opened ${range} for the ${where}`;
   if (event.eventType === 'confirmed') return `Printed ${range} on the ${where}`;
   if (event.eventType === 'failed') return reprint ? `Reprint of ${range} failed on the ${where}` : `Printing ${range} failed on the ${where}`;
+  if (event.eventType === 'cancelled' && event.message === 'Run cancelled') return event.rangeFrom > event.rangeTo ? 'Cancelled the run' : `Cancelled the run; ${range} not printed`;
   if (event.eventType === 'cancelled') return `Stopped ${range} on the ${where}`;
   if (/^Exported PDF/i.test(event.message || '')) return `Saved ${range} as a PDF`;
   if (/^Exported ZPL/i.test(event.message || '')) return `Saved ${range} as a printer file`;
