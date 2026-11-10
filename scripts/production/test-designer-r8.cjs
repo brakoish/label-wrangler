@@ -50,3 +50,11 @@ const BT = require('../../src/lib/runBarcodeTicks.ts');
   assert.match(why, /^This barcode holds plain letters, numbers and everyday symbols only\. Fix row 4 of your spreadsheet\.$/);
   console.log('PASS run r9: Why? under a barcode problem adds only what the sentence did not say');
 }
+{
+  // Round 10: the designer's office test print says "Sending…" while the first send is in flight,
+  // never "We're not sure the office got your last test print" (that is only for after a reload or a real uncertain answer).
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../src/components/designer/OfficePreviewPrint.tsx'), 'utf8');
+  assert.match(src, /\{pending && !busy && <p role="status"[^>]*>We’re not sure the office got your last test print/);
+  assert.match(src, /\{busy \? 'Sending…'/);
+  console.log('PASS designer r10: no "not sure" warning while a test print is still sending');
+}
