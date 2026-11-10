@@ -5,7 +5,7 @@ import { jobsOfRequests, officeDeliverySummary, OFFICE_IN_PROGRESS, type OfficeD
 export interface OfficeJob { id: string; from: number; to: number; count: number; state: string; review: boolean; reason: string | null; cupsJobId: number | null }
 export interface OfficeRequest { id: string; range_from: number; range_to: number; reprint_of: string | null; username: string; created_at?: string; jobs: OfficeJob[] }
 /** Every job of the run in compact form, sent by the server when the request list is cut at 100. */
-export interface OfficeJobBrief { id: string; requestId: string; from: number; to: number; state: string; review: boolean; reason: string | null }
+export interface OfficeJobBrief { id: string; requestId: string; /** When its send was made (the server's clock). */ requestAt?: string; from: number; to: number; state: string; review: boolean; reason: string | null }
 
 /**
  * The run's office print requests (read-only GET /api/office/jobs), shared by

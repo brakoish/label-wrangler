@@ -36,8 +36,8 @@ export function jobCoversLabels(job: OfficeJobLike): boolean {
 }
 
 /** Jobs of every request, each tagged with its request id. */
-export function jobsOfRequests<J extends OfficeJobLike>(requests: ReadonlyArray<{ id: string; jobs: ReadonlyArray<J> }>): Array<J & { requestId: string }> {
-  return requests.flatMap((request) => request.jobs.map((job) => ({ ...job, requestId: request.id })));
+export function jobsOfRequests<J extends OfficeJobLike>(requests: ReadonlyArray<{ id: string; created_at?: string; jobs: ReadonlyArray<J> }>): Array<J & { requestId: string; requestAt?: string }> {
+  return requests.flatMap((request) => request.jobs.map((job) => ({ ...job, requestId: request.id, ...(request.created_at ? { requestAt: request.created_at } : {}) })));
 }
 
 /**

@@ -290,10 +290,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     : officeHeldBy ? { heldBy: officeHeldBy, sent: 0, onTheWay: 0, failed: 0 } : null;
   // Every stretch the office reported sent and nobody counted yet.
   const officeMark = useMemo(() => {
-    const after = rewoundAt ? new Set(office.requests.filter((r) => r.created_at && Date.parse(r.created_at) > rewoundAt).map((r) => r.id)) : null;
-    const jobs = after ? office.jobs.filter((job) => after.has(job.requestId)) : office.jobs;
+    // Each job carries its send's time, for every send of the run (not only
+    // the latest 100 listed), so this matches what the Runs list offers.
+    const jobs = rewoundAt ? office.jobs.filter((job) => !!job.requestAt && Date.parse(job.requestAt) > rewoundAt) : office.jobs;
     return officeMarkPlan(printedCount, jobs, officeConfirmed, total);
-  }, [office.jobs, office.requests, officeConfirmed, printedCount, total, rewoundAt]);
+  }, [office.jobs, officeConfirmed, printedCount, total, rewoundAt]);
   const allWithOffice = !!officeSummary && printedCount < total && firstUnsentLabel(office.jobs, total, printedCount) === null;
   // Print history follows the office: every move re-reads it.
   const officeSignature = office.signature;
