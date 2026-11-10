@@ -6,7 +6,7 @@ const { checkRunData } = require('../../src/lib/runDataCheck.ts');
 const { barcodeValueProblem, checkRunBarcodes, describeBarcodeIssue } = require('../../src/lib/barcodeCheck.ts');
 const { friendlyFieldName, nextFieldName, spreadsheetRow } = require('../../src/lib/fieldLabels.ts');
 const { printedBarcodeWidth, layoutProblems, freeSpot } = require('../../src/lib/designerLayout.ts');
-const { readRunDraft, saveRunDraft, clearRunDraft } = require('../../src/lib/runDraft.ts');
+const { readRunDraft, saveRunDraft, clearRunDraft, lastRunSource, rememberRunSource } = require('../../src/lib/runDraft.ts');
 
 const text = (fieldName, extra = {}) => ({ id: 'txt-' + fieldName, type: 'text', isStatic: false, fieldName, x: 0, y: 0, width: 300, height: 40, rotation: 0, zIndex: 1, fontSize: 10, lineHeight: 1.2, textAlign: 'left', ...extra });
 const barcode = (fieldName, extra = {}) => ({ id: 'bc-' + fieldName, type: 'barcode', isStatic: false, fieldName, barcodeFormat: 'CODE128', showText: true, x: 0, y: 60, width: 300, height: 80, rotation: 0, zIndex: 2, ...extra });
@@ -135,5 +135,18 @@ assert.equal(readRunDraft(storage, 2000).name, 'Batch');
 assert.equal(readRunDraft(storage, 1000 + 25 * 3600 * 1000), null, 'old drafts are dropped');
 clearRunDraft(storage);
 assert.equal(readRunDraft(storage, 2000), null);
+
+// A new run starts on a spreadsheet, or where the last started run did.
+{
+  const mem = new Map();
+  const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+  assert.equal(lastRunSource(store), 'csv', 'first time: Spreadsheet');
+  rememberRunSource('manual', store);
+  assert.equal(lastRunSource(store), 'manual', 'the last choice is kept');
+  mem.set('lw:new-run-source', 'bogus');
+  assert.equal(lastRunSource(store), 'csv', 'an unknown value falls back');
+  assert.equal(lastRunSource({ getItem: () => { throw new Error('blocked'); } }), 'csv', 'blocked storage falls back');
+  assert.equal(lastRunSource(null), 'csv');
+}
 
 console.log('run field setup: ok');
