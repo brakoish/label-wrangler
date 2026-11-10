@@ -107,7 +107,7 @@ export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, show
       ) : note && <p className="pl-5.5 text-zinc-400">{note}</p>}
       {!onChoiceChange && check.canLeaveBlank && (
         <label htmlFor={checkboxId} className="ml-5.5 flex min-h-11 items-center gap-3 text-zinc-100">
-          <input id={checkboxId} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />
+          <input id={checkboxId} type="checkbox" className="check" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />
           <span>Print {check.blankLabels === 1 ? 'that label' : `those ${check.blankLabels.toLocaleString()} labels`} with the field left blank</span>
         </label>
       )}
@@ -141,7 +141,7 @@ function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, mod
       {options.length === 1 && (
         // One way on: a tick that can be taken back, not a lone radio button.
         <label className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-          <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={choice === options[0].value} onChange={(e) => onChoiceChange(e.target.checked ? options[0].value : '')} />
+          <input type="checkbox" className="check" checked={choice === options[0].value} onChange={(e) => onChoiceChange(e.target.checked ? options[0].value : '')} />
           <span>{options[0].label}</span>
         </label>
       )}
@@ -149,7 +149,7 @@ function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, mod
         <div role="radiogroup" aria-label="What to do with the blank labels" className="space-y-0.5">
           {[...options, { value: '' as BlankChoice, label: mode === 'csv' ? 'Neither: I’ll fix the spreadsheet' : 'Neither yet' }].map((option) => (
             <label key={option.value || 'none'} className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-              <input type="radio" name={groupName} className="size-5 shrink-0 accent-amber-500" checked={choice === option.value} onChange={() => onChoiceChange(option.value)} />
+              <input type="radio" name={groupName} className="check" checked={choice === option.value} onChange={() => onChoiceChange(option.value)} />
               <span>{option.label}</span>
             </label>
           ))}
@@ -190,7 +190,7 @@ export function ProblemList({ heading, items, more, confirmLabel, confirmed, onC
       {actions && <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">{actions}</div>}
       {confirmLabel && onConfirmedChange && (
         <label htmlFor={checkboxId} className="press ml-5.5 flex min-h-11 cursor-pointer items-center gap-3 text-zinc-100">
-          <input id={checkboxId} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={!!confirmed} onChange={(e) => onConfirmedChange(e.target.checked)} />
+          <input id={checkboxId} type="checkbox" className="check" checked={!!confirmed} onChange={(e) => onConfirmedChange(e.target.checked)} />
           <span>{confirmLabel}</span>
         </label>
       )}

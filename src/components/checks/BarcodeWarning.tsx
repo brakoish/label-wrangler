@@ -73,7 +73,7 @@ export function BarcodeWarning({ items, stops, stopWords, isTicked, onTick, fix,
               </div>
               {canTick && (
                 <label htmlFor={`${uid}-${i}`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-                  <input id={`${uid}-${i}`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={ticked(item)} onChange={(e) => onTick!(item, e.target.checked)} />
+                  <input id={`${uid}-${i}`} type="checkbox" className="check" checked={ticked(item)} onChange={(e) => onTick!(item, e.target.checked)} />
                   <span>{barcodeTickLabel(item)}</span>
                 </label>
               )}
@@ -88,7 +88,7 @@ export function BarcodeWarning({ items, stops, stopWords, isTicked, onTick, fix,
             </p>
             {canTick && (
               <label htmlFor={`${uid}-more`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-                <input id={`${uid}-more`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={rest.every(ticked)} onChange={(e) => { for (const item of rest) onTick!(item, e.target.checked); }} />
+                <input id={`${uid}-more`} type="checkbox" className="check" checked={rest.every(ticked)} onChange={(e) => { for (const item of rest) onTick!(item, e.target.checked); }} />
                 <span>{rest.length === 1 ? 'Print that one anyway' : `Print those ${rest.length.toLocaleString()} anyway`}</span>
               </label>
             )}

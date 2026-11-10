@@ -1698,7 +1698,7 @@ function NewRunContent() {
               </ul>
               {exampleRisks.length > 0 && (
                 <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-100">
-                  <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={exampleConfirmedKey === exampleKey} onChange={(e) => setExampleConfirmedKey(e.target.checked ? exampleKey : '')} />
+                  <input type="checkbox" className="check" checked={exampleConfirmedKey === exampleKey} onChange={(e) => setExampleConfirmedKey(e.target.checked ? exampleKey : '')} />
                   <span>Yes, print {exampleRisks.length === 1 ? `this ${exampleRisks[0].type === 'qr' ? 'QR code' : 'barcode'}` : 'these'} the same on every label</span>
                 </label>
               )}
@@ -2024,7 +2024,7 @@ function NewRunContent() {
                                 </p>
                                 {risk.field === sameRisks[sameRisks.length - 1].field && (
                                   <label className="flex min-h-11 items-center gap-3 text-zinc-100">
-                                    <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
+                                    <input type="checkbox" className="check" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
                                     <span>Yes, print the same {sameRisks.map((r) => friendlyFieldName(r.field)).join(' and ')} on every label</span>
                                   </label>
                                 )}
@@ -2162,7 +2162,7 @@ function NewRunContent() {
                             <RotateCcw className="size-4" aria-hidden="true" /> {isSearchingManifest ? 'Searching' : 'Search again'}
                           </button>
                           <label className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
-                            <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={nabisGapOkKey === nabisGap.signature} onChange={(e) => setNabisGapOkKey(e.target.checked ? nabisGap.signature : '')} />
+                            <input type="checkbox" className="check" checked={nabisGapOkKey === nabisGap.signature} onChange={(e) => setNabisGapOkKey(e.target.checked ? nabisGap.signature : '')} />
                             <span>{nabisGapFields.length ? `Leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off and print` : `Print ${nabisGap.labels.length === 1 ? 'it' : 'them'} without the ${nabisGapWhat}`}</span>
                           </label>
                         </div>

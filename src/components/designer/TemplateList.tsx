@@ -612,7 +612,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
                 type="checkbox"
                 checked={scale}
                 onChange={(e) => setScale(e.target.checked)}
-                className="mt-0.5 size-5 shrink-0 accent-amber-500"
+                className="check -mt-2.5"
               />
               <div className="flex-1">
                 <div className="text-sm font-medium text-zinc-100">Resize everything to fit the new size</div>
