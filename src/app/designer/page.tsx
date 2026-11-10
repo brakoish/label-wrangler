@@ -861,7 +861,7 @@ function DesignerContent() {
           />
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} />
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} showPrinterCode={isAdmin} />
           ) : (
             <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}
