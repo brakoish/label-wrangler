@@ -41,14 +41,28 @@ export async function requireStation(req: Request, station: unknown) {
   if (!rows.length) throw new OfficeError('Invalid station credential', 401);
   return station;
 }
+export const LOGIN_MAX_FAILURES = 10;
+export const LOGIN_WINDOW_MINUTES = 15;
 export async function login(username: string, password: string, staySignedIn = false) {
   const sql = officeSql();
   // Durable username throttle across instances. No IP/header trust required.
+  // Each attempt reserves a slot atomically before the password is checked, so
+  // parallel guesses cannot overrun the limit. A successful sign-in deletes the
+  // row, refunding its own slot and clearing earlier failures, so successes
+  // never stay counted. The window is fixed from the first failure: once it
+  // has passed, the count starts again, so a lockout always ends.
   const key = hash(username.toLowerCase());
   const attempts = await sql`INSERT INTO office_login_attempts(key,attempts,window_start) VALUES(${key},1,now())
    ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN office_login_attempts.window_start<now()-interval '15 minutes' THEN 1 ELSE office_login_attempts.attempts+1 END,
    window_start=CASE WHEN office_login_attempts.window_start<now()-interval '15 minutes' THEN now() ELSE office_login_attempts.window_start END RETURNING attempts`;
-  if (attempts[0].attempts > 10) throw new OfficeError('Too many attempts. Try again in 15 minutes.', 429);
+  if (attempts[0].attempts > LOGIN_MAX_FAILURES) {
+    let minutes = LOGIN_WINDOW_MINUTES;
+    try {
+      const [row] = await sql`SELECT CEIL(EXTRACT(EPOCH FROM (window_start + interval '15 minutes' - now())) / 60)::int AS minutes FROM office_login_attempts WHERE key=${key}`;
+      if (Number.isFinite(Number(row?.minutes))) minutes = Math.min(LOGIN_WINDOW_MINUTES, Math.max(1, Number(row.minutes)));
+    } catch { /* fall back to the full window in the message */ }
+    throw new OfficeError(`Too many failed sign-in attempts for this account. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}. Devices that are already signed in keep working.`, 429);
+  }
   const rows = await sql`SELECT * FROM office_users WHERE username=${username.toLowerCase()} AND NOT disabled`;
   const stored = rows[0]?.password_hash || '00000000000000000000000000000000:' + '00'.repeat(64);
   const [salt, expected] = stored.split(':');
