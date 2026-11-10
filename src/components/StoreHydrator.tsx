@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { useShallow } from 'zustand/react/shallow';
 import { useFormatStore } from '@/lib/store';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useRunStore } from '@/lib/runStore';
@@ -10,16 +11,27 @@ import { setShellBanners, useShellMounted } from '@/components/ui/shellSlot';
 import { friendlyError } from '@/lib/userMessages';
 import { flushOfflineQueue, pendingPatchCount, progressSyncError, QUEUE_EVENT, deadLetteredOps, exportDeadLetters, discardDeadLetters, type DeadLetter } from '@/lib/offlineQueue';
 
+function exportSetAside() {
+  const url = URL.createObjectURL(new Blob([exportDeadLetters()], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = `label-wrangler-set-aside-updates-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const signedOut = (message: string) => /sign in|signed in|unauthori[sz]ed|401|session/i.test(message);
+
 export function StoreHydrator({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const formats = useFormatStore();
-  const templates = useTemplateStore();
-  const runs = useRunStore();
-  const globals = useGlobalElementStore();
+  // Only what the banners and loaders read, so per-label progress updates in
+  // the run store don't re-render this component (and the app shell).
+  const formats = useFormatStore(useShallow(s => ({ error: s.error, hasMore: s.hasMore, loading: s.loading, hydrated: s.hydrated, count: s.formats.length, load: s.fetchFormats })));
+  const templates = useTemplateStore(useShallow(s => ({ error: s.error, hasMore: s.hasMore, loading: s.loading, hydrated: s.hydrated, count: s.templates.length, load: s.fetchTemplates })));
+  const runs = useRunStore(useShallow(s => ({ error: s.error, hasMore: s.hasMore, loading: s.loading, hydrated: s.hydrated, count: s.runs.length, load: s.loadAll })));
+  const globals = useGlobalElementStore(useShallow(s => ({ error: s.error, hasMore: s.hasMore, loading: s.loading, hydrated: s.hydrated, count: 1, load: s.fetchGlobals })));
   const [sync, setSync] = useState<{count:number;error:string;dead:DeadLetter[]}>({ count:0, error:'', dead:[] });
   const library = pathname === '/designer' || pathname === '/runs' || pathname === '/runs/new' || pathname === '/';
   const needsRuns = pathname === '/runs' || pathname === '/runs/new' || pathname === '/';
-  const {fetchFormats}=formats; const {fetchTemplates}=templates; const {loadAll}=runs; const {fetchGlobals}=globals;
+  const fetchFormats = formats.load; const fetchTemplates = templates.load; const loadAll = runs.load; const fetchGlobals = globals.load;
   useEffect(() => {
     if (pathname === '/login') return;
     if ((library || pathname === '/formats') && !useFormatStore.getState().hydrated) void fetchFormats();
@@ -37,7 +49,12 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
   }, [needsRuns,library,pathname,runs.hydrated,runs.hasMore,runs.loading,runs.error,templates.hydrated,templates.hasMore,templates.loading,templates.error,formats.hydrated,formats.hasMore,formats.loading,formats.error,globals.hydrated,globals.hasMore,globals.loading,globals.error,loadAll,fetchTemplates,fetchFormats,fetchGlobals]);
   useEffect(() => {
     if (pathname === '/login') return;
-    const refresh = () => setSync({count:pendingPatchCount(),error:progressSyncError(),dead:deadLetteredOps()});
+    // Keep the same object when nothing changed: the outbox announces after
+    // every progress update while printing.
+    const refresh = () => {
+      const next = {count:pendingPatchCount(),error:progressSyncError(),dead:deadLetteredOps()};
+      setSync(prev => prev.count === next.count && prev.error === next.error && prev.dead.length === next.dead.length && prev.dead.every((item, i) => item.id === next.dead[i].id) ? prev : next);
+    };
     const flush = () => { void flushOfflineQueue().then(refresh); };
     refresh(); flush();
     const onSynced = (event: Event) => { const run=(event as CustomEvent).detail; useRunStore.setState(state=>({runs:state.runs.map(old=>old.id===run.id?{...old,...run}:old)})); };
@@ -50,35 +67,30 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     const timer=setInterval(flush,30000);
     return () => { window.removeEventListener('lw:event-synced',onEventSynced); window.removeEventListener('lw:run-synced',onSynced); clearInterval(timer); window.removeEventListener(QUEUE_EVENT,refresh); window.removeEventListener('storage',refresh); window.removeEventListener('online',flush); };
   }, [pathname]);
-  // A list page that is empty shows its own load error with "Try again";
-  // skip the duplicate banner there.
-  const ownsEmptyList = (name: string, count: number) => count === 0 && ((name === 'Label sizes' && pathname === '/formats') || (name === 'Designs' && pathname === '/designer') || (name === 'Runs' && (pathname === '/runs' || pathname === '/')));
-  const collections = [
-    ...(library || pathname==='/formats' ? [{name:'Label sizes',store:formats,load:formats.fetchFormats,count:formats.formats.length}] : []),
-    ...(library ? [{name:'Designs',store:templates,load:templates.fetchTemplates,count:templates.templates.length}] : []),
-    ...(pathname.startsWith('/runs') || needsRuns ? [{name:'Runs',store:runs,load:runs.loadAll,count:runs.runs.length}] : []),
-    ...(pathname==='/designer' ? [{name:'Reusable elements',store:globals,load:globals.fetchGlobals,count:1}] : []),
-  ];
   const shellMounted = useShellMounted();
-  const exportSetAside = () => {
-    const url = URL.createObjectURL(new Blob([exportDeadLetters()], { type: 'application/json' }));
-    const link = document.createElement('a');
-    link.href = url; link.download = `label-wrangler-set-aside-updates-${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  const signedOut = (message: string) => /sign in|signed in|unauthori[sz]ed|401|session/i.test(message);
-  const banners = pathname !== '/login' ? <div className="text-sm text-amber-200 [&>div]:border-b [&>div]:border-amber-500/30 [&>div]:bg-amber-500/10" aria-live="polite">
-      {collections.map(({name,store,load,count}) => store.error ? (ownsEmptyList(name, count) ? null : <div role="alert" className="px-4 py-2" key={name}>Couldn&apos;t load {name.toLowerCase()}: {friendlyError(store.error)} <button type="button" className="underline" onClick={()=>void load()}>Try again</button>{signedOut(store.error) && <a className="underline ml-2" href="/login">Sign in</a>}</div>) : store.hasMore ? <button type="button" key={name} className="px-4 py-1 underline" disabled={store.loading} onClick={()=>void load(true)}>{store.loading ? `Loading the rest of your ${name.toLowerCase()}…` : `Load more ${name.toLowerCase()}`}</button> : null)}
-      {(sync.count > 0 || sync.error) && <div role="alert" className="px-4 py-2">{sync.error ? friendlyError(sync.error) : `${sync.count === 1 ? '1 print update hasn\u2019t' : `${sync.count} print updates haven\u2019t`} reached the server yet. They\u2019ll send when you\u2019re back online — don\u2019t clear this browser\u2019s data.`} <button type="button" className="underline" onClick={()=>void flushOfflineQueue()}>Send now</button></div>}
-      {sync.dead.length > 0 && <div role="alert" className="px-4 py-2">
-        {sync.dead.length === 1 ? '1 print update' : `${sync.dead.length} print updates`} could not be saved to the server and {sync.dead.length === 1 ? 'was' : 'were'} set aside, so printing is not blocked. {sync.dead[sync.dead.length - 1].message}
-        {' '}<button type="button" className="underline" onClick={exportSetAside}>Export</button>
-        {' '}<button type="button" className="underline ml-2" onClick={()=>{ void confirmDialog({ title: 'Discard the set-aside print updates?', body: 'They are removed from this device. Export them first if you need a record.', confirmLabel: 'Discard', danger: true }).then(ok => { if (ok) discardDeadLetters(sync.dead.map(item=>item.id)); }); }}>Discard</button>
-      </div>}
-    </div> : null;
+  const banners = useMemo(() => {
+    if (pathname === '/login') return null;
+    // A list page that is empty shows its own load error with "Try again";
+    // skip the duplicate banner there.
+    const ownsEmptyList = (name: string, count: number) => count === 0 && ((name === 'Label sizes' && pathname === '/formats') || (name === 'Designs' && pathname === '/designer') || (name === 'Runs' && (pathname === '/runs' || pathname === '/')));
+    const collections = [
+      ...(library || pathname==='/formats' ? [{name:'Label sizes',store:formats,load:formats.load,count:formats.count}] : []),
+      ...(library ? [{name:'Designs',store:templates,load:templates.load,count:templates.count}] : []),
+      ...(pathname.startsWith('/runs') || needsRuns ? [{name:'Runs',store:runs,load:runs.load,count:runs.count}] : []),
+      ...(pathname==='/designer' ? [{name:'Reusable elements',store:globals,load:globals.load,count:globals.count}] : []),
+    ];
+    return <div className="text-sm text-amber-200 [&>div]:border-b [&>div]:border-amber-500/30 [&>div]:bg-amber-500/10" aria-live="polite">
+        {collections.map(({name,store,load,count}) => store.error ? (ownsEmptyList(name, count) ? null : <div role="alert" className="px-4 py-2" key={name}>Couldn&apos;t load {name.toLowerCase()}: {friendlyError(store.error)} <button type="button" className="underline" onClick={()=>void load()}>Try again</button>{signedOut(store.error) && <a className="underline ml-2" href="/login">Sign in</a>}</div>) : store.hasMore ? <button type="button" key={name} className="px-4 py-1 underline" disabled={store.loading} onClick={()=>void load(true)}>{store.loading ? `Loading the rest of your ${name.toLowerCase()}…` : `Load more ${name.toLowerCase()}`}</button> : null)}
+        {(sync.count > 0 || sync.error) && <div role="alert" className="px-4 py-2">{sync.error ? friendlyError(sync.error) : `${sync.count === 1 ? '1 print update hasn\u2019t' : `${sync.count} print updates haven\u2019t`} reached the server yet. They\u2019ll send when you\u2019re back online — don\u2019t clear this browser\u2019s data.`} <button type="button" className="underline" onClick={()=>void flushOfflineQueue()}>Send now</button></div>}
+        {sync.dead.length > 0 && <div role="alert" className="px-4 py-2">
+          {sync.dead.length === 1 ? '1 print update' : `${sync.dead.length} print updates`} could not be saved to the server and {sync.dead.length === 1 ? 'was' : 'were'} set aside, so printing is not blocked. {sync.dead[sync.dead.length - 1].message}
+          {' '}<button type="button" className="underline" onClick={exportSetAside}>Export</button>
+          {' '}<button type="button" className="underline ml-2" onClick={()=>{ void confirmDialog({ title: 'Discard the set-aside print updates?', body: 'They are removed from this device. Export them first if you need a record.', confirmLabel: 'Discard', danger: true }).then(ok => { if (ok) discardDeadLetters(sync.dead.map(item=>item.id)); }); }}>Discard</button>
+        </div>}
+      </div>;
+  }, [pathname, library, needsRuns, formats, templates, runs, globals, sync]);
   // Inside the layout (under the header) when the page uses AppShell.
-  useEffect(() => { setShellBanners(banners); });
+  useEffect(() => { setShellBanners(banners); }, [banners]);
   useEffect(() => () => setShellBanners(null), []);
   return <>
     {!shellMounted && banners}
