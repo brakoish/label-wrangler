@@ -88,10 +88,18 @@ function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { 
 function useLiveRunsList() {
   useEffect(() => {
     let active = true;
-    const update = async () => {
+    // Most polls are live reads: the server reads history and office work
+    // only for runs being printed, changed lately, or with office work moving
+    // (named here); the rest keep what they have. A full read every minute,
+    // and on coming back to the page, catches up everything else.
+    let lastFull = 0;
+    const update = async (forceFull = false) => {
       if (document.visibilityState === 'hidden' || !useRunStore.getState().hydrated) return;
       try {
-        const response = await fetch('/api/runs?offset=0', { cache: 'no-store' });
+        const full = forceFull || Date.now() - lastFull >= 60000;
+        const watch = full ? [] : useRunStore.getState().runs.filter((run) => ((run as ListRun).office?.onTheWay ?? 0) > 0 || ((run as ListRun).office?.failed ?? 0) > 0).map((run) => run.id).slice(0, 50);
+        const response = await fetch(full ? '/api/runs?offset=0' : `/api/runs?offset=0&live=1${watch.length ? `&watch=${watch.map(encodeURIComponent).join(',')}` : ''}`, { cache: 'no-store' });
+        if (full && response.ok) lastFull = Date.now();
         if (!response.ok || !active) return;
         const rows = await response.json() as ListRun[];
         if (!Array.isArray(rows) || !active) return;
@@ -114,8 +122,8 @@ function useLiveRunsList() {
       timer = setTimeout(() => { void update().finally(() => { if (active) schedule(); }); }, moving ? 5000 : 15000);
     };
     // Read once right away too: coming back from a run, its counts are current at once.
-    void update().finally(() => { if (active) schedule(); });
-    const onVisible = () => { if (document.visibilityState === 'visible') void update(); };
+    void update(true).finally(() => { if (active) schedule(); });
+    const onVisible = () => { if (document.visibilityState === 'visible') void update(true); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
