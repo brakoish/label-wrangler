@@ -854,7 +854,7 @@ function DesignerContent() {
       </div>}
       {saveError && <button type="button" className="link px-4 pb-2 text-left text-sm" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
       <div className="lg:hidden px-4 py-2">
-      <div role="tablist" aria-label="Designer panes" className="segmented [&>button]:px-1.5">
+      <div role="tablist" aria-label="Designer panes" className="segmented [&>button]:px-1 max-[400px]:[&>button]:text-[13px]">
         <SegmentedIndicator index={phoneTabs.findIndex(([pane]) => pane === shownPane)} count={phoneTabs.length} />
         {phoneTabs.map(([pane, text]) => (
           <button key={pane} type="button" role="tab" aria-selected={shownPane === pane} onClick={() => { setPhonePane(pane); if (pane === 'layers' || pane === 'data') setLeftPanel(pane); }} >{text}</button>
