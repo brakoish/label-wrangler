@@ -211,3 +211,15 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   assert.match(friendlySaveError('Invalid width', [{ ...els[0], width: Infinity }], 'x'), /^Barcode 1’s width can’t be used/);
   console.log('PASS size boxes read 1 1/2, 1,5 and 1.5in; refuse abc by name; render and save errors name the item');
 }
+
+// Scan mode: which labels went out by scan, for the run page.
+{
+  const { scannedLabelNumbers, scannedLabelRanges } = require('../../src/lib/scanEvents.ts');
+  const ev = (rangeFrom, extra = {}) => ({ eventType: 'sent', output: 'scan', rangeFrom, rangeTo: rangeFrom, runId: 'r1', ...extra });
+  const events = [ev(9), ev(4), ev(4), ev(5), ev(6), ev(12, { runId: 'r2' }), ev(7, { output: 'roll-zpl' }), ev(8, { eventType: 'failed' })];
+  assert.deepEqual(scannedLabelNumbers(events, 'r1'), [4, 5, 6, 9]);
+  assert.deepEqual(scannedLabelNumbers(events), [4, 5, 6, 9, 12]);
+  assert.deepEqual(scannedLabelNumbers([]), []);
+  assert.deepEqual(scannedLabelRanges([4, 5, 6, 9]), [{ from: 4, to: 6 }, { from: 9, to: 9 }]);
+  console.log('PASS scannedLabelNumbers lists each scanned label once, from sent scan events only');
+}

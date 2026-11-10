@@ -237,8 +237,14 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
-            <StackedField label="Field name" hint="New run fills it from the spreadsheet column with this name.">
-              {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />}
+            <StackedField label="Spreadsheet column" hint="Each label takes its value from the column with this name. Capitals and spaces don’t matter.">
+              {(id) => <>
+                <input id={id} type="text" list={`${id}-columns`} className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />
+                {/* Columns other items already use, to pick from instead of retyping. */}
+                <datalist id={`${id}-columns`}>
+                  {[...new Set(allElements.filter((e) => e.id !== element.id && !e.isStatic && e.fieldName).map((e) => e.fieldName!))].map((name) => <option key={name} value={name}>{friendlyFieldName(name)}</option>)}
+                </datalist>
+              </>}
             </StackedField>
             {(showManifest || usesManifest(allElements, element)) ? (
               <StackedField label="Or a Manifest field">

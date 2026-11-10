@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed, ChevronDown } from 'lucide-react';
+import { Printer, RefreshCw, ChevronRight, ZoomIn, ZoomOut, Maximize2, SquareDashed, ChevronDown } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
@@ -191,14 +191,15 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
         )}
           </div>
           {/* The raw printer commands, for admins who set up printers. */}
-          {showPrinterCode && <button type="button" onClick={() => setShowZPL(!showZPL)} aria-expanded={showZPL} className="mt-2 inline-flex min-h-control-sm items-center gap-1.5 self-start text-xs text-zinc-400 hover:text-zinc-100">
-            <Code2 className="size-3.5" aria-hidden="true" />{showZPL ? 'Hide the printer commands' : 'Printer setup (admins): show the commands sent to the printer'}
-          </button>}
-          {showPrinterCode && showZPL && (
-            <div className="mt-2 max-h-[200px] overflow-auto rounded-lg bg-zinc-950 p-3">
-              <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
-            </div>
-          )}
+          {/* The raw printer commands: an admin tool, behind one plainly named fold. */}
+          {showPrinterCode && <details className="group mt-2 text-xs" open={showZPL} onToggle={(e) => setShowZPL((e.currentTarget as HTMLDetailsElement).open)}>
+            <summary className="inline-flex min-h-control-sm cursor-pointer list-none items-center gap-1 text-zinc-400 hover:text-zinc-100 [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />For admins: printer commands
+            </summary>
+            {showZPL && <div className="fold-reveal mt-1 max-h-[200px] overflow-auto rounded-lg bg-zinc-950 p-3">
+              <pre className="font-mono text-zinc-300 whitespace-pre-wrap break-all">{zpl}</pre>
+            </div>}
+          </details>}
         </div>
       )}
     </div>
