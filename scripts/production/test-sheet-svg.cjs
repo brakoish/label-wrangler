@@ -44,3 +44,15 @@ const {renderSheetLabelSvg}=require('../../src/lib/sheetPrint.ts');
  assert.throws(()=>validate({elements:[{...el,id:'i',type:'image',src:'data:image/png;base64,AA',objectFit:'scale-down'}]},'template'),/Invalid/);
  console.log('PASS sheet SVG: numeric barcode viewBox; hostile style values escaped in SVG/HTML and rejected by API validation');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+// pdf.js: the served worker must be the installed version, and the version
+// must be pinned exactly so the API and worker cannot drift apart again.
+{
+ const fs=require('node:fs');
+ const pkg=require('../../package.json');const installed=require('pdfjs-dist/package.json').version;
+ if(!/^\d+\.\d+\.\d+$/.test(pkg.dependencies['pdfjs-dist']))throw new Error('pdfjs-dist must be pinned to an exact version');
+ if(pkg.dependencies['pdfjs-dist']!==installed)throw new Error(`pdfjs-dist ${installed} installed, package.json pins ${pkg.dependencies['pdfjs-dist']}`);
+ if(!installed.startsWith('4.'))throw new Error('Keep pdf.js v4 (v5 worker had a Vercel issue; see HANDOFF.md)');
+ const served=fs.readFileSync('public/pdf.worker.min.mjs');const expected=fs.readFileSync(require.resolve('pdfjs-dist/build/pdf.worker.min.mjs'));
+ if(!served.equals(expected))throw new Error('public/pdf.worker.min.mjs does not match the installed pdfjs-dist worker; run node scripts/copy-pdf-worker.cjs');
+ console.log(`PASS pdf.js worker matches installed pdfjs-dist ${installed} (exact pin)`);
+}

@@ -219,7 +219,10 @@ async function tryCanvasFallback(
   pageH: number
 ): Promise<ParsedLabelSpec | null> {
   const pdfjsLib = await import('pdfjs-dist');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+  // public/pdf.worker.min.mjs is copied from the installed pdfjs-dist at
+  // build time (scripts/copy-pdf-worker.cjs). The version query keeps a
+  // cached older worker from being reused after an upgrade.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs?v=${encodeURIComponent(pdfjsLib.version)}`;
 
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, verbosity: 0 }).promise;
   const page = await pdf.getPage(1);
