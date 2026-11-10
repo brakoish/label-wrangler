@@ -797,7 +797,9 @@ function RunRow({
   const pct = run.totalLabels > 0 ? Math.round((shown / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
   // Labels no office send covers and nothing counts as printed: the run page's "Still to go" line, in the same words.
-  const stillToSend = office?.unsent?.length ? intersectSpans(office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)) : [];
+  // Without the server's counted stretches (main, or a history read that failed) the run page may count
+  // more than this row can know, so the row names no range rather than a different one.
+  const stillToSend = office?.unsent?.length && run.countedSpans !== undefined ? intersectSpans(office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)) : [];
   const pinned = !!run.pinnedAt;
   // A "Send all … in N parts" that stopped early on this device.
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);

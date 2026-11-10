@@ -279,7 +279,6 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const proofRef=useRef<{key:string;digest:string;count:number}|null>(null);
   const setProof=(next:{key:string;digest:string;count:number}|null)=>{proofRef.current=next;setProofState(next);};
   const preparationController=useRef<AbortController|null>(null);
-  const [preparationProgress,setPreparationProgress]=useState<{completed:number;total:number}|null>(null);
   const [series,setSeries]=useState<Series|null>(null);
   const seriesRunning=useRef(false);
   const stopSeries=useRef(false);
@@ -370,12 +369,6 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       else setError(drawFailureWords(e,target) ?? friendlyRenderError(friendlyError(e,'Checking the labels failed.'),template.elements,format.labelsAcross||1));
       return null;
     }finally{preparationController.current=null;}
-  };
-  const prepareProof=async()=>{
-    if(inFlight.current||!rangeValid||!printAllowed)return;
-    inFlight.current=true;setBusy(true);setError('');setProof(null);clearRefusal();setNotice(null);
-    try{await drawProof({from:fromNumber,to:toNumber},(completed,total)=>setPreparationProgress({completed,total}));}
-    finally{setPreparationProgress(null);inFlight.current=false;setBusy(false);}
   };
   const [reprintOf,setReprintOf]=useState('');
   const [fix,setFix]=useState<Fix|null>(null);
@@ -1041,7 +1034,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // A refusal with its own "Send … again" button: the form steps aside, so there is one send button.
   const refusalOwnsSend=owner==='refusal' && (refusalStep==='resend' || refusalStep==='smaller' || refusalStep==='without-blank');
   const primaryLabel=busy
-    ?(preparationProgress?'Checking labels…':'Sending to office printer…')
+    ?(directCheck?'Checking labels…':'Sending to office printer…')
     :pending && pendingPhase==='other'?'Sending from another tab…'
     :pending && !posting && pendingPhase==='checking'?'Checking…'
     :pending?'Send again'
@@ -1050,10 +1043,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :tooBig && parts.length>1?`Send all ${sendCount.toLocaleString()} in ${parts.length} parts`
     // Labels a "Print in order" fix held back: the button names them, so the plan's last step is plainly this press.
     // A check only checks: the send is its own press afterwards ("Send 76–150").
-    :sendingHeld && plan.kind!=='reprint'?`${proofCurrent?'Send':'Check'} ${fromNumber===toNumber?`label ${fromNumber.toLocaleString()}`:`labels ${nums(fromNumber,toNumber)}`}`
+    // One press checks (an exact design) and sends: the button says what it ends with.
+    :sendingHeld && plan.kind!=='reprint'?`Send ${fromNumber===toNumber?`label ${fromNumber.toLocaleString()}`:`labels ${nums(fromNumber,toNumber)}`}`
     // Never a count of 0: until the boxes hold a real range, the button names no number.
     :!sendCount?'Send to office printer'
-    :!proofCurrent?(plan.kind==='reprint'?'Check labels to print again':`Check ${plural(sendCount)}`)
     :plan.kind==='reprint'?`Print ${plural(sendCount)} again`
     // One wording for the same state, before and after a reload, in every tab.
     :`Send ${plural(sendCount)} to office printer`;
@@ -1089,7 +1082,14 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       }
       if(tooBig){if(parts.length>1)void startSeries();return;}
     }
-    if(!pending && !proofCurrent) void prepareProof(); else void submit();
+    // An exact (picture) design: one press checks every label, then sends
+    // them in the same tap with the checked picture's digest (one job). A
+    // check that finds a problem stops there and says so; nothing is sent.
+    if(!pending && !proofCurrent){
+      if(printAllowed && plan.kind!=='wait')void sendNow({from:fromNumber,to:toNumber},plan.kind==='reprint' && reprintOf?reprintOf:undefined,false,endBlank);
+      return;
+    }
+    void submit();
   };
   const alreadyPrinted=!pending && plan.kind==='new' && rangeValid && fromNumber<=printedCount;
 
@@ -1508,11 +1508,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="flex items-center gap-2 text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{directCheck.progress?`Checking ${range(directCheck.span.from,directCheck.span.to)}: ${directCheck.progress.completed.toLocaleString()} of ${directCheck.progress.total.toLocaleString()}… then it sends.`:`Checking ${range(directCheck.span.from,directCheck.span.to)}… then it sends.`}</p>
       <button type="button" onClick={()=>preparationController.current?.abort()} className="btn btn-secondary btn-sm">Stop</button>
     </div>}
-    {bitmap && showForm && !pending && preparationProgress && !directCheck && <div role="status" className="space-y-2 text-sm">
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />Checked {preparationProgress.completed.toLocaleString()} of {preparationProgress.total.toLocaleString()} labels… nothing is sent yet.</p>
-      <button type="button" onClick={()=>preparationController.current?.abort()} className="btn btn-secondary btn-sm">Stop checking</button>
-    </div>}
-    {bitmap && showForm && !pending && !preparationProgress && proofCurrent && proof && <p className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="size-4 rounded-full animate-success" aria-hidden="true" />{plural(proof.count)} checked. Nothing is sent until you press Send.</p>}
+    {bitmap && showForm && !pending && !directCheck && proofCurrent && proof && <p className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="size-4 rounded-full animate-success" aria-hidden="true" />{plural(proof.count)} checked. Nothing is sent until you press Send.</p>}
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     {requestsError && requestsError.status!==401 && requestsError.status!==403 && <p role="status" className="text-sm text-zinc-400">The office queue couldn’t be read just now. It tries again on its own.</p>}
     {/* The amber waiting line already says why queued labels aren't printing. */}

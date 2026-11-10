@@ -447,7 +447,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     [printCheck, checkFrom, checkTo, template, format],
   );
   const shownCheck = sendCheck.check;
-  // A "neither label will scan" go-ahead never carries over from the wizard: ask again here.
+  // The wizard's go-ahead for these exact problems carries over (RunBarcodeCheck says so beside the tick).
   const wizardBarcodeGoAhead = !!shownCheck.blocking.length && shownCheck.verdict.carriesOver && goAhead.barcode === shownCheck.blockingKey;
   const barcodeOk = barcodeTicksAllow(shownCheck.blocking, barcodeTicks, wizardBarcodeGoAhead);
   const tickBarcode = (item: string, value: boolean) => setBarcodeTicks((current) => {
@@ -889,7 +889,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (plan.rewind) {
       const ok = await confirmDialog({
         title: `Go back to label ${selectedFrom} and continue?`,
-        body: `Labels up to ${printedCount} are already printed. The run's progress goes back to ${plan.startCount} of ${total}, and labels ${selectedFrom} to ${selectedThrough} print now. To print a few labels again without changing progress, use "Print some labels again" instead.`,
+        body: `Labels up to ${printedCount} are already printed. The run’s progress goes back to ${plan.startCount} of ${total}, and labels ${selectedFrom} to ${selectedThrough} print now. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
         confirmLabel: `Go back to label ${selectedFrom}`,
       });
       if (!ok) { setFromDraft(null); setCountDraft(null); return; }
@@ -1164,8 +1164,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !reprintValid) return;
     const n = reprintFrom;
     const ok = await confirmDialog({
-      title: `Go back to label ${n} and continue?`,
-      body: `The run's progress goes back to ${n - 1} of ${total}, and the next Start prints labels ${n} to ${total} (${total - n + 1} labels). To print only a few labels again, use “Print ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`} again” instead.`,
+      title: `Go back to label ${n}?`,
+      body: `The run’s progress goes back to ${n - 1} of ${total}. Nothing prints yet: “Resume from label ${n}” then prints labels ${n} to ${total} (${total - n + 1} labels). To print only a few labels again, use “Print ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`} again” instead.`,
       confirmLabel: `Go back to label ${n}`,
     });
     if (!ok) return;
@@ -1862,7 +1862,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!calm && !officeFixFirst && checkList}
 
           <div className="space-y-2">
-            <RunProgress printedCount={printedCount} total={total} confirmed={countedSpans} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} tone={runFinished ? 'done' : 'active'} animate />
+            <RunProgress printedCount={printedCount} total={total} confirmed={countedSpans} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} named={transport === 'office' && !isSheetFormat ? office.summary.failed : []} tone={runFinished ? 'done' : 'active'} animate />
             {/* What the office printer has done: shown, never counted as printed.
                 With the office printer chosen, its panel says it once. */}
             {transport !== 'office' && sentLine && <p className="text-sm text-zinc-400 tabular-nums">{sentLine}</p>}

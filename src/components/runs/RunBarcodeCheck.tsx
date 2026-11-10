@@ -121,6 +121,7 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
             </li>
           )}
         </ul>
+        {canTick && wizardGoAhead && <p className="pl-5.5 text-zinc-400">You chose to print {check.blocking.length === 1 ? 'this' : 'these'} anyway when you made the run.</p>}
         {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopNote || stopFixWords(check.verdict.fixIn)}</p>}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
           {check.verdict.stops && !readOnly && leaveOut && <button type="button" className="btn btn-secondary btn-sm" onClick={leaveOut.pick}>{leaveOut.label}</button>}

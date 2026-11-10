@@ -167,7 +167,7 @@ async function renderNative(template, format, values) {
     assert.equal(pairs.verdict.severity, 'neither-scans');
     assert.equal(pairs.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode prints over the next label’s, so neither label will scan');
     assert.equal(pairs.verdict.carriesOver, true, 'the wizard go-ahead is kept for the milder problems');
-    assert.equal(barcodeTicksAllow(pairs.blocking, [], true), false, 'a wizard tick for "neither label will scan" never covers it on the run page');
+    assert.equal(barcodeTicksAllow(pairs.blocking, [], true), true, 'B13: the wizard tick for the same "neither label will scan" carries over (the run page says it was chosen when the run was made)');
     assert.equal(pairs.blocking.length, 1);
     assert.equal(pairs.layout.length, 0, 'one problem, one tick: the overlap is not asked about again');
     const g = thermalRenderGeometry(F.preroll);
