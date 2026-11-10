@@ -82,7 +82,7 @@ export function plainOfficeRefusal(message: string, status?: number): { reason: 
   if (status === 401) return { reason: 'signed-out', message: REFUSALS[3][2] };
   if (status === 403) return { reason: 'no-access', message: REFUSALS[2][2] };
   // Never show raw server text: it is written for developers.
-  return { reason: 'other', message: 'The office printer didn’t take this request. Check the office queue below.' };
+  return { reason: 'other', message: 'The office printer didn’t take this request, so nothing was sent. Try again, or ask your admin if it keeps happening.' };
 }
 
 /** What the run page remembers about a refused send, so a refresh tells the truth. */
