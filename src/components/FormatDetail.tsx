@@ -49,7 +49,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
   return (
     <div className="h-full">
       {saveError && <p role="alert" className="p-4 text-red-400">{saveError}</p>}
-      <div className="px-4 pt-2 pb-6 sm:px-8 xl:px-0">
+      <div className="pt-2 pb-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-4">
               <span className="flex h-10 w-14 shrink-0 items-center justify-center" aria-hidden="true">
@@ -122,7 +122,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-8 sm:px-8 xl:px-0">
+      <div className="pb-8">
         {/* Primary specs */}
         <div className="grid grid-cols-1 gap-6 mb-8 sm:grid-cols-3">
           <SpecCard label="Label size" editing={editing}>

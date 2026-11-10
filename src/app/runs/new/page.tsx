@@ -1174,7 +1174,7 @@ function NewRunContent() {
     <AppShell beforeLeave={confirmLeave}>
       <PageTitle title={name.trim() ? `New run · ${name.trim()}` : 'New run'} />
       <div className="flex-1 overflow-auto">
-        <div className="page-container py-6 space-y-5 pb-48 sm:pb-28">
+        <div className="page-container space-y-5 pb-48 sm:pb-28">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <h1 className="text-2xl font-semibold text-zinc-100">New print run</h1>
             <ol className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Progress">
@@ -1809,8 +1809,8 @@ function NewRunContent() {
                   </button>
                 </div>
               </details>
-              <div className="fixed inset-x-0 bottom-0 z-30 bg-zinc-950 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-0">
-                <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+              <div className="fixed inset-x-0 bottom-0 z-30 bg-zinc-950 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <div className="page-container flex flex-col gap-3 py-0 sm:flex-row sm:items-center sm:justify-between sm:py-0 lg:py-0">
                   <div className="min-w-0 max-sm:hidden">
                     <p className="truncate text-sm font-semibold text-zinc-100">
                       {name.trim() || 'Untitled run'}

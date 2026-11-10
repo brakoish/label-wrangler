@@ -70,19 +70,19 @@ export default function Home() {
   return (
     <AppShell>
       <PageTitle title="Label sizes" />
-      <div className="flex-1 flex flex-col min-h-0 max-w-[1600px] mx-auto w-full">
-        <div className={`flex items-center justify-between gap-3 px-4 pt-6 pb-4 sm:px-8 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
+      <div className="page-container flex-1 flex flex-col min-h-0 pb-0 sm:pb-0 lg:pb-0">
+        <div className={`flex items-center justify-between gap-3 pb-4 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
           <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
           <button type="button" onClick={() => setIsAddModalOpen(true)} className={`btn ${selectedFormat ? "btn-secondary" : "btn-primary"}`}>
             <PlusIcon className="w-4 h-4" />
             New label size
           </button>
         </div>
-        <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 xl:px-8 overflow-auto xl:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 overflow-auto xl:overflow-hidden">
         {/* List */}
         <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full xl:w-[360px] xl:shrink-0 flex-col min-h-0`}>
           {hasFormats && (
-            <div className="px-4 pb-3 space-y-3 sm:px-8 xl:px-0">
+            <div className="pb-3 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-500" aria-hidden="true" />
                 <input
@@ -105,7 +105,7 @@ export default function Home() {
             </div>
           )}
 
-          <div className="flex-1 xl:overflow-auto px-4 pb-6 space-y-1 stagger sm:px-8 xl:px-0">
+          <div className="flex-1 xl:overflow-auto pb-6 space-y-1 stagger">
             {!hydrated && formats.length === 0 ? (
               <div role="status" aria-label="Loading label sizes" className="space-y-2">
                 {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 rounded-lg bg-zinc-900 animate-pulse" />)}
@@ -139,7 +139,7 @@ export default function Home() {
         <div className={`${phoneView === 'detail' && selectedFormat ? 'block' : 'max-xl:hidden'} flex-1 min-w-0 xl:overflow-auto`}>
           {selectedFormat ? (
             <>
-              <button type="button" onClick={() => setPhoneView('list')} className="xl:hidden btn btn-ghost btn-sm mx-2 mt-4">
+              <button type="button" onClick={() => setPhoneView('list')} className="xl:hidden btn btn-ghost btn-sm -ml-3">
                 <ChevronLeft className="size-4" aria-hidden="true" /> All label sizes
               </button>
               <FormatDetail

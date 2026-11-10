@@ -435,7 +435,7 @@ export default function NabisPage() {
       `}</style>
 
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 sm:px-8">
+        <div className="page-container grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0">
           <div className="lg:col-span-2">
             <h1 className="text-2xl font-semibold text-zinc-100">Nabis labels</h1>
             <p className="mt-1 text-sm text-zinc-400">Print a 6×4 case label for a Nabis delivery. Find the package by its name or state tracking (Metrc) tag, or type it in.</p>

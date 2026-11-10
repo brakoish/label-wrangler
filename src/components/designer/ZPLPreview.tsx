@@ -180,7 +180,7 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
             {showOutlines && <LabelOutlineOverlay format={format} />}
             {(loading || (!proofReady && !error)) && (
               <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center">
-                <RefreshCw className="w-5 h-5 animate-spin text-white" />
+                <RefreshCw className="w-5 h-5 animate-spin text-zinc-100" />
               </div>
             )}
           </div>

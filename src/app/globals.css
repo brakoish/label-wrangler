@@ -549,21 +549,24 @@ textarea:focus-visible {
 }
 /* end area B r3 */
 
-/* area B r4 ----------------------------------------------------------------
- * One page frame for the Runs list and a run's page: the same width, left
- * gutter and top space, so the title sits in the same place on both.
+/* One page container ---------------------------------------------------
+ * Every page (Runs, a run, New run, Designs, Scan, Label sizes, Nabis) sits
+ * in the same frame: the same width, side gutter and top space, so page
+ * edges and titles line up. In the components layer, so a page can still
+ * change its bottom space with a utility (pb-48). The designer's editor
+ * stays full-bleed.
  */
 @layer components {
-  .page-frame {
+  .page-container {
     width: 100%;
     max-width: 72rem;
     margin-inline: auto;
     padding: 1rem;
   }
-  @media (min-width: 640px) { .page-frame { padding: 1.5rem 2rem; } }
-  @media (min-width: 1024px) { .page-frame { padding-block: 2rem; } }
+  @media (min-width: 640px) { .page-container { padding: 1.5rem 2rem; } }
+  @media (min-width: 1024px) { .page-container { padding-block: 2rem; } }
 }
-/* end area B r4 */
+/* end page container */
 
 /* Motion off for anyone who asks for less of it — spinners included. */
 @media (prefers-reduced-motion: reduce) {
@@ -626,17 +629,6 @@ textarea:focus-visible {
 /* end area A r3 */
 
 /* area A r4 */
-/* One page edge for list and form pages: the same width and side gutter
-   (the designer stays full-bleed). */
-.page-container {
-  width: 100%;
-  max-width: 72rem;
-  margin-inline: auto;
-  padding-inline: 1rem;
-}
-@media (min-width: 40rem) {
-  .page-container { padding-inline: 2rem; }
-}
 /* "Where the values come from" on a narrow phone: two rows of two, so
    "Spreadsheet" and "Manifest" never run together. */
 @media (max-width: 26.24rem) {

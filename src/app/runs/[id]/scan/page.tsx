@@ -323,7 +323,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       <div className={`flex-1 overflow-auto transition-colors duration-200 ${
         flash === 'ok' ? 'bg-emerald-500/10' : flash === 'error' ? 'bg-red-500/10' : ''
       }`}>
-        <div className="mx-auto w-full max-w-xl px-4 py-6 sm:px-8 space-y-5">
+        <div className="page-container"><div className="max-w-xl space-y-5">
           <div className="space-y-1">
             <Link href={`/runs/${run.id}`} className="btn btn-ghost btn-sm -ml-3">
               <ArrowLeft className="size-4" aria-hidden="true" /> Back to run
@@ -467,7 +467,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 <div
                   key={h.id}
                   className={`flex items-start gap-3 px-3 py-2 rounded-lg text-sm ${
-                    h.status === 'ok' ? 'bg-zinc-900 text-zinc-100' : 'bg-red-500/10 text-red-300'
+                    h.status === 'ok' ? 'bg-zinc-900 text-zinc-100' : 'bg-red-500/10 text-red-400'
                   }`}
                 >
                   {h.status === 'ok'
@@ -479,7 +479,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                     ) : null}
                     <span className={`block truncate tabular-nums ${h.status === 'ok' && (h.label || h.what) ? 'text-zinc-400' : ''}`}>{h.value}</span>
                     {h.status === 'ok' && (h.times ?? 1) > 1 && <span className="block text-amber-300">Printed again ({ordinal(h.times ?? 2)} time)</span>}
-                    {h.message && <span className="block text-red-300">{h.message}</span>}
+                    {h.message && <span className="block text-red-400">{h.message}</span>}
                   </span>
                   <span className="text-zinc-400 tabular-nums shrink-0">
                     {new Date(h.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
@@ -488,7 +488,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
               ))}
             </section>
           )}
-        </div>
+        </div></div>
       </div>
     </AppShell>
   );

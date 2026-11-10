@@ -403,7 +403,7 @@ function DesignerContent() {
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
           {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && <div className="page-container pb-8">
+          {isAdmin && <div className="page-container pt-0 sm:pt-0 lg:pt-0">
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           </div>}
         </div>

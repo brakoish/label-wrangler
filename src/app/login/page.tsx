@@ -40,7 +40,7 @@ export default function LoginPage(){
       window.location.assign(nextPath());
     }catch(err){setError(isNetworkError(err)?OFFLINE_MESSAGE:err instanceof Error?err.message:'Sign-in didn\u2019t work. Try again.');setBusy(false);}
   }}>
-    <h1 className="text-xl font-semibold text-zinc-50">Label Wrangler</h1>
+    <h1 className="text-xl font-semibold text-zinc-100">Label Wrangler</h1>
     <p className="-mt-2 text-sm text-zinc-400">Sign in with your office account.</p>
     <label htmlFor="login-username" className="field-label">Username</label>
     <input id="login-username" required name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-invalid={missing.username||undefined} aria-describedby={missing.username?'login-username-missing':undefined} onInput={()=>missing.username&&setMissing(m=>({...m,username:false}))} className="field -mt-2.5 text-base" />

@@ -399,7 +399,7 @@ export default function RunsPage() {
       <PageTitle title="Runs" />
       <BulkMarkDialog runs={markableRuns} open={bulkOpen} onClose={() => setBulkOpen(false)} />
       <div className="flex-1 overflow-auto">
-        <div className="page-frame space-y-6 sm:space-y-8">
+        <div className="page-container space-y-6 sm:space-y-8">
           <section>
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">

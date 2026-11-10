@@ -1255,7 +1255,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   return (
     <>
     <div className="flex-1 overflow-auto">
-      <div className="page-frame space-y-5 sm:space-y-6">
+      <div className="page-container space-y-5 sm:space-y-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100 break-words">{run.name}</h1>
