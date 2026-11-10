@@ -308,40 +308,39 @@ function NewRunContent() {
     ));
   };
 
-  // Self-heal: if the chosen template has dynamic elements without a fieldName
-  // (common for older templates + QRs that predate the auto-name fix), backfill
-  // names in-place and persist. The user would otherwise be locked out of
-  // using those elements in a run because they wouldn't show up in the picker.
-  const didHealTemplateRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!template) return;
-    if (didHealTemplateRef.current === template.id) return;
-    const needsHeal = template.elements.some((el) => el.type !== 'image' && !el.isStatic && (!el.fieldName || !el.fieldName.trim()));
-    if (!needsHeal) {
-      didHealTemplateRef.current = template.id;
-      return;
-    }
+  // Older templates can have dynamic elements without a fieldName, so they do
+  // not show up in the field picker. Naming them changes the shared design, so
+  // it is an explicit action (button below) rather than a silent save on open,
+  // which used to bump the template revision and break other designer tabs.
+  const unnamedDynamic = useMemo(() => template ? template.elements.filter((el) => el.type !== 'image' && !el.isStatic && (!el.fieldName || !el.fieldName.trim())) : [], [template]);
+  const [namingFields, setNamingFields] = useState(false);
+  const [namingError, setNamingError] = useState<string | null>(null);
+  const nameUnnamedFields = async () => {
+    if (!template || !unnamedDynamic.length) return;
     const used = new Set<string>();
     for (const el of template.elements) {
       if (el.fieldName && el.fieldName.trim()) used.add(el.fieldName.trim());
     }
-    for (const el of template.elements) {
-      if (el.isStatic || el.type === 'image') continue;
-      if (el.fieldName && el.fieldName.trim()) continue;
-      // Generate a type-based name, incrementing until unique.
-      let n = 1;
-      let candidate = `${el.type}_${n}`;
-      while (used.has(candidate)) {
-        n++;
-        candidate = `${el.type}_${n}`;
+    setNamingFields(true); setNamingError(null);
+    try {
+      for (const el of unnamedDynamic) {
+        // Generate a type-based name, incrementing until unique.
+        let n = 1;
+        let candidate = `${el.type}_${n}`;
+        while (used.has(candidate)) {
+          n++;
+          candidate = `${el.type}_${n}`;
+        }
+        used.add(candidate);
+        updateElementLocal(template.id, el.id, { fieldName: candidate });
       }
-      used.add(candidate);
-      updateElementLocal(template.id, el.id, { fieldName: candidate });
+      await saveTemplate(template.id);
+    } catch (error) {
+      setNamingError((error as Error).message || 'Could not save the design. Try again.');
+    } finally {
+      setNamingFields(false);
     }
-    // Persist once, then remember we've healed this template id.
-    void saveTemplate(template.id);
-    didHealTemplateRef.current = template.id;
-  }, [template, updateElementLocal, saveTemplate]);
+  };
 
   // Initialize field mappings when template changes: default all to static.
   // If it's the first time (no existing mappings), also auto-map any field
@@ -829,6 +828,23 @@ function NewRunContent() {
           </section>
 
           {template && <RunImagePicker key={template.id} template={template} selections={imageSelections} onBusyChange={setImageBusy} onChange={value => setImagesByTemplate(current => ({ ...current, [template.id]: value }))} />}
+
+          {template && unnamedDynamic.length > 0 && (
+            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
+              <h2 className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Unnamed Fields</h2>
+              <p className="text-xs text-zinc-400">
+                {unnamedDynamic.length === 1 ? '1 dynamic element has' : `${unnamedDynamic.length} dynamic elements have`} no field name, so {unnamedDynamic.length === 1 ? 'it' : 'they'} can&apos;t be filled in this run. Naming them saves the shared design.
+              </p>
+              <button
+                onClick={() => void nameUnnamedFields()}
+                disabled={namingFields}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+              >
+                {namingFields ? 'Saving design…' : 'Name fields and save design'}
+              </button>
+              {namingError && <p role="alert" className="text-xs text-red-400">{namingError}</p>}
+            </section>
+          )}
 
           {template && flippable.length > 0 && (
             <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
