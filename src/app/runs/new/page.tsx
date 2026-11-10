@@ -1060,7 +1060,8 @@ function NewRunContent() {
   const formDirty = !leavingAfterCreate && (name.trim().length > 0 || !!templateId || csvRows.length > 0 || pasteText.trim().length > 0 || manifestRows.length > 0);
   const confirmLeave = useCallback(async () => {
     if (!formDirty) return true;
-    return confirmDialog({ title: 'Leave this new run?', body: 'We keep it in this browser tab, so you can pick it up again from New run.', confirmLabel: 'Leave', cancelLabel: 'Stay here' });
+    // "Stay here" has the focus: Enter or Space never throws the run away.
+    return confirmDialog({ title: 'Leave this new run?', body: 'We keep it in this browser tab, so you can pick it up again from New run.', confirmLabel: 'Leave', cancelLabel: 'Stay here', focusCancel: true });
   }, [formDirty]);
   useEffect(() => {
     if (!formDirty) return;
@@ -1078,9 +1079,13 @@ function NewRunContent() {
   useEffect(() => { routerRef.current = router; }, [router]);
   const confirmLeaveRef = useRef(confirmLeave);
   useEffect(() => { confirmLeaveRef.current = confirmLeave; }, [confirmLeave]);
+  // A same-page link ("Skip to content", #main) adds a history entry with a
+  // new #hash and fires popstate too: that is not leaving.
+  const guardHashRef = useRef('');
   useEffect(() => {
     if (!formDirty || guardRef.current) return;
     guardRef.current = true;
+    guardHashRef.current = window.location.hash;
     window.history.pushState(null, '', window.location.href);
   }, [formDirty]);
   useEffect(() => {
@@ -1091,6 +1096,10 @@ function NewRunContent() {
         routerRef.current.replace(target);
         return;
       }
+      if (window.location.hash !== guardHashRef.current) {
+        guardHashRef.current = window.location.hash;
+        return;
+      }
       if (!guardRef.current) return;
       guardRef.current = false;
       void confirmLeaveRef.current().then((leave) => {
@@ -1099,6 +1108,7 @@ function NewRunContent() {
           window.history.back();
         } else {
           guardRef.current = true;
+          guardHashRef.current = window.location.hash;
           window.history.pushState(null, '', window.location.href);
         }
       });
