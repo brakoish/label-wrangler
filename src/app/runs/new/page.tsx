@@ -1455,7 +1455,7 @@ function NewRunContent() {
   // listed under the picture), not the renderer's own error.
   const shownBadBarcode = previewState.status === 'error' && barcodeCheck.issues.some((issue) => issue.kind !== 'too-long' && issue.kind !== 'tight' && issue.label > feedStart && issue.label <= feedStart + across);
   const previewMessage = shownBadBarcode
-    ? `The barcode on ${across > 1 ? 'these labels' : 'this label'} can’t be drawn: its value has characters a barcode can’t hold.`
+    ? `The preview can’t draw the barcode on ${across > 1 ? 'these labels' : 'this label'}: its value has characters a barcode can’t hold.`
     : previewState.status === 'error' && checkTemplate
       ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
       : '';
