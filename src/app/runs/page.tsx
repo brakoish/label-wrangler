@@ -116,7 +116,11 @@ function OfficePrinterBar({ onHeld, runs = [] }: { onHeld?: (held: boolean, hold
     } catch { /* tries again on the next read */ }
   }, []);
   const printer = printers?.find((p) => p.dispatch_enabled && p.paired_at) ?? null;
-  const status = officeStatusLine(printer ?? undefined);
+  // A pause the printer confirmed reads "Paused" at once, before the next stations read.
+  const [controlPaused, setControlPaused] = useState<boolean | null>(null);
+  const live = officeStatusLine(printer ?? undefined);
+  const status = controlPaused && !live.paused && !live.stopped && printer?.online
+    ? { ...live, paused: true, tone: 'warn' as const, text: 'Paused: nothing new prints until someone resumes it.' } : live;
   const watch = status.stopped || status.paused || status.tone !== 'ok';
   const held = officePrinterHeld(printers);
   const holdId = status.stopped && status.hold ? status.hold.run_id : '';
@@ -150,7 +154,7 @@ function OfficePrinterBar({ onHeld, runs = [] }: { onHeld?: (held: boolean, hold
       <div className="flex flex-wrap items-center gap-2">
         {/* The bar's action is the row's action: open that run and fix it there. */}
         {status.stopped && status.hold && <Link href={`/runs/${encodeURIComponent(status.hold.run_id)}`} className="btn btn-secondary btn-sm">Open “{runName}”</Link>}
-        <OfficePrinterControls onUnavailable={() => setHidden(true)} onChange={() => void read()} />
+        <OfficePrinterControls onPausedChange={setControlPaused} onUnavailable={() => setHidden(true)} onChange={() => void read()} />
       </div>
     </section>
   );
