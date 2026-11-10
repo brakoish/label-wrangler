@@ -16,8 +16,8 @@ export interface RunOfficeSummary {
   heldBy?: { runId: string; runName: string } | null;
   /** Labels the office reported sent that nobody has said came out yet. */
   unchecked?: number;
-  /** The run page's office panel: a send it isn't sure the office got. */
-  unsure?: { from: number; to: number } | null;
+  /** The run page's office panel: a send it isn't sure the office got (likely: the queue lists those labels). */
+  unsure?: { from: number; to: number; likely?: boolean } | null;
   /** The run page's office panel: a send the office refused (nothing was queued). */
   refused?: { from: number; to: number } | null;
   /** The run page's office panel: the office printer is paused. */
@@ -39,13 +39,14 @@ export interface RunOfficeSummary {
  */
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'check' | 'confirm' | 'paused' | 'cancelled' | 'idle';
 /** The run statuses, used the same way in rows, the run header and the filter. */
-export type RunStatusBucket = 'needs-you' | 'check' | 'sent' | 'printing' | 'paused' | 'ready' | 'done' | 'cancelled';
+export type RunStatusBucket = 'needs-you' | 'check' | 'sent' | 'printing' | 'paused' | 'waiting' | 'ready' | 'done' | 'cancelled';
 export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
   'needs-you': 'Needs you',
   check: 'Needs a check',
   sent: 'Sent',
   printing: 'Printing',
   paused: 'Paused',
+  waiting: 'Waiting',
   ready: 'Ready',
   done: 'Done',
   cancelled: 'Cancelled',
@@ -55,8 +56,8 @@ const labelsWord = (span: { from: number; to: number }) => (span.from === span.t
 
 /**
  * One status for a run, shared by the run header and the Runs list, from the
- * same facts the office panel shows: one of eight words (Needs you, Needs a
- * check, Sent, Printing, Paused, Ready, Done, Cancelled), with a short detail
+ * same facts the office panel shows: one of nine words (Needs you, Needs a
+ * check, Sent, Printing, Paused, Waiting, Ready, Done, Cancelled), with a short detail
  * beside it. The words never contradict the panel: "Needs you" is always red
  * and only for something that went wrong, "Needs a check" is amber and only
  * for something uncertain, "Sent" (labels the office sent that nobody has
@@ -74,7 +75,7 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (run.status === 'cancelled') return out('cancelled', 'cancelled');
   if (total > 0 && printed >= total) return out('done', 'done');
   if (localProblem) return out('needs-you', 'attention', 'Stopped: printer problem');
-  if (office?.unsure) return out('check', 'check', `Not sure the office got ${labelsWord(office.unsure).toLowerCase()}`);
+  if (office?.unsure) return out('check', 'check', office.unsure.likely ? `${labelsWord(office.unsure)} look${office.unsure.from === office.unsure.to ? 's' : ''} like ${office.unsure.from === office.unsure.to ? 'it' : 'they'} arrived` : `Not sure the office got ${labelsWord(office.unsure).toLowerCase()}`);
   if (office && office.failed > 0) {
     const first = office.firstFailed;
     const kind = first?.kind ?? (first?.didNotPrint ? 'did-not-print' : first ? 'needs-check' : undefined);
@@ -92,16 +93,16 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (office?.sending) return out('printing', 'active', office.sending);
   // Another run's part stops the shared printer. Only labels of this run
   // already waiting there make it "Paused"; a run with nothing there is
-  // still "Ready", and says what it waits for. The run header and the Runs
+  // "Waiting" (never "Ready"), and says what for. The run header and the Runs
   // list both read this, so they use the same word.
   if (office?.heldBy && run.status !== 'draft') {
     const name = office.heldBy.runName || 'Another run';
-    return office.onTheWay > 0 ? out('paused', 'paused', `“${name}” needs a check first`) : out('ready', 'idle', `Waits for “${name}”`);
+    return office.onTheWay > 0 ? out('paused', 'paused', `“${name}” needs a check first`) : out('waiting', 'paused', `For “${name}” to be checked`);
   }
   if (office && office.onTheWay > 0) return office.held ? out('paused', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'At the office printer');
   if (office?.printerPaused) return out('paused', 'paused', 'The office printer is paused');
   // Labels a "Print in order" fix held back: nothing sends them but a press.
-  if (office?.heldBack) return out('ready', 'confirm', `${labelsWord(office.heldBack)} held back · send them`);
+  if (office?.heldBack) return out('ready', 'confirm', `Send ${labelsWord(office.heldBack).toLowerCase()} next`);
   if (run.status === 'printing') return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
   // The question is only about what was sent; labels still to send are said apart.

@@ -94,8 +94,14 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   assert.match(submit,/setPending\(null\);setPosting\(false\);\s*\/\/[^\n]*\n\s*setEndBlank\(false\);/,'a successful send turns the box off');
   assert.doesNotMatch(src,/setEndBlank\(data\.endBlank\)/,'a resumed record keeps its choice for its own resend only');
   assert.match(src,/\{!pending && rangeValid && <BlankOption id=\{`\$\{uid\}-form-blank`\} checked=\{endBlank\}/,'the form’s box is hidden while a saved request waits (it resends as saved)');
-  assert.match(src,/setFix\(\{part,seen:'',againText:'',note:'',order:'in-order',blank:false\}\)/,'the fix dialog starts with the blank off');
-  assert.match(src,/const blankOnReprint=current\.blank && heldLast===null;/,'a "Print in order" fix feeds the blank after the held labels, never after the reprint');
+  assert.match(src,/setFix\(\{part,seen:'',againText:'',note:'',order:'in-order',blank:null\}\)/,'the fix dialog starts untouched (fixBlank decides)');
+  // B13: untouched, the box is ticked only when the plan's last label is where an earlier send's blank was, and that blank went with the labels this plan sends.
+  assert.match(src,/if\(current\.blank!==null\)return current\.blank;/,'a person’s choice always wins');
+  assert.match(src,/return jobs\.some\(j=>j\.to===last && sentWithBlank\(j\.requestId\) && Math\.max\(\.\.\.jobs\.filter\(o=>o\.requestId===j\.requestId\)\.map\(o=>o\.to\)\)===last\);/,'only the true end of a send that asked for the blank');
+  assert.match(src,/const blank=fixBlank\(current\);\s*if\(blank && heldLast!==null\)saveHeldBlank\(heldLast\);\s*const blankOnReprint=blank && heldLast===null;/,'a "Print in order" fix feeds the blank after the held labels, never after the reprint');
+  // B13: a "too big" split keeps the blank due for the send that ends the range.
+  assert.match(src,/if\(again\.endBlank===true && end<again\.to\)saveBlankDue\(again\.to\);/,'the split remembers where the blank is due');
+  assert.match(src,/if\(blankDueAt!==null && payload\.to===blankDueAt\)saveBlankDue\(null\);/,'the send ending there clears it');
   assert.match(src,/body:`\$\{end-part\.from===0\?'It prints':'They print'\} once more on the office printer\. The run’s progress doesn’t change\.`/,'a one-confirm reprint has no blank');
   // No room for the blank: a new request without it, never the refused payload again.
   assert.match(src,/refusalStep==='without-blank'[\s\S]{0,400}sendNow\(\{from:again\.from,to:Math\.min\(again\.to,again\.from\+cap-1\)\},undefined,false,false\)/);

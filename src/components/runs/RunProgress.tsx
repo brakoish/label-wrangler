@@ -1,6 +1,6 @@
 'use client';
 import { type OfficeSpan } from '@/lib/officeRange';
-import { printedSpans, stillToGo } from '@/lib/runProgress';
+import { intersectSpans, printedSpans, stillToGo } from '@/lib/runProgress';
 
 /** "41–60, 81–89, 93–120": label numbers only, each range kept on one line. */
 export function spanNumbers(spans: ReadonlyArray<OfficeSpan>): string {
@@ -51,7 +51,7 @@ export function progressParts(printedCount: number, total: number, confirmed: Re
  * is paused). Neither is ever called printed, and "still to go" names only
  * labels never sent.
  */
-export function RunProgress({ printedCount, total, confirmed, sent = [], waiting = [], waitingLabel = 'waiting at the office', tone, animate = false }: {
+export function RunProgress({ printedCount, total, confirmed, sent = [], waiting = [], waitingLabel = 'waiting at the office', named = [], tone, animate = false }: {
   printedCount: number; total: number; confirmed: ReadonlyArray<OfficeSpan>;
   /** Labels the office reported sent to the printer, not counted as printed yet. */
   sent?: ReadonlyArray<OfficeSpan>;
@@ -59,9 +59,14 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   waiting?: ReadonlyArray<OfficeSpan>;
   /** Their words ("waiting at the office", "on the way to the office printer"); empty when the office panel already says it. */
   waitingLabel?: string;
+  /** Labels the panel already names on their own line ("Out of labels: 66–90"): "Still to go" doesn't repeat them. */
+  named?: ReadonlyArray<OfficeSpan>;
   tone: 'done' | 'active' | 'muted'; animate?: boolean;
 }) {
-  const { spans, sentOnly, waitingOnly, left, shown } = progressParts(printedCount, total, confirmed, sent, waiting);
+  const parts = progressParts(printedCount, total, confirmed, sent, waiting);
+  const { spans, sentOnly, waitingOnly } = parts;
+  const left = named.length ? intersectSpans(parts.left, stillToGo([...named].sort((a, b) => a.from - b.from), total)) : parts.left;
+  const shown = parts.shown && left.length > 0;
   const printed = spans.reduce((n, s) => n + s.to - s.from + 1, 0);
   const sentCount = sentOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
   const waitingCount = waitingOnly.reduce((n, s) => n + s.to - s.from + 1, 0);

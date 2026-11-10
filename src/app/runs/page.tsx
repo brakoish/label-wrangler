@@ -65,11 +65,20 @@ const spanCount = (spans: ReadonlyArray<OfficeSpan> | undefined) => (spans ?? []
  * run's part (named once); every other run keeps its own status. Sent labels
  * nobody checked yet read "N labels sent, not checked yet".
  */
+/** True when this device last chose a USB printer or the Dazzle app (the run page opens on it). */
+function lastPrinterIsLocal(): boolean {
+  try { const saved = typeof window !== 'undefined' ? window.localStorage.getItem('lw:last-transport') : null; return saved === 'webusb' || saved === 'dazzle'; } catch { return false; }
+}
+
 function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null) {
   // Another run's check holds the shared printer: an unfinished run that uses
   // the office waits for it, the same rule as the run page's header.
   const unfinished = run.status !== 'cancelled' && run.status !== 'completed' && printedShown(run) < run.totalLabels;
-  const heldBy = holdRun && holdRun.runId !== run.id && unfinished ? holdRun : null;
+  // A run printing on another printer right now (USB, the Dazzle app) with no
+  // office work doesn't wait for the office printer.
+  // This device last printed elsewhere (the run page then opens on that printer), so the row agrees with it.
+  const printingElsewhere = !run.office && run.status === 'printing' && lastPrinterIsLocal();
+  const heldBy = holdRun && holdRun.runId !== run.id && unfinished && !printingElsewhere ? holdRun : null;
   // Labels still to send are said beside "Did they all come out?", like the run page.
   if (run.office) return { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) };
   // Nothing sent to the office yet: the run page (office printer by default) still says it waits, so the row does too.
@@ -794,7 +803,9 @@ function RunRow({
   const pct = run.totalLabels > 0 ? Math.round((shown / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
   // Labels no office send covers and nothing counts as printed: the run page's "Still to go" line, in the same words.
-  const stillToSend = office?.unsent?.length ? intersectSpans(office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)) : [];
+  // Without the server's counted stretches (main, or a history read that failed) the run page may count
+  // more than this row can know, so the row names no range rather than a different one.
+  const stillToSend = office?.unsent?.length && run.countedSpans !== undefined ? intersectSpans(office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)) : [];
   const pinned = !!run.pinnedAt;
   // A "Send all … in N parts" that stopped early on this device.
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);

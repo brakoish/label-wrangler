@@ -1,9 +1,10 @@
 /**
  * The run page's go-ahead for barcodes that won't print whole: one tick per
- * problem, kept on this device. A go-ahead given in the new-run wizard still
- * covers the milder problems, but never a barcode that runs onto the next
- * label ("neither label would scan"): that spoils two labels each time, so it
- * is asked again here, where printing starts.
+ * problem, kept on this device. A go-ahead given in the new-run wizard for
+ * these exact problems carries over (shown ticked, with a line saying it was
+ * chosen when the run was made), so nobody ticks the same thing twice. A
+ * barcode that runs onto the next label ("neither label would scan") says
+ * what printing it costs right beside that tick.
  */
 const PREFIX = 'lw:run-barcode-ok:';
 
@@ -173,7 +174,7 @@ export function saveRunBarcodeTicks(storage: Pick<Storage, 'setItem' | 'removeIt
 
 /** Whether one problem counts as ticked. */
 export function barcodeItemTicked(item: string, ticks: ReadonlyArray<string>, wizardGoAhead: boolean): boolean {
-  return ticks.includes(item) || (wizardGoAhead && !barcodeProblemSevere(item));
+  return ticks.includes(item) || wizardGoAhead;
 }
 
 /** Every problem ticked (none at all also counts). */

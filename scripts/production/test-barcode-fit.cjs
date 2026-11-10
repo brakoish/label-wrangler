@@ -10,7 +10,7 @@ const sharp = require('sharp');
 const { barcodeFit, nativeBarcodeFootprint, barcodeFitProblem, barcodeFitFix } = require('../../src/lib/barcodeFit.ts');
 const { checkRunBarcodes, describeBarcodeGroups } = require('../../src/lib/barcodeCheck.ts');
 const { layoutProblems } = require('../../src/lib/designerLayout.ts');
-const { runPrintCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, barcodeVerdict, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
+const { runPrintCheck, runSendCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, barcodeVerdict, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
 const { barcodeDamage, barcodeTickLabel, barcodePlainSentence, barcodeTicksAllow } = require('../../src/lib/runBarcodeTicks.ts');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -167,7 +167,7 @@ async function renderNative(template, format, values) {
     assert.equal(pairs.verdict.severity, 'neither-scans');
     assert.equal(pairs.verdict.goAheadLabel, 'Print anyway — the Package Tag barcode prints over the next label’s, so neither label will scan');
     assert.equal(pairs.verdict.carriesOver, true, 'the wizard go-ahead is kept for the milder problems');
-    assert.equal(barcodeTicksAllow(pairs.blocking, [], true), false, 'a wizard tick for "neither label will scan" never covers it on the run page');
+    assert.equal(barcodeTicksAllow(pairs.blocking, [], true), true, 'B13: the wizard tick for the same "neither label will scan" carries over (the run page says it was chosen when the run was made)');
     assert.equal(pairs.blocking.length, 1);
     assert.equal(pairs.layout.length, 0, 'one problem, one tick: the overlap is not asked about again');
     const g = thermalRenderGeometry(F.preroll);
@@ -249,6 +249,28 @@ async function renderNative(template, format, values) {
     const exactPage = runPrintCheck({ ...run([T24, forty]), totalLabels: 2, dataSource: 'csv' }, design('2x1', 'bitmap-v1', full), F['2x1']);
     assert.equal(exactPage.verdict.stops, true, 'a renderer refusal is a stop');
     assert.equal(printCheckAllows(exactPage, { barcode: exactPage.blockingKey }), false, 'no go-ahead past a renderer refusal');
+    // B13: a refusal stops only the sends that include that label, and the part before it can go.
+    {
+      const tags = [T24, T24, forty, T24, T24];
+      const r5 = { ...run(tags), totalLabels: 5, dataSource: 'csv' }; const d5 = design('2x1', 'bitmap-v1', full);
+      const whole = runPrintCheck(r5, d5, F['2x1']);
+      assert.deepEqual(whole.stopLabels, [3]);
+      const all = runSendCheck(whole, r5, d5, F['2x1'], { from: 1, to: 5 });
+      assert.deepEqual(all.stopsHere, [3]); assert.deepEqual(all.before, { from: 1, to: 2 });
+      assert.equal(all.check.verdict.stops, true); assert.equal(printCheckAllows(all.check, {}), false);
+      const after = runSendCheck(whole, r5, d5, F['2x1'], { from: 4, to: 5 });
+      assert.deepEqual(after.stopsHere, []); assert.deepEqual(after.stopsElsewhere, [3]);
+      assert.equal(after.check.verdict.stops, false); assert.equal(after.check.blocking.length, 0);
+      assert.equal(printCheckAllows(after.check, {}), true, 'labels that leave the bad one out can go');
+      const first = runSendCheck(whole, r5, d5, F['2x1'], { from: 3, to: 5 });
+      assert.equal(first.before, null); assert.equal(first.check.verdict.stops, true); assert.deepEqual(first.after, { from: 4, to: 5 });
+      // Past the first 2,000 labels: the send itself is checked (here with a small limit).
+      const late = runSendCheck(runPrintCheck(r5, d5, F['2x1'], 2), r5, d5, F['2x1'], { from: 2, to: 5 }, 2);
+      assert.deepEqual(late.stopsHere, [3]); assert.equal(late.checkedTo, 3);
+      // No stop anywhere and inside the checked labels: the whole-run check, unchanged (same object).
+      const fine = runPrintCheck({ ...run([T24, T24]), totalLabels: 2, dataSource: 'csv' }, d5, F['2x1']);
+      assert.equal(runSendCheck(fine, { ...run([T24, T24]), totalLabels: 2 }, d5, F['2x1'], { from: 1, to: 2 }).check, fine);
+    }
     // A native value the barcode type can't hold: the printer is still sent it, so it needs a go-ahead, not a stop.
     const valuePage = runPrintCheck({ ...run([accented]), totalLabels: 1, dataSource: 'csv' }, design('4x6', 'native-v1', barcode()), F['4x6']);
     assert.equal(valuePage.verdict.stops, false);
