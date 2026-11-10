@@ -6,7 +6,6 @@ import JsBarcode from 'jsbarcode';
 import {
   Check,
   PackageCheck,
-  Plus,
   Printer,
   Search,
   X,
@@ -148,64 +147,6 @@ function FittedText({
     >
       {children}
     </p>
-  );
-}
-
-function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
-  const [itemName, setItemName] = useState('');
-  const [tag, setTag] = useState('');
-  const [batch, setBatch] = useState('');
-
-  const canAdd = itemName.trim().length > 0 && tag.trim().length > 0;
-
-  return (
-    <form
-      className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_auto] [&>*]:min-w-0"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!canAdd) return;
-        onAdd({
-          id: `manual-${tag.trim()}`,
-          itemName: itemName.trim(),
-          tag: tag.trim(),
-          batch: batch.trim(),
-          brandName: '',
-          quantity: '',
-          unitOfMeasure: '',
-          packagedDate: '',
-        });
-        setItemName('');
-        setTag('');
-        setBatch('');
-      }}
-    >
-      <label className="block">
-        <span className="field-label mb-1.5">Item name</span>
-        <input value={itemName} onChange={(event) => setItemName(event.target.value)} className="field w-full" />
-      </label>
-      <label className="block">
-        <span className="field-label mb-1.5">Package tag</span>
-        <input value={tag} onChange={(event) => setTag(event.target.value)} className="field w-full tabular-nums" />
-      </label>
-      <label className="block">
-        <span className="field-label mb-1.5">Batch <span className="font-normal text-zinc-500">(optional)</span></span>
-        <input value={batch} onChange={(event) => setBatch(event.target.value)} className="field w-full" />
-      </label>
-      <button
-        type="submit"
-        disabled={!canAdd}
-        aria-describedby={!canAdd ? 'nabis-add-reason' : undefined}
-        className="btn btn-secondary"
-      >
-        <Plus className="h-4 w-4" />
-        Add
-      </button>
-      {!canAdd && (
-        <p id="nabis-add-reason" className="text-sm text-zinc-400 sm:col-span-4">
-          {itemName.trim() ? 'Type the package tag to add it' : tag.trim() ? 'Type the item name to add it' : 'Type the item name and package tag to add a package'}
-        </p>
-      )}
-    </form>
   );
 }
 
@@ -444,7 +385,7 @@ export default function NabisPage() {
             <div>
               <h2 className="mb-3 text-base font-semibold text-zinc-100">Find a package</h2>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -469,12 +410,12 @@ export default function NabisPage() {
             <div className="space-y-1.5 stagger">
               {isSearching && (
                 <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
-                  Searching the Manifest…
+                  Searching Nabis…
                 </div>
               )}
               {!isSearching && query.trim().length >= 2 && results.length === 0 && (
                 <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
-                  No packages match. Check the name or tag, or add the package by hand below.
+                  No packages match. Check the name or tag, or type the details yourself.
                 </div>
               )}
               {visibleResults.map((pkg) => {
@@ -496,7 +437,7 @@ export default function NabisPage() {
                         <p className="break-words text-sm font-semibold text-zinc-100">{pkg.itemName}</p>
                         <p className="mt-1 break-all text-xs tabular-nums text-zinc-400">{pkg.tag}</p>
                       </div>
-                      {active ? <Check className="h-5 w-5 shrink-0 text-amber-400 animate-icon" aria-hidden="true" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-500" aria-hidden="true" />}
+                      {active ? <Check className="h-5 w-5 shrink-0 text-amber-400 animate-icon" aria-hidden="true" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-400" aria-hidden="true" />}
                     </div>
                     <p className="mt-2 text-xs text-zinc-400">
                       {[pkg.batch && `Batch ${pkg.batch}`, pkg.quantity && `${pkg.quantity} ${pkg.unitOfMeasure ?? ''}`.trim(), pkg.brandName].filter(Boolean).join(' · ')}
@@ -506,15 +447,6 @@ export default function NabisPage() {
               })}
             </div>
 
-            <div className="pt-4">
-              <h2 className="mb-3 text-base font-semibold text-zinc-100">Add a package by hand</h2>
-              <ManualPackageForm
-                onAdd={(pkg) => {
-                  setResults((current) => [pkg, ...current.filter((item) => item.tag !== pkg.tag)]);
-                  selectPackage(pkg);
-                }}
-              />
-            </div>
           </section>
 
           <section className="min-h-0 space-y-5 [&>*]:min-w-0">
@@ -522,7 +454,7 @@ export default function NabisPage() {
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-zinc-100">Check the label</h2>
                 <div className="flex items-center gap-3">
-                  {!canPrint && <span id="nabis-print-reason" className="text-sm text-zinc-400">{label.itemName.trim() || label.uid.trim() ? `Add the ${!label.itemName.trim() ? 'item description' : 'package tag'} to print` : 'Pick a package to print'}</span>}
+                  {!canPrint && <span id="nabis-print-reason" className="text-sm text-zinc-400">{label.itemName.trim() || label.uid.trim() ? `Add the ${!label.itemName.trim() ? 'item description' : 'package tag'} to print` : 'Pick a package or type the details to print'}</span>}
                   <button
                     type="button"
                     disabled={!canPrint}
@@ -540,6 +472,7 @@ export default function NabisPage() {
                 <LabelPreview label={label} />
               </div>
 
+              <h3 className="mb-3 text-base font-semibold text-zinc-100">{selected ? 'Change the details' : 'Or type the details'}</h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
                 {(
                   [
@@ -559,7 +492,7 @@ export default function NabisPage() {
                       onChange={(event) => setLabelField(field, event.target.value)}
                       className={`field w-full ${field === 'uid' ? 'tabular-nums' : ''}`}
                     />
-                    {field === 'unitsPerCase' && !label.unitsPerCase.trim() && <span className="mt-1 block text-xs text-zinc-500">Empty prints a blank line to write on</span>}
+                    {field === 'unitsPerCase' && !label.unitsPerCase.trim() && <span className="mt-1 block text-xs text-zinc-400">Empty prints a blank line to write on</span>}
                   </label>
                 ))}
               </div>
