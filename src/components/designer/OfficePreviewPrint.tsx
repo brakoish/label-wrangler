@@ -8,9 +8,9 @@ import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { keepPendingAfter, officeFailureKind, officePrinterReadiness, plainOfficeRefusal, readRefusal, refusalStillApplies, uncertainSendWords, type OfficeRefusalRecord } from '@/lib/officeSendOutcome';
+import { keepPendingAfter, officeFailureKind, officeStatusLine, plainOfficeRefusal, readRefusal, refusalStillApplies, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 
-type PrinterInfo = { station_id: string; id: string; name: string; online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at?: string | null; needs_review: boolean };
+type PrinterInfo = { station_id: string; id: string; name: string; online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at?: string | null; needs_review: boolean; dispatch_hold_reason?: string | null; review_holds?: OfficeReviewHold[] };
 type Pending = { status?: number; code?: string; idempotencyKey: string; stationId: string; printerId: string; quantity: number; template: LabelTemplate; format: LabelFormat; testData: Record<string, string>; expectedPixelDigests?: string[] };
 /** Carries the HTTP status so a definite "no" is not read as "maybe it arrived". */
 class OfficeRequestError extends Error { constructor(message: string, public status: number, public code?: string) { super(message); } }
@@ -134,7 +134,8 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   };
 
   // Live status decides readiness; a remembered refusal never overrides it.
-  const readiness = officePrinterReadiness(printer);
+  // One status line: never "ready" while the printer is paused or stopped.
+  const readiness = officeStatusLine(printer);
   const shownRefusal = refusalStillApplies(refusal, printer) ? refusal : null;
   const quantityOk = Number.isInteger(quantity) && quantity >= 1 && quantity <= 25;
   const canSend = !busy && canPrint && !!printer && (pending ? true : readiness.canSend && quantityOk && !(bitmap && proofs?.key !== proofKey));

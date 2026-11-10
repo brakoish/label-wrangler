@@ -175,6 +175,12 @@ export function officeDeliverySummary(jobs: ReadonlyArray<OfficeJobLike>, total:
   return { sent: size(sentSpans), onTheWay: size(moving), failed, failedLabels: size(union(failed, total)) };
 }
 
+/** Labels still waiting at the office (queued or picked up, not reported sent), as merged spans. */
+export function officeWaitingSpans(jobs: ReadonlyArray<OfficeJobLike>, total: number): OfficeSpan[] {
+  const sent = union(jobs.filter((j) => j.state === 'sent_to_printer' && !j.review), total);
+  return minus(union(jobs.filter((j) => OFFICE_IN_PROGRESS.includes(j.state) && !j.review), total), sent).map(([from, to]) => ({ from, to }));
+}
+
 /** Labels from..to as merged spans, for messages like "labels 1–50 and 101–150". */
 export function spanWords(spans: ReadonlyArray<OfficeSpan>): string {
   const parts = spans.map((s) => (s.from === s.to ? `${s.from.toLocaleString()}` : `${s.from.toLocaleString()}–${s.to.toLocaleString()}`));
