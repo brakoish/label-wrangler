@@ -254,14 +254,15 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
 }
 
 // --- The office panel's request contract is unchanged ------------------------
-// Same endpoint and method, same payload keys (new-job or reprint shape), the
+// Same endpoint and method, same payload keys (new-job or reprint shape, plus
+// main's optional endBlank from 50ea233), the
 // idempotency key saved before the POST, and one POST per tap.
 {
   const src = fs.readFileSync(path.join(__dirname, '../../src/components/runs/OfficePiPrinter.tsx'), 'utf8');
   const payload = src.match(/payload=\{(runId,stationId[^\n]*?)\};/);
   assert.ok(payload, 'payload literal found');
   const keys = [...payload[1].matchAll(/(?:^|,|\{)\s*(?:\.\.\.\(\w+\?\{)?(\w+):/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(['runId', ...keys])].sort(), ['expectedBitmapDigest', 'from', 'idempotencyKey', 'printerId', 'reprintOf', 'runId', 'stationId', 'to'].sort());
+  assert.deepEqual([...new Set(['runId', ...keys])].sort(), ['endBlank', 'expectedBitmapDigest', 'from', 'idempotencyKey', 'printerId', 'reprintOf', 'runId', 'stationId', 'to'].sort());
   assert.doesNotMatch(payload[1], /reason/, 'no new payload key');
   const save = src.indexOf('localStorage.setItem(storageKey,JSON.stringify(payload))');
   const post = src.indexOf("api('/api/office/jobs',{method:'POST'");
@@ -315,7 +316,7 @@ console.log('PASS field display names');
   assert.match(panel, /if\(!printAllowed \|\| !requestsEverLoaded\)return;/);
   // A multi-part send is one explicit tap, and each part goes through the one POST site with its own saved key.
   assert.match(panel, /`Send all \$\{sendCount\.toLocaleString\(\)\} in \$\{parts\.length\} parts`/);
-  assert.match(panel, /const outcome=await submit\(part\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
+  assert.match(panel, /const outcome=await submit\(part,undefined,blankHere\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
   assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
   // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
   assert.match(panel, /if\(direct \|\| payload\.from!==want\.from \|\| payload\.to!==want\.to\)\{/, 'a part, the form or a one-tap send never sends another range\'s saved request');

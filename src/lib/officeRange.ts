@@ -265,7 +265,12 @@ export function officeSendParts(from: number, to: number, cap: number, across = 
 }
 
 /** A multi-part send saved on this device so a closed page can finish it later. */
-export interface OfficePartsPlan { stationId: string; printerId: string; parts: OfficeSpan[]; next: number; at: string }
+/**
+ * endBlankAt: the last label of the whole range when the person asked for one
+ * blank label at the end. Only the part ending on that label carries
+ * `endBlank`, so a series that stops early never feeds the blank mid-run.
+ */
+export interface OfficePartsPlan { stationId: string; printerId: string; parts: OfficeSpan[]; next: number; at: string; endBlankAt?: number }
 export function readPartsPlan(raw: string | null): OfficePartsPlan | null {
   if (!raw) return null;
   try {
@@ -273,8 +278,13 @@ export function readPartsPlan(raw: string | null): OfficePartsPlan | null {
     if (typeof data.stationId !== 'string' || typeof data.printerId !== 'string' || !Array.isArray(data.parts) || !Number.isInteger(data.next)) return null;
     const parts = data.parts.filter((p): p is OfficeSpan => !!p && Number.isInteger(p.from) && Number.isInteger(p.to) && p.from >= 1 && p.to >= p.from);
     if (parts.length !== data.parts.length || data.next! < 0 || data.next! > parts.length) return null;
-    return { stationId: data.stationId, printerId: data.printerId, parts, next: data.next!, at: typeof data.at === 'string' ? data.at : '' };
+    const endBlankAt = Number.isInteger(data.endBlankAt) && data.endBlankAt! >= 1 ? data.endBlankAt : undefined;
+    return { stationId: data.stationId, printerId: data.printerId, parts, next: data.next!, at: typeof data.at === 'string' ? data.at : '', ...(endBlankAt ? { endBlankAt } : {}) };
   } catch { return null; }
+}
+/** True only for the part that ends the whole range of a plan that asked for a blank label at the end. */
+export function partCarriesEndBlank(plan: Pick<OfficePartsPlan, 'endBlankAt'> | null | undefined, part: OfficeSpan): boolean {
+  return !!plan && Number.isInteger(plan.endBlankAt) && part.to === plan.endBlankAt;
 }
 /** Parts still to send, or none. */
 export function remainingParts(plan: OfficePartsPlan | null): OfficeSpan[] {

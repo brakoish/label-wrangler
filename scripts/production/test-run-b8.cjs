@@ -36,8 +36,8 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
 {
   const panel=read('src/components/runs/OfficePiPrinter.tsx');
   const loop=panel.slice(panel.indexOf('const runSeries=async'),panel.indexOf('const startSeries=async'));
-  assert.ok(loop.indexOf('await runEndedWords(i,current.parts.length)')>-1 && loop.indexOf('await runEndedWords(')<loop.indexOf('await submit(part)'),'the run is read again before every part');
-  assert.ok(loop.lastIndexOf('await runEndedWords(')>loop.indexOf('await drawProof(') && loop.lastIndexOf('await runEndedWords(')<loop.indexOf('await submit(part)'),'and read again right before the send, after the check');
+  assert.ok(loop.indexOf('await runEndedWords(i,current.parts.length)')>-1 && loop.indexOf('await runEndedWords(')<loop.indexOf('await submit(part,'),'the run is read again before every part');
+  assert.ok(loop.lastIndexOf('await runEndedWords(')>loop.indexOf('await drawProof(') && loop.lastIndexOf('await runEndedWords(')<loop.indexOf('await submit(part,'),'and read again right before the send, after the check');
   assert.match(panel,/fetch\(`\/api\/runs\/\$\{encodeURIComponent\(runId\)\}`,\{cache:'no-store'\}\)/,'a fresh read of the run');
   assert.match(panel,/couldn’t check the run just now/,'an unreadable run stops the parts too');
   const page=read('src/components/runs/RunPrinter.tsx');

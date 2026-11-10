@@ -27,6 +27,7 @@ for(const file of [
  'scripts/production/test-barcode-fit.cjs',
  'scripts/production/test-run-code-columns.cjs',
  'scripts/production/test-office-progress.cjs',
+ 'scripts/production/test-office-end-blank.cjs',
  'scripts/production/test-sheet-print-chrome.cjs',
  'scripts/production/test-template-previews.cjs',
  'scripts/production/test-run-field-setup.cjs',

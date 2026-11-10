@@ -79,6 +79,8 @@ const REFUSALS: Array<[RegExp, OfficeRefusalReason, string]> = [
     'The office printer is offline, so nothing was sent. Check that the Office Pi and the printer are switched on.'],
   [/too large|exceeds 32 MiB|exceeds the 2 MiB|up to 10,000/i, 'too-large',
     'That’s too many labels for one send. Send a smaller range.'],
+  [/no room for a blank feed/i, 'too-large',
+    'There isn’t room for the blank label at the end of this send. Send a smaller range, or untick the blank label.'],
 ];
 
 /** A refusal from the office API in plain words, with a reason the UI can act on. */
@@ -216,16 +218,35 @@ export function officeStatusLine(
  * The words after a successful send. Never "the office keeps going" when the
  * printer is paused or stopped: say when it will print instead.
  */
-export function queuedNotice(range: string, one: boolean, status: { paused: boolean; stopped: boolean }): string {
+export function queuedNotice(range: string, one: boolean, status: { paused: boolean; stopped: boolean }, blankAfter?: number): string {
   const verb = one ? 'is' : 'are';
-  if (status.stopped) return `${range} ${verb} queued. The office printer is stopped for a check, so ${one ? 'it prints' : 'they print'} once that’s done.`;
-  if (status.paused) return `${range} ${verb} queued. The printer is paused, so nothing prints until someone presses Resume.`;
-  return `${range} ${verb} queued for the office printer. You can leave this page; the office keeps going.`;
+  // One blank label was asked for at the end of this send (never after each part).
+  const blank = blankAfter ? ` One blank label comes out after label ${blankAfter.toLocaleString()}.` : '';
+  if (status.stopped) return `${range} ${verb} queued.${blank} The office printer is stopped for a check, so ${one ? 'it prints' : 'they print'} once that’s done.`;
+  if (status.paused) return `${range} ${verb} queued.${blank} The printer is paused, so nothing prints until someone presses Resume.`;
+  return `${range} ${verb} queued for the office printer.${blank} You can leave this page; the office keeps going.`;
 }
 
 /** A refusal that only someone else can fix: no "Try again" button for it. */
 export function refusalNeedsSomeoneElse(reason: OfficeRefusalReason): boolean {
   return reason === 'no-access' || reason === 'not-paired';
+}
+
+/**
+ * The one request saved on this device before its POST (`lw:office-pending:<runId>`).
+ * It is the request payload itself, the same record main's panel writes and
+ * reads (from, to, reprintOf, endBlank, idempotencyKey, ...), so a rollback or
+ * a roll-forward resumes it unchanged. Only what the panel shows is read here;
+ * a resend always posts the saved record as it is.
+ */
+export interface SavedOfficeRequest { from: number; to: number; reprintOf?: string; endBlank: boolean }
+export function readSavedOfficeRequest(raw: string | null): SavedOfficeRequest | null | 'unreadable' {
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as { from?: unknown; to?: unknown; reprintOf?: unknown; endBlank?: unknown } | null;
+    if (!data || !Number.isInteger(data.from) || !Number.isInteger(data.to)) return 'unreadable';
+    return { from: data.from as number, to: data.to as number, ...(typeof data.reprintOf === 'string' && data.reprintOf ? { reprintOf: data.reprintOf } : {}), endBlank: data.endBlank === true };
+  } catch { return 'unreadable'; }
 }
 
 /** Why the last try of a saved request was "not sure", kept beside it so a refresh says the same thing. */
