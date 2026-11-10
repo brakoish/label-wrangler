@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { canLeaveLocalPrint } from '@/lib/printNavigation';
+import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -20,6 +21,8 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   const isNabis = pathname === '/nabis' || pathname.startsWith('/nabis');
   const isDesigner = pathname === '/designer' || pathname.startsWith('/designer');
   const isFormats = pathname === '/formats' || pathname.startsWith('/formats');
+  useRegisterShell();
+  const banners = useShellBanners();
 
   return (
     <div className="h-screen flex flex-col bg-[#0c0c0e]">
@@ -115,6 +118,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         </div>
       </header>
 
+      {banners}
       {/* Page content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {children}
