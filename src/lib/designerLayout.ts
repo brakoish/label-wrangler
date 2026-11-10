@@ -227,6 +227,11 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
     }
   }
 
+  // A barcode printing over another code ruins that one too: say so by name.
+  const coveredCodes = (over: TemplateElement[]) => {
+    const codes = over.filter((o) => o.type === 'qr' || o.type === 'barcode');
+    return codes.length ? `, so ${codes.length === 1 && over.length === 1 ? 'that' : listNames(codes.map(itemName))} won’t scan either` : '';
+  };
   const problems: LayoutProblem[] = [];
   for (const { el, offLabel, over } of byItem.values()) {
     const fit = fits.get(el.id);
@@ -239,7 +244,7 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
         kind: kinds[0],
         kinds,
         ids: [el.id, ...over.map((o) => o.id)],
-        message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${overText ? `, and ${overText}` : ''}.`,
+        message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${overText ? `, and ${overText}` : ''}${coveredCodes(over)}.`,
         fix: barcodeFitFix(fit) || undefined,
         barcodeFit: fit,
         blocking,
