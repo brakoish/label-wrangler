@@ -458,6 +458,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const queueHasPending=pendingFrom!==undefined && requests.some(r=>r.range_from===pendingFrom && r.range_to===pendingTo && (r.reprint_of ?? '')===pendingReprintOf);
   const queueHasPendingRef=useRef(queueHasPending);
   useEffect(()=>{queueHasPendingRef.current=queueHasPending;},[queueHasPending]);
+  // The queue just listed those labels while another tab's mark is still up
+  // and the lookup can't answer: settle now, not at the next look.
+  useEffect(()=>{if(queueHasPending && lookupMissing)setPendingPhase(p=>p==='other'?'unsure':p);},[queueHasPending,lookupMissing]);
   useEffect(()=>{
     if(pendingFrom===undefined || pendingTo===undefined || posting)return;
     const key=savedKey();
