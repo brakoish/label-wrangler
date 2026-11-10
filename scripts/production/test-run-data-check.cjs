@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 require('../thermal/register.cjs');
 const assert = require('node:assert/strict');
-const { checkRunData, describeBlankIssue, describeRowList, blankRemedy, describeBlankSummary, rememberBlankChoice, hasBlankChoice } = require('../../src/lib/runDataCheck.ts');
+const { blankCheckAllowsPrinting, checkRunData, describeBlankIssue, describeRowList, blankRemedy, describeBlankSummary, rememberBlankChoice, hasBlankChoice } = require('../../src/lib/runDataCheck.ts');
 const { friendlyError, friendlyRenderError, runStatusLabel, printOutputLabel, stripInternalIds, OFFLINE_MESSAGE } = require('../../src/lib/userMessages.ts');
 
 const text = (fieldName, extra = {}) => ({ id: 'txt-' + fieldName, type: 'text', isStatic: false, fieldName, ...extra });
@@ -17,6 +17,7 @@ assert.equal(check.issues.length, 1);
 assert.deepEqual(check.issues[0].rows, [7, 212, 1500, 1600, 1700, 1800]);
 assert.equal(check.issues[0].outcome, 'sample', 'blank barcode with a designer sample prints the sample');
 assert.equal(check.canLeaveBlank, false, 'no "leave blank" override when the generator would print the sample');
+assert.equal(blankCheckAllowsPrinting(check, true), false, 'a stale or forged leave-blank choice cannot unlock a sample-printing run');
 assert.equal(describeBlankIssue(check.issues[0], 2000), 'sku is empty on rows 7, 212, 1500 (and 3 more). Those labels would print the design\'s sample "123456789012" instead.');
 assert.match(blankRemedy(check), /Same on every label/);
 assert.equal(describeBlankSummary(check), '6 labels are missing a value');
@@ -37,6 +38,8 @@ check = checkRunData(plain, { sourceData: [{ n: 'a', note: '' }, { n: 'b', note:
 assert.equal(check.issues[0].outcome, 'blank');
 assert.equal(check.canLeaveBlank, true);
 assert.match(blankRemedy(check), /left blank/);
+assert.equal(blankCheckAllowsPrinting(check, false), false, 'blocked by default');
+assert.equal(blankCheckAllowsPrinting(check, true), true);
 // A barcode without a sample would fail to render, so no override either.
 assert.equal(checkRunData({ elements: [barcode('sku')] }, { sourceData: [{ s: '' }], fieldMappings: { sku: { mode: 'column', csvColumn: 's' } } }).issues[0].outcome, 'error');
 assert.equal(checkRunData({ elements: [barcode('sku')] }, { sourceData: [{ s: '' }], fieldMappings: { sku: { mode: 'column', csvColumn: 's' } } }).canLeaveBlank, false);

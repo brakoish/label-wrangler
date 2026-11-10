@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, Suspense, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense, useCallback, useId } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff } from 'lucide-react';
@@ -18,7 +18,10 @@ import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
-import { RunPrinter } from '@/components/runs/RunPrinter';
+import { BlankValueCheck } from '@/components/runs/BlankValueCheck';
+import { blankCheckAllowsPrinting, checkRunData, describeBlankSummary, rememberBlankChoice } from '@/lib/runDataCheck';
+import { confirmDialog, toast } from '@/components/ui/feedback';
+import { friendlyError, isNetworkError } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
@@ -153,6 +156,8 @@ function NewRunContent() {
   const [imagesByTemplate, setImagesByTemplate] = useState<Record<string, RunImageSelections>>({});
   const [imageBusy, setImageBusy] = useState(false);
   const [staticValues, setStaticValues] = useState<Record<string, string>>({});
+  const staticValuesRef = useRef(staticValues);
+  useEffect(() => { staticValuesRef.current = staticValues; }, [staticValues]);
   const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
   const [hiddenRunFields, setHiddenRunFields] = useState<string[]>([]);
   const [inputMode, setInputMode] = useState<RunInputMode>('manual');
@@ -173,8 +178,10 @@ function NewRunContent() {
   const [saveAsPresetName, setSaveAsPresetName] = useState('');
   const [manualQty, setManualQty] = useState(1);
   const [manualQtyDraft, setManualQtyDraft] = useState('1');
-  const [createdRunId, setCreatedRunId] = useState<string | null>(null);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
+  const [leaveBlank, setLeaveBlank] = useState(false);
+  const [leavingAfterCreate, setLeavingAfterCreate] = useState(false);
+  const formId = useId();
   const [createRunError, setCreateRunError] = useState<string | null>(null);
   // Controls the 'create new template' dialog invoked from the template
   // picker. Kept local to this page so the modal render + submit logic
@@ -369,7 +376,7 @@ function NewRunContent() {
 
   // When a CSV is loaded, attempt to auto-map any column whose header
   // closely matches a dynamic field name.
-  const applyAutoColumnMapping = useCallback((headers: string[], rows: Record<string, string>[]) => {
+  const applyAutoColumnMapping = useCallback((headers: string[], rows: Record<string, string>[], unmatchedFromSheet = false) => {
     if (!template) return;
     setFieldMappings((prev) => {
       const next = { ...prev };
@@ -377,6 +384,11 @@ function NewRunContent() {
         const match = findBestHeaderForField(field, headers, rows);
         if (match) {
           next[field] = { mode: 'column', csvColumn: match };
+        } else if (unmatchedFromSheet && !(staticValuesRef.current[field] ?? '').trim()) {
+          // No matching column: leave the picker empty so the person sees it
+          // needs a choice, instead of quietly switching to an empty
+          // "Same on every label" box.
+          next[field] = { mode: 'column', csvColumn: '' };
         }
       }
       return next;
@@ -399,7 +411,8 @@ function NewRunContent() {
     const parsed = parseCsv(text);
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
-    applyAutoColumnMapping(parsed.headers, parsed.rows);
+    setLeaveBlank(false);
+    applyAutoColumnMapping(parsed.headers, parsed.rows, true);
   };
 
   const searchManifest = useCallback(async (rawQuery: string) => {
@@ -456,6 +469,14 @@ function NewRunContent() {
     () => dynamicFields.filter((f) => !fieldMappings[f] || fieldMappings[f].mode === 'static'),
     [dynamicFields, fieldMappings],
   );
+
+  const fromSheetLabel = inputMode === 'manifest' ? 'From Manifest' : 'From spreadsheet';
+  // Fields with no matching spreadsheet column and no typed value.
+  const unmatchedCsvFields = useMemo(() => dynamicFields.filter((f) => {
+    const mapping = fieldMappings[f];
+    if (mapping?.mode === 'column') return !mapping.csvColumn || !csvHeaders.includes(mapping.csvColumn);
+    return !(staticValues[f] ?? '').trim();
+  }), [dynamicFields, fieldMappings, csvHeaders, staticValues]);
 
   // Pick the pasteField default once template loads.
   useEffect(() => {
@@ -582,14 +603,75 @@ function NewRunContent() {
 
   const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
 
+  // The exact data the run will be created with, so the whole-run blank check
+  // sees what the printer will see (hidden fields included: they would print
+  // the design's sample text).
+  const runDataForCheck = useMemo(() => {
+    let mappings: Record<string, FieldMapping> = fieldMappings;
+    let rows: Record<string, string>[] = sourceData;
+    if (inputMode === 'manual') {
+      mappings = Object.fromEntries(dynamicFields.map((f) => [f, { mode: 'static' } as FieldMapping]));
+      rows = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
+    } else if (inputMode === 'paste' && pasteField) {
+      mappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
+    }
+    mappings = Object.fromEntries(Object.entries(mappings).filter(([field]) => visibleFieldSet.has(field)));
+    return { sourceData: rows, fieldMappings: mappings, staticValues: visibleStaticValues, mappedField: inputMode === 'paste' ? pasteField : null };
+  }, [fieldMappings, sourceData, inputMode, dynamicFields, manualQty, pasteField, visibleFieldSet, visibleStaticValues]);
+  const blankCheck = useMemo(() => checkRunData(previewTemplate ?? template ?? { elements: [] }, runDataForCheck), [previewTemplate, template, runDataForCheck]);
+  useEffect(() => { setLeaveBlank(false); }, [blankCheck.signature]);
+  const hasData = inputMode === 'manual' || labelCount > 0;
+  const blanksOk = !hasData || blankCheckAllowsPrinting(blankCheck, leaveBlank);
+
   const canCreate =
     !imageBusy &&
     name.trim().length > 0 &&
     !!template &&
     !!format &&
+    blanksOk &&
     (inputMode === 'manual'
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
       : labelCount > 0 && (inputMode === 'csv' || inputMode === 'manifest' ? variableFields.length > 0 : !!pasteField));
+
+  // One plain reason, shown next to the Start button, for why it is disabled.
+  const blockReason = !name.trim()
+    ? 'Give this run a name to start.'
+    : !template
+      ? 'Choose a label design to start.'
+      : !format
+        ? 'This design has no label size. Open it in the designer to pick one.'
+        : imageBusy
+          ? 'Waiting for the picture to finish uploading…'
+          : inputMode === 'manual' && !dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0)
+            ? 'Fill in every field to start.'
+            : inputMode !== 'manual' && labelCount === 0
+              ? inputMode === 'csv' ? 'Upload a spreadsheet (CSV) to start.' : inputMode === 'paste' ? 'Paste at least one value to start.' : 'Search and pick a Manifest package to start.'
+              : (inputMode === 'csv' || inputMode === 'manifest') && variableFields.length === 0
+                ? 'Pick a spreadsheet column for at least one field.'
+                : inputMode === 'paste' && !pasteField
+                  ? 'Choose which field the pasted values fill.'
+                  : !blanksOk
+                    ? `${describeBlankSummary(blankCheck)} — see the list above Start.`
+                    : format.type === 'thermal' && previewState.status === 'error'
+                      ? 'Fix the preview error above to start.'
+                      : format.type === 'thermal' && previewState.status === 'loading'
+                        ? 'Checking the label preview…'
+                        : format.type === 'thermal' && previewState.status === 'empty'
+                          ? 'No label output was generated. Check the design and data.'
+                          : null;
+
+  // Leaving a half-filled run loses the spreadsheet and settings: ask first.
+  const formDirty = !leavingAfterCreate && (name.trim().length > 0 || !!templateId || csvRows.length > 0 || pasteText.trim().length > 0 || manifestRows.length > 0);
+  const confirmLeave = useCallback(async () => {
+    if (!formDirty) return true;
+    return confirmDialog({ title: 'Leave this new run?', body: 'Your spreadsheet and settings will be lost.', confirmLabel: 'Leave', cancelLabel: 'Stay here', danger: true });
+  }, [formDirty]);
+  useEffect(() => {
+    if (!formDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [formDirty]);
 
   const compactSourceDataForRun = (
     rows: Record<string, string>[],
@@ -645,10 +727,13 @@ function NewRunContent() {
         status: autoStart ? 'queued' : 'draft',
       });
       if (presetId) void updatePreset(presetId, { touch: true });
+      if (blankCheck.issues.length && leaveBlank) rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, run.id, blankCheck.signature);
       return run;
     } catch (error) {
       console.error('Error creating run:', error);
-      setCreateRunError(error instanceof Error ? error.message : 'Could not start this run.');
+      setCreateRunError(isNetworkError(error)
+        ? "Couldn't reach Label Wrangler — check your internet and press Start run again. Nothing was printed and your data is still here."
+        : friendlyError(error, 'Could not start this run. Nothing was printed and your data is still here.'));
       return null;
     } finally {
       setIsCreatingRun(false);
@@ -657,7 +742,11 @@ function NewRunContent() {
 
   const handleSaveAndPrint = async () => {
     const run = await handleCreateRun(true);
-    if (run) setCreatedRunId(run.id);
+    if (run) {
+      // The run has its own address now, so a refresh or Back keeps it.
+      setLeavingAfterCreate(true);
+      router.replace(`/runs/${run.id}`);
+    }
   };
 
   // Generate + download a blank CSV with headers for every template dynamic
@@ -689,24 +778,18 @@ function NewRunContent() {
       fieldMappings: Object.fromEntries(Object.entries(fieldMappings).filter(([field]) => visibleFieldSet.has(field))),
     });
     setSaveAsPresetName('');
-    alert(`Preset "${preset.name}" saved.`);
+    toast(`Preset "${preset.name}" saved.`);
   };
-
-  if (createdRunId) {
-    return (
-      <AppShell>
-        <RunPrinter runId={createdRunId} onDone={() => router.push(`/runs/${createdRunId}`)} />
-      </AppShell>
-    );
-  }
 
   const setupComplete = name.trim().length > 0 && !!template && !!format;
   const fieldsComplete = !!template && allDynamicFields.length > 0 && dynamicFields.length > 0;
-  const dataComplete = inputMode === 'manual'
+  // Data is only "done" once there is a design with fields and real values
+  // for them (an empty field list used to read as ✓).
+  const dataComplete = fieldsComplete && blanksOk && (inputMode === 'manual'
     ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
     : inputMode === 'paste'
       ? pasteText.trim().length > 0 && !!pasteField
-      : labelCount > 0 && variableFields.length > 0;
+      : labelCount > 0 && variableFields.length > 0);
   const workflowSteps = [
     { label: 'Setup', done: setupComplete },
     { label: 'Fields', done: fieldsComplete },
@@ -717,10 +800,10 @@ function NewRunContent() {
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
   // action is needed here.
   return (
-    <AppShell>
+    <AppShell beforeLeave={confirmLeave}>
       <PageTitle title={name.trim() ? `New Run · ${name.trim()}` : 'New Run'} />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-[1180px] mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-5 pb-28">
+        <div className="max-w-[1180px] mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-5 pb-48 sm:pb-28">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Print workflow</p>
@@ -754,8 +837,9 @@ function NewRunContent() {
             />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-zinc-400 block mb-1.5">Run name</label>
+                <label htmlFor={`${formId}-name`} className="text-xs text-zinc-400 block mb-1.5">Run name</label>
                 <input
+                  id={`${formId}-name`}
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -765,7 +849,7 @@ function NewRunContent() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs text-zinc-400">Template</label>
+                  <span id={`${formId}-template`} className="text-xs text-zinc-400">Label design</span>
                   <div className="flex items-center gap-2">
                     {/* Edit the currently-selected template without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
@@ -773,33 +857,34 @@ function NewRunContent() {
                       <Link
                         href={`/designer?id=${template.id}&returnTo=${encodeURIComponent('/runs/new')}`}
                         className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-amber-400 transition-colors"
-                        title="Open this template in the designer"
+                        title="Open this design in the designer"
                       >
-                        <Pencil className="w-3 h-3" /> Edit
+                        <Pencil className="w-3 h-3" /> Edit design
                       </Link>
                     )}
                     <button
                       type="button"
                       onClick={() => setShowNewTemplateDialog(true)}
                       disabled={formats.length === 0}
-                      title={formats.length === 0 ? 'Create a format first' : 'Create a new template inline'}
+                      title={formats.length === 0 ? 'Create a label size first' : 'Create a new label design'}
                       className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-amber-400 transition-colors disabled:opacity-40 disabled:hover:text-zinc-500"
                     >
-                      <Plus className="w-3 h-3" /> New template
+                      <Plus className="w-3 h-3" /> New design
                     </button>
                   </div>
                 </div>
                 {templates.length === 0 ? (
                   <p className="text-xs text-zinc-500 py-2">
-                    No templates yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="text-amber-400 hover:underline disabled:opacity-40">Create one</button>
-                    {formats.length === 0 && <> (but you need a <Link href="/formats" className="text-amber-400 hover:underline">format</Link> first)</>}
+                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="text-amber-400 hover:underline disabled:opacity-40">Create one</button>
+                    {formats.length === 0 && <> (you need a <Link href="/formats" className="text-amber-400 hover:underline">label size</Link> first)</>}
                     .
                   </p>
                 ) : (
                   <CustomSelect
+                    aria-labelledby={`${formId}-template`}
                     value={templateId}
                     onChange={setTemplateId}
-                    placeholder="Select template..."
+                    placeholder="Choose a label design…"
                     options={templates.filter((t) => !t.archivedAt || t.id === templateId).map((t) => {
                       const f = formats.find((x) => x.id === t.formatId);
                       return {
@@ -815,7 +900,7 @@ function NewRunContent() {
             {template && format && (
               <div className="border-t border-zinc-800/60 pt-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Template Preview</span>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Design preview</span>
                   <span className="truncate text-xs text-zinc-500" title={`${template.name} · ${format.name}`}>
                     {template.name} · {format.name}
                   </span>
@@ -958,8 +1043,9 @@ function NewRunContent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {dynamicFields.map((field) => (
                         <div key={field}>
-                          <label className="text-xs text-zinc-400 block mb-1.5">{field}</label>
+                          <label htmlFor={`${formId}-manual-${field}`} className="text-xs text-zinc-400 block mb-1.5">{field}</label>
                           <input
+                            id={`${formId}-manual-${field}`}
                             type="text"
                             value={staticValues[field] ?? ''}
                             onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
@@ -970,8 +1056,9 @@ function NewRunContent() {
                       ))}
                     </div>
                     <div className="flex items-center gap-3 pt-1">
-                      <label className="text-xs text-zinc-400">Quantity</label>
+                      <label htmlFor={`${formId}-qty`} className="text-xs text-zinc-400">Quantity</label>
                       <input
+                        id={`${formId}-qty`}
                         type="number"
                         min={1}
                         max={9999}
@@ -999,8 +1086,9 @@ function NewRunContent() {
                 ) : inputMode === 'paste' ? (
                   <>
                     <div>
-                      <label className="text-xs text-zinc-400 block mb-1.5">One value per line</label>
+                      <label htmlFor={`${formId}-paste`} className="text-xs text-zinc-400 block mb-1.5">One value per line</label>
                       <textarea
+                        id={`${formId}-paste`}
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
                         rows={7}
@@ -1009,8 +1097,9 @@ function NewRunContent() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-zinc-400 block mb-1.5">Fill which field with these values?</label>
+                      <span id={`${formId}-paste-field`} className="text-xs text-zinc-400 block mb-1.5">Fill which field with these values?</span>
                       <CustomSelect
+                        aria-labelledby={`${formId}-paste-field`}
                         value={pasteField ?? ''}
                         onChange={(v) => setPasteField(v || null)}
                         options={dynamicFields.map((f) => ({ value: f, label: f }))}
@@ -1032,7 +1121,7 @@ function NewRunContent() {
                         title="Download a blank CSV with headers matching your template fields"
                         className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-400 transition-colors disabled:opacity-40"
                       >
-                        <Download className="w-4 h-4" /> CSV Template
+                        <Download className="w-4 h-4" /> Blank spreadsheet
                       </button>
                     </div>
                     <input
@@ -1064,6 +1153,7 @@ function NewRunContent() {
                           if (e.key === 'Enter') void handleManifestSearch();
                         }}
                         placeholder="Search package tag, item, or batch"
+                        aria-label="Search Manifest packages"
                         className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:outline-none focus:border-amber-500/40"
                       />
                       <button
@@ -1159,35 +1249,52 @@ function NewRunContent() {
                   <SectionHeader
                     number="3a"
                     title="Field mapping"
-                    detail={`Match template fields to ${inputMode === 'manifest' ? 'Manifest' : 'CSV'} columns.`}
+                    detail={`Match each field on the label to a ${inputMode === 'manifest' ? 'Manifest field' : 'column in your spreadsheet'}.`}
                   />
+                  {inputMode === 'csv' && unmatchedCsvFields.length > 0 && (
+                    <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100 space-y-1">
+                      <p className="text-sm font-semibold text-amber-200">
+                        We couldn&apos;t find {unmatchedCsvFields.length === 1 ? 'a column' : 'columns'} called {unmatchedCsvFields.map((f) => `"${f}"`).join(unmatchedCsvFields.length === 2 ? ' and ' : ', ')} in your file.
+                      </p>
+                      <p>Your file has: {csvHeaders.join(', ') || '(no columns)'}.</p>
+                      <p>Pick which column fills each field below, or choose &ldquo;Same on every label&rdquo; and type one value.</p>
+                    </div>
+                  )}
                   <p className="text-xs text-zinc-500">
-                    For each dynamic field, pick <span className="text-zinc-300">Static</span> (one value for all labels) or
-                    <span className="text-zinc-300"> Row field</span> (a different value per row from {inputMode === 'manifest' ? 'Manifest' : 'your CSV'}).
+                    <span className="text-zinc-300">Same on every label</span> prints one value you type. <span className="text-zinc-300">{fromSheetLabel}</span> prints a different value on each label.
                   </p>
                   <div className="space-y-2">
                     {dynamicFields.map((field) => {
                       const mapping = fieldMappings[field] ?? { mode: 'static' };
+                      const needsChoice = mapping.mode === 'column' ? !mapping.csvColumn : !(staticValues[field] ?? '').trim();
                       return (
-                        <div key={field} className="flex items-center gap-3 p-3 rounded-lg bg-zinc-950 border border-zinc-800/60">
-                          <div className="w-36 shrink-0 font-medium text-sm text-zinc-200">{field}</div>
-                          <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
+                        <div key={field} className={`flex flex-col gap-2 p-3 rounded-lg bg-zinc-950 border sm:flex-row sm:items-center sm:gap-3 ${needsChoice ? 'border-amber-500/40' : 'border-zinc-800/60'}`}>
+                          <div id={`${formId}-map-${field}`} className="w-36 shrink-0 font-medium text-sm text-zinc-200 break-words">{field}</div>
+                          <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="flex w-fit items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
                             <button
+                              type="button"
+                              role="radio"
+                              aria-checked={mapping.mode === 'static'}
                               onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'static' } }))}
-                              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${mapping.mode === 'static' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500'}`}
+                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${mapping.mode === 'static' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500'}`}
                             >
-                              Static
+                              Same on every label
                             </button>
                             <button
-                              onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? rowHeaders[0] } }))}
-                              className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
+                              type="button"
+                              role="radio"
+                              aria-checked={mapping.mode === 'column'}
+                              onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? '' } }))}
+                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
                             >
-                              Row
+                              {fromSheetLabel}
                             </button>
                           </div>
                           {mapping.mode === 'column' ? (
                             <div className="flex-1 min-w-0">
                               <CustomSelect
+                                aria-label={`Column for ${field}`}
+                                placeholder="Choose a column…"
                                 value={mapping.csvColumn ?? ''}
                                 onChange={(v) => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: v } }))}
                                 options={inputMode === 'manifest' ? MANIFEST_FIELD_OPTIONS : rowHeaders.map((h) => ({ value: h, label: h }))}
@@ -1196,10 +1303,11 @@ function NewRunContent() {
                           ) : (
                             <input
                               type="text"
+                              aria-label={`Value for ${field} on every label`}
                               value={staticValues[field] ?? ''}
                               onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
-                              placeholder={`Static value for ${field}`}
-                              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:border-amber-500/40"
+                              placeholder="Type the value for every label"
+                              className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:border-amber-500/40"
                             />
                           )}
                         </div>
@@ -1214,14 +1322,15 @@ function NewRunContent() {
                 <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
                   <SectionHeader
                     number="3a"
-                    title="Static fields"
+                    title="Same on every label"
                     detail="Values here print the same on every label."
                   />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {staticFieldNames.filter((f) => f !== pasteField).map((f) => (
                       <div key={f}>
-                        <label className="text-xs text-zinc-400 block mb-1.5">{f}</label>
+                        <label htmlFor={`${formId}-static-${f}`} className="text-xs text-zinc-400 block mb-1.5">{f}</label>
                         <input
+                          id={`${formId}-static-${f}`}
                           type="text"
                           value={staticValues[f] ?? ''}
                           onChange={(e) => setStaticValues((s) => ({ ...s, [f]: e.target.value }))}
@@ -1265,7 +1374,7 @@ function NewRunContent() {
                         </button>
                       </div>
                     ) : (
-                      <span className="text-[11px] text-zinc-500">Showing defaults — add data for per-label preview</span>
+                      <span className="text-[11px] text-zinc-500">Showing the design&apos;s sample text — add data to see each label</span>
                     )}
                   </div>
                   <div className="rounded-xl bg-zinc-950/60 p-4">
@@ -1306,16 +1415,7 @@ function NewRunContent() {
                     <Save className="w-3.5 h-3.5" /> Save
                   </button>
                 </div>
-                {!canCreate && (
-                  <p className="text-xs text-amber-500 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    {inputMode === 'manual'
-                      ? 'Fill in all dynamic fields to proceed.'
-                      : (inputMode === 'csv' || inputMode === 'manifest') && variableFields.length === 0
-                        ? 'Map at least one field to a row field to proceed.'
-                        : 'Need a run name, template, and data to proceed.'}
-                  </p>
-                )}
+                {hasData && template && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} />}
                 {format?.type === 'thermal' && (
                   <p className="text-xs text-amber-400">
                     {previewState.status === 'error'
@@ -1323,23 +1423,10 @@ function NewRunContent() {
                       : previewState.status === 'loading'
                         ? 'Rendering current label before starting…'
                         : previewState.status === 'empty'
-                          ? 'Cannot start: no label output was generated. Check the template and data.'
-                          : 'Current label preview only — other rows have not been validated.'}
+                          ? 'Cannot start: no label output was generated. Check the design and data.'
+                          : <span className="text-zinc-400">Fit and layout are checked for the label shown; other rows have not been validated for fit. Step through a few with Prev / Next.</span>}
                   </p>
                 )}
-                {createRunError && (
-                  <p className="text-xs text-red-400 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    {createRunError}
-                  </p>
-                )}
-                <button
-                  onClick={handleSaveAndPrint}
-                  disabled={!canCreate || !previewReady || isCreatingRun}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Play className="w-4 h-4" /> {isCreatingRun ? 'Starting...' : `Start Run (${labelCount} label${labelCount === 1 ? '' : 's'})`}
-                </button>
               </section>
               <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-[#0c0c0e]/95 px-4 py-3 backdrop-blur">
                 <div className="mx-auto flex max-w-[1180px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1348,16 +1435,27 @@ function NewRunContent() {
                       {name.trim() || 'Untitled run'}
                     </p>
                     <p className="text-xs text-zinc-500">
-                      {template?.name || 'No template selected'} · {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}
+                      {template?.name || 'No design selected'} · {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}
                     </p>
                   </div>
-                  <button
-                    onClick={handleSaveAndPrint}
-                    disabled={!canCreate || !previewReady || isCreatingRun}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-                  >
-                    <Play className="h-4 w-4" /> {isCreatingRun ? 'Starting...' : 'Start run'}
-                  </button>
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    {createRunError ? (
+                      <p role="alert" className="flex items-start gap-1.5 text-xs text-red-400 sm:max-w-md">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {createRunError}
+                      </p>
+                    ) : blockReason && !isCreatingRun ? (
+                      <p role="status" className="flex items-start gap-1.5 text-xs text-amber-400 sm:max-w-md">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {blockReason}
+                      </p>
+                    ) : null}
+                    <button
+                      onClick={handleSaveAndPrint}
+                      disabled={!canCreate || !previewReady || isCreatingRun}
+                      className="flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                    >
+                      <Play className="h-4 w-4" /> {isCreatingRun ? 'Starting…' : `Start run (${labelCount.toLocaleString()} label${labelCount === 1 ? '' : 's'})`}
+                    </button>
+                  </div>
                 </div>
               </div>
             </>

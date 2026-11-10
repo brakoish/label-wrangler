@@ -176,3 +176,8 @@ export function hasBlankChoice(storage: Pick<Storage, 'getItem'> | null | undefi
   if (!check.canLeaveBlank) return false;
   try { return storage?.getItem(ACK_PREFIX + runId) === check.signature; } catch { return false; }
 }
+
+/** True when printing may start: no blanks, or a deliberate, valid "leave blank" choice. */
+export function blankCheckAllowsPrinting(check: RunDataCheck, leaveBlank: boolean) {
+  return check.issues.length === 0 || (check.canLeaveBlank && leaveBlank);
+}
