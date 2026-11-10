@@ -451,7 +451,10 @@ function NewRunContent() {
   // Parts left off this run: picked by the person, or left off by the Nabis
   // tick above. They are not filled, checked or drawn, and the run's saved
   // design leaves them out, so nothing prints there.
-  const leftOffFields = useMemo(() => new Set([...hiddenRunFields, ...(nabisTicked ? nabisGapFields : [])].filter((field) => allDynamicFields.includes(field))), [hiddenRunFields, nabisTicked, nabisGapFields, allDynamicFields]);
+  // Keyed by the names, not the array: the Nabis auto-mapping effect re-runs
+  // whenever dynamicFields changes identity, so it must only change with them.
+  const leftOffKey = Array.from(new Set([...hiddenRunFields, ...(nabisTicked ? nabisGapFields : [])].filter((field) => allDynamicFields.includes(field)))).sort().join('\n');
+  const leftOffFields = useMemo(() => new Set(leftOffKey ? leftOffKey.split('\n') : []), [leftOffKey]);
   const dynamicFields = useMemo(
     () => allDynamicFields.filter((field) => !leftOffFields.has(field)),
     [allDynamicFields, leftOffFields],
