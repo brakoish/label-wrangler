@@ -20,7 +20,7 @@ export default function LoginPage(){
       .catch(()=>{}); // Leave the normal login form available on failure.
     return ()=>controller.abort();
   },[]);
-  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><PageTitle title="Sign in" /><form noValidate className="card w-full max-w-sm p-6 space-y-4" onSubmit={async(e)=>{
+  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><PageTitle title="Sign in" /><form noValidate className="w-full max-w-sm space-y-4 p-2 sm:p-6" onSubmit={async(e)=>{
     e.preventDefault();
     const form=new FormData(e.currentTarget);
     // Say what is missing in the page's own words, next to the field.
@@ -40,6 +40,8 @@ export default function LoginPage(){
       window.location.assign(nextPath());
     }catch(err){setError(isNetworkError(err)?OFFLINE_MESSAGE:err instanceof Error?err.message:'Sign-in didn\u2019t work. Try again.');setBusy(false);}
   }}>
+    {/* The same mark as the nav bar, so sign-in looks like the app it opens. */}
+    <img src="/logo.png" alt="" aria-hidden="true" width={48} height={48} className="size-12" style={{ filter: 'brightness(0) invert(1)' }} />
     <h1 className="text-xl font-semibold text-zinc-100">Label Wrangler</h1>
     <p className="-mt-2 text-sm text-zinc-400">Sign in with your office account.</p>
     <label htmlFor="login-username" className="field-label">Username</label>
@@ -48,7 +50,7 @@ export default function LoginPage(){
     <label htmlFor="login-password" className="field-label">Password</label>
     <input id="login-password" required name="password" type="password" autoComplete="current-password" aria-invalid={missing.password||undefined} aria-describedby={missing.password?'login-password-missing':undefined} onInput={()=>missing.password&&setMissing(m=>({...m,password:false}))} className="field -mt-2.5 text-base" />
     {missing.password && <p id="login-password-missing" className="-mt-2.5 text-sm text-red-400">Enter your password.</p>}
-    <label className="flex min-h-control-sm items-center gap-2 text-sm text-zinc-300"><input name="staySignedIn" type="checkbox" className="size-4 accent-amber-500" />Stay signed in for 30 days</label>
+    <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-300"><input name="staySignedIn" type="checkbox" className="size-5 accent-amber-500" />Stay signed in for 30 days</label>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <button disabled={busy} className="btn btn-primary w-full">{busy?'Signing in…':'Sign in'}</button>
     <p className="text-sm text-zinc-400">Forgot your password? Ask your admin to reset it.</p>

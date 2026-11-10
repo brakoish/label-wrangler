@@ -17,6 +17,8 @@ import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
 import { Menu } from '@/components/ui/Menu';
+import { EmptyState } from '@/components/EmptyState';
+import { FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
 import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
 
 interface TemplateListProps {
@@ -32,6 +34,8 @@ interface TemplateListProps {
   /** When the whole list failed while a design link was opening: one error, one Try again for both. */
   openingName?: string;
   onRetryOpen?: () => void;
+  /** Extra tools under the list (the admin import fold); centred inside the empty state. */
+  extra?: ReactNode;
 }
 
 export function TemplateList({
@@ -42,6 +46,7 @@ export function TemplateList({
   onDuplicateTemplate,
   onRenameTemplate,
   onNewTemplate,
+  extra,
   notice,
   openingName,
   onRetryOpen,
@@ -76,7 +81,7 @@ export function TemplateList({
       {!(listError && templates.length === 0) && notice}
       <div className="mb-5 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>
-        <button type="button" onClick={onNewTemplate} className={`btn ${listError && templates.length === 0 ? 'btn-secondary' : 'btn-primary'}`}>
+        <button type="button" onClick={onNewTemplate} className="btn btn-primary">
           <Plus className="size-4" aria-hidden="true" /> New design
         </button>
       </div>
@@ -104,20 +109,17 @@ export function TemplateList({
           <span className="sr-only">Loading designs…</span>
         </div>
       ) : listError && templates.length === 0 ? (
-        <div role="alert" className="py-16 text-center space-y-3">
-          <h2 className="text-zinc-100 font-semibold text-lg">{openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}</h2>
-          <p className="text-zinc-400 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
-          <button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-primary">{listLoading ? 'Trying again…' : 'Try again'}</button>
-        </div>
+        <EmptyState
+          tone="error"
+          title={openingName ? `We couldn’t open ${openingName}` : 'We couldn’t load your designs'}
+          body={friendlyError(listError, 'Something went wrong.')}
+          actions={<button type="button" disabled={listLoading} onClick={() => { void useTemplateStore.getState().fetchTemplates(); onRetryOpen?.(); }} className="btn btn-secondary">{listLoading ? 'Trying again…' : 'Try again'}</button>}
+        />
       ) : visibleTemplates.length === 0 ? (
-        <div className="flex items-center justify-center py-24">
-          <div className="text-center max-w-sm">
-            <h2 className="text-zinc-100 font-semibold text-lg">{isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}</h2>
-            <p className="text-zinc-400 text-sm mt-1">
-              {isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          title={isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}
+          body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
+        >{templates.length === 0 ? extra : null}</EmptyState>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
 
@@ -138,6 +140,7 @@ export function TemplateList({
           })}
         </div>
       )}
+      {extra && !(listError && templates.length === 0) && templates.length > 0 && <div className="pt-6">{extra}</div>}
     </div>
   );
 }
@@ -176,9 +179,9 @@ function CardPreview({ template, format }: { template: LabelTemplate; format?: L
   }, [visible, template, attempt]);
   const full = template.summaryOnly ? loaded : template;
   return <div ref={ref} className="w-full h-full flex items-center justify-center">
-    {visible && full ? (full.elements.length ? <MiniPreview template={full} format={format} /> : <span className="text-zinc-500 text-xs">Empty template</span>)
-      : error ? <div className="text-xs text-zinc-400 text-center"><p role="status">{error}</p><button className="btn btn-secondary btn-sm mt-2" onClick={event => { event.stopPropagation(); setError(''); setAttempt(value => value + 1); }}>Retry preview</button></div>
-      : <span role="status" className="text-zinc-500 text-xs">{visible ? 'Loading preview…' : 'Preview loads when visible'}</span>}
+    {visible && full ? (full.elements.length ? <MiniPreview template={full} format={format} /> : <span className="text-zinc-400 text-xs">No items yet</span>)
+      : error ? <div className="text-xs text-zinc-400 text-center"><p role="status">{error}</p><button className="btn btn-secondary btn-sm mt-2" onClick={event => { event.stopPropagation(); setError(''); setAttempt(value => value + 1); }}>Try again</button></div>
+      : <span role="status" className="text-zinc-400 text-xs">{visible ? 'Loading preview…' : 'Preview loads when visible'}</span>}
   </div>;
 }
 
@@ -189,7 +192,6 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
   const [sheetSvg, setSheetSvg] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [draftWarning, setDraftWarning] = useState('');
-  const [attempt, setAttempt] = useState(0);
   const sampleData = useMemo(() => designSampleValues(template.elements), [template]);
 
   useEffect(() => {
@@ -215,7 +217,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       .catch((error) => { if (active) setPreviewError(friendlyRenderFailure(error, 'The preview could not be drawn.', template.elements, format.labelsAcross || 1, sampleData, format)); });
 
     return () => { active = false; };
-  }, [format, sampleData, template, attempt]);
+  }, [format, sampleData, template]);
 
   if (!format) return <div className="w-full h-full bg-zinc-900 rounded-lg" />;
 
@@ -233,7 +235,9 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
     );
   }
 
-  if (previewError) return <div className="text-xs text-zinc-400 p-3"><p role="status">{previewError}</p><button className="btn btn-secondary btn-sm mt-2" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1); }}>Try again</button></div>;
+  // The same design fails the same way every time, so the way out is the
+  // designer (the click opens the design), not another try.
+  if (previewError) return <div className="text-xs text-zinc-400 p-3"><p role="status">{previewError}</p><span className="link mt-1 inline-flex min-h-control-sm items-center gap-1.5 text-sm"><Pencil className="size-4" aria-hidden="true" />{FIX_IN_DESIGNER}</span></div>;
   if (format.type !== 'thermal' && sheetSvg) {
     const { vbW, vbH } = labelViewBox(format);
     return (
@@ -243,7 +247,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       </svg>
     );
   }
-  return <p role="status" className="text-xs text-zinc-500 p-3">Loading preview…</p>;
+  return <p role="status" className="text-xs text-zinc-400 p-3">Loading preview…</p>;
 }
 
 function sheetBody(svg: string): string {
@@ -276,7 +280,7 @@ function TemplateCard({
   return (
     <div
       onClick={onSelect}
-      className="card cursor-pointer overflow-hidden transition-colors hover:border-zinc-700"
+      className="group cursor-pointer overflow-hidden rounded-xl bg-zinc-900 transition-colors hover:bg-zinc-800/70"
     >
       {/* Preview area */}
       <div className="h-[140px] bg-zinc-950 p-3">
@@ -307,13 +311,12 @@ function TemplateCard({
           </div>
         </div>
 
-        <p className="truncate text-xs text-zinc-400">
-          {format && !formatName.includes(`${format.width}"`) ? `${formatName} · ${format.width}" × ${format.height}"` : formatName}
+        {/* Two short facts, wrapped, never cut off mid-phrase. */}
+        <p className="text-xs text-zinc-400 break-words">
+          {format && !formatName.includes(`${format.width}"`) ? `${formatName}, ${format.width}" × ${format.height}"` : formatName}
         </p>
-        <p className="mt-0.5 truncate text-xs text-zinc-500">
-          {partCount} {partCount === 1 ? 'item' : 'items'}
-          {dynamicCount > 0 && <> · {dynamicCount === partCount ? (dynamicCount === 1 ? 'changes per label' : 'all change per label') : `${dynamicCount} of them change per label`}</>}
-          {' · '}{new Date(template.updatedAt).toLocaleDateString()}
+        <p className="mt-0.5 text-xs text-zinc-400">
+          {partCount} {partCount === 1 ? 'item' : 'items'}{dynamicCount > 0 ? `, ${dynamicCount} change${dynamicCount === 1 ? 's' : ''} per label` : ''}
         </p>
       </div>
     </div>
@@ -377,18 +380,18 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
             />
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="dialog-actions pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-secondary flex-1"
+              className="btn btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim()}
-              className="btn btn-primary flex-1"
+              className="btn btn-primary"
             >
               Save
             </button>
@@ -457,8 +460,8 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
           <div>
             <label id={`${fieldId}-size`} className="field-label mb-1.5">Label size</label>
             {formats.length === 0 ? (
-              <p className="text-sm text-zinc-500 py-2">
-                No label sizes yet — <Link href="/formats" className="text-amber-300 underline underline-offset-2">add a label size</Link>{' '}first
+              <p className="text-sm text-zinc-400 py-2">
+                No label sizes yet — <Link href="/formats" className="link">add a label size</Link>{' '}first
               </p>
             ) : (
               <CustomSelect
@@ -490,18 +493,18 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             </div>
           </div>}
 
-          <div className="flex gap-3 pt-2">
+          <div className="dialog-actions pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-secondary flex-1"
+              className="btn btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || !formatId}
-              className="btn btn-primary flex-1"
+              className="btn btn-primary"
             >
               Create
             </button>
@@ -576,7 +579,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
           <div>
             <label id={`${fieldId}-size`} className="field-label mb-1.5">Label size for the copy</label>
             {formats.length === 0 ? (
-              <p className="text-sm text-zinc-500 py-2">No label sizes yet.</p>
+              <p className="text-sm text-zinc-400 py-2">No label sizes yet.</p>
             ) : (
               <CustomSelect
                 value={formatId}
@@ -593,12 +596,12 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
           </div>
 
           {isDifferentFormat && targetFormat && (
-            <label className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3 cursor-pointer transition-colors hover:border-zinc-700">
+            <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg py-2">
               <input
                 type="checkbox"
                 checked={scale}
                 onChange={(e) => setScale(e.target.checked)}
-                className="mt-0.5 accent-amber-500"
+                className="mt-0.5 size-5 shrink-0 accent-amber-500"
               />
               <div className="flex-1">
                 <div className="text-sm font-medium text-zinc-100">Resize everything to fit the new size</div>
@@ -609,18 +612,18 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
             </label>
           )}
 
-          <div className="flex gap-3 pt-2">
+          <div className="dialog-actions pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-secondary flex-1"
+              className="btn btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || !formatId}
-              className="btn btn-primary flex-1"
+              className="btn btn-primary"
             >
               Duplicate
             </button>

@@ -18,7 +18,7 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
       aria-current={isSelected ? 'true' : undefined}
       className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
         isSelected
-          ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
+          ? 'bg-zinc-800'
           : 'hover:bg-zinc-900'
       }`}
     >
@@ -35,7 +35,7 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
             : `Sheet of ${format.labelsPerSheet}`}
         </span>
         {format.description && (
-          <span className="mt-0.5 block truncate text-xs text-zinc-500">{format.description}</span>
+          <span className="mt-0.5 block truncate text-xs text-zinc-400">{format.description}</span>
         )}
       </span>
     </button>

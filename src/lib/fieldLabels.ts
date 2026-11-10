@@ -143,7 +143,7 @@ export function spreadsheetRow(labelNumber: number): number {
  */
 export function runSourceWords(source: string | null | undefined): { label: string; rowWord: string } {
   if (source === 'csv') return { label: 'From a spreadsheet', rowWord: 'spreadsheet' };
-  if (source === 'manifest') return { label: 'From Manifest', rowWord: 'Manifest' };
+  if (source === 'manifest') return { label: 'From Nabis', rowWord: 'Nabis' };
   if (source === 'manual') return { label: 'Typed in', rowWord: 'typed' };
   return { label: 'Pasted in', rowWord: 'pasted' };
 }
@@ -155,6 +155,6 @@ export function columnSourceWords(source: string | null | undefined, column: str
   if (column === '__paste__') return { text: 'Pasted values', title: '' };
   const name = friendlyFieldName(base);
   const where = runSourceWords(source).rowWord;
-  const text = source === 'manifest' ? `From Manifest: ${name}` : `From the ${where} column ${name}${plain ? ' (number only)' : ''}`;
+  const text = source === 'manifest' ? `From Nabis: ${name}` : `From the ${where} column ${name}${plain ? ' (number only)' : ''}`;
   return { text, title: base };
 }

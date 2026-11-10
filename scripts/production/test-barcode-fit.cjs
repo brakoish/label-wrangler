@@ -11,7 +11,7 @@ const { barcodeFit, nativeBarcodeFootprint, barcodeFitProblem, barcodeFitFix } =
 const { checkRunBarcodes, describeBarcodeGroups } = require('../../src/lib/barcodeCheck.ts');
 const { layoutProblems } = require('../../src/lib/designerLayout.ts');
 const { runPrintCheck, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, barcodeVerdict, BARCODE_VALUE_GO_AHEAD } = require('../../src/lib/runLayoutCheck.ts');
-const { barcodeDamage, barcodeTickLabel, barcodeTicksAllow } = require('../../src/lib/runBarcodeTicks.ts');
+const { barcodeDamage, barcodeTickLabel, barcodePlainSentence, barcodeTicksAllow } = require('../../src/lib/runBarcodeTicks.ts');
 const fs = require('node:fs');
 const path = require('node:path');
 const { generateZPL } = require('../../src/lib/zplGenerator.ts');
@@ -315,8 +315,10 @@ async function renderNative(template, format, values) {
       assert.equal(page.verdict.fixIn, 'data');
       assert.equal(page.verdict.goAheadLabel, c.go, `${c.name}: the wizard's tick says what will scan`);
       assert.match(page.verdict.heading, /won’t scan exactly as written/);
-      assert.match(page.verdict.waitReason, /tick the box/);
-      assert.equal(barcodeTickLabel(page.blocking[0]), c.tick, `${c.name}: the run page's tick`);
+      assert.match(page.verdict.waitReason, /tick “Print anyway”/);
+      // One tick wording everywhere; the plain sentence above it says what will scan.
+      assert.equal(barcodeTickLabel(page.blocking[0]), 'Print anyway', `${c.name}: the run page's tick`);
+      assert.match(barcodePlainSentence(page.blocking[0]) + ' ' + page.blocking[0], c.note, `${c.name}: the shown words say what will scan`);
       assert.match(barcodeDamage(page.blocking[0]), c.damage);
       assert.equal(barcodeTicksAllow(page.blocking, [], false), false);
       assert.equal(barcodeTicksAllow(page.blocking, [page.blocking[0]], false), true);
@@ -375,7 +377,7 @@ async function renderNative(template, format, values) {
     const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
     const wizard = read('src/app/runs/new/page.tsx');
     assert.match(wizard, /const barcodesOk = barcodesClear \|\| barcodeGoAhead;/, 'the wizard goes ahead on an explicit tick');
-    assert.match(wizard, /confirmLabel=\{barcodeWords\.stops \? undefined : barcodeWords\.goAheadLabel\}/);
+    assert.match(wizard, /<BarcodeWarning[\s\S]*?stops=\{barcodeWords\.stops\}/, 'the wizard shows the shared barcode warning, with no tick when nothing can print');
     assert.match(wizard, /saved\.verdict\.carriesOver/, 'the wizard keeps a go-ahead for the run page only when it may carry over');
     const page = read('src/components/runs/RunPrinter.tsx');
     assert.match(page, /runPrintCheck\(run, template, format\)/, 'the run page checks with runPrintCheck');
@@ -383,8 +385,10 @@ async function renderNative(template, format, values) {
     assert.doesNotMatch(page, /runLayoutWarnings|anyway`/, 'no old layout-only "… anyway" path');
     const panel = read('src/components/runs/OfficePiPrinter.tsx');
     assert.doesNotMatch(panel, /Send anyway|layoutWarnings/, 'the office panel has no second, different ask');
-    const checks = read('src/components/checks/RunChecks.tsx');
-    assert.match(checks, /confirmLabel=\{check\.verdict\.stops \? undefined : check\.verdict\.goAheadLabel\}/);
+    const checks = read('src/components/runs/RunBarcodeCheck.tsx');
+    assert.match(checks, /stops=\{check\.verdict\.stops\}/, 'the run page shows the same barcode warning, with no tick when nothing can print');
+    const warning = read('src/components/checks/BarcodeWarning.tsx');
+    assert.match(warning, /const canTick = tickable && !stops && !!onTick;/, 'a problem that stops printing never gets a "Print anyway" tick');
   }
   console.log('PASS barcode fit: one verdict, matched to the native and exact renderers; Metrc tags pass on 4"×6", 3"×2" (tight), 300 dpi 2"×1" and every exact design; impossible values still blocked; never "shorten"');
 })().catch((error) => { console.error(error); process.exit(1); });

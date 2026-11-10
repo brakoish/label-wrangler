@@ -337,7 +337,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   });
   const checksOk = printCheckAllows(printCheck, { ...goAhead, barcode: barcodeOk ? printCheck.blockingKey : undefined });
   const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || !barcodeOk)
-    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : `${printCheck.verdict.heading}. Fix the design, or tick “Print anyway” for each problem above.`)
+    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : `${printCheck.verdict.heading}. Fix it in the designer, or tick “Print anyway” for each one.`)
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.

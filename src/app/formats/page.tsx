@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronLeft, Search } from 'lucide-react';
 import { useFormatStore } from '@/lib/store';
 import type { ApiError } from '@/lib/apiClient';
@@ -9,6 +9,8 @@ import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
+import { EmptyState } from '@/components/EmptyState';
+import { useRubberBand } from '@/components/motion/rubberBand';
 import { PlusIcon } from '../icons';
 import { alertDialog, confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
@@ -58,6 +60,8 @@ export default function Home() {
   const [phoneView, setPhoneView] = useState<'list' | 'detail'>('list');
   // The list's entrance plays once: coming back from a size's detail on a phone shouldn't replay it.
   const [listShown, setListShown] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  useRubberBand(listRef);
   const openFormat = (id: string) => { selectFormat(id); setPhoneView('detail'); setListShown(true); };
 
   // On a wide screen, show the first size instead of an empty "pick one" pane.
@@ -75,7 +79,7 @@ export default function Home() {
       <div className="page-container flex-1 flex flex-col min-h-0 pb-0 sm:pb-0 lg:pb-0">
         <div className={`flex items-center justify-between gap-3 pb-4 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
           <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
-          <button type="button" onClick={() => setIsAddModalOpen(true)} className={`btn ${selectedFormat || (loadError && formats.length === 0) ? "btn-secondary" : "btn-primary"}`}>
+          <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
             <PlusIcon className="w-4 h-4" />
             New label size
           </button>
@@ -86,7 +90,7 @@ export default function Home() {
           {hasFormats && (
             <div className="pb-3 space-y-3">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-500" aria-hidden="true" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" aria-hidden="true" />
                 <input
                   type="search"
                   value={searchQuery}
@@ -107,23 +111,23 @@ export default function Home() {
             </div>
           )}
 
-          <div className={`flex-1 xl:overflow-auto pb-6 space-y-1 ${listShown ? '' : 'stagger'}`}>
+          <div ref={listRef} className={`flex-1 xl:overflow-auto pb-6 space-y-1 ${listShown ? '' : 'stagger'}`}>
             {!hydrated && formats.length === 0 ? (
               <div role="status" aria-label="Loading label sizes" className="space-y-2">
                 {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 rounded-lg bg-zinc-900 animate-pulse" />)}
                 <span className="sr-only">Loading label sizes…</span>
               </div>
             ) : loadError && formats.length === 0 ? (
-              <div role="alert" className="py-16 text-center space-y-3">
-                <h2 className="text-zinc-100 font-semibold text-lg">We couldn’t load your label sizes</h2>
-                <p className="text-zinc-400 text-sm">{friendlyError(loadError, 'Something went wrong.')}</p>
-                <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>
-              </div>
+              <EmptyState
+                tone="error"
+                title="We couldn’t load your label sizes"
+                body={friendlyError(loadError, 'Something went wrong.')}
+                actions={<button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-secondary">{loading ? 'Trying again…' : 'Try again'}</button>}
+              />
             ) : filteredFormats.length === 0 ? (
-              <div className={hasFormats ? 'py-12' : 'py-16 text-center'}>
-                <h2 className={hasFormats ? 'text-zinc-100 text-sm font-medium' : 'text-zinc-100 font-semibold text-lg'}>{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</h2>
-                <p className="text-zinc-400 text-sm mt-1">{hasFormats ? 'Try another name, or show all types.' : 'Add the size of label you print on.'}</p>
-              </div>
+              hasFormats
+                ? <div className="py-12"><h2 className="text-sm font-medium text-zinc-100">No label sizes match</h2><p className="mt-1 text-sm text-zinc-400">Try another name, or show all types.</p></div>
+                : <EmptyState title="No label sizes yet" body="Add the size of label you print on." />
             ) : (
               filteredFormats.map((format) => (
                 <FormatCard

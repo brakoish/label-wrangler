@@ -384,14 +384,14 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                       }}
                       className={`flex w-full min-h-control-sm items-center rounded-md text-left px-2.5 text-sm hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-300' : 'text-zinc-100'}`}
                     >
-                      {p.name} {p.is_default && <span className="text-zinc-500">(default)</span>}
+                      {p.name} {p.is_default && <span className="text-zinc-400">(default)</span>}
                     </button>
                   ))}
                 </div>
               )}
             </div>
           ) : (
-            <span className="text-xs text-zinc-500">No printers found</span>
+            <span className="text-xs text-zinc-400">No printers found</span>
           )
         ) : (
           <a
@@ -406,7 +406,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
           </a>
         )
       ) : !webUsbSupported ? (
-        <span className="text-xs text-zinc-500">This browser can’t print over USB</span>
+        <span className="text-xs text-zinc-400">This browser can’t print over USB</span>
       ) : !usbPrinter ? (
         <button
           onClick={handleConnectUsb}
@@ -460,7 +460,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
               className="btn btn-sm rounded-r-none text-zinc-100 hover:bg-zinc-700"
             >
               {printing === 'calibration' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
-              Calibrate {calibCount > 1 && <span className="text-zinc-500">×{calibCount}</span>}
+              Calibrate {calibCount > 1 && <span className="text-zinc-400">×{calibCount}</span>}
             </button>
             <button
               onClick={() => setCalibMenuOpen((v) => !v)}
@@ -487,7 +487,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1.5">3+ copies help detect feed drift between labels</p>
+                  <p className="text-xs text-zinc-400 mt-1.5">3+ copies help detect feed drift between labels</p>
                 </div>
 
                 {/* Printer adjustments */}
@@ -618,8 +618,8 @@ function NumberRow({
           +
         </button>
       </div>
-      {unit && <span className="text-xs text-zinc-500">{unit}</span>}
-      {hint && <span className="text-xs text-zinc-500 ml-auto">{hint}</span>}
+      {unit && <span className="text-xs text-zinc-400">{unit}</span>}
+      {hint && <span className="text-xs text-zinc-400 ml-auto">{hint}</span>}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Printer, RefreshCw, ChevronRight, ZoomIn, ZoomOut, Maximize2, SquareDashed, ChevronDown } from 'lucide-react';
+import { RefreshCw, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
@@ -16,17 +16,14 @@ interface ZPLPreviewProps {
   format: LabelFormat;
   template: LabelTemplate;
   testData?: Record<string, string>;
-  /** The raw printer commands, for admins who set up printers. */
-  showPrinterCode?: boolean;
+  /** Draw only while this view is showing (the designer's "Exact print"). */
+  active?: boolean;
 }
 
-export function ZPLPreview({ format, template, testData, showPrinterCode = false }: ZPLPreviewProps) {
+export function ZPLPreview({ format, template, testData, active = true }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [zpl, setZpl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showZPL, setShowZPL] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const revision = useRef(0);
   const signature = JSON.stringify([template, format, testData]);
   const [renderedSignature, setRenderedSignature] = useState('');
@@ -50,11 +47,11 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
       const nextZpl = await generateZPLWithImages(template, format, testData);
       const url = await renderZplToDataUrl(nextZpl, format);
       if (token !== revision.current) return;
-      setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
+      setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
       setError(plainRenderWarning(friendlyRenderFailure(err, 'The preview could not be drawn.', template.elements, format.labelsAcross || 1, testData, format), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData, format)));
-      setPreviewUrl(null); setZpl('');
+      setPreviewUrl(null);
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {
           const draft = await getBitmapProof(template, format, testData, true);
@@ -66,10 +63,10 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
     }
   }, [template, format, testData, signature]);
 
-  // Render only while the secondary print preview is open. Local WASM uses a
-  // tight debounce because there is no network or rate limit.
+  // Render only while the exact print view shows. Local WASM uses a tight
+  // debounce because there is no network or rate limit.
   useEffect(() => {
-    if (!expanded) return;
+    if (!active) return;
 
     const timer = setTimeout(() => {
       fetchPreview();
@@ -78,32 +75,27 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
     // Invalidate async work, not a DOM ref. Older results may never replace new artwork.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { clearTimeout(timer); revision.current++; };
-  }, [expanded, fetchPreview]);
+  }, [active, fetchPreview]);
 
   if (format.type !== 'thermal') return null;
 
   const basePreviewWidth = Math.min(900, Math.max(520, format.width * (format.dpi || 203) * 1.25));
 
   return (
-    <div className="flex flex-col shrink-0">
-      <div className="flex items-center gap-2 px-4 py-2 flex-wrap sm:px-6">
-        <Printer className="w-4 h-4 text-zinc-500 max-sm:hidden" aria-hidden="true" />
-        <button
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md text-left min-h-control-sm"
-        >
-          <span className="text-sm text-zinc-100 font-medium">Print preview</span>
-          <span className="text-xs text-zinc-400 max-sm:hidden">Exactly what the printer makes</span>
-          <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
-        </button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
+        {/* Test prints: the office printer, and a printer plugged into this computer. */}
+        <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />
+        <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />
 
-
-        {/* WebUSB test print controls — connect, print current template, calibration. */}
-        {expanded && <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />}
-        {expanded && <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />}
-
-        {expanded && <div className="ml-auto flex items-center">
+        <div className="ml-auto flex items-center">
+          {(format.labelsAcross || 1) > 1 && <button
+            onClick={() => setShowOutlines((s) => !s)}
+            aria-pressed={showOutlines}
+            className="btn btn-ghost btn-sm"
+          >
+            {showOutlines ? 'Hide label edges' : 'Show label edges'}
+          </button>}
           <button
             onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
             title="Zoom out"
@@ -129,79 +121,45 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
           >
             <Maximize2 className="w-4 h-4" />
           </button>
-          {(format.labelsAcross || 1) > 1 && <button
-            onClick={() => setShowOutlines((s) => !s)}
-            title={showOutlines ? 'Hide label edges' : 'Show label edges'}
-            aria-label="Show label edges"
-            aria-pressed={showOutlines}
-            className={`btn btn-ghost btn-icon btn-sm ${showOutlines ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'}`}
-          >
-            <SquareDashed className="w-4 h-4" />
-          </button>}
-        </div>}
+        </div>
       </div>
 
-      {expanded && (
-        <div className="px-4 pb-4 pt-1 flex flex-col sm:px-6" style={{ minHeight: '320px', maxHeight: '65vh' }}>
-          {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Fix this before printing: {error}</p>}
-          {/* The print image opens large enough to inspect alignment. Zoomed
-              output can scroll without shrinking the design canvas above. */}
-          <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
-        {loading && !previewUrl ? (
-          <div className="flex items-center justify-center text-zinc-500 text-sm">
-            <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-            Drawing the preview…
-          </div>
-        ) : error && !previewUrl ? (
-          <div className="flex items-center justify-center text-red-400 text-sm">
-            {error}
-          </div>
-        ) : previewUrl ? (
-          <div
-            className="relative shrink-0"
-            style={{ padding: '4px', width: `${basePreviewWidth * zoom}px`, maxWidth: zoom === 1 ? '100%' : 'none' }}
-          >
-            {/* At zoom=1 the image fits its container (max-w/h 100%).
-                At zoom>1 it grows past container bounds and parent scrolls. */}
-            <img
-              src={previewUrl}
-              alt={error ? 'Print preview, with problems to fix' : 'Print preview'}
-              className="rounded-md"
-              style={{
-                // Native-DPI render — keep pixelated for sharp bitmap-font edges;
-                // zoom handles bigger size when user wants to inspect details.
-                imageRendering: 'pixelated',
-                display: 'block',
-                maxWidth: '100%',
-                width: '100%',
-                height: 'auto',
-              }}
-            />
-            {showOutlines && <LabelOutlineOverlay format={format} />}
-            {(loading || (!proofReady && !error)) && (
-              <div className="absolute inset-0 bg-black/30 rounded-lg flex items-center justify-center">
-                <RefreshCw className="w-5 h-5 animate-spin text-zinc-100" />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center text-zinc-500 text-sm">
-            No preview yet
-          </div>
-        )}
-          </div>
-          {/* The raw printer commands, for admins who set up printers. */}
-          {/* The raw printer commands: an admin tool, behind one plainly named fold. */}
-          {showPrinterCode && <details className="group mt-2 text-xs" open={showZPL} onToggle={(e) => setShowZPL((e.currentTarget as HTMLDetailsElement).open)}>
-            <summary className="inline-flex min-h-control-sm cursor-pointer list-none items-center gap-1 text-zinc-400 hover:text-zinc-100 [&::-webkit-details-marker]:hidden">
-              <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />For admins: printer commands
-            </summary>
-            {showZPL && <div className="fold-reveal mt-1 max-h-[200px] overflow-auto rounded-lg bg-zinc-950 p-3">
-              <pre className="font-mono text-zinc-300 whitespace-pre-wrap break-all">{zpl}</pre>
-            </div>}
-          </details>}
+      <div className="flex min-h-[320px] flex-1 flex-col px-4 pb-4 pt-1 sm:px-6">
+        {error && previewUrl && <p role="status" className="mb-2 text-sm text-amber-300">Fix this before printing: {error}</p>}
+        {/* Zoomed output scrolls inside this frame. */}
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
+          {loading && !previewUrl ? (
+            <div className="flex items-center justify-center text-sm text-zinc-400">
+              <RefreshCw className="mr-2 w-5 h-5 animate-spin" aria-hidden="true" />
+              Drawing the label…
+            </div>
+          ) : error && !previewUrl ? (
+            <div className="flex items-center justify-center text-sm text-red-400">
+              {error}
+            </div>
+          ) : previewUrl ? (
+            <div
+              className="relative shrink-0"
+              style={{ padding: '4px', width: `${basePreviewWidth * zoom}px`, maxWidth: zoom === 1 ? '100%' : 'none' }}
+            >
+              <img
+                src={previewUrl}
+                alt={error ? 'Exact print, with problems to fix' : 'Exact print'}
+                className="rounded-md"
+                style={{ imageRendering: 'pixelated', display: 'block', maxWidth: '100%', width: '100%', height: 'auto' }}
+              />
+              {showOutlines && <LabelOutlineOverlay format={format} />}
+              {(loading || (!proofReady && !error)) && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
+                  <RefreshCw className="w-5 h-5 animate-spin text-zinc-100" aria-hidden="true" />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center text-sm text-zinc-400">Drawing the label…</div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

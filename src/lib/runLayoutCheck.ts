@@ -174,7 +174,7 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
     : fixIn === 'both' ? 'Fix the items listed above.' : 'Fix the design (see the list above).';
   const waitReason = stops
     ? `${heading}, so nothing can print. ${fixWords}`
-    : `${heading}. Fix it, or tick the box under the list above.`;
+    : `${heading}. Fix it, or tick “Print anyway” for each problem.`;
   return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: severity !== 'neither-scans', fixIn };
 }
 
