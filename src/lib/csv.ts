@@ -7,9 +7,51 @@
 export interface ParsedCsv {
   headers: string[];
   rows: Record<string, string>[];
+  /** Spreadsheet row (1-based) that holds the headings. */
+  headerRow?: number;
+  /** True when rows above the headings looked like a title and were skipped. */
+  titleSkipped?: boolean;
+  /** Excel only: the name of the sheet that was read. */
+  sheetName?: string;
+  /** Excel only: how many sheets the workbook has. */
+  sheetCount?: number;
 }
 
-export function parseCsv(input: string): ParsedCsv {
+export interface ReadOptions {
+  /** Use this spreadsheet row (1-based) as the headings instead of finding it. */
+  headerRow?: number;
+}
+
+/**
+ * Which row holds the headings. A title above the table ("November new
+ * products") fills one cell; the headings fill several. Returns a 0-based
+ * index into `grid`.
+ */
+export function findHeaderRow(grid: string[][]): number {
+  const filled = (row: string[]) => row.filter((cell) => cell.trim()).length;
+  const sample = grid.slice(0, 30);
+  const widest = Math.max(0, ...sample.map(filled));
+  if (widest < 2) return 0;
+  for (let i = 0; i < Math.min(10, sample.length); i++) {
+    const count = filled(sample[i]);
+    if (count >= 2 && count >= Math.ceil(widest * 0.5)) return i;
+  }
+  return 0;
+}
+
+/** Headings and rows from a grid of cells, starting at `headerIndex`. */
+export function gridToRows(grid: string[][], headerIndex: number): { headers: string[]; rows: Record<string, string>[] } {
+  const header = grid[headerIndex] ?? [];
+  const headers = header.map((h) => h.trim());
+  const rows = grid.slice(headerIndex + 1).filter((r) => r.some((c) => c.trim())).map((r) => {
+    const obj: Record<string, string> = {};
+    headers.forEach((h, i) => { if (h) obj[h] = r[i] ?? ''; });
+    return obj;
+  });
+  return { headers: headers.filter(Boolean), rows };
+}
+
+export function parseCsv(input: string, options: ReadOptions = {}): ParsedCsv {
   // Normalize line endings and strip BOM.
   const src = input.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
@@ -59,20 +101,24 @@ export function parseCsv(input: string): ParsedCsv {
     rows.pop();
   }
 
+  let leading = 0;
+  while (rows.length > 0 && rows[0].every((f) => f.trim() === '')) { rows.shift(); leading++; }
   if (rows.length === 0) {
     return { headers: [], rows: [] };
   }
 
-  const headers = rows[0].map((h) => h.trim());
-  const dataRows = rows.slice(1).map((r) => {
+  const found = findHeaderRow(rows);
+  const headerIndex = options.headerRow ? Math.min(rows.length - 1, Math.max(0, options.headerRow - 1 - leading)) : found;
+  const header = rows[headerIndex].map((h) => h.trim());
+  const dataRows = rows.slice(headerIndex + 1).map((r) => {
     const obj: Record<string, string> = {};
-    headers.forEach((h, idx) => {
+    header.forEach((h, idx) => {
       obj[h] = r[idx] ?? '';
     });
     return obj;
   });
 
-  return { headers, rows: dataRows };
+  return { headers: header, rows: dataRows, headerRow: leading + headerIndex + 1, titleSkipped: headerIndex > 0 && !options.headerRow };
 }
 
 /**

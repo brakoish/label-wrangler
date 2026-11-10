@@ -24,6 +24,7 @@ for(const file of [
  'scripts/production/test-template-previews.cjs',
  'scripts/production/test-run-field-setup.cjs',
  'scripts/production/test-wysiwyg-checks.cjs',
+ 'scripts/production/test-spreadsheet-import.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',

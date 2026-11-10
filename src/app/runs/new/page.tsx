@@ -12,7 +12,7 @@ import { useFormatStore } from '@/lib/store';
 import { useTemplateStore } from '@/lib/templateStore';
 import { NewTemplateDialog } from '@/components/designer/TemplateList';
 import { useRunStore } from '@/lib/runStore';
-import { parseCsv, detectUrlColumn } from '@/lib/csv';
+import { parseCsv, detectUrlColumn, type ParsedCsv } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
@@ -28,7 +28,7 @@ import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 import { contentModeUpdates } from '@/lib/elementBinding';
-import { friendlyFieldName, nextFieldName } from '@/lib/fieldLabels';
+import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeIssue } from '@/lib/barcodeCheck';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
@@ -37,6 +37,19 @@ import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 const PASTE_COLUMN = '__paste__';
+
+/**
+ * Pasted lines, one label each. A first line that names the field it fills
+ * ("SKU") is a heading, not a label; tab-separated lines are a table.
+ */
+function pastedValues(text: string, field: string | null): { values: string[]; heading: string; table: boolean } {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const table = lines.length > 1 && lines.slice(0, 5).filter((line) => line.includes('\t')).length >= 2;
+  const simple = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const first = lines[0] ?? '';
+  const heading = lines.length > 1 && field && (simple(first) === simple(field) || simple(first) === simple(friendlyFieldName(field))) ? first : '';
+  return { values: heading ? lines.slice(1) : lines, heading, table };
+}
 const MANIFEST_HEADERS = [...MANIFEST_FIELDS];
 
 const FIELD_ALIASES: Record<string, string[]> = {
@@ -413,15 +426,20 @@ function NewRunContent() {
 
   const [fileError, setFileError] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState('');
-  const handleFile = async (file: File) => {
+  // Where the headings were found, and the file, so the person can say
+  // "my headings are in row 3" and read it again.
+  const [fileInfo, setFileInfo] = useState<{ headerRow: number; titleSkipped: boolean; sheetName?: string; sheetCount?: number } | null>(null);
+  const lastFile = useRef<File | null>(null);
+  useEffect(() => () => setSpreadsheetHeaderRow(1), []);
+  const handleFile = async (file: File, headerRow?: number) => {
     setFileError(null);
-    let parsed: { headers: string[]; rows: Record<string, string>[] };
+    let parsed: ParsedCsv;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       if (isZipFile(bytes)) {
         // An Excel workbook. Read its first sheet; if that fails, say how to
         // make a CSV instead of showing the zip's bytes as "columns".
-        try { parsed = await readXlsx(bytes); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
+        try { parsed = await readXlsx(bytes, { headerRow }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
         if (!parsed.headers.length) { setFileError('This Excel file has nothing on its first sheet. Put the headings in row 1, then upload it again.'); return; }
       } else if (isOleFile(bytes)) {
         setFileError('This is an older Excel file (.xls). In Excel choose File > Save As > CSV, then upload that.');
@@ -429,13 +447,16 @@ function NewRunContent() {
       } else {
         const text = new TextDecoder().decode(bytes);
         if (text.slice(0, 4096).includes('\u0000')) { setFileError('This file isn’t a spreadsheet. Upload a CSV or Excel (.xlsx) file.'); return; }
-        parsed = parseCsv(text);
+        parsed = parseCsv(text, { headerRow });
       }
     } catch {
       setFileError('We couldn’t read that file. Save it again as CSV, then upload it.');
       return;
     }
+    lastFile.current = file;
     setCsvFileName(file.name);
+    setFileInfo({ headerRow: parsed.headerRow ?? 1, titleSkipped: !!parsed.titleSkipped, sheetName: parsed.sheetName, sheetCount: parsed.sheetCount });
+    setSpreadsheetHeaderRow(parsed.headerRow ?? 1);
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
     setLeaveBlank(false);
@@ -527,17 +548,28 @@ function NewRunContent() {
       return Array.from({ length: Math.max(1, manualQty) }, () => ({ ...visibleStaticValues }));
     }
     if (inputMode === 'paste') {
-      return pasteText
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((value) => ({ [PASTE_COLUMN]: value }));
+      return pastedValues(pasteText, pasteField).values.map((value) => ({ [PASTE_COLUMN]: value }));
     }
     if (inputMode === 'manifest') {
       return manifestSelectedRows;
     }
     return csvRows;
-  }, [inputMode, pasteText, csvRows, manifestSelectedRows, manualQty, visibleStaticValues]);
+  }, [inputMode, pasteText, pasteField, csvRows, manifestSelectedRows, manualQty, visibleStaticValues]);
+  const pasteInfo = useMemo(() => pastedValues(pasteText, pasteField), [pasteText, pasteField]);
+  // A table copied from Excel (tab-separated): read it like an uploaded file.
+  const usePasteAsSpreadsheet = () => {
+    const parsed = parseCsv(pasteText.split(/\r?\n/).map((line) => line.split('\t').map((cell) => /[",]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell).join(',')).join('\n'));
+    if (!parsed.headers.length) return;
+    lastFile.current = null;
+    setCsvFileName('Pasted table');
+    setFileInfo({ headerRow: parsed.headerRow ?? 1, titleSkipped: !!parsed.titleSkipped });
+    setSpreadsheetHeaderRow(parsed.headerRow ?? 1);
+    setCsvHeaders(parsed.headers);
+    setCsvRows(parsed.rows);
+    setLeaveBlank(false);
+    applyAutoColumnMapping(parsed.headers, parsed.rows, true);
+    setInputMode('csv');
+  };
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
@@ -1209,9 +1241,11 @@ function NewRunContent() {
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
                         rows={7}
-                        placeholder={'HTTPS://1A4.COM/5LO1I9DSOPW43WR19JI8\nHTTPS://1A4.COM/5LO1I9DSOPW43WR19JI9'}
+                        placeholder={'1A4FF0300000022000000101\n1A4FF0300000022000000102'}
                         className="field resize-y"
                       />
+                      {pasteInfo.heading && <p className="mt-1.5 text-sm text-zinc-400">The first line, “{pasteInfo.heading}”, looks like a heading, so it isn’t a label.</p>}
+                      {pasteInfo.table && <p className="mt-1.5 text-sm text-zinc-400">This looks like a table from a spreadsheet. <button type="button" onClick={usePasteAsSpreadsheet} className="text-amber-400 hover:underline">Use it as a spreadsheet</button></p>}
                     </div>
                     <div>
                       <span id={`${formId}-paste-field`} className="field-label mb-1.5">These values fill</span>
@@ -1252,11 +1286,32 @@ function NewRunContent() {
                     {fileError ? (
                       <p role="alert" className="flex items-start gap-1.5 text-sm text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{fileError}</p>
                     ) : csvHeaders.length > 0 ? (
-                      <p className="text-sm text-zinc-400">
-                        {csvFileName ? <span className="text-zinc-200">{csvFileName}</span> : 'Your file'}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
-                      </p>
+                      <div className="space-y-1 text-sm text-zinc-400">
+                        <p>
+                          {csvFileName ? <span className="text-zinc-100">{csvFileName}</span> : 'Your file'}{fileInfo?.sheetName && (fileInfo.sheetCount ?? 1) > 1 ? <>, sheet ‘{fileInfo.sheetName}’</> : null}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
+                        </p>
+                        {fileInfo && (fileInfo.sheetCount ?? 1) > 1 && <p>Only the first sheet is read. Move the labels’ sheet first in Excel to use another one.</p>}
+                        {fileInfo && lastFile.current && (
+                          <label className="flex flex-wrap items-center gap-2">
+                            {fileInfo.titleSkipped ? <span>Headings found in row {fileInfo.headerRow} (the rows above looked like a title).</span> : null}
+                            <span>Headings are in row</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={fileInfo.headerRow}
+                              onChange={(e) => {
+                                const row = Math.max(1, Math.min(50, Math.floor(Number(e.target.value) || 1)));
+                                setFileInfo((info) => (info ? { ...info, headerRow: row } : info));
+                                if (lastFile.current) void handleFile(lastFile.current, row);
+                              }}
+                              className="field field-sm w-20 tabular-nums"
+                            />
+                          </label>
+                        )}
+                      </div>
                     ) : (
-                      <p className="text-sm text-zinc-400">A CSV or Excel file with one row per label and the headings in row 1.</p>
+                      <p className="text-sm text-zinc-400">A CSV or Excel file with one row per label under a row of headings.</p>
                     )}
                   </div>
                 ) : (
