@@ -1546,7 +1546,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </ul>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {scanInHeader && <Link href={`/runs/${run.id}/scan`} className="btn btn-secondary btn-sm" title="One label per scan, hands-free">
+            {scanInHeader && <Link href={`/runs/${run.id}/scan`} className="btn btn-secondary btn-sm" title="One label per scan, on a label printer plugged into this computer. The office printer can’t print from scans." aria-label="Scan mode (needs a label printer plugged into this computer)">
               <ScanBarcode className="w-4 h-4 text-amber-400" aria-hidden="true" />
               <span className="max-sm:sr-only">Scan mode</span>
             </Link>}

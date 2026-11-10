@@ -312,7 +312,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
         as="h1"
         title="This run can’t print from scans"
         body="It has no saved design."
-        actions={<Link href={`/runs/${run.id}`} className="btn btn-primary">Go to the run</Link>}
+        actions={<Link href={`/runs/${run.id}`} className="btn btn-primary">Print on the office printer</Link>}
       />
     ));
   }
@@ -393,7 +393,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                     : transport === 'dazzle'
                       ? 'The printer app on this computer shows no printers. Turn the printer on and check it’s set up there.'
                       : 'Open the label printer app on this computer, or use Chrome or Edge to connect a USB printer.'}
-                {' '}To print on the office printer, go to the run.
+                {' '}Scan mode only prints on a printer plugged in here. For the office printer, go back to the run.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Link href={`/runs/${run.id}`} className="btn btn-primary">Go to the run</Link>
