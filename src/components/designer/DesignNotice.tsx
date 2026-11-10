@@ -15,14 +15,19 @@ export function problemText(problem: LayoutProblem): string {
 
 /**
  * What is wrong with the design, above the label (the editing canvas and the
- * exact print view show the same notice): one plain sentence per problem,
+ * print preview show the same notice): one plain sentence per problem,
  * problems that stop printing first, a barcode's measurements behind "Why?",
- * and the fix buttons under them.
+ * and each fix button under the problem it fixes.
  */
-export function DesignNotice({ problems, action }: { problems: ReadonlyArray<LayoutProblem>; action?: ReactNode }) {
+export type NoticeAction = ReactNode | ((problem: LayoutProblem) => ReactNode);
+
+export function DesignNotice({ problems, action }: { problems: ReadonlyArray<LayoutProblem>; action?: NoticeAction }) {
   const [showAll, setShowAll] = useState(false);
   if (!problems.length) return null;
-  const sorted = [...problems].sort((a, b) => Number(!!b.blocking) - Number(!!a.blocking));
+  // Problems that stop printing first, then ones with a fix button, so a
+  // button is never hidden behind "Show more".
+  const hasFix = (p: LayoutProblem) => typeof action === 'function' && !!action(p);
+  const sorted = [...problems].sort((a, b) => Number(!!b.blocking) - Number(!!a.blocking) || Number(hasFix(b)) - Number(hasFix(a)));
   const shown = showAll ? sorted : sorted.slice(0, SHOWN);
   const hidden = sorted.length - shown.length;
   return (
@@ -38,6 +43,7 @@ export function DesignNotice({ problems, action }: { problems: ReadonlyArray<Lay
               <div className="min-w-0 flex-1 text-zinc-100">
                 <span>{sentence}</span>
                 {barcode && barcodeHasDetails(full) && <> <WhyToggle>{full}</WhyToggle></>}
+                {typeof action === 'function' && (() => { const own = action(problem); return own ? <div className="flex flex-wrap items-center gap-2 pt-1.5">{own}</div> : null; })()}
               </div>
             </li>
           );
@@ -48,7 +54,7 @@ export function DesignNotice({ problems, action }: { problems: ReadonlyArray<Lay
           {showAll ? 'Show fewer' : `Show ${hidden} more`}
         </button>
       )}
-      {action && <div className="flex flex-wrap items-center gap-2 pl-5.5">{action}</div>}
+      {action && typeof action !== 'function' && <div className="flex flex-wrap items-center gap-2 pl-5.5">{action}</div>}
     </div>
   );
 }

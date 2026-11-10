@@ -13,7 +13,7 @@ const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
 
 /** Package search returned in time but some rows are missing extra details
  * (lab results, retail IDs) because Manifest or Metrc was slow. */
-export const SEARCH_DETAILS_INCOMPLETE = 'Some details are still loading. Search again in a moment to fill them in.';
+export const SEARCH_DETAILS_INCOMPLETE = 'Nabis didn’t send every detail just now. Search again in a moment to fill them in.';
 
 export const OFFLINE_MESSAGE = "Couldn't reach Label Wrangler — check your internet connection and try again.";
 
@@ -159,6 +159,21 @@ export function friendlySaveError(message: string, elements: TemplateElement[], 
     }
   }
   return friendlyError(message, fallback);
+}
+
+/**
+ * The designer's "not saved" line: a cause the person can act on (an item's
+ * size, another tab, signed out, offline), else one plain sentence. Raw
+ * server text ("Failed") is never shown.
+ */
+export function designSaveProblem(message: string, elements: TemplateElement[]): string {
+  if (/^\s*Invalid (width|height|x|y|fontSize|minFontSize|lineHeight|strokeWidth|borderRadius)\.?\s*$/i.test(message)) {
+    const named = friendlySaveError(message, elements, '');
+    if (/can’t be used/.test(named)) return named;
+  }
+  if (/^(Failed to fetch\s*$|NetworkError|Load failed)|network/i.test(message)) return OFFLINE_MESSAGE;
+  if (/Session expired|changed in another tab|Draft recovery storage/i.test(message)) return message;
+  return 'Label Wrangler couldn’t save that just now.';
 }
 
 function elementTypeLabel(type: string): string {

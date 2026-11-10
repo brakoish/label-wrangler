@@ -30,7 +30,7 @@ interface RunStore {
   runLoadErrors: Record<string, { status: number; message: string }>;
 
   // Runs
-  createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections }) => Promise<Run>;
+  createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections; leaveOff?: string[] }) => Promise<Run>;
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   /** `onSetAside` is called with a plain reason when the server permanently
    * refused this update (it was set aside, not saved). */

@@ -276,3 +276,22 @@ export function barcodeToQr(elements: ReadonlyArray<TemplateElement>, id: string
   }
   return null;
 }
+
+/**
+ * "Fix it for me" for text that covers other text: move it, unchanged, to the
+ * nearest spot where it lands on nothing and stays on the label. Null when
+ * there is no such spot. Only this design's layout changes.
+ */
+export function textAutoFix(elements: ReadonlyArray<TemplateElement>, id: string, format: LabelFormat | null | undefined, values: Values, bitmap: boolean, opts: AutoFixOptions = {}): BarcodeAutoFix | null {
+  if (!format || format.type !== 'thermal') return null;
+  const el = elements.find((e) => e.id === id);
+  if (!el || el.type !== 'text' || el.locked) return null;
+  const ink = inkOf(el, format, values, bitmap, opts, true);
+  if (!ink) return null;
+  const spot = spotFor(elements, id, format, values, bitmap, opts);
+  for (const place of freePlaces(el, ink, spot)) {
+    const next = replace(elements, id, { ...el, x: place.x, y: place.y } as TemplateElement);
+    if (clean(next, id, format, values, bitmap, opts)) return { kind: 'move', label: 'Fix it for me', done: 'Moved the text so it covers nothing else.', elements: next };
+  }
+  return null;
+}

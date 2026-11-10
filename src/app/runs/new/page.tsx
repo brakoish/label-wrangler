@@ -16,7 +16,7 @@ import { useRunStore } from '@/lib/runStore';
 import { parseCsv, detectUrlColumn, type ParsedCsv } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
-import { renderZplToDataUrl } from '@/lib/zplRenderClient';
+import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
@@ -36,13 +36,27 @@ import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow, setSpreadshe
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
 import { runBarcodeFixes } from '@/lib/runBarcodeFix';
-import { labelsWords, missingDetailsWords, rowMissingDetails, runMissingDetails } from '@/lib/nabisDetails';
+import { labelsWords, missingDetailFields, missingDetailsWords, rowMissingDetails, runMissingDetails } from '@/lib/nabisDetails';
+import { leaveFieldsOff } from '@/lib/runLeaveOff';
+import { cleanHiddenCharacters, labelsWithBadCharacters } from '@/lib/runCharacterRows';
+import { blankPreviewItems, type PreviewBlankBox } from '@/lib/runPreviewBlanks';
 import type { BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
+
+/** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
+function runFixWords(before: TemplateElement, after: TemplateElement, ahead = false): string {
+  if (before.type !== after.type) return `${ahead ? 'This swaps' : 'Swapped'} the barcode for a ${after.type === 'qr' ? 'QR code' : after.type}`;
+  const done: string[] = [];
+  if ((before.rotation || 0) !== (after.rotation || 0)) done.push(ahead ? 'turns' : 'turned');
+  if (before.x !== after.x || before.y !== after.y) done.push(ahead ? 'moves' : 'moved');
+  if (before.width !== after.width || before.height !== after.height) done.push(ahead ? 'resizes' : 'resized');
+  const verbs = done.length ? andList(done) : ahead ? 'changes' : 'changed';
+  return ahead ? `This ${verbs} the barcode` : `${verbs.charAt(0).toUpperCase()}${verbs.slice(1)} the barcode`;
+}
 
 /** “Strain, THC, CBD and Batch”: a plain list join for the wait reasons. */
 function andList(items: string[]): string {
@@ -404,15 +418,49 @@ function NewRunContent() {
   useEffect(() => { if (templateId) void useTemplateStore.getState().fetchTemplate(templateId); }, [templateId]);
   const template = useMemo(() => templates.find((t) => t.id === templateId && !t.summaryOnly) ?? null, [templates, templateId]);
   const imageSelections = useMemo(() => imagesByTemplate[templateId] ?? {}, [imagesByTemplate, templateId]);
-  const previewTemplate = useMemo(() => template ? applyRunImages(template, Object.fromEntries(Object.entries(imageSelections).filter(([id]) => template.elements.some(e => e.id === id && e.type === 'image' && e.runSelectable)))) : null, [template, imageSelections]);
   const format = template ? getFormatById(template.formatId) : null;
   const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
   const codeTypes = useMemo(() => codeFieldTypes(template), [template]);
   const hiddenRunFieldSet = useMemo(() => new Set(hiddenRunFields), [hiddenRunFields]);
+
+  const manifestSelectedRows = useMemo(() => {
+    if (manifestRows === savedManifestRows) return manifestRows;
+    if (!selectedManifestPackageKey) return [];
+    return manifestRows.filter((row) => manifestPackageKey(row) === selectedManifestPackageKey);
+  }, [manifestRows, selectedManifestPackageKey, savedManifestRows]);
+
+  // A Nabis search cut short (time limit, or Metrc busy) leaves rows without
+  // their retail IDs or lab potency: Start waits until the person searches
+  // again or ticks to leave those parts off (named), so neither the sample
+  // nor a blank prints in their place.
+  const nabisGap = useMemo(() => {
+    if (inputMode !== 'manifest') return { labels: [], missing: [], signature: '' };
+    const mappings = Object.fromEntries(Object.entries(fieldMappings).filter(([field]) => allDynamicFields.includes(field) && !hiddenRunFieldSet.has(field)));
+    return runMissingDetails(manifestSelectedRows, mappings);
+  }, [inputMode, fieldMappings, allDynamicFields, hiddenRunFieldSet, manifestSelectedRows]);
+  const nabisGapFields = useMemo(() => {
+    if (!nabisGap.labels.length) return [];
+    const mappings = Object.fromEntries(Object.entries(fieldMappings).filter(([field]) => allDynamicFields.includes(field) && !hiddenRunFieldSet.has(field)));
+    return missingDetailFields(manifestSelectedRows, mappings, nabisGap.labels);
+  }, [nabisGap, fieldMappings, allDynamicFields, hiddenRunFieldSet, manifestSelectedRows]);
+  const [nabisGapOkKey, setNabisGapOkKey] = useState('');
+  const nabisTicked = nabisGap.labels.length > 0 && nabisGapOkKey === nabisGap.signature;
+  const nabisOk = !nabisGap.labels.length || nabisTicked;
+  const nabisGapWhat = missingDetailsWords(nabisGap.missing);
+
+  // Parts left off this run: picked by the person, or left off by the Nabis
+  // tick above. They are not filled, checked or drawn, and the run's saved
+  // design leaves them out, so nothing prints there.
+  // Keyed by the names, not the array: the Nabis auto-mapping effect re-runs
+  // whenever dynamicFields changes identity, so it must only change with them.
+  const leftOffKey = Array.from(new Set([...hiddenRunFields, ...(nabisTicked ? nabisGapFields : [])].filter((field) => allDynamicFields.includes(field)))).sort().join('\n');
+  const leftOffFields = useMemo(() => new Set(leftOffKey ? leftOffKey.split('\n') : []), [leftOffKey]);
   const dynamicFields = useMemo(
-    () => allDynamicFields.filter((field) => !hiddenRunFieldSet.has(field)),
-    [allDynamicFields, hiddenRunFieldSet],
+    () => allDynamicFields.filter((field) => !leftOffFields.has(field)),
+    [allDynamicFields, leftOffFields],
   );
+  const visibleTemplate = useMemo(() => (template ? leaveFieldsOff(template, leftOffFields) : null), [template, leftOffFields]);
+  const previewTemplate = useMemo(() => visibleTemplate ? applyRunImages(visibleTemplate, Object.fromEntries(Object.entries(imageSelections).filter(([id]) => visibleTemplate.elements.some(e => e.id === id && e.type === 'image' && e.runSelectable)))) : null, [visibleTemplate, imageSelections]);
   const visibleFieldSet = useMemo(() => new Set(dynamicFields), [dynamicFields]);
   const visibleStaticValues = useMemo(() => {
     const next: Record<string, string> = {};
@@ -648,12 +696,6 @@ function NewRunContent() {
     setPasteField(pick ?? dynamicFields[0] ?? null);
   }, [template, dynamicFields, pasteField]);
 
-  const manifestSelectedRows = useMemo(() => {
-    if (manifestRows === savedManifestRows) return manifestRows;
-    if (!selectedManifestPackageKey) return [];
-    return manifestRows.filter((row) => manifestPackageKey(row) === selectedManifestPackageKey);
-  }, [manifestRows, selectedManifestPackageKey, savedManifestRows]);
-
   // Compute the effective sourceData based on input mode. New runs always use
   // row objects so manual/paste/CSV/Manifest can feed the same downstream shape.
   const sourceData = useMemo<Record<string, string>[]>(() => {
@@ -693,7 +735,9 @@ function NewRunContent() {
     const plainFields = new Set([...Object.keys(codeTypes), ...plainNumberFields]);
     return applyPlainNumbers({ rows: sourceData, plainRows: csvPlainRows, mappings: fieldMappings, plainFields, currencyFields: new Set(plainNumberFields) });
   }, [inputMode, sourceData, fieldMappings, codeTypes, plainNumberFields, csvPlainRows]);
-  const allDataRows = plainData.rows;
+  // Tabs and invisible characters in the cells never print: taken out, and said so.
+  const hiddenClean = useMemo(() => (inputMode === 'manual' ? { rows: plainData.rows, fixes: [] } : cleanHiddenCharacters(plainData.rows, plainData.mappings)), [inputMode, plainData]);
+  const allDataRows = hiddenClean.rows;
   const dataMappings = plainData.mappings;
 
   // The run's data as the checks see it (hidden fields included: they would
@@ -715,7 +759,7 @@ function NewRunContent() {
   // Blank cells, over every row: one blank in 2,000 rows must not hold back
   // the other 1,999, so the person can leave those labels out, or (where the
   // design really prints blank) print them blank.
-  const checkTemplate = previewTemplate ?? template;
+  const checkTemplate = previewTemplate ?? visibleTemplate;
   const allCheckData = useMemo(() => checkDataFor(allDataRows), [checkDataFor, allDataRows]);
   const blankCheck = useMemo(() => checkRunData(checkTemplate ?? { elements: [] }, allCheckData), [checkTemplate, allCheckData]);
   const skippable = useMemo(() => (inputMode === 'manual' ? null : blankLabelIndexes(checkTemplate ?? { elements: [] }, allCheckData, blankCheck)), [inputMode, checkTemplate, allCheckData, blankCheck]);
@@ -725,11 +769,18 @@ function NewRunContent() {
   const skipRows = blankChoiceNow === 'skip' && !!skippable;
   const leaveBlank = blankChoiceNow === 'blank' && blankCheck.canLeaveBlank;
   // The rows the run is made from: every row, or every row but the blank ones.
+  // Labels whose spreadsheet values can't print (é in a barcode, an emoji in
+  // the printer's font): they can be left out too, like blank rows.
+  const charBadIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, (field) => allCheckData.fieldMappings[field]?.mode === 'column')), [inputMode, checkTemplate, format, allCheckData]);
+  const charBadKey = charBadIndexes.join(',');
+  const charSkippable = charBadIndexes.length > 0 && charBadIndexes.length < allDataRows.length;
+  const [charSkipKey, setCharSkipKey] = useState('');
+  const skipChars = charSkippable && charSkipKey === charBadKey;
   const keptRows = useMemo(() => {
-    if (!skipRows || !skippable) return null;
-    const skip = new Set(skippable);
+    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...(skipChars ? charBadIndexes : [])]);
+    if (!skip.size) return null;
     return allDataRows.map((_, index) => index).filter((index) => !skip.has(index));
-  }, [skipRows, skippable, allDataRows]);
+  }, [skipRows, skippable, skipChars, charBadIndexes, allDataRows]);
   const dataRows = useMemo(() => (keptRows ? keptRows.map((index) => allDataRows[index]) : allDataRows), [keptRows, allDataRows]);
   // Row numbers in every message stay the ones in the file.
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
@@ -820,7 +871,14 @@ function NewRunContent() {
     return Array.from({ length: across }, (_, lane) => (feedStart + lane < labelCount ? previewValuesForIndex(feedStart + lane) : null));
   }, [across, labelCount, previewValues, feedStart, previewValuesForIndex]);
   useEffect(() => { if (labelCount > 0 && previewIndex > labelCount - 1) setPreviewIndex(Math.max(0, labelCount - 1)); }, [labelCount, previewIndex]);
-  const previewInput = useMemo(() => ({ template: previewTemplate ?? template, format, values: previewLanes }), [template, previewTemplate, format, previewLanes]);
+  // A part with no value is drawn empty (marked), never as the design's sample.
+  const previewBlanks = useMemo(() => {
+    const base = previewTemplate ?? visibleTemplate;
+    if (!base || !(inputMode === 'manual' || labelCount > 0)) return { template: base, emptyFields: [] as string[], boxes: [] as PreviewBlankBox[] };
+    const shown = format?.type === 'sheet' ? (sheetPreviewValues ?? [previewValues]) : Array.isArray(previewLanes) ? previewLanes : [previewLanes];
+    return blankPreviewItems(base, shown, dynamicFields);
+  }, [previewTemplate, visibleTemplate, inputMode, labelCount, format, sheetPreviewValues, previewValues, previewLanes, dynamicFields]);
+  const previewInput = useMemo(() => ({ template: previewBlanks.template, format, values: previewLanes }), [previewBlanks.template, format, previewLanes]);
   const [previewResult, setPreviewResult] = useState<{ input: typeof previewInput; state: RunPreviewState } | null>(null);
   const previewState: RunPreviewState = previewResult?.input === previewInput
     ? previewResult.state
@@ -941,12 +999,22 @@ function NewRunContent() {
   const applyRunFix = async (fix: BarcodeAutoFix, elementId: string) => {
     if (!template || runFixBusy) return;
     const changed = fix.elements.find((el) => el.id === elementId);
-    if (!changed) return;
+    const was = template.elements.find((el) => el.id === elementId);
+    if (!changed || !was) return;
+    // This changes the shared design, not just this run: say so plainly, once.
+    const what = runFixWords(was, changed);
+    const ok = await confirmDialog({
+      title: `Change the design “${template.name}”?`,
+      body: `${runFixWords(was, changed, true)} in the design itself, so every run made from it from now on gets this change too. Runs you already made keep their design. You can undo it right after.`,
+      confirmLabel: 'Change the design',
+      cancelLabel: 'Not now',
+    });
+    if (!ok) return;
     const before = template.elements;
     setRunFixBusy(true);
     try {
       await updateTemplate(template.id, { elements: before.map((el) => (el.id === elementId ? changed : el)) });
-      setRunFixNote({ templateId: template.id, text: `${fix.done} Saved to the design.`, before, tone: 'ok' });
+      setRunFixNote({ templateId: template.id, text: `${what} in the design “${template.name}”. Runs made from it from now on use this too.`, before, tone: 'ok' });
     } catch {
       setRunFixNote({ templateId: template.id, text: 'The design couldn’t be saved, so nothing changed. Check your connection and try again.', before, tone: 'error' });
     } finally {
@@ -969,7 +1037,11 @@ function NewRunContent() {
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
   const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
-  const charactersOk = characterCheck.issues.length === 0;
+  // Going ahead anyway takes an explicit tick (those characters print as
+  // junk); the bytes sent to the printer don't change either way.
+  const characterKey = characterCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.chars.join('')}`).join('\n');
+  const [characterGoAheadKey, setCharacterGoAheadKey] = useState('');
+  const charactersOk = characterCheck.issues.length === 0 || characterGoAheadKey === characterKey;
 
   // Items that cover each other or run off the label, on any label (a
   // barcode that doesn't print whole is named once, in the barcode list).
@@ -978,13 +1050,6 @@ function NewRunContent() {
   const [layoutConfirmedKey, setLayoutConfirmedKey] = useState('');
   const layoutOk = !layoutIssues.length || layoutConfirmedKey === layoutKey;
 
-  // A Nabis search cut short by its time limit leaves rows without their
-  // retail IDs or lab potency: Start waits until the person searches again
-  // or ticks that these labels print without them (named).
-  const nabisGap = useMemo(() => (inputMode === 'manifest' ? runMissingDetails(dataRows, dataMappings) : { labels: [], missing: [], signature: '' }), [inputMode, dataRows, dataMappings]);
-  const [nabisGapOkKey, setNabisGapOkKey] = useState('');
-  const nabisOk = !nabisGap.labels.length || nabisGapOkKey === nabisGap.signature;
-  const nabisGapWhat = missingDetailsWords(nabisGap.missing);
 
   const canCreate =
     !imageBusy &&
@@ -1030,18 +1095,21 @@ function NewRunContent() {
     const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
     return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
   };
+  // The parts Nabis didn't send are said once, in the Nabis notice with its
+  // own Search again and Leave off: not again as "pick another package".
+  const nabisCoversBlanks = !nabisOk && blankCheck.issues.length > 0 && blankCheck.issues.every((issue) => nabisGapFields.includes(issue.field));
   const checkReasons = setupReason || !format ? [] : [
-    !blanksOk && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
+    !blanksOk && !nabisCoversBlanks && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.'
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (charSkippable ? 'A barcode value can’t print. Leave those labels out, or fix those rows in your spreadsheet.' : 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.')
       : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
         : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
-    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
+    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. Fix them, leave those labels out, or tick “Print anyway” above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
-    !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, labelCount)}. Search again, or tick to print without them.`,
+    !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, manifestSelectedRows.length)}. Search again, or tick ${nabisGapFields.length ? `to leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off` : 'to print without them'}.`,
   ].filter((reason): reason is string => !!reason);
   const previewReason = setupReason || !format || checkReasons.length ? null
     : format.type === 'thermal' && previewState.status === 'error'
@@ -1235,6 +1303,8 @@ function NewRunContent() {
         // field never carries one value that other labels could pick up.
         staticValues: staticValuesForRun(dynamicFields, finalMappings, visibleStaticValues),
         fieldMappings: finalMappings,
+        // Left-off parts print nothing: the run's saved design leaves their items out.
+        ...(leftOffFields.size ? { leaveOff: Array.from(leftOffFields) } : {}),
         dataSource: inputMode as RunDataSource,
         sourceData: finalSourceData,
         mappedField: legacyField,
@@ -1246,7 +1316,7 @@ function NewRunContent() {
       // The go-ahead given here carries to the run page, for the same problems.
       if ((barcodeGoAhead && barcodeWords.carriesOver) || (layoutIssues.length && layoutOk)) {
         const snapshot = run.designSnapshot;
-        const saved = runPrintCheck({ ...run, sourceData: run.sourceData?.length ? run.sourceData : finalSourceData, fieldMappings: run.fieldMappings ?? finalMappings }, snapshot?.template ?? template, snapshot?.format ?? format);
+        const saved = runPrintCheck({ ...run, sourceData: run.sourceData?.length ? run.sourceData : finalSourceData, fieldMappings: run.fieldMappings ?? finalMappings }, snapshot?.template ?? visibleTemplate ?? template, snapshot?.format ?? format);
         rememberPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, run.id, {
           // "Neither label will scan" is asked again on the run page, never carried over ticked.
           ...(barcodeGoAhead && saved.blocking.length && !saved.verdict.stops && saved.verdict.carriesOver ? { barcode: saved.blockingKey } : {}),
@@ -1356,6 +1426,13 @@ function NewRunContent() {
         />
       </div>
     </div>
+  ) : null;
+
+  // "Leave those 3 labels out and print the other 17", as blank rows get.
+  const leaveOutButton = charSkippable ? (
+    <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => setCharSkipKey(charBadKey)}>
+      Leave {charBadIndexes.length === 1 ? 'that label' : `those ${charBadIndexes.length.toLocaleString()} labels`} out and print the other {(allDataRows.length - charBadIndexes.length).toLocaleString()}
+    </button>
   ) : null;
 
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
@@ -1766,7 +1843,14 @@ function NewRunContent() {
                           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                           No column for {unmatchedShown.map((f) => friendlyFieldName(f)).join(unmatchedShown.length === 2 ? ' and ' : ', ')}
                         </p>
-                        <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, or choose &ldquo;Same on every label&rdquo; and type one value.</p>
+                        <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, choose &ldquo;Same on every label&rdquo; and type one value, or leave {unmatchedShown.length === 1 ? 'it' : 'them'} off this run.</p>
+                        <div className="flex flex-wrap gap-2 pl-5.5 pt-1">
+                          {unmatchedShown.map((field) => (
+                            <button key={field} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => toggleRunFieldVisibility(field)}>
+                              <EyeOff className="size-4" aria-hidden="true" /> Leave {friendlyFieldName(field)} off
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                     <div className="space-y-4">
@@ -1863,21 +1947,23 @@ function NewRunContent() {
                   </div>
                 )}
 
-                {/* Leaving a field off this run (it prints the design's sample). */}
-                <details className="group text-sm" open={hiddenRunFields.length > 0 || undefined}>
+                {/* Leaving a part off this run: nothing prints there (the run's
+                    design leaves its items out; the shared design doesn't change). */}
+                <details className="group text-sm" open={leftOffFields.size > 0 || undefined}>
                   <summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 text-zinc-400 hover:text-zinc-100 [&::-webkit-details-marker]:hidden">
                     <ChevronRight className="size-4 shrink-0 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />
-                    Leave a part off this run{hiddenRunFields.length > 0 ? ` (${hiddenRunFields.length} left off)` : ''}
+                    Leave a part off this run{leftOffFields.size > 0 ? ` (${leftOffFields.size} left off)` : ''}
                   </summary>
                   <div className="flex flex-wrap gap-2 pt-2">
                     {allDynamicFields.map((field) => {
-                      const hidden = hiddenRunFieldSet.has(field);
+                      const byNabis = !hiddenRunFieldSet.has(field) && leftOffFields.has(field);
+                      const hidden = leftOffFields.has(field);
                       return (
                         <button
                           key={field}
                           type="button"
-                          onClick={() => toggleRunFieldVisibility(field)}
-                          title={hidden ? `Fill ${friendlyFieldName(field)} in this run` : `Leave ${friendlyFieldName(field)} off this run`}
+                          onClick={() => (byNabis ? setNabisGapOkKey('') : toggleRunFieldVisibility(field))}
+                          title={byNabis ? `Left off because Nabis didn’t send it. Select to fill ${friendlyFieldName(field)} again` : hidden ? `Fill ${friendlyFieldName(field)} in this run` : `Leave ${friendlyFieldName(field)} off this run`}
                           aria-pressed={!hidden}
                           className={`btn btn-sm ${hidden ? 'btn-ghost text-zinc-400 line-through' : 'btn-secondary'}`}
                         >
@@ -1887,6 +1973,7 @@ function NewRunContent() {
                       );
                     })}
                   </div>
+                  <p className="pt-2 text-zinc-400">{leftOffFields.size > 0 ? `Nothing prints where ${andList(Array.from(leftOffFields).map((field) => friendlyFieldName(field)))} would go. The design itself doesn’t change.` : 'A part you leave off prints nothing on this run. The design itself doesn’t change.'}</p>
                 </details>
               </section>
 
@@ -1929,21 +2016,26 @@ function NewRunContent() {
                       <LayoutPreview
                         thermalRenderMode={template.thermalRenderMode}
                         format={format}
-                        elements={(previewTemplate ?? template).elements}
+                        elements={(previewBlanks.template ?? template).elements}
                         testData={previewValues}
                         testDataByLabel={sheetPreviewValues}
                         selectedLabelOffset={selectedSheetLabelOffset}
                       />
                     ) : (
-                      <LocalZplPreview state={previewState} message={previewMessage} format={format} />
+                      <LocalZplPreview state={previewState} message={previewMessage} format={format} blanks={previewBlanks.boxes} />
                     )}
                   </div>
+                  {previewBlanks.emptyFields.length > 0 && (
+                    <p className="text-center text-sm text-zinc-400">
+                      {andList(previewBlanks.emptyFields.map((field) => friendlyFieldName(field)))} {previewBlanks.emptyFields.length === 1 ? 'has' : 'have'} no value on {across > 1 || format.type === 'sheet' ? 'these labels' : 'this label'}, so {previewBlanks.emptyFields.length === 1 ? 'it’s' : 'they’re'} shown empty{previewBlanks.boxes.length ? ' (striped)' : ''}.
+                    </p>
+                  )}
                   <div className="space-y-4">
                     {nabisGap.labels.length > 0 && (
                       <div role="alert" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 text-zinc-100">
                           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
-                          <span>Nabis didn’t send the {nabisGapWhat} in time, so {labelsWords(nabisGap.labels, labelCount)} would print without {nabisGap.missing.length > 1 || nabisGap.missing[0] === 'retailIds' ? 'them' : 'it'}{nabisGap.missing.includes('retailIds') ? ', and a package may get one label instead of one per unit' : ''}.</span>
+                          <span>Nabis didn’t send the {nabisGapWhat} for {labelsWords(nabisGap.labels, manifestSelectedRows.length)}.{nabisGap.missing.includes('retailIds') ? ' Without retail IDs the package prints as one label, not one per unit.' : ''} Search again in a moment, or {nabisGapFields.length ? `leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off this run` : 'print without them'}.</span>
                         </p>
                         <div className="flex flex-wrap items-center gap-x-4 pl-5.5">
                           <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={isSearchingManifest || manifestSearch.trim().length < 2} onClick={() => void handleManifestSearch()}>
@@ -1951,12 +2043,12 @@ function NewRunContent() {
                           </button>
                           <label className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
                             <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={nabisGapOkKey === nabisGap.signature} onChange={(e) => setNabisGapOkKey(e.target.checked ? nabisGap.signature : '')} />
-                            <span>Print {nabisGap.labels.length === 1 ? 'it' : 'them'} without the {nabisGapWhat}</span>
+                            <span>{nabisGapFields.length ? `Leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off and print` : `Print ${nabisGap.labels.length === 1 ? 'it' : 'them'} without the ${nabisGapWhat}`}</span>
                           </label>
                         </div>
                       </div>
                     )}
-                    {hasData && template && (
+                    {hasData && template && !nabisCoversBlanks && (
                       <BlankSummary
                         check={blankCheck}
                         mode={inputMode}
@@ -1974,15 +2066,29 @@ function NewRunContent() {
                         {inputMode === 'csv' ? (skippable.length === 1 ? 'Row' : 'Rows') : (skippable.length === 1 ? 'Label' : 'Labels')} {(() => { const shown = skippable.slice(0, 5).map((i) => String(inputMode === 'csv' ? i + 1 + (fileInfo?.headerRow ?? 1) : i + 1)); return skippable.length > 5 ? `${shown.join(', ')} and ${(skippable.length - 5).toLocaleString()} more` : andList(shown); })()} {skippable.length === 1 ? 'is' : 'are'} left out, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}, numbered from 1 again.{inputMode === 'csv' ? ' Each label shows its spreadsheet row.' : ''}
                       </p>
                     )}
+                    {hiddenClean.fixes.length > 0 && (
+                      <p role="status" className="flex items-start gap-1.5 text-sm text-zinc-400">
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                        <span>{hiddenClean.fixes.length === 1
+                          ? `Removed a hidden ${hiddenClean.fixes[0].tab ? 'tab' : 'character'} from label ${hiddenClean.fixes[0].label}’s ${friendlyFieldName(hiddenClean.fixes[0].field)}.`
+                          : `Removed hidden tabs or characters from ${hiddenClean.fixes.length.toLocaleString()} values (${labelsWords(Array.from(new Set(hiddenClean.fixes.map((fix) => fix.label))), allDataRows.length)}).`}</span>
+                      </p>
+                    )}
+                    {skipChars && (
+                      <p className="text-sm text-zinc-400">
+                        {labelsWords(charBadIndexes.map((index) => index + 1), allDataRows.length).replace(/^l/, 'L')} {charBadIndexes.length === 1 ? 'is' : 'are'} left out because of characters that can’t print, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}.{' '}
+                        <button type="button" className="link" onClick={() => setCharSkipKey('')}>Undo</button>
+                      </p>
+                    )}
                     <BarcodeWarning
                       items={barcodeItems}
                       stops={barcodeWords.stops}
-                      stopWords={stopFixWords(barcodeWords.fixIn)}
+                      stopWords={barcodeWords.fixIn === 'data' && charSkippable ? 'Nothing can print until those rows are fixed or left out.' : stopFixWords(barcodeWords.fixIn)}
                       isTicked={barcodeItemTicked}
                       onTick={tickBarcodeItem}
                       fix={<>
                         {barcodeFixes?.fix && (
-                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
+                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
                         )}
                         {!barcodeFixes?.fix && barcodeFixes?.qr && (
                           <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>
@@ -1990,6 +2096,7 @@ function NewRunContent() {
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
+                        {barcodeWords.fixIn !== 'design' && charSkippable && !skipChars && barcodeCheck.issues.some((issue) => issue.kind === 'characters') && leaveOutButton}
 
                       </>}
                     />
@@ -2028,9 +2135,14 @@ function NewRunContent() {
                       heading={`${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`}
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
-                      actions={lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) ? (
-                        <span className="text-zinc-400">Fix them in your spreadsheet, then use “Choose another file” at the top.</span>
-                      ) : undefined}
+                      actions={<>
+                        {charSkippable && !skipChars && characterCheck.issues.some((issue) => issue.label > 0) && leaveOutButton}
+                        {characterCheck.issues.some((issue) => !issue.label) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}
+                        {lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) && <span className="text-zinc-400">Or fix them in your spreadsheet, then use “Choose another file” at the top.</span>}
+                      </>}
+                      confirmLabel="Print anyway: those characters come out as junk"
+                      confirmed={characterGoAheadKey === characterKey}
+                      onConfirmedChange={(value) => setCharacterGoAheadKey(value ? characterKey : '')}
                     />
                     <ProblemList
                       heading="Some items overlap or run off the label"
@@ -2115,7 +2227,7 @@ function NewRunContent() {
 
 // Inline ZPL preview via zpl-renderer-js WASM: exactly what the printer
 // makes, so label edges are off unless asked for (rolls with 2+ across).
-function LocalZplPreview({ state, message, format }: { state: RunPreviewState; message?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number } }) {
+function LocalZplPreview({ state, message, format, blanks = [] }: { state: RunPreviewState; message?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; blanks?: ReadonlyArray<PreviewBlankBox> }) {
   const [showEdges, setShowEdges] = useState(false);
   // Big labels (4" × 6") shrink to fit the page; "Zoom in" shows them at
   // print size so small text can be checked, scrolling inside the frame.
@@ -2137,6 +2249,7 @@ function LocalZplPreview({ state, message, format }: { state: RunPreviewState; m
             className="rounded-md bg-white"
             style={{ imageRendering: 'pixelated', display: 'block', ...(zoomed ? { width: `${Math.round((format.linerWidth || format.width * (format.labelsAcross ?? 1)) * 96)}px`, maxWidth: 'none' } : { maxWidth: '100%', maxHeight: '420px' }) }}
           />
+          {blanks.length > 0 && <EmptyPartsOverlay format={format} blanks={blanks} />}
           {showEdges && across && (
             <LabelOutlineOverlay format={format as unknown as import('@/lib/types').LabelFormat} />
           )}
@@ -2149,6 +2262,30 @@ function LocalZplPreview({ state, message, format }: { state: RunPreviewState; m
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Striped boxes over the picture where a part has no value: that spot prints
+ * nothing yet (the picture leaves out the design's sample). Positions use the
+ * same lane math as the printer code, in printer dots.
+ */
+function EmptyPartsOverlay({ format, blanks }: { format: Parameters<typeof thermalRenderGeometry>[0]; blanks: ReadonlyArray<PreviewBlankBox> }) {
+  const id = useId().replace(/:/g, '');
+  const { labelWDots, heightDots, linerDots, effectiveSideMDots } = thermalRenderGeometry(format);
+  const gapDots = Math.round((format.horizontalGapThermal || 0) * (format.dpi || 203));
+  const stripe = Math.max(4, Math.round(Math.min(labelWDots, heightDots) / 40));
+  return (
+    <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" viewBox={`0 0 ${linerDots} ${heightDots}`} preserveAspectRatio="none">
+      <defs>
+        <pattern id={`${id}-hatch`} width={stripe * 2} height={stripe * 2} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width={stripe} height={stripe * 2} fill="#d97706" fillOpacity={0.35} />
+        </pattern>
+      </defs>
+      {blanks.map((box, index) => (
+        <rect key={index} x={effectiveSideMDots + box.lane * (labelWDots + gapDots) + box.x} y={box.y} width={box.width} height={box.height} fill={`url(#${id}-hatch)`} stroke="#d97706" strokeOpacity={0.7} strokeWidth={Math.max(1, stripe / 3)} strokeDasharray={`${stripe} ${stripe / 2}`} />
+      ))}
+    </svg>
   );
 }
 

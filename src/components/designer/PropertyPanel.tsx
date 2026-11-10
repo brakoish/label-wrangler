@@ -14,7 +14,7 @@ import { contentModeUpdates } from '@/lib/elementBinding';
 import { elementTypeName, friendlyFieldName, nextFieldName } from '@/lib/fieldLabels';
 import { Menu } from '@/components/ui/Menu';
 import { useRubberBand } from '@/components/motion/rubberBand';
-import { describeUnprintable, elementUnprintable, plainPrinterText } from '@/lib/printerCharacters';
+import { describeUnprintable, elementUnprintable, plainPrinterText, plainReplacement } from '@/lib/printerCharacters';
 import { parseSizeInput, sizeProblem } from '@/lib/sizeInput';
 import { columnChoices, isMadeUpFieldName, readLastColumns } from '@/lib/lastColumns';
 
@@ -28,8 +28,8 @@ interface PropertyPanelProps {
   onArrange?: (action: AlignAction) => void;
   /** Every item on the design: for unique default names and the Manifest picker. */
   allElements?: TemplateElement[];
-  /** Layout problems that involve the selected item, in plain words. */
-  problems?: string[];
+  /** Layout problems that involve the selected item, in plain words (red when printing must wait, as on the label's notice). */
+  problems?: Array<{ text: string; blocking?: boolean }>;
 }
 
 /** Each kind of item's icon, the same as in the items list. */
@@ -99,7 +99,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     // One line, not a second copy of the Items list.
     return (
       <div className={`${PANEL} min-h-20 lg:min-h-0`}>
-        <p className="px-4 pt-3 pb-4 text-sm text-zinc-400">{allElements.length ? 'Tap an item on the label, or in Items, to change it.' : 'Add an item to the label first.'}</p>
+        <p className="px-4 pt-3 pb-4 text-sm text-zinc-400">{allElements.length ? 'Select an item on the label, or in Items, to change it.' : 'Add an item to the label first.'}</p>
       </div>
     );
   }
@@ -141,14 +141,14 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-100">{elementTypeName(element.type)}{!element.isStatic && element.fieldName && !isMadeUpFieldName(element.fieldName) ? `: ${friendlyFieldName(element.fieldName)}` : ''}</h2>
       </div>
       {problems.length > 0 && (
-        <ul role="alert" className="mx-4 mt-2 space-y-1 text-sm text-amber-300">
-          {problems.slice(0, 3).map((message) => <li key={message} className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{message}</li>)}
+        <ul role="alert" className="mx-4 mt-2 space-y-1 text-sm text-zinc-100">
+          {problems.slice(0, 3).map((problem) => <li key={problem.text} className="flex items-start gap-1.5"><AlertCircle className={`mt-0.5 size-4 shrink-0 ${problem.blocking ? 'text-red-400' : 'text-amber-300'}`} aria-hidden="true" />{problem.text}</li>)}
         </ul>
       )}
       {unprintable.length > 0 && (
-        <div role="alert" className="mx-4 mt-2 space-y-1 text-sm text-amber-300">
-          <p className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{describeUnprintable(unprintable)}</p>
-          <button type="button" className="btn btn-secondary btn-sm ml-5.5" onClick={replaceUnprintable}>Replace {unprintable.length === 1 ? 'it' : 'them'}</button>
+        <div role="alert" className="mx-4 mt-2 space-y-1 text-sm text-zinc-100">
+          <p className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden="true" />{describeUnprintable(unprintable)}</p>
+          <button type="button" className="btn btn-secondary btn-sm ml-5.5 max-sm:min-h-11" onClick={replaceUnprintable}>{unprintable.every((ch) => plainReplacement(ch) === '-') ? 'Replace with -' : 'Use plain characters'}</button>
         </div>
       )}
 

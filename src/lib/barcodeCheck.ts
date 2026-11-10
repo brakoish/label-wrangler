@@ -219,7 +219,7 @@ function whichLabels(labels: number[], count: number, total: number, fromSpreads
  * One sentence per barcode and problem, for the run check: "The Package tag
  * barcode on all 40 labels prints 2.95" wide for 24 characters, but only
  * 1.93" fits from where it starts, so the printer cuts it off and it won’t
- * scan. Make an exact-print copy of the design…". Values the barcode type
+ * scan. Make a picture copy of the design…". Values the barcode type
  * can't hold stay one line per label (each needs its own fix in the data).
  */
 export function describeBarcodeGroups(issues: ReadonlyArray<BarcodeIssue>, totalLabels: number, fromSpreadsheet: (field: string) => boolean, limit = 5, fitCounts: Record<string, number> = {}): { items: string[]; more: number } {

@@ -107,7 +107,7 @@ assert.equal(barcodeToQr(flower.map((e) => (e.id === 'bc' ? { ...e, locked: true
 assert.equal(barcodeToQr(flower, 'bc', { ...fmt, type: 'sheet' }, values, false), null);
 
 // Plain sentences: one per problem, the measurements kept for Why?.
-const full = 'The Package tag barcode prints 2.95" wide for 24 characters but only 1.93" fits, so the printer cuts it off and it won’t scan, and prints over the COA link QR code and the Batch text, so the COA link QR code won’t scan either. Make an exact-print copy, which draws thinner bars that fit.';
+const full = 'The Package tag barcode prints 2.95" wide for 24 characters but only 1.93" fits, so the printer cuts it off and it won’t scan, and prints over the COA link QR code and the Batch text, so the COA link QR code won’t scan either. Make a picture copy, which draws thinner bars that fit.';
 assert.equal(barcodePlainSentence(full), 'The Package tag barcode is too wide for this label and covers the COA link QR code, so neither will scan.');
 assert.ok(!/\d"/.test(barcodePlainSentence(full)), 'no measurements in the sentence');
 assert.equal(PRINT_ANYWAY, 'Print anyway');
@@ -117,7 +117,7 @@ assert.equal(barcodeTickLabel('The Metrc barcode on all 20 labels prints 2.1″ 
 assert.equal(barcodeTickLabel('The Metrc barcode on both labels prints 2.1″ wide.'), 'Print both anyway');
 assert.equal(barcodeTickLabel('The Metrc barcode on labels 1, 3, 5 and 17 more (rows 2, 4, 6…) prints 2.1″ wide.'), 'Print these 20 anyway');
 assert.equal(barcodeTickLabel('The Metrc barcode on label 7 (row 8) prints 2.1″ wide.'), 'Print anyway');
-assert.equal(FIX_IN_DESIGNER, 'Fix in the designer');
+assert.equal(FIX_IN_DESIGNER, 'Open in designer');
 assert.match(barcodeWaitWords(false, 1), /tick “Print anyway”/);
 assert.match(barcodeWaitWords(true, 1), /can’t print/);
 assert.ok(!/list|above|below/i.test(barcodeWaitWords(false, 3)), 'never points to a list');
@@ -155,4 +155,4 @@ assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
   assert.equal(runBarcodeFixes(short, shortRun, fmt, [{ field: 'package_tag', label: 1, value: 'é', problem: 'x', kind: 'characters', elementId: 'b3' }]), null);
 }
 
-console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Fix in the designer');
+console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Open in designer');

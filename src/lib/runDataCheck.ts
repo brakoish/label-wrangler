@@ -172,6 +172,11 @@ export function describeBlankIssue(issue: BlankFieldIssue, total: number): strin
 /** Headline for the whole check, e.g. "3 labels are missing a value". */
 export function describeBlankSummary(check: RunDataCheck): string {
   if (!check.issues.length) return check.checkedLabels > 0 ? `All ${check.checkedLabels.toLocaleString()} labels checked — every field has a value.` : '';
+  const total = check.checkedLabels;
+  if (check.issues.every((issue) => issue.kind === 'no-value' || (total > 1 && issue.count >= total))) {
+    const fields = check.issues.length;
+    return `${fields} field${fields === 1 ? ' has' : 's have'} no value`;
+  }
   const n = check.blankLabels;
   return `${n.toLocaleString()} label${n === 1 ? ' is' : 's are'} missing a value`;
 }
