@@ -335,7 +335,9 @@ console.log('PASS field display names');
   assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true\);/, 'one press checks and sends one stretch');
 
   const page = read('src/components/runs/RunPrinter.tsx');
-  assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: 'Skip and count as printed'/, 'the safe start is the primary button');
+  assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: `Print only \$\{only\}`/, 'the safe start is the primary button; printing only the chosen labels leaves progress alone');
+  assert.doesNotMatch(page, /Skip and count as printed/, 'skipped labels are never counted as printed without a yes');
+  assert.match(page, /confirmLabel: `Yes, \$\{one \? 'it' : 'they'\} printed`/, 'counting skipped labels as printed needs the person to say they printed');
   assert.match(page, /confirmLabel: `Keep progress at \$\{printedCount\}`,\s*altLabel: 'Count them too'/, 'keeping progress honest is the primary button');
   assert.match(page, /resetProgress: true, expectedPrintedCount: before/, 'a rewind says which count it expects');
   assert.match(page, /\.\.\.\(plan\.rewind \? \{ expectedPrintedCount: printedCount \} : \{\}\)/);

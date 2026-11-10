@@ -167,7 +167,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [showReprint, setShowReprint] = useState(false);
   const [reprintFromDraft, setReprintFromDraft] = useState('1');
   const [reprintToDraft, setReprintToDraft] = useState('1');
-  const [reprinting, setReprinting] = useState<{ from: number; to: number; done: number } | null>(null);
+  const [reprinting, setReprinting] = useState<{ from: number; to: number; done: number; kind?: 'reprint' | 'only' } | null>(null);
   const reprintQueue = useRef<RunQueueHandle | null>(null);
   const [stopAt, setStopAt] = useState(0); // 0 = print all; >0 = stop after this physical label
   const [fromDraft, setFromDraft] = useState<string | null>(null);
@@ -679,15 +679,32 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // between as printed, because progress is "printed up to label N".
     const skipped = plan.rewind ? null : skippedLabels(printedCount, selectedFrom);
     if (skipped) {
-      // The safe choice is the primary button; closing the dialog starts nothing.
+      // The safe choice is the primary button; closing the dialog starts
+      // nothing. Labels are only counted as printed when the person says
+      // they did print.
+      const one = skipped.from === skipped.to;
+      const gap = one ? `label ${skipped.from}` : `labels ${skipped.from}–${skipped.to}`;
+      const only = selectedFrom === selectedThrough ? `${selectedFrom}` : `${selectedFrom}–${selectedThrough}`;
       const choice = await choiceDialog({
-        title: `Skip ${skipped.from === skipped.to ? `label ${skipped.from}` : `labels ${skipped.from}–${skipped.to}`}?`,
-        body: `The next label to print is ${skipped.from}. If you start at ${selectedFrom}, ${skipped.from === skipped.to ? `label ${skipped.from} is` : `labels ${skipped.from}–${skipped.to} are`} counted as printed without printing.`,
+        title: `${gap.charAt(0).toUpperCase()}${gap.slice(1)} ${one ? 'hasn’t' : 'haven’t'} printed yet`,
+        body: `The next label to print is ${skipped.from}. Start there, or print only ${selectedFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
         confirmLabel: `Start at ${skipped.from} instead`,
-        altLabel: 'Skip and count as printed',
+        altLabel: `Print only ${only}`,
+        extraLabel: `${one ? 'It' : 'They'} already printed…`,
+        cancelAlso: true,
       });
       if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); return; }
-      if (choice !== 'alt') return;
+      // Printed apart from the run (its own guard against a second start).
+      if (choice === 'alt') { starting.current = false; await handleReprintRange({ from: selectedFrom, to: selectedThrough }, 'only'); return; }
+      if (choice !== 'extra') return;
+      const printedThem = await confirmDialog({
+        title: `Did ${gap} print?`,
+        body: `Only say yes if ${one ? 'it came' : 'they came'} out of a printer. ${one ? 'It is' : 'They are'} then counted as printed, and printing starts at ${selectedFrom}.`,
+        confirmLabel: `Yes, ${one ? 'it' : 'they'} printed`,
+        cancelLabel: 'No',
+        focusCancel: true,
+      });
+      if (!printedThem) return;
     }
     // Labels the office printer already has: printing them here too is a
     // choice, not a surprise.
@@ -882,22 +899,27 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // Reprint exactly From..To (e.g. a jammed strip). This is a separate job:
   // it never rewinds or changes the run's progress or status, and it is
   // logged in the print history as a reprint.
-  const handleReprintRange = async () => {
-    if (!run || !template || !format || !reprintValid || reprinting || statusRef.current === 'running' || starting.current) return;
+  /**
+   * Prints a range without touching the run's progress: a reprint, or
+   * ('only') labels picked out of order from the start form.
+   */
+  const handleReprintRange = async (chosen?: { from: number; to: number }, kind: 'reprint' | 'only' = 'reprint') => {
+    if (!run || !template || !format || (!chosen && !reprintValid) || reprinting || statusRef.current === 'running' || starting.current) return;
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
-    const range = { from: reprintFrom, to: reprintTo };
+    const range = chosen ?? { from: reprintFrom, to: reprintTo };
+    const message = kind === 'only' ? 'Printed out of order (run progress unchanged)' : 'Reprint (run progress unchanged)';
     setErrorMsg(null);
     if (isSheetFormat) {
       if (!openInNewTab(sheetPrintHref(range))) { setErrorMsg('Popup blocked. Allow popups, then try again.'); return; }
       setShowReprint(false);
-      void createPrintEvent(run.id, { eventType: 'opened', output: 'sheet-pdf', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName: null, message: 'Reprint (run progress unchanged)' });
+      void createPrintEvent(run.id, { eventType: 'opened', output: 'sheet-pdf', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName: null, message });
       return;
     }
-    if (!(transport === 'dazzle' && dazzleSelected) && !(transport === 'webusb' && usbPrinter)) { setErrorMsg('Connect a printer first, then press Reprint again.'); return; }
+    if (!(transport === 'dazzle' && dazzleSelected) && !(transport === 'webusb' && usbPrinter)) { setErrorMsg(kind === 'only' ? 'Connect a printer first, then press Print again.' : 'Connect a printer first, then press Reprint again.'); return; }
     const controller = new AbortController();
     preparation.current = controller;
-    setReprinting({ ...range, done: 0 });
+    setReprinting({ ...range, done: 0, kind });
     setLocalPrintRunning(true);
     const printerName = transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null;
     const finish = () => { reprintQueue.current = null; if (mounted.current) { setReprinting(null); setLocalPrintRunning(false); } };
@@ -916,13 +938,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         if (feedsDone >= labelsToSend.length) {
           finish();
           setShowReprint(false);
-          await createPrintEvent(run.id, { eventType: 'sent', output: 'roll-zpl', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName, message: 'Reprint (run progress unchanged)' });
+          await createPrintEvent(run.id, { eventType: 'sent', output: 'roll-zpl', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName, message });
         }
       },
       onError: async (err) => {
         finish();
-        setErrorMsg(friendlyError(err, 'Reprint failed'));
-        await createPrintEvent(run.id, { eventType: 'failed', output: 'roll-zpl', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName, message: `Reprint failed: ${(err as Error)?.message || 'Print failed'}` });
+        setErrorMsg(friendlyError(err, kind === 'only' ? 'Printing failed' : 'Reprint failed'));
+        await createPrintEvent(run.id, { eventType: 'failed', output: 'roll-zpl', rangeFrom: range.from, rangeTo: range.to, labelCount: labelRangeCount(range), printedCountAfter: null, printerName, message: kind === 'only' ? `Print failed: ${(err as Error)?.message || 'Print failed'}` : `Reprint failed: ${(err as Error)?.message || 'Print failed'}` });
       },
     });
   };
@@ -1664,7 +1686,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {status !== 'running' && total > 0 && (printedCount > 0 || !!reprinting || showReprint) && (
             reprinting ? (
               <div role="status" className="space-y-2 text-sm text-zinc-300">
-                <p className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin text-amber-400" aria-hidden="true" /> Reprinting labels {reprinting.from}–{reprinting.to} ({reprinting.done} of {reprinting.to - reprinting.from + 1} sent). Progress won&apos;t change.</p>
+                <p className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin text-amber-400" aria-hidden="true" /> {reprinting.kind === 'only' ? 'Printing' : 'Reprinting'} {reprinting.from === reprinting.to ? `label ${reprinting.from}` : `labels ${reprinting.from}–${reprinting.to}`} ({reprinting.done} of {reprinting.to - reprinting.from + 1} sent). Progress won&apos;t change.</p>
                 <button type="button" onClick={stopReprint} className="btn btn-secondary btn-sm">Stop reprint</button>
               </div>
             ) : !showReprint ? (
