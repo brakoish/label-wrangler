@@ -62,12 +62,12 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   const base={sent:0,onTheWay:0,failed:0,firstFailed:null};
   assert.equal(D.runDisplayStatus(run,{...base,unsure:{from:1,to:20}}).label,'Needs a check','not sure the office got them');
   assert.equal(D.runDisplayStatus(run,{...base,printerPaused:true}).label,'Paused');
-  assert.equal(D.runDisplayStatus(run,{...base,sent:20,unchecked:20}).tone,'check','a routine check is amber, never red');
+  assert.equal(D.runDisplayStatus(run,{...base,sent:20,unchecked:20}).tone,'confirm','a normal send asks calmly: never amber or red');
   assert.equal(D.runDisplayStatus(run,{...base,refused:{from:1,to:20}}).tone,'attention','a refused send needs someone');
   assert.equal(D.runDisplayStatus(run,base).label,'Ready');
   assert.equal(R.statusAfterMarkPrinted('cancelled',100,100),null);
   const list=read('src/app/runs/page.tsx');
   assert.match(list,/\(fresh\.printedCount \|\| 0\) < \(run\.printedCount \|\| 0\)/,'bulk mark never undoes a go-back made elsewhere');
-  assert.match(list,/sent — check they came out/,'a cancelled run with sent labels says so on the list');
+  assert.match(list,/sent: did they all come out?/,'a cancelled run with sent labels asks calmly on the list');
   console.log('PASS run b8: status words match the panel; cancelled runs stay cancelled');
 }

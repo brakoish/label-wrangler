@@ -22,13 +22,17 @@ async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 const PROGRESS_FIELDS = new Set(['printedCount', 'status', 'completedAt', 'progressOnly', 'resetProgress', 'expectedPrintedCount']);
+const PRINT_STATUSES = new Set(['queued', 'printing', 'paused', 'completed', 'cancelled']);
 
 async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const body = await validatedBody(req, 'run', false);
     // Recording print progress is printing work; anything else edits the run.
-    if (Object.keys(body).some(key => !PROGRESS_FIELDS.has(key)) && !officeUserFor(req)?.can_edit) throw new OfficeError('Your account does not have permission', 403);
+    // Printing moves a run between queued, printing, paused, completed and
+    // cancelled (main's "Reprint all" sends queued); only editing makes it a
+    // draft again.
+    if ((Object.keys(body).some(key => !PROGRESS_FIELDS.has(key)) || (body.status !== undefined && !PRINT_STATUSES.has(String(body.status)))) && !officeUserFor(req)?.can_edit) throw new OfficeError('Your account does not have permission', 403);
     const [current] = await db.select({totalLabels:runs.totalLabels,printedCount:runs.printedCount}).from(runs).where(eq(runs.id,id));
     if (!current) throw new OfficeError('Run not found',404);
     const total = Array.isArray(body.sourceData) ? body.sourceData.length : current.totalLabels;

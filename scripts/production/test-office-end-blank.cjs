@@ -61,8 +61,14 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   assert.doesNotMatch(O.queuedNotice('Labels 1–63',false,{paused:false,stopped:false}),/blank/,'no blank asked: not mentioned');
   assert.match(O.queuedNotice('Label 4',true,{paused:true,stopped:false},4),/One blank label comes out after label 4\./);
   const room=O.plainOfficeRefusal('Final batch has no room for a blank feed. Choose a smaller range or reduce artwork size.',400);
-  assert.equal(room.reason,'too-large');assert.match(room.message,/untick the blank label/);
-  assert.equal(O.plainOfficeRefusal('This range with its blank feed exceeds 32 MiB. Choose a smaller range.',400).reason,'too-large');
+  assert.equal(room.reason,'no-blank-room');assert.match(room.message,/isn’t room for the blank label/);
+  assert.equal(O.refusalNextStep('no-blank-room'),'without-blank','the way out is a send without the blank, never the refused send again');
+  assert.equal(O.plainOfficeRefusal('This range with its blank feed exceeds 32 MiB. Choose a smaller range.',400).reason,'no-blank-room');
+  assert.equal(O.plainOfficeRefusal('Request exceeds 32 MiB of printer data',413).reason,'too-large');
+  assert.equal(O.officeFailureKind(400),'refused','a definite refusal: the saved request is cleared');
+  // The refused send remembers that it asked for the blank, so other resends keep it.
+  assert.deepEqual(O.readRefusal(JSON.stringify({from:1,to:9,reason:'labels-changed',message:'m',at:'x',endBlank:true})).endBlank,true);
+  assert.equal(O.readRefusal(JSON.stringify({from:1,to:9,reason:'other',message:'m',at:'x'})).endBlank,undefined);
   assert.equal(O.plainOfficeRefusal('Invalid end blank option',400).reason,'other','developer words never shown');
   console.log('PASS end blank: plain words for the notice and refusals');
 }
@@ -71,7 +77,7 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
 {
   const src=read('src/components/runs/OfficePiPrinter.tsx');
   const submit=src.slice(src.indexOf('const submit=async'),src.indexOf('const [directCheck,setDirectCheck]'));
-  const blank=submit.indexOf('const blank=target?partBlank:endBlank;');
+  const blank=submit.indexOf('const blank=target?partBlank:direct?direct.endBlank===true:endBlank;');
   const literal=submit.indexOf('payload={runId,stationId:printer.station_id,printerId:printer.id,from:want.from,to:want.to,idempotencyKey:crypto.randomUUID(),...(blank?{endBlank:true}:{}),');
   const save=submit.indexOf('localStorage.setItem(storageKey,JSON.stringify(payload))');
   const post=submit.indexOf("api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)})");
@@ -83,9 +89,20 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   assert.match(loop,/const blankHere=partCarriesEndBlank\(current,part\);\s*const outcome=await submit\(part,undefined,blankHere\);/,'each part asks the plan whether it ends the range');
   const start=src.slice(src.indexOf('const startSeries=async'),src.indexOf('// Leaving the page mid-series'));
   assert.match(start,/\.\.\.\(endBlank\?\{endBlankAt:toNumber\}:\{\}\)/,'the choice is saved in the parts plan');
-  assert.match(src,/checked=\{pending\?pending\.endBlank===true:endBlank\} disabled=\{busy \|\| !!pending \|\| !!series\}/,'the box shows the saved request’s choice and is off while a send is pending or busy');
   assert.match(src,/const \[endBlank,setEndBlank\]=useState\(false\);/,'defaults off');
-  assert.match(src,/\{again && blankBox\('fix'\)\}/,'the fix dialog’s reprint uses (and shows) the current choice');
+  // Per send: off again after every send that went through, and a saved record never changes the box.
+  assert.match(submit,/setPending\(null\);setPosting\(false\);\s*\/\/[^\n]*\n\s*setEndBlank\(false\);/,'a successful send turns the box off');
+  assert.doesNotMatch(src,/setEndBlank\(data\.endBlank\)/,'a resumed record keeps its choice for its own resend only');
+  assert.match(src,/\{!pending && rangeValid && <BlankOption id=\{`\$\{uid\}-form-blank`\} checked=\{endBlank\}/,'the form’s box is hidden while a saved request waits (it resends as saved)');
+  assert.match(src,/setFix\(\{part,seen:'',againText:'',note:'',order:'in-order',blank:false\}\)/,'the fix dialog starts with the blank off');
+  assert.match(src,/const blankOnReprint=current\.blank && heldLast===null;/,'a "Print in order" fix feeds the blank after the held labels, never after the reprint');
+  assert.match(src,/body:`\$\{end-part\.from===0\?'It prints':'They print'\} once more on the office printer\. The run’s progress doesn’t change\.`/,'a one-confirm reprint has no blank');
+  // No room for the blank: a new request without it, never the refused payload again.
+  assert.match(src,/refusalStep==='without-blank'[\s\S]{0,400}sendNow\(\{from:again\.from,to:Math\.min\(again\.to,again\.from\+cap-1\)\},undefined,false,false\)/);
+  // While the single POST is on its way, the panel doesn't say "not sure".
+  assert.match(src,/const unsure=!!pending && !posting;/);
+  assert.match(src,/\{unsure && pending && <div role="status"/);
+  assert.match(src,/const unsureFrom=unsure\?pending\?\.from:undefined/);
   assert.match(src,/payload\.endBlank===true\?payload\.to:undefined/,'the notice names the blank when one was asked for');
   console.log('PASS end blank: panel saves the choice before the POST, resends it unchanged, passes it to the last part only');
 }

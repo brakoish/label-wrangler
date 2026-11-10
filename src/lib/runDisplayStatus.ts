@@ -26,15 +26,18 @@ export interface RunOfficeSummary {
 
 /**
  * Tones: 'attention' (red) is only for something that went wrong (a printer
- * problem, labels that didn't print, a refused send); 'check' (amber) is a
- * routine "look at the printer" step.
+ * problem, labels that didn't print, a refused send); 'check' (amber) is for
+ * something that is actually uncertain (the office didn't confirm a part, a
+ * send nobody is sure arrived); 'confirm' (calm, neutral) is the normal ask
+ * after a send went through: did they all come out?
  */
-export type RunDisplayTone = 'done' | 'active' | 'attention' | 'check' | 'paused' | 'cancelled' | 'idle';
+export type RunDisplayTone = 'done' | 'active' | 'attention' | 'check' | 'confirm' | 'paused' | 'cancelled' | 'idle';
 /** The run statuses, used the same way in rows, the run header and the filter. */
-export type RunStatusBucket = 'needs-you' | 'check' | 'printing' | 'paused' | 'ready' | 'done' | 'cancelled';
+export type RunStatusBucket = 'needs-you' | 'check' | 'sent' | 'printing' | 'paused' | 'ready' | 'done' | 'cancelled';
 export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
   'needs-you': 'Needs you',
   check: 'Needs a check',
+  sent: 'Sent',
   printing: 'Printing',
   paused: 'Paused',
   ready: 'Ready',
@@ -43,14 +46,15 @@ export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
 };
 
 const labelsWord = (span: { from: number; to: number }) => (span.from === span.to ? `Label ${span.from.toLocaleString('en-US')}` : `Labels ${span.from.toLocaleString('en-US')}–${span.to.toLocaleString('en-US')}`);
-const plural = (n: number) => (n === 1 ? '1 label' : `${n.toLocaleString('en-US')} labels`);
 
 /**
  * One status for a run, shared by the run header and the Runs list, from the
- * same facts the office panel shows: one of seven words (Needs you, Needs a
- * check, Printing, Paused, Ready, Done, Cancelled), with a short detail
+ * same facts the office panel shows: one of eight words (Needs you, Needs a
+ * check, Sent, Printing, Paused, Ready, Done, Cancelled), with a short detail
  * beside it. The words never contradict the panel: "Needs you" is always red
- * and only for something that went wrong, "Needs a check" is amber, a run
+ * and only for something that went wrong, "Needs a check" is amber and only
+ * for something uncertain, "Sent" (labels the office sent that nobody has
+ * said came out yet) is a calm question, never a warning, a run
  * whose labels wait for a paused or stopped office printer is "Paused",
  * never "Printing", and a run is "Ready" only when nothing is outstanding.
  * Office deliveries are shown as "sent", never as "printed": the office
@@ -82,8 +86,8 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (office?.printerPaused) return out('paused', 'paused', 'The office printer is paused');
   if (run.status === 'printing') return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
-  if (office && (office.unchecked ?? 0) > 0) return out('check', 'check', `${plural(office.unchecked!)} sent, not checked yet`);
-  if (office && office.unchecked === undefined && total > 0 && office.sent >= total) return out('check', 'check', 'Sent: check they came out');
+  if (office && (office.unchecked ?? 0) > 0) return out('sent', 'confirm', office.unchecked === 1 ? 'Did it come out?' : `Did all ${office.unchecked!.toLocaleString('en-US')} come out?`);
+  if (office && office.unchecked === undefined && total > 0 && office.sent >= total) return out('sent', 'confirm', 'Did they all come out?');
   if (office && office.sent > 0) return out('ready', 'idle', printed > 0 ? 'Partly printed' : 'Partly sent');
   if (printed > 0) return out('ready', 'idle', 'Partly printed');
   return out('ready', 'idle');

@@ -15,6 +15,9 @@ const event={eventType:'sent',output:'roll-zpl',rangeFrom:1,rangeTo:2,labelCount
  assert.equal((await put(printOnly,{printedCount:5,progressOnly:true})).status,200);
  assert.equal((await put(printOnly,{status:'paused',printedCount:5})).status,200);
  assert.equal((await put(printOnly,{status:'queued',printedCount:0,resetProgress:true})).status,200);
+ for(const status of ['printing','completed','cancelled'])assert.equal((await put(printOnly,{status,printedCount:5})).status,200,`print-only user can set ${status}`);
+ assert.equal((await put(printOnly,{status:'draft'})).status,403,'print-only user turned a run back into a draft');
+ assert.equal((await put(editOnly,{status:'draft'})).status,200,'an editor can still make a draft');
  assert.equal((await put(printOnly,{name:'Renamed'})).status,403,'print-only user renamed a run');
  assert.equal((await put(printOnly,{printedCount:5,sourceData:['a']})).status,403,'print-only user replaced source rows');
  assert.equal((await put(editOnly,{printedCount:5,progressOnly:true})).status,200,'edit-only user lost progress recording');

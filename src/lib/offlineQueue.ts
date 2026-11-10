@@ -22,6 +22,8 @@ const MAIN_EVENT_TYPES: ReadonlySet<string> = new Set(['opened', 'sent', 'confir
 const MAIN_OUTPUTS: ReadonlySet<string> = new Set(['roll-zpl', 'sheet-pdf', 'roll-pdf', 'scan', 'office-pi']);
 /** Main's refusal of the rewind fields: 400 "Invalid field resetProgress". */
 const MAIN_REFUSES_REWIND = /Invalid field (resetProgress|expectedPrintedCount)/;
+/** Main's origin refusal (403), which carries no code. */
+const MAIN_ORIGIN_REFUSAL = 'Request origin not allowed';
 const LEGACY = 'lw:pending-run-ops';
 /** Responses that will never succeed on retry. These operations are set aside
  * (dead-lettered) so they stop blocking newer progress. Network failures,
@@ -284,9 +286,10 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
             announce(pendingError);
             continue;
           }
-          if (response.status === 403 && refused.code === ORIGIN_NOT_ALLOWED) {
+          if (response.status === 403 && (refused.code === ORIGIN_NOT_ALLOWED || refused.message === MAIN_ORIGIN_REFUSAL)) {
             // Not a permission problem: the app was opened at an address the
             // server doesn't accept. Keep the update and block this run.
+            // After a rollback, main's server says the same without the code.
             blocked.add(runId);
             pendingError = ORIGIN_REFUSED_MESSAGE;
             continue;

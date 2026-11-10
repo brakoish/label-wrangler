@@ -335,8 +335,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld,
       unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused }
     : null;
-  // Labels at or sent to the office printer that nobody counted yet: the lighter part of the progress bar.
-  const sentSpans = useMemo<OfficeSpan[]>(() => [...officeMark.ranges, ...(office.loaded ? officeWaitingSpans(office.jobs, total) : [])], [officeMark.ranges, office.loaded, office.jobs, total]);
+  // Labels at or sent to the office printer that nobody counted yet: the lighter part of the progress bar,
+  // named apart ("sent to the printer", "waiting at the office") like the office panel names them.
+  // Labels on their way are named once: by the office panel's line, or (another printer chosen) the
+  // "Sent to office printer" line; only a paused office printer leaves the count to the progress line.
+  const waitingSpans = useMemo<OfficeSpan[]>(() => (office.loaded ? officeWaitingSpans(office.jobs, total) : []), [office.loaded, office.jobs, total]);
   const allWithOffice = !!officeSummary && printedCount < total && firstUnsentLabel(office.jobs, total, printedCount) === null;
   // Print history follows the office: every move re-reads it.
   const officeSignature = office.signature;
@@ -401,6 +404,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     previewStarted.current = run.id;
     setPreviewIndex(Math.max(0, Math.min(run.totalLabels - 1, run.printedCount ?? 0)));
   }, [run]);
+  // The preview follows the labels the office panel sends next (its range
+  // boxes, or "Which labels didn't come out?"), so the person sees the first
+  // of the labels they typed.
+  const officeSendFrom = officeSend?.from;
+  useEffect(() => {
+    if (officeSendFrom === undefined || !Number.isInteger(officeSendFrom) || officeSendFrom < 1 || officeSendFrom > total) return;
+    setPreviewIndex(officeSendFrom - 1);
+  }, [officeSendFrom, total]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -977,6 +988,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const one = !parsed.error && parsed.spans.length === 1 ? parsed.spans[0] : null;
     setReprintFromDraft(one ? String(one.from) : '');
     setReprintToDraft(one ? String(one.to) : '');
+    // Show the first of the labels typed.
+    if (one && one.from <= total) setPreviewIndex(one.from - 1);
     setReprintTextError(parsed.error || (parsed.spans.length > 1 ? 'Type one stretch, like 5–8. Print the others after.' : ''));
   };
 
@@ -1520,6 +1533,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 display.tone === 'active' ? 'bg-amber-400' :
                 display.tone === 'attention' ? 'bg-red-400' :
                 display.tone === 'check' ? 'bg-amber-300' :
+                display.tone === 'confirm' ? 'bg-zinc-300' :
                 display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
                 display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
               }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap min-w-0 ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300"> · {display.detail}</span>}</span>
@@ -1532,7 +1546,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </ul>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {scanInHeader && <Link href={`/runs/${run.id}/scan`} className="btn btn-secondary btn-sm" title="One label per scan, hands-free">
+            {scanInHeader && <Link href={`/runs/${run.id}/scan`} className="btn btn-secondary btn-sm" title="One label per scan, on a label printer plugged into this computer. The office printer can’t print from scans." aria-label="Scan mode (needs a label printer plugged into this computer)">
               <ScanBarcode className="w-4 h-4 text-amber-400" aria-hidden="true" />
               <span className="max-sm:sr-only">Scan mode</span>
             </Link>}
@@ -1683,7 +1697,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!calm && !officeFixFirst && checkList}
 
           <div className="space-y-2">
-            <RunProgress printedCount={printedCount} total={total} confirmed={[...officeConfirmed, ...scannedSpans]} sent={sentSpans} tone={runFinished ? 'done' : 'active'} animate />
+            <RunProgress printedCount={printedCount} total={total} confirmed={[...officeConfirmed, ...scannedSpans]} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} tone={runFinished ? 'done' : 'active'} animate />
             {/* What the office printer has done: shown, never counted as printed.
                 With the office printer chosen, its panel says it once. */}
             {transport !== 'office' && sentLine && <p className="text-sm text-zinc-400 tabular-nums">{sentLine}</p>}
@@ -1773,8 +1787,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!isSheetFormat && !transportReady && !showReprint && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
             <p className="text-sm text-zinc-400">{transport === 'webusb' ? 'Connect a printer first.' : transport === 'dazzle' ? 'Turn on a printer in the Dazzle app first.' : 'Choose a printer first.'}</p>
           )}
-          {((!blanksOk && !isSheetFormat) || !checksOk) && (isSheetFormat || transport !== 'office') && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-            <p className="text-sm text-amber-300">{!blanksOk && !isSheetFormat ? 'Printing is off until every label has a value (see the list above).' : checksReason}</p>
+          {/* A barcode or layout problem is said once, in the check above, with its own tick. */}
+          {!blanksOk && !isSheetFormat && transport !== 'office' && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            <p className="text-sm text-amber-300">Printing is off until every label has a value (see the list above).</p>
           )}
 
           {/* Reprint: a separate From/To job that never changes the run's progress.
@@ -1782,7 +1797,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {status !== 'running' && total > 0 && (printedCount > 0 || !!reprinting || showReprint) && (
             reprinting ? (
               <div role="status" className="space-y-2 text-sm text-zinc-300">
-                <p className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin text-amber-400" aria-hidden="true" /> {reprinting.kind === 'only' ? 'Printing' : 'Reprinting'} {reprinting.from === reprinting.to ? `label ${reprinting.from}` : `labels ${reprinting.from}–${reprinting.to}`} ({reprinting.done} of {reprinting.to - reprinting.from + 1} sent). Progress won&apos;t change.</p>
+                <p className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin text-amber-400" aria-hidden="true" /> {reprinting.kind === 'only' ? 'Printing' : 'Reprinting'} {reprinting.from === reprinting.to ? `label ${reprinting.from}` : `labels ${reprinting.from}–${reprinting.to}`} ({reprinting.done.toLocaleString()} of {(reprinting.to - reprinting.from + 1).toLocaleString()} sent). Progress won&apos;t change.</p>
                 <button type="button" onClick={stopReprint} className="btn btn-secondary btn-sm">Stop reprint</button>
               </div>
             ) : !showReprint ? (
@@ -1826,7 +1841,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
           {officeFixFirst && checkList}
           </>}
         </section>
@@ -1866,9 +1881,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {/* Per-label preview with row stepper. Lets the user spot-check that,
               say, label 1 and label 543 really do have different QR codes. */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="section-title">Preview</h3>
-              <div className="flex items-center gap-2">
+            {/* Phones: the label stepper gets its own full-width row, so nothing runs past the card. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="section-title mr-auto">Preview</h3>
                 <button
                   type="button"
                   onClick={() => setShowOutlines((s) => !s)}
@@ -1879,7 +1894,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <SquareDashed className="w-4 h-4" aria-hidden="true" />Outlines
                 </button>
               {total > 0 && (
-                <div className="flex items-center gap-1 text-sm">
+                <div className="flex items-center gap-1 text-sm max-sm:-mx-2 max-sm:w-[calc(100%+1rem)]">
                   <button
                     type="button"
                     onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
@@ -1899,7 +1914,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     }}
                     className="field field-sm w-16 text-center tabular-nums"
                   />
-                  <span className="text-zinc-400 tabular-nums">of {total}</span>
+                  <span className="whitespace-nowrap text-zinc-400 tabular-nums max-sm:mr-auto">of {total.toLocaleString()}</span>
                   <button
                     type="button"
                     onClick={() => setPreviewIndex((i) => Math.min(total - 1, i + 1))}
@@ -1909,7 +1924,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   ><ChevronRight className="w-4 h-4" aria-hidden="true" /></button>
                 </div>
               )}
-              </div>
             </div>
             <div className="rounded-lg bg-zinc-950 p-3 sm:p-4 min-h-[120px] flex items-center justify-center">
               {format.type === 'sheet' ? (
@@ -1977,7 +1991,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           onChange={(e) => setExportTo(Math.min(total, parseInt(e.target.value, 10) || total))}
           className="field w-24 tabular-nums"
         />
-        <span className="text-zinc-400 tabular-nums">of {total}</span>
+        <span className="text-zinc-400 tabular-nums">of {total.toLocaleString()}</span>
       </div>
       {(() => {
         const count = resolvedExportTo - exportFrom + 1;

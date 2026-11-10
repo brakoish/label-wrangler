@@ -238,7 +238,10 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
 {
   const run = (status, printedCount, totalLabels = 100) => ({ status, printedCount, totalLabels });
   { const s = runDisplayStatus(run('queued', 0), { sent: 0, onTheWay: 20, failed: 0 }); assert.equal(s.label, 'Printing', 'never "Ready" while printing'); assert.equal(s.detail, 'At the office printer'); }
-  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Needs a check', 'sent is not printed: someone confirms'); assert.equal(s.tone, 'check', 'a routine check is amber, never red'); assert.match(s.detail, /^Sent: check they came out/); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Sent', 'sent is not printed: someone confirms'); assert.equal(s.tone, 'confirm', 'a normal send asks calmly, never amber or red'); assert.equal(s.detail, 'Did they all come out?'); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0, unchecked: 20 }); assert.equal(s.label, 'Sent'); assert.equal(s.bucket, 'sent'); assert.equal(s.detail, 'Did all 20 come out?'); }
+  assert.equal(runDisplayStatus(run('queued', 0), { sent: 1, onTheWay: 0, failed: 0, unchecked: 1 }).detail, 'Did it come out?');
+  assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0, unchecked: 20, unsure: { from: 21, to: 40 } }).tone, 'check', 'a send nobody is sure arrived is amber');
   assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0 }).detail, 'Partly sent');
   { const s = runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 1 }); assert.equal(s.label, 'Needs you'); assert.equal(s.detail, 'Office print needs a check'); }
   assert.equal(runDisplayStatus(run('queued', 0), null).label, 'Ready');
@@ -320,7 +323,7 @@ console.log('PASS field display names');
   assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
   // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
   assert.match(panel, /if\(direct \|\| payload\.from!==want\.from \|\| payload\.to!==want\.to\)\{/, 'a part, the form or a one-tap send never sends another range\'s saved request');
-  assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
+  assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{(if\(partCarriesEndBlank\(current,part\)\)blankSkipped=\{span:part,why:'office'\};)?current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
   assert.match(panel, /if\(pending && pendingInPlan && partsPlan\)\{void runSeries\(partsPlan\);return;\}/, '"Send again" on an unsure part carries on with the plan');
   // Fixing a part: later parts are held before the check lets the office carry on; a 409 means already checked.
   const save = panel.slice(panel.indexOf('const saveFix='), panel.indexOf('const pendingWords='));
@@ -330,10 +333,10 @@ console.log('PASS field display names');
   assert.match(save, /onRecordPrinted\?\.\(/, '"They printed" counts them only on that explicit choice');
   // "Print some labels again" starts empty.
   assert.match(panel, /Print some labels again…/);
-  assert.match(panel, /const openAgain=\(mode:Again\['mode'\],requestId\?:string\)=>\{setAgain\(\{mode,text:'',queue:\[\],requestId\}\);/, 'choosing labels again starts with an empty box (never prefilled, also in a queue row)');
+  assert.match(panel, /const openAgain=\(mode:Again\['mode'\],requestId\?:string\)=>\{setAgain\(\{mode,text:'',queue:\[\],requestId,blank:false\}\);/, 'choosing labels again starts with an empty box and no blank label (never prefilled, also in a queue row)');
   assert.ok((panel.match(/openAgain\('(again|missing)'/g) || []).length >= 4, 'every "print again" opens the same one box');
   assert.match(panel, /const showForm=!!pending \|\| \(!again && /, 'only one range editor at a time');
-  assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true\);/, 'one press checks and sends one stretch');
+  assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true,current\.blank && rest\.length===0\);/, 'one press checks and sends one stretch; only the last can end with a blank label');
 
   const page = read('src/components/runs/RunPrinter.tsx');
   assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: `Print only \$\{only\}`/, 'the safe start is the primary button; printing only the chosen labels leaves progress alone');

@@ -45,6 +45,7 @@ const TONE_DOT: Record<RunDisplayTone, string> = {
   active: 'bg-amber-400',
   attention: 'bg-red-400',
   check: 'bg-amber-300',
+  confirm: 'bg-zinc-300',
   paused: 'bg-transparent ring-2 ring-inset ring-amber-300',
   done: 'bg-emerald-400',
   cancelled: 'bg-zinc-500',
@@ -162,7 +163,9 @@ function OfficePrinterBar({ onHeld, runs = [] }: { onHeld?: (held: boolean, hold
     ? (first ? officeProblemWords(first) : officeProblemWords({ from: status.hold.from, to: status.hold.to, kind: status.hold.did_not_print ? 'did-not-print' : 'needs-check' }))
     : null;
   const runName = status.hold?.run_name || holdRun?.name || 'another run';
-  const line = words ? `Stopped by “${runName}”: ${words.sentence}${status.otherHolds > 1 ? ` ${status.otherHolds} runs need a check.` : ''}` : status.text;
+  // That run's row below says what to do; the bar names it once. A run not
+  // shown in the list keeps the whole sentence here.
+  const line = words ? `Stopped by “${runName}”${holdRun ? '.' : `: ${words.sentence}`}${status.otherHolds > 1 ? ` ${status.otherHolds} runs need a check.` : ''}` : status.text;
   return (
     <section aria-label="Office printer" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div role="status" className="min-w-0 text-sm">
@@ -882,8 +885,9 @@ function RunRow({
             <h3 className="line-clamp-2 min-w-0 break-words text-sm font-semibold text-zinc-100">{run.name}</h3>
             <RunStatusText run={run} office={office} />
           </div>
-          <p className="mt-0.5 truncate text-xs text-zinc-400">
-            {display.detail && !failed ? `${display.detail} · ` : ''}{templateName}{formatName ? ` · ${formatName}` : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
+          {/* Phones: the label size steps aside and the line may wrap, so the date (what tells runs apart) is never cut. */}
+          <p className="mt-0.5 text-xs text-zinc-400 max-sm:line-clamp-2 sm:truncate">
+            {display.detail && !failed ? `${display.detail} · ` : ''}{templateName}{formatName ? <span className="max-sm:hidden"> · {formatName}</span> : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
           </p>
           {failed && run.status !== 'cancelled' && (
             <p className={`mt-0.5 text-xs ${failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? 'text-red-400' : 'text-amber-300'}`}>
@@ -891,7 +895,7 @@ function RunRow({
             </p>
           )}
           {run.status === 'cancelled' && (office?.unchecked ?? 0) > 0 && (
-            <p className="mt-0.5 text-xs text-amber-300">{office!.unchecked!.toLocaleString()} sent — check they came out</p>
+            <p className="mt-0.5 text-xs text-zinc-400">{office!.unchecked === 1 ? '1 sent: did it come out?' : `${office!.unchecked!.toLocaleString()} sent: did they all come out?`}</p>
           )}
           {!failed && partsLeft.length > 0 && unfinished && (
             <p className="mt-0.5 text-xs text-amber-300">{partsLeft.length === 1 ? 'The last part wasn’t' : `${partsLeft.length} parts weren’t`} sent yet. Open this run to send {partsLeft.length === 1 ? 'it' : 'them'}.</p>
@@ -912,7 +916,8 @@ function RunRow({
           {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>
         {/* The whole card opens the run; the button is only drawn on wider screens. */}
-        {unfinished && <span className="btn btn-secondary btn-sm max-sm:hidden sm:w-24">Open</span>}
+        {/* Finished rows keep the button's room, so every row's bar lines up. */}
+        {unfinished ? <span className="btn btn-secondary btn-sm max-sm:hidden sm:w-24">Open</span> : <span aria-hidden="true" className="shrink-0 max-sm:hidden sm:w-24" />}
       </Link>
       <Menu
         label={`More for ${run.name}`}
