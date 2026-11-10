@@ -2,7 +2,7 @@ import type { LabelFormat, LabelTemplate, Run } from './types';
 import { layoutProblems, type LayoutProblem } from './designerLayout';
 import { previewLabelValues } from './runBuilder';
 import { checkRunBarcodes, describeBarcodeGroups, type BarcodeIssue } from './barcodeCheck';
-import { friendlyFieldName } from './fieldLabels';
+import { fieldItemWords, friendlyFieldName, placeholderDescription } from './fieldLabels';
 import { NOT_AS_WRITTEN_NOTE } from './barcodeValue';
 
 /** The run data the checks read (a Run, or the new-run wizard's data before the run exists). */
@@ -116,8 +116,10 @@ function joinNames(names: ReadonlyArray<string>): string {
 }
 
 function codeNames(issues: ReadonlyArray<VerdictIssue>): string {
-  const names = Array.from(new Set(issues.map((issue) => (issue.label && issue.field ? friendlyFieldName(issue.field) : 'fixed'))));
+  const names = Array.from(new Set(issues.map((issue) => (issue.label && issue.field ? (placeholderDescription(issue.field) ?? friendlyFieldName(issue.field)) : 'fixed'))));
   if (!names.length) return 'the barcode';
+  // An item with no column yet is just "the barcode" (never "Barcode 1").
+  if (names.length === 1 && placeholderDescription(issues.find((i) => i.field)?.field)) return `the ${fieldItemWords(issues.find((i) => i.field)?.field, 'barcode')}`;
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   return `the ${list} barcode${names.length === 1 ? '' : 's'}`;
 }

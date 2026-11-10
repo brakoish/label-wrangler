@@ -63,8 +63,10 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   const [showManifest, setShowManifest] = useState(false);
   // Columns to pick from: the last spreadsheet loaded on New run, then the ones other items use.
   const [lastColumns] = useState(() => readLastColumns(typeof window === 'undefined' ? null : window.localStorage));
-  const designNames = allElements.filter((e) => e.id !== element?.id && !e.isStatic && e.fieldName && !isMadeUpFieldName(e.fieldName)).map((e) => e.fieldName!);
-  const columnList = columnChoices(lastColumns.headers, designNames);
+  // Another item's column is offered only to an item of the same kind (a
+  // barcode is never offered "Product Name").
+  const designNames = allElements.filter((e) => e.id !== element?.id && e.type === element?.type && !e.isStatic && e.fieldName && !isMadeUpFieldName(e.fieldName)).map((e) => e.fieldName!);
+  const columnList = rankColumns(columnChoices(lastColumns.headers, designNames), element?.type);
   const multiSelected = selectedElements.length > 1;
   const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
 
@@ -162,7 +164,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         <span className="flex size-4 items-center justify-center text-zinc-400" aria-hidden="true">
           {typeIcons[element.type]}
         </span>
-        <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-100">{elementTypeName(element.type)}{!element.isStatic && element.fieldName ? `: ${friendlyFieldName(element.fieldName)}` : ''}</h2>
+        <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-100">{elementTypeName(element.type)}{!element.isStatic && element.fieldName && !isMadeUpFieldName(element.fieldName) ? `: ${friendlyFieldName(element.fieldName)}` : ''}</h2>
       </div>
       {problems.length > 0 && (
         <ul role="alert" className="mx-4 mt-2 space-y-1 text-sm text-amber-300">
@@ -267,7 +269,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
-            <ColumnPicker element={element} columns={columnList} fileName={lastColumns.fileName} onUpdate={onUpdate} />
+            <ColumnPicker element={element} columns={columnList} fileName={lastColumns.fileName} onUpdate={onUpdate} placeholderName={() => nextFieldName(element.type, allElements.filter((e) => e.id !== element.id))} />
             {(showManifest || usesManifest(allElements, element)) ? (
               <StackedField label="Or a Nabis detail">
                 {(id) => <CustomSelect
@@ -544,45 +546,50 @@ function StackedField({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-const TYPE_A_NAME = '__type__';
+/** Columns that look like this kind of item's come first ("SKU" for a barcode). */
+function rankColumns(columns: string[], type: string | undefined): string[] {
+  const looks = type === 'barcode' ? /sku|tag|barcode|upc|ean|code|\bid\b|uid|number/i
+    : type === 'qr' ? /url|link|coa|qr|web|lab/i
+      : /name|product|strain|item|title|description|weight|size|price|date|lot|batch/i;
+  return [...columns.filter((c) => looks.test(c)), ...columns.filter((c) => !looks.test(c))];
+}
 
 /**
- * Which spreadsheet column fills a per-label item: picked from a list (the
- * last file's headings, the columns other items use), or typed when the
- * heading isn't there yet. The item takes the column's name, so a new
- * spreadsheet with that heading fills it (capitals and spaces don't matter).
+ * Which spreadsheet column fills a per-label item, as one question with one
+ * control on every item: a box for the column's heading (empty until it has
+ * one, never "Text 1"), with the known headings as suggestions to tap. The
+ * item takes the column's name, so a spreadsheet with that heading fills it
+ * (capitals and spaces don't matter).
  */
-function ColumnPicker({ element, columns, fileName, onUpdate }: { element: TemplateElement; columns: string[]; fileName?: string; onUpdate: (updates: Partial<TemplateElement>) => void }) {
+function ColumnPicker({ element, columns, fileName, onUpdate, placeholderName }: { element: TemplateElement; columns: string[]; fileName?: string; onUpdate: (updates: Partial<TemplateElement>) => void; placeholderName: () => string }) {
   const current = element.fieldName || '';
+  const madeUp = isMadeUpFieldName(current);
   const simple = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const listed = columns.find((name) => simple(name) === simple(current));
-  const [typing, setTyping] = useState(false);
-  const pickFirst = columns.length > 0 && isMadeUpFieldName(current);
-  if (!columns.length || typing) {
-    return (
-      <StackedField label="Spreadsheet column" hint={columns.length ? undefined : 'Type the column’s heading. Capitals and spaces don’t matter.'}>
-        {(id) => <div className="space-y-1">
-          <input id={id} type="text" className="field field-sm w-full" value={current} autoFocus={typing} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />
-          {columns.length > 0 && <button type="button" className="link inline-flex min-h-control-sm items-center text-sm" onClick={() => setTyping(false)}>Pick from the list</button>}
-        </div>}
-      </StackedField>
-    );
-  }
-  const options = [
-    ...columns.map((name) => ({ value: name, label: name })),
-    ...(current && !listed && !pickFirst ? [{ value: current, label: current, sublabel: 'not in your last file' }] : []),
-    { value: TYPE_A_NAME, label: 'Type another name…' },
-  ];
+  const suggestions = columns.filter((name) => simple(name) !== simple(current)).slice(0, 6);
+  const kind = element.type === 'barcode' ? 'barcode' : element.type === 'qr' ? 'QR code' : element.type === 'text' ? 'text' : 'item';
   return (
-    <StackedField label="Spreadsheet column" hint={fileName ? `From your last file, ${fileName}` : undefined}>
-      {(id) => <CustomSelect
-        compact
-        id={id}
-        value={listed ?? (pickFirst ? '' : current)}
-        placeholder="Pick a column"
-        onChange={(value) => { if (value === TYPE_A_NAME) setTyping(true); else if (value) onUpdate({ fieldName: value }); }}
-        options={options}
-      />}
+    <StackedField label="What is this column called in your spreadsheet?" hint={madeUp ? `Until then it shows as “${kind}” on New run.` : 'Capitals and spaces don’t matter.'}>
+      {(id) => <div className="space-y-1.5">
+        <input
+          id={id}
+          type="text"
+          className="field field-sm w-full"
+          value={madeUp ? '' : current}
+          // An empty box keeps the item per label under its stand-in name.
+          onChange={(e) => onUpdate({ fieldName: e.target.value.trim() ? e.target.value : placeholderName() })}
+          placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'}
+        />
+        {suggestions.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs text-zinc-400">{fileName ? `From your last file, ${fileName}:` : 'Columns this design uses:'}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((name) => (
+                <button key={name} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => onUpdate({ fieldName: name })}>{name}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>}
     </StackedField>
   );
 }

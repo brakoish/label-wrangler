@@ -1,7 +1,7 @@
 import type { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from './types';
 import { zplQrGeometry } from './zplGenerator';
 import { layoutThermalText, wrapThermalText } from './thermalTextLayout';
-import { elementTypeName, friendlyFieldName } from './fieldLabels';
+import { elementTypeName, fieldItemWords } from './fieldLabels';
 import { font0Width, font0Wrap } from './zebraFont0';
 import { barcodeFit, barcodeFitFix, barcodeFitProblem, nativeBarcodeDots, nativeBarcodeFootprint, NATIVE_MODULE_DOTS, type BarcodeFit } from './barcodeFit';
 
@@ -140,7 +140,7 @@ export interface LayoutProblem {
 /** "the Package tag barcode", "the THC text", "the text “Net Wt 3.5g”", "the QR code". */
 export function itemName(el: TemplateElement): string {
   const type = elementTypeName(el.type).toLowerCase().replace(/^qr code$/, 'QR code');
-  if (!el.isStatic && el.fieldName) return `the ${friendlyFieldName(el.fieldName)} ${type}`;
+  if (!el.isStatic && el.fieldName) return `the ${fieldItemWords(el.fieldName, type)}`;
   if (el.type === 'text' && el.isStatic && el.content?.trim()) {
     const text = el.content.trim();
     return `the text “${text.length > 18 ? `${text.slice(0, 17)}…` : text}”`;
