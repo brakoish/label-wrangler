@@ -16,7 +16,7 @@ interface ZPLPreviewProps {
   format: LabelFormat;
   template: LabelTemplate;
   testData?: Record<string, string>;
-  /** Draw only while this view is showing (the designer's "Exact print"). */
+  /** Draw only while this view is showing (the designer's "Print preview"). */
   active?: boolean;
   /** The designer already names the problems above the preview: don't say them twice. */
   problemsShown?: boolean;
@@ -65,7 +65,7 @@ export function ZPLPreview({ format, template, testData, active = true, problems
     }
   }, [template, format, testData, signature]);
 
-  // Render only while the exact print view shows. Local WASM uses a tight
+  // Render only while the print preview shows. Local WASM uses a tight
   // debounce because there is no network or rate limit.
   useEffect(() => {
     if (!active) return;
@@ -146,7 +146,7 @@ export function ZPLPreview({ format, template, testData, active = true, problems
             >
               <img
                 src={previewUrl}
-                alt={error ? 'Exact print, with problems to fix' : 'Exact print'}
+                alt={error ? 'Print preview, with problems to fix' : 'Print preview'}
                 className="rounded-md"
                 style={{ imageRendering: 'pixelated', display: 'block', maxWidth: '100%', width: '100%', height: 'auto' }}
               />

@@ -137,3 +137,34 @@ export function bitmapLayoutProblems(elements: ReadonlyArray<TemplateElement>, f
   }
   return problems;
 }
+
+/**
+ * Text drawn on top of other text on an exact-picture label (the designer
+ * only; the run checks don't use it). The boxes are what the picture fills,
+ * so a real overlap (at least 15% of the smaller box, as the printer-font
+ * check uses) is named once, by the text drawn on top. A warning, never a
+ * stop: the label still prints exactly as shown.
+ */
+export function bitmapTextOverlaps(elements: ReadonlyArray<TemplateElement>, format: LabelFormat, values?: Values): LayoutProblem[] {
+  if (format.type !== 'thermal') return [];
+  const texts = elements.filter((el) => el.type === 'text').map((el): { el: TemplateElement; box: Box | null } => ({ el, box: bitmapFootprint(el, values) })).filter((p): p is { el: TemplateElement; box: Box } => !!p.box);
+  const over = new Map<string, { el: TemplateElement; under: TemplateElement[] }>();
+  for (let i = 0; i < texts.length; i++) {
+    for (let j = i + 1; j < texts.length; j++) {
+      const a = texts[i], b = texts[j];
+      const w = Math.min(a.box.x + a.box.width, b.box.x + b.box.width) - Math.max(a.box.x, b.box.x);
+      const h = Math.min(a.box.y + a.box.height, b.box.y + b.box.height) - Math.max(a.box.y, b.box.y);
+      if (w <= 0 || h <= 0) continue;
+      const smaller = Math.min(a.box.width * a.box.height, b.box.width * b.box.height);
+      if (w * h < Math.max(16, smaller * 0.15)) continue;
+      const [top, under] = a.el.zIndex >= b.el.zIndex ? [a.el, b.el] : [b.el, a.el];
+      const entry = over.get(top.id) ?? { el: top, under: [] };
+      entry.under.push(under);
+      over.set(top.id, entry);
+    }
+  }
+  return Array.from(over.values()).map(({ el, under }) => ({
+    kind: 'overlap' as const, kinds: ['overlap' as const], ids: [el.id, ...under.map((o) => o.id)],
+    message: `${capitalise(itemName(el))} covers ${listNames(under.map(itemName))}, so the words run together.`,
+  }));
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
-import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Undo2, Redo2, Pencil, ChevronLeft } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
@@ -27,15 +27,15 @@ import { DesignNotice, problemText } from '@/components/designer/DesignNotice';
 import { barcodePlainSentence } from '@/lib/runBarcodeTicks';
 import { arcMove } from '@/components/motion/arc';
 import { PrinterCodeDialog } from '@/components/designer/PrinterCodeDialog';
-import { barcodeAutoFix, barcodeToQr, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
+import { barcodeAutoFix, barcodeToQr, textAutoFix, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { safeNextPath } from '@/lib/safeRedirect';
 import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
-import { bitmapLayoutProblems } from '@/lib/bitmapLayout';
-import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
+import { bitmapLayoutProblems, bitmapTextOverlaps } from '@/lib/bitmapLayout';
+import { describeUnprintable, elementUnprintable, plainPrinterText, plainReplacement, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
 import { barcodeFitFix } from '@/lib/barcodeFit';
 import { elementTypeName } from '@/lib/fieldLabels';
@@ -417,7 +417,8 @@ function DesignerContent() {
   const designProblems = useMemo(() => {
     if (!currentTemplate || !currentFormat || currentTemplate.summaryOnly) return [];
     // Exact picture designs: what the exact renderer refuses, and codes that land on something.
-    if (currentTemplate.thermalRenderMode === 'bitmap-v1') return bitmapLayoutProblems(currentTemplate.elements, currentFormat, previewValues);
+    // Text over text is a warning here only: the run checks don't stop for it.
+    if (currentTemplate.thermalRenderMode === 'bitmap-v1') return [...bitmapLayoutProblems(currentTemplate.elements, currentFormat, previewValues), ...bitmapTextOverlaps(currentTemplate.elements, currentFormat, previewValues)];
     // Inside the designer the fix is a button here, not "go to the designer".
     return layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured).map((p) => (
       p.barcodeFit ? { ...p, fix: barcodeFitFix(p.barcodeFit, 'designer') || p.fix } : p
@@ -441,6 +442,14 @@ function DesignerContent() {
     // A QR code only where moving or widening can't do it.
     return { fix, qr: fix ? null : barcodeToQr(currentTemplate.elements, brokenBarcodeId, currentFormat, previewValues, bitmap, opts) };
   }, [brokenBarcodeId, currentTemplate, currentFormat, previewValues, measured]);
+  // Text that covers other text: "Fix it for me" moves it to a free spot.
+  const isText = (id: string | undefined) => !!id && currentTemplate?.elements.some((e) => e.id === id && e.type === 'text');
+  const textProblem = designProblems.find((p) => p.kind === 'overlap' && isText(p.ids[0]) && p.ids.slice(1).every(isText));
+  const textFix = useMemo(() => {
+    if (!textProblem || !currentTemplate || currentTemplate.summaryOnly) return null;
+    const bitmap = currentTemplate.thermalRenderMode === 'bitmap-v1';
+    return textAutoFix(currentTemplate.elements, textProblem.ids[0], currentFormat, previewValues, bitmap, bitmap ? {} : { measured });
+  }, [textProblem, currentTemplate, currentFormat, previewValues, measured]);
   // Characters the printer's own font can't print, outlined on the canvas too.
   const canvasProblems = useMemo<LayoutProblem[]>(() => {
     if (!currentTemplate || currentTemplate.summaryOnly || !usesPrinterFont(currentFormat, currentTemplate)) return designProblems;
@@ -755,9 +764,9 @@ function DesignerContent() {
   const exactView = currentFormat.type === 'thermal' && view === 'exact';
 
   // One edit to this design, so Undo takes it back; other designs and their runs are untouched.
-  const applyFix = (fix: BarcodeAutoFix) => {
-    const before = currentTemplate.elements.find((e) => e.id === brokenBarcodeId);
-    const after = fix.elements.find((e) => e.id === brokenBarcodeId);
+  const applyFix = (fix: BarcodeAutoFix, movedId = brokenBarcodeId) => {
+    const before = currentTemplate.elements.find((e) => e.id === movedId);
+    const after = fix.elements.find((e) => e.id === movedId);
     commitEdit({ elements: fix.elements });
     // The item travels to its new spot along an arc, so the change is seen.
     if (before && after) {
@@ -766,20 +775,74 @@ function DesignerContent() {
       requestAnimationFrame(() => arcMove(document.querySelector(`[data-designer-canvas] [data-element-id="${CSS.escape(after.id)}"]`), dx, dy));
     }
     setFixNote({ templateId: currentTemplate.id, text: fix.done, elements: fix.elements });
-    setSelectedIds(new Set(fix.elements.filter((e) => e.id === brokenBarcodeId).map((e) => e.id)));
+    setSelectedIds(new Set(fix.elements.filter((e) => e.id === movedId).map((e) => e.id)));
   };
   const fixStillShown = fixNote && fixNote.templateId === currentTemplate.id && fixNote.elements === currentTemplate.elements;
-  const noticeAction = (autoFixes.fix || autoFixes.qr || canExactCopy) ? <>
-    {autoFixes.fix && <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.fix!)}>{autoFixes.fix.label}</button>}
-    {!autoFixes.fix && autoFixes.qr && <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.qr!)}>{autoFixes.qr.label}</button>}
-    {canExactCopy && <button type="button" className={autoFixes.fix || autoFixes.qr ? 'btn btn-ghost btn-sm max-sm:min-h-11' : 'btn btn-secondary btn-sm max-sm:min-h-11'} onClick={() => setExactCopyRequest((n) => n + 1)}>Make an exact-print copy</button>}
-  </> : null;
+  // Each fix button sits under the problem it fixes. The barcode's own fix
+  // is "Fix it for me" (the same words as on the new run page).
+  const barcodeProblem = brokenBarcodeId ? canvasProblems.find((p) => p.ids.includes(brokenBarcodeId) && (p.barcodeFit || p.kinds.includes('overlap'))) : undefined;
+  const copyProblem = canExactCopy ? canvasProblems.find((p) => p.barcodeFit?.fixes.includes('exact-copy')) : undefined;
+  // Characters the printer font can't print, typed into the design itself
+  // (not only a sample value): one click swaps them for plain ones.
+  const plainText = (el: TemplateElement): Partial<TemplateElement> | null => {
+    if (el.type !== 'text') return null;
+    const fields = (el.isStatic ? ['content'] : ['defaultValue', 'prefix', 'suffix']) as Array<'content' | 'defaultValue' | 'prefix' | 'suffix'>;
+    const updates: Record<string, string> = {};
+    for (const key of fields) {
+      const value = (el as unknown as Record<string, string | undefined>)[key] || '';
+      const plain = plainPrinterText(value);
+      if (plain !== value) updates[key] = plain;
+    }
+    return Object.keys(updates).length ? (updates as Partial<TemplateElement>) : null;
+  };
+  const characterFixIds = canvasProblems.filter((p) => p.kind === 'characters').map((p) => p.ids[0]).filter((id) => {
+    const el = currentTemplate.elements.find((e) => e.id === id);
+    return !!el && !!plainText(el);
+  });
+  const characterWords = (ids: string[]) => {
+    const chars = new Set(ids.flatMap((id) => { const el = currentTemplate.elements.find((e) => e.id === id); return el ? elementUnprintable(el, {}) : []; }));
+    return chars.size > 0 && [...chars].every((ch) => plainReplacement(ch) === '-') ? 'Replace with -' : 'Use plain characters';
+  };
+  const replaceCharacters = (ids: string[]) => {
+    const elements = currentTemplate.elements.map((el) => {
+      if (!ids.includes(el.id)) return el;
+      const updates = plainText(el);
+      return updates ? ({ ...el, ...updates } as TemplateElement) : el;
+    });
+    commitEdit({ elements });
+    setFixNote({ templateId: currentTemplate.id, text: ids.length === 1 ? 'Swapped those characters for plain ones the printer can print.' : `Swapped the characters the printer can’t print for plain ones in ${ids.length} items.`, elements });
+  };
+  const noticeAction = (problem: LayoutProblem) => {
+    const buttons: ReactNode[] = [];
+    if (problem === barcodeProblem) {
+      if (autoFixes.fix) buttons.push(<button key="fix" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.fix!)}>{autoFixes.fix.label}</button>);
+      else if (autoFixes.qr) buttons.push(<button key="qr" type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.qr!)}>{autoFixes.qr.label}</button>);
+    }
+    if (textProblem && textFix && problem.kind === 'overlap' && problem.ids[0] === textProblem.ids[0] && problem.ids.join() === textProblem.ids.join()) {
+      buttons.push(<button key="text" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => applyFix(textFix, textProblem.ids[0])}>{textFix.label}</button>);
+    }
+    if (problem === copyProblem) {
+      buttons.push(<button key="copy" type="button" className={buttons.length ? 'btn btn-ghost btn-sm max-sm:min-h-11' : 'btn btn-secondary btn-sm max-sm:min-h-11'} onClick={() => setExactCopyRequest((n) => n + 1)}>Make a picture copy</button>);
+    }
+    if (problem.kind === 'characters' && characterFixIds.includes(problem.ids[0])) {
+      buttons.push(<button key="chars" type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => replaceCharacters([problem.ids[0]])}>{characterWords([problem.ids[0]])}</button>);
+      if (characterFixIds.length > 1 && characterFixIds[0] === problem.ids[0]) {
+        buttons.push(<button key="chars-all" type="button" className="btn btn-ghost btn-sm max-sm:min-h-11" onClick={() => replaceCharacters(characterFixIds)}>Do it in all {characterFixIds.length} items</button>);
+      }
+    }
+    return buttons.length ? <>{buttons}</> : null;
+  };
   const fixDone = fixStillShown ? (
     <p role="status" className="fold-reveal flex flex-wrap items-center gap-x-3 px-3 pb-1 text-sm text-emerald-400 sm:px-6">
       <span>{fixNote.text}</span>
       <button type="button" className="link inline-flex min-h-control-sm items-center" onClick={() => { handleUndo(); setFixNote(null); }}>Undo</button>
     </p>
   ) : null;
+
+  // Phone: "Change item" only shows once an item is chosen, so it is never an empty pane.
+  // ("Change item", not a second "Edit" next to the Edit | Print preview toggle.)
+  const phoneTabs = ([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Change item']] as const).filter(([pane]) => pane !== 'edit' || selectedIds.size > 0);
+  const shownPane = phonePane === 'edit' && selectedIds.size === 0 ? 'label' : phonePane;
 
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
@@ -791,17 +854,16 @@ function DesignerContent() {
       {saveError && <button type="button" className="link px-4 pb-2 text-left text-sm" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
       <div className="lg:hidden px-4 py-2">
       <div role="tablist" aria-label="Designer panes" className="segmented">
-        <SegmentedIndicator index={['label', 'layers', 'data', 'edit'].indexOf(phonePane)} count={4} />
-        {/* "Change item", not a second "Edit" next to the Edit | Exact print toggle. */}
-        {([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Change item']] as const).map(([pane, text]) => (
-          <button key={pane} type="button" role="tab" aria-selected={phonePane === pane} onClick={() => { setPhonePane(pane); if (pane === 'layers' || pane === 'data') setLeftPanel(pane); }} >{text}</button>
+        <SegmentedIndicator index={phoneTabs.findIndex(([pane]) => pane === shownPane)} count={phoneTabs.length} />
+        {phoneTabs.map(([pane, text]) => (
+          <button key={pane} type="button" role="tab" aria-selected={shownPane === pane} onClick={() => { setPhonePane(pane); if (pane === 'layers' || pane === 'data') setLeftPanel(pane); }} >{text}</button>
         ))}
       </div>
       </div>
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className={`${phonePane === 'layers' || phonePane === 'data' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`}>
+        <div className={`${shownPane === 'layers' || shownPane === 'data' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`}>
           <div className="p-2 max-lg:hidden">
           <div className="segmented" role="group" aria-label="Designer panels">
             <SegmentedIndicator index={leftPanel === 'data' ? 1 : 0} count={2} />
@@ -838,7 +900,7 @@ function DesignerContent() {
         </div>
 
         {/* Center Panel - Preview */}
-        <div className={`${phonePane === 'label' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 min-h-[440px] lg:min-h-0 overflow-y-auto`}>
+        <div className={`${shownPane === 'label' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 min-h-[440px] lg:min-h-0 overflow-y-auto`}>
           {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
               so the round-trip feels like 'I edited this and came back'
               rather than 'I'm lost in the designer'. */}
@@ -894,7 +956,7 @@ function DesignerContent() {
                 <div className="segmented mr-1" role="group" aria-label="What the label shows">
                   <SegmentedIndicator index={exactView ? 1 : 0} count={2} />
                   <button type="button" aria-pressed={!exactView} onClick={() => setView('edit')} title="Move and change items">Edit</button>
-                  <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Exact print</button>
+                  <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Print preview</button>
                 </div>
               )}
               {showThermalOrientationPicker && !exactView && (
@@ -936,7 +998,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} onShowCode={isAdmin ? () => setShowCode(true) : undefined} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} closeKey={canvasProblems.map((p) => `${p.kind}:${p.ids.join(',')}`).join('|')} onShowCode={isAdmin ? () => setShowCode(true) : undefined} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
@@ -989,7 +1051,7 @@ function DesignerContent() {
         </div>
 
         {/* Right Panel - Properties */}
-        <div className={phonePane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
+        <div className={shownPane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel
           element={selectedElement}
           selectedElements={currentTemplate.elements.filter((e) => selectedIds.has(e.id))}
@@ -998,7 +1060,7 @@ function DesignerContent() {
           onUpdateSelected={handleUpdateSelectedElements}
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
           allElements={currentTemplate.elements}
-          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => (p.barcodeFit ? barcodePlainSentence(problemText(p)) : problemText(p))) : []}
+          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => ({ text: p.barcodeFit ? barcodePlainSentence(problemText(p)) : problemText(p), blocking: !!p.blocking })) : []}
           onArrange={(action: AlignAction) => {
             beginGesture();
             const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id) && !e.locked), action);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useId, useMemo, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react';
 import { LabelFormat, TemplateElement, TextElement, QRElement, ImageElement } from '@/lib/types';
 import { getBitmapProof, type EditorLayer } from '@/lib/thermal/client';
 import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorGeometry';
@@ -10,7 +10,7 @@ import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { friendlyRenderError, friendlyRenderFailure } from '@/lib/userMessages';
 import { friendlyFieldName } from '@/lib/fieldLabels';
 import { plainRenderWarning, type Box, type LayoutProblem } from '@/lib/designerLayout';
-import { DesignNotice } from './DesignNotice';
+import { DesignNotice, type NoticeAction } from './DesignNotice';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -32,8 +32,8 @@ interface LabelPreviewProps {
   onGestureCancel?: () => void;
   /** Items that overlap or run off the label (native thermal): outlined in red and listed. */
   layoutProblems?: LayoutProblem[];
-  /** A button that fixes the first problem (Make an exact-print copy), shown right under it. */
-  noticeAction?: ReactNode;
+  /** The buttons that fix each problem, shown right under that problem. */
+  noticeAction?: NoticeAction;
 }
 
 /** An item's printed ink relative to its x/y, in label units. */
