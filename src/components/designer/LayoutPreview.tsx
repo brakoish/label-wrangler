@@ -10,6 +10,7 @@ import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 import { barcodeViewBox } from '@/lib/barcodeViewBox';
+import { friendlyFieldName } from '@/lib/fieldLabels';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
@@ -65,7 +66,7 @@ function resolveElementContent(element: TemplateElement, testData?: Record<strin
 
   const value = (element.fieldName && testData?.[element.fieldName])
     || element.defaultValue
-    || `{{${element.fieldName || 'field'}}}`;
+    || friendlyFieldName(element.fieldName);
 
   return `${element.prefix || ''}${value}${element.suffix || ''}`;
 }

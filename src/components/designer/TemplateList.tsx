@@ -79,10 +79,14 @@ export function TemplateList({
         <button type="button" onClick={() => setShowArchived(true)} aria-pressed={showArchived}>Archived ({templates.filter((t) => t.archivedAt).length})</button>
       </div>
         <input type="search" aria-label="Search designs" placeholder="Search designs…" value={query} onChange={e => setQuery(e.target.value)} className="field min-w-0 flex-1 sm:max-w-xs" />
-        <select aria-label="Filter by label size" value={formatFilter} onChange={e => setFormatFilter(e.target.value)} className="field w-full sm:w-auto sm:max-w-xs">
-          <option value="">All label sizes</option>
-          {formats.map(f => <option key={f.id} value={f.id}>{f.name} · {f.width} × {f.height} in · {f.type}</option>)}
-        </select>
+        <div className="w-full sm:w-64">
+          <CustomSelect
+            aria-label="Filter by label size"
+            value={formatFilter}
+            onChange={setFormatFilter}
+            options={[{ value: '', label: 'All label sizes' }, ...formats.map(f => ({ value: f.id, label: f.name, sublabel: `${f.width}" × ${f.height}"` }))]}
+          />
+        </div>
         {isFiltered && <button onClick={() => { setQuery(''); setFormatFilter(''); }} className="btn btn-ghost">Clear filters</button>}
       </div>
       {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
@@ -509,7 +513,7 @@ function TemplateCard({
       <div className="p-3 pl-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="min-w-0 flex-1 text-sm font-semibold text-zinc-100">
-            <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} className="block max-w-full truncate rounded-sm text-left">
+            <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} className="flex min-h-control-sm max-w-full items-center truncate rounded-sm text-left">
               {template.name}
             </button>
           </h3>
@@ -560,8 +564,8 @@ function TemplateCard({
           {format ? `${formatName} · ${format.width}" × ${format.height}"` : formatName}
         </p>
         <p className="mt-0.5 truncate text-xs text-zinc-500">
-          {partCount} {partCount === 1 ? 'part' : 'parts'}
-          {dynamicCount > 0 && <span className="text-amber-300"> · {dynamicCount} change per label</span>}
+          {partCount} {partCount === 1 ? 'item' : 'items'}
+          {dynamicCount > 0 && <> · {dynamicCount === partCount ? (dynamicCount === 1 ? 'it changes' : 'all change') : `${dynamicCount} change`} per label</>}
           {' · '}{new Date(template.updatedAt).toLocaleDateString()}
         </p>
       </div>
@@ -724,12 +728,20 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             )}
           </div>
 
-          {formats.find(f => f.id === formatId)?.type === 'thermal' && <label className="field-label">How it prints
-            <select className="field mt-1.5 font-normal" value={renderMode} onChange={e => setRenderMode(e.target.value as 'native-v1' | 'bitmap-v1')}>
-              <option value="bitmap-v1">Exact picture (recommended) · any font · needs internet to print</option>
-              <option value="native-v1">Printer fonts (older designs)</option>
-            </select>
-          </label>}
+          {formats.find(f => f.id === formatId)?.type === 'thermal' && <div>
+            <span id={`${fieldId}-mode`} className="field-label">How it prints</span>
+            <div className="mt-1.5">
+              <CustomSelect
+                aria-labelledby={`${fieldId}-mode`}
+                value={renderMode}
+                onChange={(v) => setRenderMode(v as 'native-v1' | 'bitmap-v1')}
+                options={[
+                  { value: 'bitmap-v1', label: 'Exact picture (recommended)', sublabel: 'Any font. Needs internet to print.' },
+                  { value: 'native-v1', label: 'Printer font', sublabel: 'The printer’s built-in font, as older designs use' },
+                ]}
+              />
+            </div>
+          </div>}
 
           <div className="flex gap-3 pt-2">
             <button

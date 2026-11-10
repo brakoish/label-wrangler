@@ -5,6 +5,7 @@ import { LabelGlyph } from '@/components/LabelGlyph';
 import { LabelFormat, formatDimensions } from '@/lib/types';
 import { TrashIcon, EditIcon } from '@/app/icons';
 import { Check, X } from 'lucide-react';
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 
 interface FormatDetailProps {
   format: LabelFormat;
@@ -48,7 +49,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
   return (
     <div className="h-full">
       {saveError && <p role="alert" className="p-4 text-red-400">{saveError}</p>}
-      <div className="px-4 py-6 sm:px-8">
+      <div className="px-4 pt-2 pb-6 sm:px-8 xl:px-0">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-4">
               <span className="flex h-10 w-14 shrink-0 items-center justify-center" aria-hidden="true">
@@ -63,7 +64,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     className="field text-lg font-semibold"
                   />
                 ) : (
-                  <h2 className="text-2xl font-semibold text-zinc-50">{format.name}</h2>
+                  <h2 className="text-xl font-semibold text-zinc-50">{format.name}</h2>
                 )}
                 {editing ? (
                   <input
@@ -121,9 +122,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-8 sm:px-8">
+      <div className="px-4 pb-8 sm:px-8 xl:px-0">
         {/* Primary specs */}
-        <div className="grid grid-cols-1 gap-3 mb-6 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 mb-8 sm:grid-cols-3">
           <SpecCard label="Label size" editing={editing}>
             {editing ? (
               <div className="flex items-center gap-1">
@@ -139,20 +140,19 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
 
           {isThermal ? (
             <>
-              <SpecCard label="Resolution" editing={editing}>
+              <SpecCard label="Dots per inch" hint="On the printer’s sticker, usually 203" editing={editing}>
                 {editing ? (
-                  <div className="flex items-center gap-1">
-                    <select value={d('dpi') as number || 203} onChange={(e) => setD('dpi', parseInt(e.target.value))} className="field field-sm text-lg font-semibold">
-                      <option value="203">203</option>
-                      <option value="300">300</option>
-                    </select>
-                    <span className="text-base font-normal text-zinc-400">DPI</span>
+                  <div className="segmented segmented-xs w-40" role="radiogroup" aria-label="Dots per inch">
+                    <SegmentedIndicator index={(d('dpi') as number || 203) === 300 ? 1 : 0} count={2} />
+                    {[203, 300].map((dpi) => (
+                      <button key={dpi} type="button" role="radio" aria-checked={(d('dpi') as number || 203) === dpi} onClick={() => setD('dpi', dpi)}>{dpi}</button>
+                    ))}
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.dpi || 203} <span className="text-base font-normal text-zinc-400">DPI</span></div>
+                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.dpi || 203}</div>
                 )}
               </SpecCard>
-              <SpecCard label="Across" editing={editing}>
+              <SpecCard label="Labels across the roll" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
                     <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="field field-sm w-16 text-lg font-semibold" />
@@ -196,7 +196,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
             <div className="card p-4 sm:p-5">
               <h3 className="section-title mb-3">Roll spacing</h3>
               <div className="space-y-3">
-                <DetailRow label="Label gap" editing={editing}>
+                <DetailRow label="Label gap" hint="Space between labels on the roll" editing={editing}>
                   {editing ? (
                     <EditNum value={d('labelGap') as number || 0} onChange={(v) => setD('labelGap', v)} />
                   ) : (
@@ -205,14 +205,14 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                 </DetailRow>
                 {(d('labelsAcross') as number || 1) > 1 && (
                   <>
-                    <DetailRow label="Gap across" editing={editing}>
+                    <DetailRow label="Gap across" hint="Space between labels side by side" editing={editing}>
                       {editing ? (
                         <EditNum value={d('horizontalGapThermal') as number || 0} onChange={(v) => setD('horizontalGapThermal', v)} />
                       ) : (
                         <span className="text-zinc-200 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
                       )}
                     </DetailRow>
-                    <DetailRow label="Side margin" editing={editing}>
+                    <DetailRow label="Side margin" hint="Backing paper left of the first label" editing={editing}>
                       {editing ? (
                         <EditNum value={d('sideMarginThermal') as number || 0} onChange={(v) => setD('sideMarginThermal', v)} />
                       ) : (
@@ -221,7 +221,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     </DetailRow>
                   </>
                 )}
-                <DetailRow label="Liner width" editing={editing}>
+                <DetailRow label="Backing width" hint="Width of the paper the labels sit on. Auto works for most rolls." editing={editing}>
                   {editing ? (
                     <EditNum value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} />
                   ) : (
@@ -271,14 +271,14 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <span className="text-zinc-200 font-medium">{format.sideMargin}&quot;</span>
                   )}
                 </DetailRow>
-                <DetailRow label="H gap" editing={editing}>
+                <DetailRow label="Gap across" editing={editing}>
                   {editing ? (
                     <EditNum value={d('horizontalGap') as number} onChange={(v) => setD('horizontalGap', v)} />
                   ) : (
                     <span className="text-zinc-200 font-medium">{format.horizontalGap}&quot;</span>
                   )}
                 </DetailRow>
-                <DetailRow label="V gap" editing={editing}>
+                <DetailRow label="Gap down" editing={editing}>
                   {editing ? (
                     <EditNum value={d('verticalGap') as number} onChange={(v) => setD('verticalGap', v)} />
                   ) : (
@@ -302,19 +302,24 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
 
 // Helper components
 
-function SpecCard({ label, editing, children }: { label: string; editing: boolean; children: React.ReactNode }) {
+/** One headline measurement: a label and a big number, no box around it. */
+function SpecCard({ label, hint, children }: { label: string; hint?: string; editing: boolean; children: React.ReactNode }) {
   return (
-    <div className={`card p-4 ${editing ? 'border-zinc-700' : ''}`}>
-      <div className="text-sm text-zinc-400 mb-1.5">{label}</div>
+    <div>
+      <div className="text-sm text-zinc-400 mb-1">{label}</div>
       {children}
+      {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
     </div>
   );
 }
 
-function DetailRow({ label, editing, children }: { label: string; editing: boolean; children: React.ReactNode }) {
+function DetailRow({ label, hint, editing, children }: { label: string; hint?: string; editing: boolean; children: React.ReactNode }) {
   return (
     <div className={`flex justify-between items-center gap-3 ${editing ? 'py-1' : 'py-1.5'}`}>
-      <span className="text-zinc-400">{label}</span>
+      <span className="min-w-0">
+        <span className="block text-zinc-400">{label}</span>
+        {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
+      </span>
       {children}
     </div>
   );

@@ -160,7 +160,7 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
 
   return (
     <form
-      className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] [&>*]:min-w-0"
+      className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] [&>*]:min-w-0"
       onSubmit={(event) => {
         event.preventDefault();
         if (!canAdd) return;
@@ -179,27 +179,18 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
         setBatch('');
       }}
     >
-      <input
-        value={itemName}
-        onChange={(event) => setItemName(event.target.value)}
-        placeholder="Item name"
-        aria-label="Item name"
-        className="field"
-      />
-      <input
-        value={tag}
-        onChange={(event) => setTag(event.target.value)}
-        placeholder="Package tag"
-        aria-label="Package tag"
-        className="field"
-      />
-      <input
-        value={batch}
-        onChange={(event) => setBatch(event.target.value)}
-        placeholder="Batch"
-        aria-label="Batch"
-        className="field"
-      />
+      <label className="block">
+        <span className="field-label mb-1.5">Item name</span>
+        <input value={itemName} onChange={(event) => setItemName(event.target.value)} className="field w-full" />
+      </label>
+      <label className="block">
+        <span className="field-label mb-1.5">Package tag</span>
+        <input value={tag} onChange={(event) => setTag(event.target.value)} className="field w-full tabular-nums" />
+      </label>
+      <label className="block">
+        <span className="field-label mb-1.5">Batch <span className="font-normal text-zinc-500">(optional)</span></span>
+        <input value={batch} onChange={(event) => setBatch(event.target.value)} className="field w-full" />
+      </label>
       <button
         type="submit"
         disabled={!canAdd}
@@ -437,8 +428,11 @@ export default function NabisPage() {
       `}</style>
 
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 lg:p-6">
-          <h1 className="text-2xl font-semibold text-zinc-50 lg:col-span-2">Nabis labels</h1>
+        <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 sm:px-8">
+          <div className="lg:col-span-2">
+            <h1 className="text-2xl font-semibold text-zinc-50">Nabis labels</h1>
+            <p className="mt-1 text-sm text-zinc-400">Print Nabis case labels from a Metrc package.</p>
+          </div>
           <section className="min-h-0 space-y-4">
             <div className="card p-4 sm:p-5">
               <h2 className="mb-3 text-base font-semibold text-zinc-100">Find a package</h2>
@@ -468,12 +462,12 @@ export default function NabisPage() {
             <div className="space-y-1.5 stagger">
               {isSearching && (
                 <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
-                  Searching Manifest...
+                  Searching the Manifest…
                 </div>
               )}
               {!isSearching && query.trim().length >= 2 && results.length === 0 && (
                 <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
-                  No matching packages.
+                  No packages match. Check the name or tag, or add the package by hand below.
                 </div>
               )}
               {visibleResults.map((pkg) => {
@@ -484,16 +478,16 @@ export default function NabisPage() {
                     key={packageKey(pkg)}
                     onClick={() => selectPackage(pkg)}
                     aria-pressed={active}
-                    className={`w-full rounded-lg border p-3 sm:p-4 text-left transition-colors ${
+                    className={`w-full rounded-lg p-3 sm:p-4 text-left transition-colors ${
                       active
-                        ? 'border-zinc-600 bg-zinc-800'
-                        : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'
+                        ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
+                        : 'bg-zinc-900 hover:bg-zinc-800'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="break-words text-sm font-semibold text-zinc-50">{pkg.itemName}</p>
-                        <p className="mt-1 break-all font-mono text-xs text-zinc-400">{pkg.tag}</p>
+                        <p className="mt-1 break-all text-xs tabular-nums text-zinc-400">{pkg.tag}</p>
                       </div>
                       {active ? <Check className="h-5 w-5 shrink-0 text-amber-400 animate-icon" aria-hidden="true" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-500" aria-hidden="true" />}
                     </div>
@@ -518,17 +512,21 @@ export default function NabisPage() {
 
           <section className="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] [&>*]:min-w-0">
             <div className="card p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-zinc-100">Check the label</h2>
-                <button
-                  type="button"
-                  disabled={!canPrint}
-                  onClick={() => window.print()}
-                  className="btn btn-primary"
-                >
-                  <Printer className="h-4 w-4" />
-                  Print
-                </button>
+                <div className="flex items-center gap-3">
+                  {!canPrint && <span id="nabis-print-reason" className="text-sm text-zinc-400">{label.itemName.trim() || label.uid.trim() ? `Add the ${!label.itemName.trim() ? 'item description' : 'package tag'} to print` : 'Pick a package to print'}</span>}
+                  <button
+                    type="button"
+                    disabled={!canPrint}
+                    aria-describedby={!canPrint ? 'nabis-print-reason' : undefined}
+                    onClick={() => window.print()}
+                    className="btn btn-primary"
+                  >
+                    <Printer className="h-4 w-4" />
+                    Print
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -548,8 +546,9 @@ export default function NabisPage() {
                     <input
                       value={label[field]}
                       onChange={(event) => setLabelField(field, event.target.value)}
-                      className="field w-full"
+                      className={`field w-full ${field === 'uid' ? 'tabular-nums' : ''}`}
                     />
+                    {field === 'unitsPerCase' && !label.unitsPerCase.trim() && <span className="mt-1 block text-xs text-zinc-500">Empty prints as a dash</span>}
                   </label>
                 ))}
               </div>

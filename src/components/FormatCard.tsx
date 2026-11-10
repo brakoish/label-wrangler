@@ -16,10 +16,10 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
     <button
       onClick={onClick}
       aria-current={isSelected ? 'true' : undefined}
-      className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+      className={`flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
         isSelected
-          ? 'border-zinc-700 bg-zinc-800'
-          : 'border-transparent hover:bg-zinc-900'
+          ? 'bg-zinc-800 shadow-[inset_2px_0_0_var(--color-amber-500)]'
+          : 'hover:bg-zinc-900'
       }`}
     >
       <span className="flex h-9 w-12 shrink-0 items-center justify-center">
@@ -31,8 +31,8 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
           {formatDimensions(format.width, format.height)}
           {' · '}
           {isThermal
-            ? `${format.dpi || 203} DPI`
-            : `${format.labelsPerSheet} ${format.labelsPerSheet === 1 ? 'label' : 'labels'}`}
+            ? ((format.labelsAcross || 1) > 1 ? `Roll, ${format.labelsAcross} across` : 'Roll')
+            : `Sheet of ${format.labelsPerSheet}`}
         </span>
         {format.description && (
           <span className="mt-0.5 block truncate text-xs text-zinc-500">{format.description}</span>

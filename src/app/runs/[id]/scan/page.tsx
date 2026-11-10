@@ -6,8 +6,12 @@ import { ArrowLeft, AlertCircle, CheckCircle2, Loader2, Plug, ScanBarcode } from
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { useRunStore } from '@/lib/runStore';
-import { BlankValueCheck } from '@/components/runs/BlankValueCheck';
+import { BlankSummary } from '@/components/checks/RunChecks';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 import { blankCheckAllowsPrinting, checkRunData } from '@/lib/runDataCheck';
+import { friendlyFieldName } from '@/lib/fieldLabels';
+import { defaultScanField, scanCanLookUpRow, scanCheckData, scanLabelValues } from '@/lib/runFieldSetup';
+import { barcodeValueProblem } from '@/lib/barcodeCheck';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { dynamicFieldsForTemplate } from '@/lib/runBuilder';
@@ -45,10 +49,11 @@ interface ScanEntry {
  * touching the screen; each scan resolves -> generates ZPL -> sends to the
  * printer -> clears the input. A short history list gives confidence.
  *
- * This mode prints ONE label per scan and uses the run's existing
- * `staticValues` + `fieldMappings` for context. The scanned value fills
- * whichever field the user picks (defaulting to the first dynamic field
- * mapped to a column, or the mappedField from legacy paste-mode runs).
+ * This mode prints ONE label per scan. The person picks which field a scan
+ * fills (default: the barcode or tag field). When that field comes from a
+ * spreadsheet column, the scan is looked up in the run's rows and the
+ * matching row fills every other per-label field. Only "Same on every label"
+ * values are ever reused; another row's per-label values never are.
  *
  * Printer setup is reused from RunPrinter \u2014 Dazzle preferred, WebUSB fallback.
  * We don't persist scanned values to `run.sourceData` in this mode; this is
@@ -65,28 +70,32 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
 
   useEffect(() => { void useRunStore.getState().fetchRun(id); }, [id]);
 
-  // Which dynamic field gets the scanned value. Default to the first
-  // column-mapped field, or the legacy mappedField, or the first dynamic
-  // field on the template.
+  // Which field each scan fills: the person picks it (remembered per run),
+  // defaulting to the barcode or tag field.
+  const fields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+  const [pickedField, setPickedField] = useState<string | null>(null);
+  useEffect(() => {
+    try { setPickedField(localStorage.getItem(`lw:scan-field:${id}`)); } catch { /* storage unavailable: use the default */ }
+  }, [id]);
   const targetField = useMemo(() => {
-    if (!run || !template) return null;
-    const allFields = dynamicFieldsForTemplate(template);
-    const mapped = Object.entries(run.fieldMappings || {})
-      .find(([, m]) => m.mode === 'column')?.[0];
-    return mapped ?? run.mappedField ?? allFields[0] ?? null;
-  }, [run, template]);
+    if (!run || !template || !fields.length) return null;
+    if (pickedField && fields.includes(pickedField)) return pickedField;
+    return defaultScanField(run, template, fields);
+  }, [run, template, fields, pickedField]);
+  const chooseField = (field: string) => {
+    setPickedField(field);
+    try { localStorage.setItem(`lw:scan-field:${id}`, field); } catch { /* not remembered */ }
+  };
+  const lookUp = !!run && scanCanLookUpRow(run, targetField);
 
-  // Each scan fills one field; every other field that changes per label must
-  // already have a value, or the label would print the design's sample.
+  // Every other field must have a value without the scan: a "Same on every
+  // label" value, or the matching row when a scan can look one up. Values
+  // from other rows never count.
   const [leaveBlank, setLeaveBlank] = useState(false);
   const blankCheck = useMemo(() => {
     if (!run || !template || !targetField) return null;
-    return checkRunData(template, {
-      sourceData: [{ __scan__: 'scanned' }],
-      fieldMappings: { [targetField]: { mode: 'column', csvColumn: '__scan__' } },
-      staticValues: run.staticValues,
-    });
-  }, [run, template, targetField]);
+    return checkRunData(template, scanCheckData(run, fields, targetField));
+  }, [run, template, targetField, fields]);
   const blanksOk = !blankCheck || blankCheckAllowsPrinting(blankCheck, leaveBlank);
 
   // Transport wiring (mirrors RunPrinter).
@@ -121,7 +130,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           }
         } catch { /* soft fail */ }
       } else {
-        setTransportError('No printer found. Open the Dazzle app on this computer, or use Chrome or Edge to connect a USB printer.');
+        setTransportError('No printer on this computer. Open the Dazzle app, or use Chrome or Edge to connect a USB printer.');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,8 +174,19 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     setBusy(true);
     const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
-      const values: Record<string, string> = { ...(run.staticValues || {}), [targetField]: v };
-      const zpl = await generateZPLWithImages(template, format, values);
+      const label = scanLabelValues(run, fields, targetField, v);
+      if (lookUp && label.matchedLabel === null) {
+        throw new Error(`No label in this run has the ${friendlyFieldName(targetField)} ${v}. Nothing was printed.`);
+      }
+      if (label.unfilled.length) {
+        throw new Error(`${label.unfilled.map(friendlyFieldName).join(', ')} ${label.unfilled.length === 1 ? 'is' : 'are'} empty for this label. Nothing was printed.`);
+      }
+      for (const el of template.elements) {
+        if (el.type !== 'barcode' || el.isStatic || !el.fieldName) continue;
+        const problem = barcodeValueProblem(el.barcodeFormat, `${el.prefix || ''}${label.values[el.fieldName] || ''}${el.suffix || ''}`);
+        if (problem) throw new Error(`The ${friendlyFieldName(el.fieldName)} ${problem}. Nothing was printed.`);
+      }
+      const zpl = await generateZPLWithImages(template, format, label.values);
       await sendLabel(zpl);
       setHistory((h) => [{ id: entryId, value: v, at: Date.now(), status: 'ok' as ScanStatus }, ...h].slice(0, 10));
       setFlash('ok');
@@ -187,13 +207,13 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       // Re-focus happens automatically via the refocus listener but be explicit.
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [run, template, format, targetField, sendLabel]);
+  }, [run, template, format, targetField, sendLabel, fields, lookUp]);
 
   // Guard: run / template / format missing.
   if (!run && loadError) {
     return (
       <AppShell>
-        <PageTitle title="Scan mode" />
+        <PageTitle title="Scan to print" />
         <div className="flex-1 flex items-center justify-center p-6">
           <div role="alert" className="max-w-sm text-center space-y-3">
             <h1 className="text-lg font-semibold text-zinc-100">{loadError.status === 404 ? 'We couldn\u2019t find that run' : 'We couldn\u2019t load that run'}</h1>
@@ -210,7 +230,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   if (run && (!template || !format)) {
     return (
       <AppShell>
-        <PageTitle title="Scan mode" />
+        <PageTitle title="Scan to print" />
         <div className="flex-1 flex items-center justify-center p-6 text-center">
           <div className="max-w-sm space-y-3"><p className="text-sm text-zinc-300">This run has no saved design, so it can&apos;t print from scans.</p><Link href={`/runs/${run.id}`} className="underline text-amber-400">Back to run</Link></div>
         </div>
@@ -220,7 +240,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   if (!run || !template || !format) {
     return (
       <AppShell>
-        <PageTitle title="Scan mode" />
+        <PageTitle title="Scan to print" />
         <div className="flex-1 flex items-center justify-center text-zinc-500">
           <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading run…
         </div>
@@ -228,76 +248,109 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     );
   }
 
-  const canPrint = !!targetField && blanksOk && (
-    (transport === 'dazzle' && !!dazzleSelected) ||
-    (transport === 'webusb' && !!usbPrinter)
-  );
+  const printerReady = (transport === 'dazzle' && !!dazzleSelected) || (transport === 'webusb' && !!usbPrinter);
+  const canPrint = !!targetField && blanksOk && printerReady;
+  const waitingFor = !targetField
+    ? 'Nothing on this design changes per label'
+    : !blanksOk
+      ? 'Some fields have no value. See above.'
+      : !printerReady
+        ? 'Connect a printer first'
+        : 'Waiting for a scan…';
 
   return (
     <AppShell>
-      <PageTitle title={`Scan \u00b7 ${run.name}`} />
-      <div className={`flex-1 flex flex-col items-center justify-start sm:justify-center p-4 sm:p-8 transition-colors duration-300 ${
+      <PageTitle title={`Scan to print · ${run.name}`} />
+      <div className={`flex-1 overflow-auto transition-colors duration-200 ${
         flash === 'ok' ? 'bg-emerald-500/10' : flash === 'error' ? 'bg-red-500/10' : ''
       }`}>
-        <div className="w-full max-w-xl">
-          <div className="flex items-center justify-between gap-3 mb-5">
-            <Link
-              href={`/runs/${run.id}`}
-              className="btn btn-ghost btn-sm -ml-3 shrink-0"
-            >
+        <div className="mx-auto w-full max-w-xl px-4 py-6 sm:px-8 space-y-5">
+          <div className="space-y-1">
+            <Link href={`/runs/${run.id}`} className="btn btn-ghost btn-sm -ml-3">
               <ArrowLeft className="size-4" aria-hidden="true" /> Back to run
             </Link>
-            <div className="min-w-0 text-xs text-zinc-400 truncate">
-              {run.name} · {template.name} · {format.name}
-            </div>
+            <h1 className="text-2xl font-semibold text-zinc-50">Scan to print</h1>
+            <p className="truncate text-sm text-zinc-400">{run.name} · {template.name}</p>
           </div>
 
-          {/* Transport status strip */}
-          <section className="card mb-5 p-3 sm:p-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <ScanBarcode className={`w-5 h-5 shrink-0 ${canPrint ? 'text-emerald-400' : 'text-zinc-500'}`} aria-hidden="true" />
-            <div className="min-w-0 flex-1 text-sm">
-              {transport === 'dazzle' && dazzlePrinters.length > 0 && (
-                <span className="text-zinc-400">Printing on this computer (Dazzle app) → <span className="text-zinc-200">{dazzleSelected}</span></span>
+          {/* Printer */}
+          <section className="card p-4 space-y-2" aria-label="Printer">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+              <ScanBarcode className={`size-5 shrink-0 ${printerReady ? 'text-emerald-400' : 'text-zinc-500'}`} aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                {transport === 'dazzle' && dazzlePrinters.length > 0 && (
+                  <span className="text-zinc-300">Prints on <span className="text-zinc-100">{dazzleSelected}</span> (Dazzle app on this computer)</span>
+                )}
+                {transport === 'dazzle' && dazzlePrinters.length === 0 && (
+                  <span className="text-zinc-300">The Dazzle app shows no printers. Turn the printer on and check it&apos;s set up in Dazzle.</span>
+                )}
+                {transport === 'webusb' && usbPrinter && (
+                  <span className="text-zinc-300">Prints on <span className="text-zinc-100">{usbPrinter.productName}</span> (USB)</span>
+                )}
+                {transport === 'webusb' && !usbPrinter && <span className="text-zinc-300">No printer connected to this computer yet.</span>}
+                {!transport && <span className="text-zinc-300">{transportError || 'Looking for a printer…'}</span>}
+              </div>
+              {transport === 'webusb' && !usbPrinter && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const d = await requestPrinter();
+                      const o = await openPrinter(d);
+                      setUsbPrinter(o);
+                    } catch (err) {
+                      if ((err as Error).name !== 'NotFoundError') setTransportError('Couldn’t connect to the USB printer. Check the cable, then try again.');
+                    }
+                  }}
+                  className="btn btn-secondary btn-sm"
+                >
+                  <Plug className="size-4" aria-hidden="true" /> Connect USB printer
+                </button>
               )}
-              {transport === 'dazzle' && dazzlePrinters.length === 0 && (
-                <span className="text-zinc-500">The Dazzle app is running but shows no printers. Turn the printer on and check it&apos;s set up in Dazzle.</span>
-              )}
-              {transport === 'webusb' && (
-                usbPrinter ? (
-                  <span className="text-zinc-400">Printing on USB printer → <span className="text-zinc-200">{usbPrinter.productName}</span></span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const d = await requestPrinter();
-                        const o = await openPrinter(d);
-                        setUsbPrinter(o);
-                      } catch (err) {
-                        if ((err as Error).name !== 'NotFoundError') setTransportError('Couldn\u2019t connect to the USB printer. Check the cable, then try again.');
-                      }
-                    }}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    <Plug className="size-4" aria-hidden="true" /> Connect USB printer
-                  </button>
-                )
-              )}
-              {!transport && <span className="text-red-400">{transportError || 'No printer available'}</span>}
             </div>
-            {targetField && (
-              <span className="text-sm text-zinc-400 max-sm:basis-full max-sm:pl-8">
-                Each scan fills <span className="font-medium text-zinc-100">{targetField}</span>
-              </span>
+            {!printerReady && (
+              <p className="text-sm text-zinc-400">
+                Scan mode prints on a printer connected to this computer. To use the office printer, <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">print from the run page</Link>.
+              </p>
             )}
+            {transportError && transport && <p role="alert" className="text-sm text-red-400">{transportError}</p>}
           </section>
 
+          {/* What a scan fills */}
+          {targetField && (
+            <section className="space-y-1.5" aria-label="What each scan fills">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span id="scan-field-label" className="field-label">Each scan fills</span>
+                <div className="min-w-48 flex-1">
+                  <CustomSelect
+                    aria-labelledby="scan-field-label"
+                    value={targetField}
+                    onChange={chooseField}
+                    options={fields.map((field) => ({ value: field, label: friendlyFieldName(field) }))}
+                  />
+                </div>
+              </div>
+              <p className="text-sm text-zinc-400">
+                {lookUp
+                  ? `Each scan finds the label in this run with that ${friendlyFieldName(targetField)} and prints it.`
+                  : 'The other fields print the value set for every label.'}
+              </p>
+            </section>
+          )}
+
+          {blankCheck && blankCheck.issues.length > 0 && (
+            <BlankSummary
+              check={blankCheck}
+              mode="scan"
+              leaveBlank={leaveBlank}
+              onLeaveBlankChange={setLeaveBlank}
+              showWhenOk={false}
+              extra={`Pick a field from your spreadsheet above so a scan can find its label, or print this run from the run page.`}
+            />
+          )}
+
           {/* The big input. Autofocus + keep-focused. Submit on Enter. */}
-          <form
-            onSubmit={(e) => { e.preventDefault(); void handleSubmit(value); }}
-            className="mb-4"
-          >
-            {blankCheck && blankCheck.issues.length > 0 && <div className="mb-3"><BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact remedy={`Each scan only fills ${targetField}. To scan with this design, open it and set the other field${blankCheck.issues.length === 1 ? '' : 's'} to "Same on every label", or print this run from the run page instead.`} /></div>}
+          <form onSubmit={(e) => { e.preventDefault(); void handleSubmit(value); }}>
             <label htmlFor="scan-input" className="field-label mb-1.5">
               Scan or type, then press Enter
             </label>
@@ -314,52 +367,52 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 type="text"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder={canPrint ? 'Waiting for a scan…' : !blanksOk ? 'Fill the missing values first' : 'Connect a printer first'}
+                placeholder={waitingFor}
                 autoFocus
                 disabled={!canPrint || busy}
-                className="w-full bg-zinc-950 rounded-[10px] text-xl sm:text-2xl font-mono text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:font-sans placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-50"
+                className="w-full bg-zinc-950 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-5">
                 <span key={busy ? 'busy' : flash ?? 'idle'} className={`block ${flash === 'ok' && !busy ? 'animate-success' : 'animate-icon'}`}>
                 {busy ? (
-                  <Loader2 className="w-6 h-6 text-zinc-400 animate-spin" />
+                  <Loader2 className="size-6 text-zinc-400 animate-spin" aria-hidden="true" />
                 ) : flash === 'ok' ? (
-                  <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                  <CheckCircle2 className="size-6 text-emerald-400" aria-hidden="true" />
                 ) : flash === 'error' ? (
-                  <AlertCircle className="w-6 h-6 text-red-400" />
+                  <AlertCircle className="size-6 text-red-400" aria-hidden="true" />
                 ) : (
-                  <ScanBarcode className="w-6 h-6 text-zinc-500" />
+                  <ScanBarcode className="size-6 text-zinc-500" aria-hidden="true" />
                 )}
                 </span>
               </div>
             </div>
             {!targetField && (
               <p className="mt-2 text-sm text-red-400 flex items-start gap-1.5">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 Nothing on this design changes per label, so there&apos;s nowhere for a scan to go. Open the design and set one part to &ldquo;Changes per label&rdquo;.
               </p>
             )}
           </form>
 
-          {/* History \u2014 newest first, 10 entries. */}
+          {/* History, newest first, 10 entries. */}
           {history.length > 0 && (
-            <section className="mt-6 space-y-1 stagger">
-              <h3 className="section-title mb-2">Recent scans</h3>
+            <section className="space-y-1 stagger" aria-label="Recent scans">
+              <h2 className="section-title mb-2">Recent scans</h2>
               {history.map((h) => (
                 <div
                   key={h.id}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
-                    h.status === 'ok'
-                      ? 'bg-zinc-900 text-zinc-200'
-                      : 'bg-red-500/10 text-red-300'
+                  className={`flex items-start gap-3 px-3 py-2 rounded-lg text-sm ${
+                    h.status === 'ok' ? 'bg-zinc-900 text-zinc-200' : 'bg-red-500/10 text-red-300'
                   }`}
                 >
                   {h.status === 'ok'
-                    ? <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
-                    : <AlertCircle className="size-4 text-red-400 shrink-0" />}
-                  <span className="flex-1 truncate font-mono text-xs">{h.value}</span>
-                  {h.message && <span className="text-xs text-red-400 truncate max-w-[180px]">{h.message}</span>}
-                  <span className="text-xs text-zinc-500 tabular-nums shrink-0">
+                    ? <CheckCircle2 className="mt-0.5 size-4 text-emerald-400 shrink-0" aria-hidden="true" />
+                    : <AlertCircle className="mt-0.5 size-4 text-red-400 shrink-0" aria-hidden="true" />}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate tabular-nums">{h.value}</span>
+                    {h.message && <span className="block text-red-300">{h.message}</span>}
+                  </span>
+                  <span className="text-zinc-400 tabular-nums shrink-0">
                     {new Date(h.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
                   </span>
                 </div>

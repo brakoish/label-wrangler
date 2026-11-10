@@ -1,7 +1,7 @@
 'use client';
 
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Undo2, Redo2, Pencil, ChevronLeft } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
@@ -27,7 +27,8 @@ import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { staggeredPosition } from '@/lib/elementPlacement';
+import { freeSpot, layoutProblems, printedBounds, type Box } from '@/lib/designerLayout';
+import { elementTypeName } from '@/lib/fieldLabels';
 import { friendlyError } from '@/lib/userMessages';
 
 type NewTemplateElement = TemplateElement extends infer T
@@ -102,6 +103,8 @@ function DesignerContent() {
   const [leftPanel, setLeftPanel] = useState<'layers' | 'data'>('layers');
   // Phones show one pane at a time; large screens show all three.
   const [phonePane, setPhonePane] = useState<'label' | 'layers' | 'edit'>('label');
+  // Said once when a new item had to go on top of others (no clear space left).
+  const [placeNotice, setPlaceNotice] = useState<{ id: string; x: number; y: number; text: string } | null>(null);
   const saveRevision = useRef(0);
   const unsavedChanges = useRef(false);
   const persistEdits = useCallback((id: string) => {
@@ -302,6 +305,12 @@ function DesignerContent() {
   }, [selectedTemplateId, clearUndo]);
 
   const [recovery, setRecovery] = useState<Array<TemplateDraft & {key:string}>>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (templateId) void useTemplateStore.getState().fetchTemplate(templateId);
     try { setRecovery(templateId ? readDrafts(templateId) : []); } catch { setSaveError('Draft recovery storage is unavailable. Keep this tab open until changes save.'); }
@@ -313,6 +322,14 @@ function DesignerContent() {
       router.push(`/designer?id=${created.id}`);
     } catch(error) { setSaveError((error as Error).message); }
   };
+
+  // Items that cover each other or run off the label, as the printer draws
+  // them (native thermal only; bitmap labels have their own exact proof).
+  const designProblems = useMemo(() => (
+    currentTemplate && currentFormat && !currentTemplate.summaryOnly && currentTemplate.thermalRenderMode !== 'bitmap-v1'
+      ? layoutProblems(currentTemplate.elements, currentFormat, testData)
+      : []
+  ), [currentTemplate, currentFormat, testData]);
 
   // If no template is selected, show template list view
   if (!currentTemplate || currentTemplate.summaryOnly || !currentFormat) {
@@ -332,9 +349,10 @@ function DesignerContent() {
             onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
-          <div className="mx-auto w-full max-w-[1600px] pb-8">
+          {/* Importing outside designs is an admin tool, not an everyday one. */}
+          {isAdmin && <div className="mx-auto w-full max-w-[1600px] pb-8">
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
-          </div>
+          </div>}
         </div>
 
         {/* New Template Dialog */}
@@ -516,10 +534,31 @@ function DesignerContent() {
         return;
     }
 
-    // Don't stack new objects exactly on top of each other.
-    const position = staggeredPosition(currentTemplate.elements, { x: elementData.x, y: elementData.y }, isThermal ? Math.max(8, Math.round(unit * 0.06)) : Math.round(unit * 0.06 * 100) / 100 || 0.05, { width: labelW, height: labelH }, { width: elementData.width, height: elementData.height });
+    // Put the new item in clear space: the first gap, top to bottom, that
+    // fits it, shrinking it (down to half size) if the label is crowded.
+    const margin = isThermal ? Math.max(6, Math.round(unit * 0.03)) : Math.round(unit * 0.03 * 100) / 100 || 0.03;
+    const taken: Box[] = currentTemplate.elements.map((el) => {
+      const box = { x: el.x, y: el.y, width: el.width, height: Math.max(el.height, el.type === 'line' ? (el as { strokeWidth?: number }).strokeWidth ?? 1 : 0) };
+      const printed = isThermal && currentTemplate.thermalRenderMode !== 'bitmap-v1' ? printedBounds(el, currentFormat, testData) : null;
+      if (!printed) return box;
+      const x = Math.min(box.x, printed.x), y = Math.min(box.y, printed.y);
+      return { x, y, width: Math.max(box.x + box.width, printed.x + printed.width) - x, height: Math.max(box.y + box.height, printed.y + printed.height) - y };
+    });
+    let placed: { x: number; y: number; width: number; height: number; fits: boolean } | null = null;
+    for (const scale of [1, 0.75, 0.5]) {
+      const round = (v: number) => isThermal ? Math.round(v) : Math.round(v * 100) / 100;
+      const size = { width: round(Math.min(elementData.width, labelW - margin * 2) * scale), height: round(elementData.height * scale) };
+      const spot = freeSpot(taken, size, { width: labelW, height: labelH }, margin);
+      if (spot.fits) { placed = { ...size, x: spot.x, y: spot.y, fits: true }; break; }
+    }
+    if (!placed) placed = { width: elementData.width, height: elementData.height, x: margin, y: margin, fits: currentTemplate.elements.length === 0 };
+    const sizeChanged = placed.width !== elementData.width || placed.height !== elementData.height;
+    const scaled: Partial<TemplateElement> = sizeChanged ? { width: placed.width, height: placed.height } : {};
+    if (sizeChanged && elementData.type === 'text') Object.assign(scaled, { fontSize: Math.max(isThermal ? 6 : 5, Math.round(elementData.fontSize * placed.height / elementData.height)) });
+    if (sizeChanged && elementData.type === 'qr') { const side = Math.min(placed.width, placed.height); Object.assign(scaled, { width: side, height: side }); }
     const id = crypto.randomUUID();
-    commitEdit({ elements: [...currentTemplate.elements, { ...elementData, ...position, id, zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + 1 } as TemplateElement] });
+    setPlaceNotice(placed.fits ? null : { id, x: placed.x, y: placed.y, text: `No free space left, so the new ${elementTypeName(type).toLowerCase()} is on top of other items. Drag it or make the label bigger.` });
+    commitEdit({ elements: [...currentTemplate.elements, { ...elementData, ...scaled, x: placed.x, y: placed.y, id, zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + 1 } as TemplateElement] });
     // Select it so the properties panel shows what was just added.
     setSelectedIds(new Set([id]));
   };
@@ -587,21 +626,12 @@ function DesignerContent() {
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title="Designer" />
-      <div className="px-4 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-400 border-b border-zinc-800">
-        <span role="status" aria-live="polite" className={`inline-flex items-center gap-1.5 ${saveError ? 'text-red-400' : saving ? 'text-zinc-300' : 'text-emerald-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full bg-current ${!saving && !saveError ? 'animate-success' : ''}`} />{saveError ? 'Not saved' : saving ? 'Saving…' : 'All changes saved'}</span>
-        <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="btn btn-secondary btn-sm">{saving ? 'Saving…' : 'Save now'}</button>
-        <span className="text-zinc-500 max-sm:hidden">Changes save on their own.</span>
-        {currentFormat.type === 'thermal' && <>
-        <span className="ml-auto max-sm:hidden">{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
-        <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>
-        </>}
-      </div>
       {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
       {saveError && <button className="px-4 pb-2 text-left text-sm text-amber-300 underline" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
-      <div className="lg:hidden p-2 border-b border-zinc-800">
+      <div className="lg:hidden px-4 py-2">
       <div role="tablist" aria-label="Designer panes" className="segmented">
         <SegmentedIndicator index={['label', 'layers', 'edit'].indexOf(phonePane)} count={3} />
         {([['label', 'Label'], ['layers', 'Layers & data'], ['edit', selectedIds.size ? 'Edit selected' : 'Edit']] as const).map(([pane, text]) => (
@@ -612,8 +642,8 @@ function DesignerContent() {
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className={`${phonePane === 'layers' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col border-b lg:border-b-0 lg:border-r border-zinc-800 lg:max-h-none`}>
-          <div className="p-2 border-b border-zinc-800">
+        <div className={`${phonePane === 'layers' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`}>
+          <div className="p-2">
           <div className="segmented" role="group" aria-label="Designer panels">
             <SegmentedIndicator index={leftPanel === 'data' ? 1 : 0} count={2} />
             <button aria-pressed={leftPanel === 'layers'} onClick={() => setLeftPanel('layers')}>Layers <span className="tabular-nums text-zinc-500">{currentTemplate.elements.length}</span></button>
@@ -652,7 +682,7 @@ function DesignerContent() {
           {/* Breadcrumb bar. When a returnTo is set we show a 'Done' CTA
               so the round-trip feels like 'I edited this and came back'
               rather than 'I'm lost in the designer'. */}
-          <div className="px-4 py-2 border-b border-zinc-800 flex flex-wrap items-center gap-2 text-sm shrink-0">
+          <div className="px-4 py-2 flex flex-wrap items-center gap-2 text-sm shrink-0">
             {returnTo ? (
               <a
                 href={returnTo}
@@ -693,25 +723,28 @@ function DesignerContent() {
               </div>
             )}
 
+            {/* Saving is automatic: just say where it stands. */}
+            <span role="status" aria-live="polite" className={`inline-flex min-h-control-sm items-center gap-1.5 ${saveError ? 'text-red-400' : 'text-zinc-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full ${saveError ? 'bg-red-400' : saving ? 'bg-zinc-500' : 'bg-emerald-400 animate-success'}`} />{saveError ? 'Not saved' : saving ? 'Saving…' : 'Saved'}</span>
+
             {/* Undo/Redo */}
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {showThermalOrientationPicker && (
                 <>
-                  <div className="segmented mr-2" role="group" aria-label="Edit orientation">
+                  <div className="segmented mr-2" role="group" aria-label="View">
                     <SegmentedIndicator index={thermalEditorOrientation === 'upright' ? 1 : 0} count={2} />
                     <button
                       onClick={() => updateThermalEditorOrientation('printer')}
-                      title="Edit in printer orientation"
+                      title="Show the label the way it comes out of the printer"
                       aria-pressed={thermalEditorOrientation === 'printer'}
                     >
-                      Printer
+                      As printed
                     </button>
                     <button
                       onClick={() => updateThermalEditorOrientation('upright')}
-                      title="Edit upright"
+                      title="Turn the label so the text reads the right way up"
                       aria-pressed={thermalEditorOrientation === 'upright'}
                     >
-                      Upright
+                      Readable
                     </button>
                   </div>
                 </>
@@ -734,6 +767,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
+              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
@@ -768,7 +802,9 @@ function DesignerContent() {
             onDragEnd={finishGesture}
             onGestureCancel={cancelGesture}
             testData={testData}
+            layoutProblems={designProblems}
           />
+          {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (
             <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
           ) : (
@@ -785,6 +821,8 @@ function DesignerContent() {
           onUpdate={handleUpdateElement}
           onUpdateSelected={handleUpdateSelectedElements}
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
+          allElements={currentTemplate.elements}
+          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => p.message) : []}
           onArrange={(action: AlignAction) => {
             beginGesture();
             const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id) && !e.locked), action);
