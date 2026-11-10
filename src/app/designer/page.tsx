@@ -3,7 +3,7 @@
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Undo2, Redo2, Pencil, ChevronLeft, Plus } from 'lucide-react';
+import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2 } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -843,7 +843,7 @@ function DesignerContent() {
   };
   const fixDone = fixStillShown ? (
     <p role="status" className="fold-reveal flex flex-wrap items-center gap-x-3 px-3 pb-1 text-sm text-emerald-400 sm:px-6">
-      <span>{fixNote.text}</span>
+      <span className="inline-flex items-center gap-1.5"><CheckCircle2 key={fixNote.text} className="size-4 shrink-0 rounded-full animate-success" aria-hidden="true" />{fixNote.text}</span>
       <button type="button" className="link inline-flex min-h-control-sm items-center" onClick={() => { handleUndo(); setFixNote(null); }}>Undo</button>
     </p>
   ) : null;

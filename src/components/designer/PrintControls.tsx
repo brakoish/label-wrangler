@@ -3,6 +3,7 @@
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react';
 import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
+import { IconSwap } from '@/components/ui/IconSwap';
 import { Printer, PrinterCheck, Plug, Target, Loader2, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL, generateZPLWithImages, prepareZplImages } from '@/lib/zplGenerator';
@@ -420,7 +421,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
           title="Connect a Zebra printer via USB"
           className="btn btn-secondary btn-sm"
         >
-          {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
+          <IconSwap className="size-3.5" active={connecting ? 'busy' : 'idle'} icons={{ idle: <Plug className="w-3.5 h-3.5" />, busy: <Loader2 className="w-3.5 h-3.5 animate-spin" /> }} />
           {connecting ? 'Connecting…' : 'Connect printer'}
         </button>
       ) : (
@@ -454,7 +455,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             title={`Send ${labelQty} label${labelQty === 1 ? '' : 's'} to the printer`}
             className="btn btn-primary btn-sm"
           >
-            {printing === 'label' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+            <IconSwap className="size-3.5" active={printing === 'label' ? 'busy' : 'idle'} icons={{ idle: <Printer className="w-3.5 h-3.5" />, busy: <Loader2 className="w-3.5 h-3.5 animate-spin" /> }} />
             Print{labelQty > 1 && <span className="tabular-nums">×{labelQty}</span>}
           </button>
           {/* Calibrate button with adjacent options menu (style + copies). */}
@@ -465,7 +466,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
               title={`Print ${calibCount} calibration label${calibCount > 1 ? 's' : ''}`}
               className="btn btn-secondary btn-sm rounded-r-none"
             >
-              {printing === 'calibration' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
+              <IconSwap className="size-3.5" active={printing === 'calibration' ? 'busy' : 'idle'} icons={{ idle: <Target className="w-3.5 h-3.5" />, busy: <Loader2 className="w-3.5 h-3.5 animate-spin" /> }} />
               Calibrate {calibCount > 1 && <span className="text-zinc-400">×{calibCount}</span>}
             </button>
             <button

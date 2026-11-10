@@ -17,6 +17,7 @@ import { useRubberBand } from '@/components/motion/rubberBand';
 import { describeUnprintable, elementUnprintable, plainPrinterText, plainReplacement } from '@/lib/printerCharacters';
 import { parseSizeInput, sizeProblem } from '@/lib/sizeInput';
 import { columnChoices, isMadeUpFieldName, readLastColumns } from '@/lib/lastColumns';
+import { Switch } from '@/components/ui/Switch';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -347,7 +348,7 @@ function TextStyleControls({ first, onUpdate, format, bitmap }: { first: TextEle
             </div>
           </Row>
           <div className="flex min-h-control-sm items-center gap-2">
-            <button type="button" role="switch" aria-checked={autoFit} onClick={() => onUpdate({ autoFit: !autoFit })} aria-labelledby="autofit-label" className="switch" />
+            <Switch checked={autoFit} onChange={(value) => onUpdate({ autoFit: value })} labelledBy="autofit-label" />
             <span id="autofit-label" className="text-sm text-zinc-300">Shrink long text to fit</span>
           </div>
           {autoFit && <CompactInput label="Min" min={1} max={500} what="Smallest size" value={first.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />}
@@ -724,14 +725,5 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
 }
 
 function Toggle({ checked, onChange, labelledBy }: { checked: boolean; onChange: (v: boolean) => void; labelledBy?: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-labelledby={labelledBy}
-      onClick={() => onChange(!checked)}
-      className="switch"
-    />
-  );
+  return <Switch checked={checked} onChange={onChange} labelledBy={labelledBy} />;
 }
