@@ -91,6 +91,24 @@ const rewindDropOps = new Set<string>();
 /** Operations a flush has tried to send (cleared by the caller that queued them). */
 const attemptedOps = new Set<string>();
 export const QUEUE_EVENT = 'lw:progress-sync';
+/**
+ * A "Go back to label N" the server now has (its answer had been lost, then a
+ * retry found it already applied, or it simply went through late). Detail:
+ * { runId, goBackTo: the count asked for, printedCount: the server's count
+ * when the retry was answered (null when not known) }. The run page settles
+ * on it: no "not synced" words, and its buttons follow the server's count.
+ */
+export const REWIND_SETTLED_EVENT = 'lw:rewind-settled';
+/** Go-backs answered as already applied, by operation id: the server's count then (null when not known). */
+const appliedOps = new Map<string, number | null>();
+/** Go-backs whose answer was lost once and were sent again right away. */
+const retriedOps = new Set<string>();
+/** Words for a send that got no answer: offline only when the browser says so. */
+function noAnswerWords(): string {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+    ? 'Progress sync pending. You seem to be offline; it sends when the connection is back.'
+    : 'A print update didn’t get an answer from the server. It tries again on its own.';
+}
 function announce(error = '') {
   lastError = error;
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_EVENT));
@@ -249,8 +267,19 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
           response = await send(op.event ? {...op.event,idempotencyKey:op.id} : { ...patch, progressOnly: !patch.status && patch.printedCount !== undefined });
           if (!response.ok) refused = await serverError(response);
         } catch {
+          // A go-back whose answer was lost (the phone slept, the Wi-Fi
+          // blinked) is sent once more right away with the same key: the
+          // server applies a key at most once and answers a repeat as already
+          // applied, so this settles it instead of leaving "not synced" words
+          // for a change the server may already have made.
+          if (op.then && !op.event && patch.resetProgress && !retriedOps.has(op.id)) {
+            retriedOps.add(op.id);
+            if (retriedOps.size > 128) retriedOps.delete(retriedOps.values().next().value!);
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            continue;
+          }
           blocked.add(runId);
-          pendingError = 'Progress sync pending. You seem to be offline; it sends when the connection is back.';
+          pendingError = noAnswerWords();
           continue;
         }
         // Rolled back to main, which has no guarded rewind and refuses its
@@ -258,6 +287,22 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
         // compare-and-set and could erase progress another device made since,
         // so it is set aside with plain words: reload, then go back again.
         if (!op.event && response.status === 400 && patch.resetProgress && MAIN_REFUSES_REWIND.test(refused.message)) {
+          // An earlier try may have been applied before the change back (its
+          // answer lost): then the run is already where the person asked, and
+          // saying "wasn't applied" would be wrong.
+          if (retriedOps.has(op.id) && typeof patch.printedCount === 'number') {
+            const now = await fetch(`/api/runs/${runId}`, { cache: 'no-store', signal: AbortSignal.timeout(15000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as { printedCount?: unknown } | null;
+            if (now && Number(now.printedCount) === patch.printedCount) {
+              window.localStorage.removeItem(op.key);
+              syncedRuns.delete(runId);
+              appliedOps.set(op.id, patch.printedCount);
+              if (appliedOps.size > 128) appliedOps.delete(appliedOps.keys().next().value!);
+              window.dispatchEvent(new CustomEvent(REWIND_SETTLED_EVENT, { detail: { runId, goBackTo: patch.printedCount, printedCount: patch.printedCount } }));
+              flushed++;
+              announce(pendingError);
+              continue;
+            }
+          }
           const message = rewindNeedsReloadMessage(patch.printedCount ?? 0);
           deadLetter(op.key, { id: op.id, runId, kind: 'rewind-dropped', status: 400, message, serverMessage: refused.message.slice(0, 500), op: storedOp(op) });
           syncedRuns.delete(runId);
@@ -320,6 +365,11 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
         if (op.event && run?.id) { syncedEvents.set(op.id,run); if(syncedEvents.size>128) syncedEvents.delete(syncedEvents.keys().next().value!); window.dispatchEvent(new CustomEvent('lw:event-synced',{detail:run})); }
         else if (run?.id) { syncedRuns.set(run.id,run); window.dispatchEvent(new CustomEvent('lw:run-synced',{detail:run})); }
         else if (alreadyApplied) syncedRuns.delete(runId);
+        if (!op.event && patch.resetProgress && typeof patch.printedCount === 'number') {
+          const serverCount = alreadyApplied ? (typeof refused.printedCount === 'number' ? refused.printedCount : null) : (Number.isFinite(Number(run?.printedCount)) ? Number(run.printedCount) : null);
+          if (alreadyApplied) { appliedOps.set(op.id, serverCount); if (appliedOps.size > 128) appliedOps.delete(appliedOps.keys().next().value!); }
+          window.dispatchEvent(new CustomEvent(REWIND_SETTLED_EVENT, { detail: { runId, goBackTo: patch.printedCount, printedCount: serverCount } }));
+        }
         // The server wrote the go-back's entry with it ('written'), or knows how
         // and found none to write ('none', a go-back that was already there):
         // either way the page doesn't send it. A server that doesn't answer
@@ -359,13 +409,20 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
  * refused this update, `onSetAside` gets the plain reason (and the stale
  * cached run is not returned).
  */
-export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAside?: (reason: string) => void, then?: PrintEventData): Promise<Run | null> {
+export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAside?: (reason: string) => void, then?: PrintEventData, onAlreadyApplied?: (serverPrinted: number | null) => void): Promise<Run | null> {
   const id = enqueueRunPatch({ runId, ...patch }, undefined, false, then);
   await flushOfflineQueue();
   // A flush that was already finishing when this was queued may have missed
   // it: send once more so the caller's own update isn't left behind.
   if (!attemptedOps.has(id)) await flushOfflineQueue();
   attemptedOps.delete(id);
+  // A go-back the server already had (its first answer was lost): the caller
+  // learns the server's count, so it never prints on from a stale screen.
+  if (appliedOps.has(id)) {
+    const serverPrinted = appliedOps.get(id) ?? null;
+    appliedOps.delete(id);
+    onAlreadyApplied?.(serverPrinted);
+  }
   const refused = setAsideOps.get(id);
   if (refused !== undefined) {
     setAsideOps.delete(id);

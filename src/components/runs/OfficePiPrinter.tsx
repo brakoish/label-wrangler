@@ -110,8 +110,26 @@ function browserTabId(){
   try{let id=sessionStorage.getItem('lw:tab-id');if(!id){id=crypto.randomUUID();sessionStorage.setItem('lw:tab-id',id);}return id;}
   catch{return 'tab-'+Math.random().toString(36).slice(2);}
 }
-/** How long a page that finds a saved send (and didn't make the POST) looks it up before saying "not sure" (when the lookup can't answer). */
-const CHECK_MS=10_000;
+/**
+ * How long a page that finds a saved send (and didn't make the POST, or whose
+ * POST was cut off by a reload) keeps checking before saying "not sure",
+ * counted from the last moment any tab was still sending it. A try this page
+ * saw fail, or one a failure was saved for, says "not sure" at once.
+ */
+const CHECK_MS=15_000;
+/** Looks at the office soon after a reload, then less often: 1 s, 2 s, 4 s, 8 s, then every 15 s. */
+const LOOK_AGAIN_MS=[1000,2000,4000,8000,15_000];
+/**
+ * The page is being unloaded (a reload, the tab closing). A POST the browser
+ * cuts off then wasn't refused and its answer wasn't lost: it was abandoned
+ * on the way. It neither clears the shared "sending" mark (the next page
+ * reads it and keeps checking) nor records a failure.
+ */
+let pageUnloading=false;
+if(typeof window!=='undefined'){
+  window.addEventListener('pagehide',()=>{pageUnloading=true;});
+  window.addEventListener('pageshow',()=>{pageUnloading=false;});
+}
 /** The send's POST gives up a little after the route's maxDuration (300 s). */
 const OFFICE_POST_TIMEOUT_MS=310_000;
 /**
@@ -202,7 +220,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   /** The progress line above already names what is still to go: not said again here. */
   toGoShown?:boolean;
   /** Tells the run header what this panel says (a send it isn't sure arrived, a refused send, a paused printer), so both say the same. */
-  onPanelState?:(state:{unsure:OfficeSpan|null;refused:OfficeSpan|null;paused:boolean;sending:string|null;held?:OfficeSpan|null})=>void;
+  onPanelState?:(state:{unsure:(OfficeSpan&{likely?:boolean})|null;refused:OfficeSpan|null;paused:boolean;sending:string|null;held?:OfficeSpan|null})=>void;
   /** The labels the main button sends next (null when none), so the run page's "Print anyway" ticks name the same range. */
   onRangeChange?:(span:OfficeSpan|null)=>void}){
   const uid=useId();
@@ -364,8 +382,22 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // reload or double-click retries this identity, never manufactures new jobs.
   const jobsRef=useRef(jobs);
   useEffect(()=>{jobsRef.current=jobs;},[jobs]);
+  const requestsRef=useRef(requests);
+  useEffect(()=>{requestsRef.current=requests;},[requests]);
   const storageKey=`lw:office-pending:${runId}`;
   const sendingKey=`lw:office-sending:${runId}`;
+  // This build only (main never reads it): the office requests for the same
+  // labels that already existed when the send was saved, so a later look at
+  // the queue can tell the saved send's own request from an earlier one.
+  const priorKey=`lw:office-pending-prior:${runId}`;
+  /** Forgets the saved send (only while it is still the one under `key`, when given). */
+  const forgetSaved=(key?:string)=>{
+    try{
+      if(key!==undefined){const raw=localStorage.getItem(storageKey);const saved=raw?JSON.parse(raw)?.idempotencyKey:'';if(saved!==key)return false;}
+      localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);localStorage.removeItem(priorKey);
+    }catch{/* nothing saved */}
+    return true;
+  };
   const [partsPlan,setPartsPlan]=useState<OfficePartsPlan|null>(null);
   // Labels a "Print in order" fix cancelled for now, offered again after the reprint.
   const [heldSpans,setHeldSpans]=useState<OfficeSpan[]>([]);
@@ -455,18 +487,41 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // A send in the office queue with exactly the saved send's labels: what the
   // page can tell when the key lookup can't answer.
   const pendingReprintOf=pending?.reprintOf ?? '';
-  const queueHasPending=pendingFrom!==undefined && requests.some(r=>r.range_from===pendingFrom && r.range_to===pendingTo && (r.reprint_of ?? '')===pendingReprintOf);
-  const queueHasPendingRef=useRef(queueHasPending);
-  useEffect(()=>{queueHasPendingRef.current=queueHasPending;},[queueHasPending]);
-  // The queue just listed those labels while another tab's mark is still up
-  // and the lookup can't answer: settle now, not at the next look.
-  useEffect(()=>{if(queueHasPending && lookupMissing)setPendingPhase(p=>p==='other'?'unsure':p);},[queueHasPending,lookupMissing]);
+  // The office requests for these labels that were there before the send was
+  // saved (null: not known, a send saved by main or an older page).
+  let priorIds:string[]|null=null;
+  if(pending){try{const raw=localStorage.getItem(priorKey);const data=raw?JSON.parse(raw):null;priorIds=Array.isArray(data?.prior)?data.prior.filter((id:unknown)=>typeof id==='string'):null;}catch{priorIds=null;}}
+  const queueMatch=pendingFrom===undefined?undefined:requests.find(r=>r.range_from===pendingFrom && r.range_to===pendingTo && (r.reprint_of ?? '')===pendingReprintOf && !priorIds?.includes(r.id) && r.jobs.some(j=>j.state!=='cancelled'));
+  const queueHasPending=!!queueMatch;
+  // The queue's request is surely this send's own: it wasn't there when the
+  // send was saved, or (a new send, not a reprint) the office would have
+  // refused this send had those labels already been there.
+  const queueSure=!!queueMatch && (priorIds!==null || !pendingReprintOf);
+  const queueSureRef=useRef<string|null>(null);
+  useEffect(()=>{queueSureRef.current=queueSure && queueMatch?queueMatch.id:null;},[queueSure,queueMatch]);
+  /** The saved send is at the office: the same as a good answer. Cleared only while it is still the same saved send. */
+  const settleArrived=useCallback((key:string,requestId:string,span:{from:number;to:number})=>{
+    forgetSaved(key);
+    setPending(null);setPendingPhase('checking');
+    setNotice({text:`${Range(span.from,span.to)} ${span.from===span.to?'is':'are'} at the office.`,requestId,at:Date.now(),queued:true});
+    void refresh().catch(()=>{});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[storageKey,metaKey,priorKey,refresh]);
+  // The key lookup can't answer (after a change back to an earlier version of
+  // Label Wrangler) but the queue lists this very send: it arrived. Settle now,
+  // never "not sure" next to "on their way".
+  useEffect(()=>{
+    if(!queueSure || !lookupMissing || posting || pendingFrom===undefined || pendingTo===undefined || !queueMatch)return;
+    const key=savedKey();if(key)settleArrived(key,queueMatch.id,{from:pendingFrom,to:pendingTo});
+  },[queueSure,lookupMissing,posting,pendingFrom,pendingTo,queueMatch,savedKey,settleArrived]);
   useEffect(()=>{
     if(pendingFrom===undefined || pendingTo===undefined || posting)return;
     const key=savedKey();
     if(!key){setPendingPhase('unsure');return;}
     let active=true;let timer:ReturnType<typeof setTimeout>|undefined;
-    const started=Date.now();
+    // The last moment a tab was still sending this send (its mark was up).
+    let lastLive=Date.now();
+    let looks=0;
     // This page saw the try fail: say so now, and still look it up now and
     // then, so a send that did arrive clears on its own.
     let phase:'checking'|'other'|'unsure'=seenFail.current.has(key)?'unsure':'checking';
@@ -475,6 +530,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       if(typeof document!=='undefined' && document.visibilityState==='hidden'){timer=setTimeout(()=>void tick(),3000);return;}
       let mark:SendingMark|null=null;try{mark=readSendingMark(localStorage.getItem(sendingKey));}catch{mark=null;}
       const live=!!mark && mark.key===key && mark.until>Date.now();
+      if(live)lastLive=Date.now();
       // A mark from this same tab is the page before a reload: that try may
       // still reach the office, so this page keeps checking until it lapses.
       const otherTab=live && mark!.tab!==tabId.current;
@@ -482,33 +538,29 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       if(!active)return;
       // Found at the office: settled, even while another tab still waits for
       // its answer (the POST landed; that tab gets the same request back).
-      if(found){
-        // At the office: the same as a good answer. Cleared only while it is
-        // still the same saved send.
-        if(savedKey()===key){try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}}
-        setPending(null);setPendingPhase('checking');
-        setNotice({text:`${Range(pendingFrom,pendingTo)} ${pendingFrom===pendingTo?'is':'are'} at the office.`,requestId:found,at:Date.now(),queued:true});
-        void refresh().catch(()=>{});
-        return;
-      }
+      if(found){settleArrived(key,found,{from:pendingFrom,to:pendingTo});return;}
+      // The lookup can't answer, but the queue lists this very send.
+      if(found===undefined && queueSureRef.current){settleArrived(key,queueSureRef.current,{from:pendingFrom,to:pendingTo});return;}
       setLookupMissing(found===undefined);
+      // A failure someone saw (here or before a reload) says "not sure" at once;
+      // a send cut off by a reload, or another tab's, is checked a while first.
+      let failed=seenFail.current.has(key);
+      if(!failed){try{failed=!!localStorage.getItem(metaKey);}catch{failed=false;}}
       if(phase!=='unsure' || otherTab){
-        // Another tab's send: shown as such until it answers, its mark lapses,
-        // or (when the lookup can't answer) the queue lists those labels.
-        if(otherTab && !(found===undefined && queueHasPendingRef.current))phase='other';
+        // Another tab's send: shown as such until it answers or its mark lapses.
+        if(otherTab)phase='other';
         // This tab's own mark from before a reload: that try may still arrive.
-        else if(live && !otherTab)phase='checking';
-        // The office answered that it doesn't have it, and nothing is on its way.
-        else if(found===null)phase='unsure';
-        // The lookup couldn't answer: look again for a little while first.
-        else phase=Date.now()-started<CHECK_MS && !queueHasPendingRef.current?'checking':'unsure';
+        else if(live)phase='checking';
+        // Nothing is on its way any more: keep checking for a little while
+        // (the office may still be saving it), then say "not sure".
+        else phase=!failed && Date.now()-lastLive<CHECK_MS?'checking':'unsure';
       }
       setPendingPhase(phase);
-      timer=setTimeout(()=>void tick(),phase==='unsure'?15_000:3000);
+      timer=setTimeout(()=>void tick(),phase==='other'?3000:LOOK_AGAIN_MS[Math.min(looks++,LOOK_AGAIN_MS.length-1)]);
     };
     void tick();
     return()=>{active=false;if(timer)clearTimeout(timer);};
-  },[pendingFrom,pendingTo,posting,markSeen,savedKey,sendingKey,storageKey,metaKey,runId,refresh]);
+  },[pendingFrom,pendingTo,posting,markSeen,savedKey,sendingKey,storageKey,metaKey,runId,settleArrived]);
 
   // The queued notice goes away as soon as the office picks the request up,
   // anything fails, or after a minute.
@@ -583,7 +635,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     let saved:string|null=null;try{saved=localStorage.getItem(storageKey);}catch{saved=null;}
     return readSavedOfficeRequest(saved);
   };
-  const finishFirstWords=(saved:{from:number;to:number})=>`Nothing new was sent: we’re still not sure the office got ${range(saved.from,saved.to)}. Press “Send again” to finish that first (it can’t print twice), or “Start over” if the office queue shows it arrived.`;
+  // While another tab is still sending (or this page is still checking), the
+  // words say so: never "not sure" about a send that is simply on its way.
+  const finishFirstWords=(saved:{from:number;to:number})=>pending && !posting && pendingPhase==='other'
+    ?`Nothing new was sent: ${range(saved.from,saved.to)} ${saved.from===saved.to?'is':'are'} being sent from another tab. Try again once ${saved.from===saved.to?'it’s':'they’re'} sent.`
+    :pending && (posting || pendingPhase==='checking')
+    ?`Nothing new was sent: ${posting?`${range(saved.from,saved.to)} ${saved.from===saved.to?'is':'are'} still being sent`:`still checking whether the office got ${range(saved.from,saved.to)}`}. Try again in a moment.`
+    :`Nothing new was sent: we’re still not sure the office got ${range(saved.from,saved.to)}. Press “Send again” to finish that first (it can’t print twice), or “Start over” if the office queue shows it arrived.`;
   /** True (and says why) when a saved request has to be sorted out before anything else is sent. */
   const blockedBySaved=():boolean=>{
     const saved=savedRequest();
@@ -650,6 +708,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           payload={runId,stationId:printer.station_id,printerId:printer.id,from:want.from,to:want.to,idempotencyKey:crypto.randomUUID(),...(blank?{endBlank:true}:{}),...(reprint?{reprintOf:reprint}: {}),...(bitmap?{expectedBitmapDigest:proof?.digest}:{})};
           try{localStorage.setItem(storageKey,JSON.stringify(payload));}
           catch{setError('This device can’t save the request, so it wasn’t sent. Check that the browser allows saving site data.');return false;}
+          try{localStorage.setItem(priorKey,JSON.stringify({key:payload.idempotencyKey,prior:requestsRef.current.filter(r=>r.range_from===want.from && r.range_to===want.to).map(r=>r.id)}));}catch{/* the key lookup still answers */}
           setPending({from:payload.from,to:payload.to,reprintOf:payload.reprintOf,endBlank:payload.endBlank===true});
         }
         markSending();
@@ -670,8 +729,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         // A stalled connection ends a little after the server's own limit
         // (300 s), as "no answer": the saved request and key stay for Send again.
         try{result=await api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload),...(typeof AbortSignal!=='undefined' && typeof AbortSignal.timeout==='function'?{signal:AbortSignal.timeout(OFFICE_POST_TIMEOUT_MS)}:{})});}
-        finally{clearInterval(beat);unmark();}
-        try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);setPosting(false);
+        // Cut off by a reload: the mark stays up (it lapses on its own) so the
+        // next page keeps checking instead of saying "not sure".
+        finally{clearInterval(beat);if(!pageUnloading)unmark();}
+        // Only this send's own saved request: another tab may have saved a new one meanwhile.
+        forgetSaved(sendKey);setPending(null);setPosting(false);
         // Every send starts with the blank off: the choice was for this send only.
         setEndBlank(false);
         if(payload.endBlank===true && typeof result?.requestId==='string')rememberBlankSend(result.requestId);
@@ -681,6 +743,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         outcome='sent';
       }catch(err){
         setPosting(false);
+        // Abandoned by a reload: no failure is recorded; the next page checks.
+        if(pageUnloading)return 'skipped';
         // A definite refusal (400/404/409/413) means nothing new was queued,
         // so the saved request is cleared and never offered for resend.
         // Anything else (offline, timeout, 5xx, busy, or signed out / no
@@ -688,7 +752,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         // request is kept and "Send again" reuses its idempotency key.
         const code=err instanceof OfficeRequestError?err.status:undefined;
         if(!sendKeepsRequest(code,err instanceof OfficeRequestError?err.code:undefined,!!saved)){
-          try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);
+          forgetSaved(sendKey);setPending(null);
           const plain=plainOfficeRefusal(err instanceof Error?err.message:'',code);
           const record:OfficeRefusalRecord={from:payload.from,to:payload.to,reason:plain.reason,message:plain.message,at:new Date().toISOString(),...(payload.endBlank===true?{endBlank:true}:{})};
           try{localStorage.setItem(refusedKey,JSON.stringify(record));}catch{/* shown on this page anyway */}
@@ -697,11 +761,21 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           outcome='refused';
         }else{
           // Another tab may have seen this send arrive meanwhile and cleared
-          // it: then it is at the office, and nothing is "not sure" here.
+          // it, or saved a new one of its own. A missing record isn't proof it
+          // arrived: the office is asked by key first.
           let still:string|null=null;try{still=localStorage.getItem(storageKey);}catch{still=saved ?? JSON.stringify(payload);}
           let stillKey='';try{stillKey=still?String(JSON.parse(still).idempotencyKey):'';}catch{stillKey='';}
-          if(stillKey!==sendKey){setPending(null);outcome='skipped';}
-          else{
+          const atOffice=stillKey!==sendKey?await lookUpSend(runId,sendKey):undefined;
+          if(stillKey!==sendKey && atOffice){
+            setPending(null);outcome='skipped';
+            setNotice({text:`${Range(payload.from,payload.to)} ${payload.from===payload.to?'is':'are'} at the office.`,requestId:atOffice,at:Date.now(),queued:true});
+          }else if(stillKey!==sendKey && still){
+            // Another tab's send is saved now: this one can't be kept beside it.
+            setPending(null);outcome='uncertain';
+            setError(`We’re not sure the office got ${range(payload.from,payload.to)}. Check the office queue below before sending ${payload.from===payload.to?'it':'them'} again.`);
+          }else{
+            // Saved again (it was cleared) so "Send again" reuses its key.
+            if(stillKey!==sendKey){try{localStorage.setItem(storageKey,JSON.stringify(payload));}catch{/* shown on this page anyway */}}
             seenFail.current.add(sendKey);
             const meta={status:code,code:err instanceof OfficeRequestError?err.code:undefined};
             // Kept beside the request, so a refresh gives the same reason.
@@ -877,7 +951,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // The unsure part of a saved plan is dropped from it, so "Send the
     // remaining parts" can't send it again with a new key.
     if(pendingInPlan && partsPlan)savePartsPlan({...partsPlan,next:partsPlan.next+1});
-    try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);setError('');
+    forgetSaved();setPending(null);setError('');
   };
   const act=async(action:()=>Promise<void>)=>{setBusy(true);setError('');try{await action();await refresh();}catch(err){setError(officeMessage(err,'That didn’t save. Try again in a moment.'));}finally{setBusy(false);}};
   const proofCurrent=!bitmap || proof?.key===proofKey;
@@ -1163,6 +1237,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     return meta?'earlier':'none';
   })();
   const pendingOne=!!pending && pending.from===pending.to;
+  // The lookup can't answer and the queue lists these labels, but it can't
+  // tell whether that request is this send's own: the queue is the truth, so
+  // "Start over" is the main button and the words say they look like they arrived.
+  const queueLikely=unsure && lookupMissing && queueHasPending && !queueSure;
   // The lookup can't answer (for example after a change back to an earlier
   // version of Label Wrangler): never say the queue doesn't show them.
   const pendingWords=!pending?''
@@ -1226,10 +1304,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const heldShownFrom=heldOffer && !pending && !series?heldUnsent[0].from:undefined;
   const heldShownTo=heldOffer && !pending && !series?heldUnsent[heldUnsent.length-1].to:undefined;
   useEffect(()=>{onPanelState?.({
-    unsure:unsureFrom!==undefined && unsureTo!==undefined?{from:unsureFrom,to:unsureTo}:null,
+    unsure:unsureFrom!==undefined && unsureTo!==undefined?{from:unsureFrom,to:unsureTo,...(queueLikely?{likely:true}:{})}:null,
     refused:refusedFrom!==undefined && refusedTo!==undefined?{from:refusedFrom,to:refusedTo}:null,
     paused:panelPaused,sending:sendingWords,
-    held:heldShownFrom!==undefined && heldShownTo!==undefined?{from:heldShownFrom,to:heldShownTo}:null});},[unsureFrom,unsureTo,refusedFrom,refusedTo,panelPaused,sendingWords,heldShownFrom,heldShownTo,onPanelState]);
+    held:heldShownFrom!==undefined && heldShownTo!==undefined?{from:heldShownFrom,to:heldShownTo}:null});},[unsureFrom,unsureTo,queueLikely,refusedFrom,refusedTo,panelPaused,sendingWords,heldShownFrom,heldShownTo,onPanelState]);
   // The labels the main button sends next, for the run page's "Print anyway" words.
   // A part that needs fixing comes first: the preview shows the labels the problem is about.
   const fixFirst=owner==='problem' && !pending?failedParts[0]:undefined;
@@ -1284,7 +1362,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
 
     {pending && !posting && pendingPhase!=='unsure' && <p role="status" className="flex items-center gap-2 text-sm text-zinc-300 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />{pendingPhase==='other'?`Sending ${range(pending.from,pending.to)} from another tab or window…`:`Checking whether the office got ${range(pending.from,pending.to)}…`}</p>}
     {unsure && pending && <div role="status" className="space-y-1 text-sm">
-      <p className="flex items-start gap-2 font-medium text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />We’re not sure the office got {range(pending.from,pending.to)}</p>
+      <p className="flex items-start gap-2 font-medium text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{queueLikely?`${Range(pending.from,pending.to)} look${pendingOne?'s':''} like ${pendingOne?'it':'they'} arrived`:`We’re not sure the office got ${range(pending.from,pending.to)}`}</p>
       <p className="pl-6 text-zinc-300">{pendingWords}</p>
     </div>}
     {shownRefusal && !pending && <div role="alert" className="space-y-2 text-sm">
@@ -1374,8 +1452,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {!formReady && !pending && <p role="status" className="text-sm text-zinc-400">Reading the office queue first…</p>}
     {/* A saved request is resent exactly as it was first sent, blank label included. */}
     {pending && pending.endBlank && !posting && <p className="text-sm text-zinc-400">It ends with one blank label after {range(pending.to,pending.to)}, as first sent.</p>}
-    <button type="button" disabled={disabled} onClick={()=>void onPrimary()} className={`btn w-full ${owner==='form'||(owner==='pending' && (posting || pendingPhase==='unsure'))?'btn-primary':'btn-secondary'}`}>{busy?<Loader2 className="size-4 animate-spin" />:<PrinterIcon className="size-4" />}{primaryLabel}</button>
-    {pending && unsure && <button type="button" onClick={()=>void startOver()} disabled={busy} className="btn btn-ghost btn-sm -ml-2 text-zinc-300">Start over</button>}
+    {queueLikely && <button type="button" onClick={()=>void startOver()} disabled={busy} className="btn btn-primary w-full">Start over</button>}
+    {/* Another tab is sending this very request: the line above says so, and there is nothing to press here. */}
+    {!(pending && !posting && pendingPhase==='other') && <button type="button" disabled={disabled} onClick={()=>void onPrimary()} className={queueLikely?'btn btn-ghost btn-sm -ml-2 text-zinc-300':`btn w-full ${owner==='form'||(owner==='pending' && (posting || pendingPhase==='unsure'))?'btn-primary':'btn-secondary'}`}>{queueLikely?null:busy?<Loader2 className="size-4 animate-spin" />:<PrinterIcon className="size-4" />}{primaryLabel}</button>}
+    {pending && unsure && !queueLikely && <button type="button" onClick={()=>void startOver()} disabled={busy} className="btn btn-ghost btn-sm -ml-2 text-zinc-300">Start over</button>}
     {!pending && rangeValid && <BlankOption id={`${uid}-form-blank`} checked={endBlank} disabled={busy || !!series} after={toNumber} inParts={tooBig && parts.length>1} onChange={setEndBlank} />}
     </>}
     {directCheck && <div role="status" className="space-y-2 text-sm">

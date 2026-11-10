@@ -181,7 +181,8 @@ const keys=()=>[...values.keys()];
   db.g=50;let first=true;const server=newServer(db,calls,()=>'2026-11-10T16:00:00.000Z');
   global.fetch=async(url,init)=>{const r=await server(url,init);if(first){first=false;throw new TypeError('network lost after the server applied it');}return r;};
   await queue.updateRunWithQueue('g',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},undefined,rewindEvent(10,50));
-  assert.equal(db.g,9);assert.equal(queue.pendingPatchCount('g'),1);
+  // Sent once more right away (same key): settled in the same call.
+  assert.equal(db.g,9);assert.equal(queue.pendingPatchCount('g'),0,'the lost answer is settled by the immediate retry');
   await queue.flushOfflineQueue();
   assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.deadLetteredOps().length,0,'not reported as a dropped go-back');
   assert.equal(calls.filter(c=>c[2].eventType==='rewind').length,1);
@@ -204,7 +205,8 @@ const keys=()=>[...values.keys()];
      return Response.json({id:`print-event-${body.idempotencyKey}`,runId:id,...body,createdAt:clock()},{status:201});
     }
     const key=headers['X-LW-Rewind-Key'];
-    const applies=!(body.resetProgress&&typeof body.expectedPrintedCount==='number'&&db[id]!==body.expectedPrintedCount);
+    // A key is applied at most once (the route's NOT EXISTS guard).
+    const applies=!(body.resetProgress&&typeof body.expectedPrintedCount==='number'&&db[id]!==body.expectedPrintedCount)&&!(key&&body.resetProgress&&entries.has(`print-event-${key}`));
     if(applies&&body.printedCount!==undefined)db[id]=body.resetProgress||body.progressOnly===false?body.printedCount:Math.max(db[id]??0,body.printedCount);
     let h={};
     if(key&&body.resetProgress){
@@ -231,16 +233,21 @@ const keys=()=>[...values.keys()];
   assert.equal(queue.rewindPending('k'),false);assert.equal(queue.pendingPatchCount(),0);
   // Answer lost after the server applied it; another device then printed on to 70.
   values.clear();calls.length=0;dispatched.length=0;
-  db.m=50;let first=true;const server=serverWithEntry(db,calls,entries,()=>'2026-11-10T18:00:00.000Z');
-  global.fetch=async(url,init)=>{const r=await server(url,init);if(first){first=false;throw new TypeError('network lost after the server applied it');}return r;};
+  // (The immediate retry is lost too, so another device gets to print first.)
+  db.m=50;let lost=2;const server=serverWithEntry(db,calls,entries,()=>'2026-11-10T18:00:00.000Z');
+  global.fetch=async(url,init)=>{const r=await server(url,init);if(lost>0){lost--;throw new TypeError('network lost after the server applied it');}return r;};
   await queue.updateRunWithQueue('m',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},()=>{},rewindEvent(10,50));
   assert.equal(db.m,9);assert.equal(queue.pendingPatchCount('m'),1);
   db.m=70;
+  // The retry finds it applied and never moves progress again (70 stays).
+  dispatched.length=0;
   await queue.flushOfflineQueue();
   assert.equal(queue.pendingPatchCount(),0);
   assert.equal(queue.deadLetteredOps().length,0,'its entry is written, so it was applied: not reported as a dropped go-back');
   assert.ok(!calls.some(c=>c[2].eventType==='rewind'),'no separate entry, and no second one');
   assert.equal([...entries.values()].filter(e=>e.runId==='m').length,1);
+  assert.equal(db.m,70,'the replayed key never drops progress a second time');
+  {const settled=dispatched.find(e=>e.type==='lw:rewind-settled');assert.ok(settled,'the page is told it settled');assert.deepEqual(settled.detail,{runId:'m',goBackTo:9,printedCount:70});}
   // A go-back that didn't apply (another device moved first): set aside, no entry anywhere.
   values.clear();calls.length=0;db.n=70;
   await queue.updateRunWithQueue('n',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:50},()=>{},rewindEvent(10,50));

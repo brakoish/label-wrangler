@@ -34,7 +34,9 @@ interface RunStore {
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   /** `onSetAside` is called with a plain reason when the server permanently
    * refused this update (it was set aside, not saved). */
-  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; expectedPrintedCount?: number; onSetAside?: (reason: string) => void }) => Promise<Run | null>;
+  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; expectedPrintedCount?: number; onSetAside?: (reason: string) => void;
+    /** A go-back the server already had (an earlier answer was lost): the server's count then, or null. */
+    onAlreadyApplied?: (serverPrinted: number | null) => void }) => Promise<Run | null>;
   /**
    * Labels counted as printed (high-water: never lowers progress), with the
    * status changed only when `status` is given. For "mark printed" when
@@ -157,7 +159,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
       rewind = rewindEvent(printedCount + 1, typeof seen === 'number' ? seen : printedCount);
     }
     if (status === 'completed') body.completedAt = new Date().toISOString();
-    const run=await updateRunWithQueue(id,body as Partial<Run>,options?.onSetAside,rewind);
+    const run=await updateRunWithQueue(id,body as Partial<Run>,options?.onSetAside,rewind,options?.onAlreadyApplied);
     if(run) set(state=>({runs:state.runs.map(r=>r.id===id?{...r,...run}:r)}));
     return run;
   },

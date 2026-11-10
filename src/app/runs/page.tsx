@@ -69,7 +69,10 @@ function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string;
   // Another run's check holds the shared printer: an unfinished run that uses
   // the office waits for it, the same rule as the run page's header.
   const unfinished = run.status !== 'cancelled' && run.status !== 'completed' && printedShown(run) < run.totalLabels;
-  const heldBy = holdRun && holdRun.runId !== run.id && unfinished ? holdRun : null;
+  // A run printing on another printer right now (USB, the Dazzle app) with no
+  // office work doesn't wait for the office printer.
+  const printingElsewhere = !run.office && run.status === 'printing';
+  const heldBy = holdRun && holdRun.runId !== run.id && unfinished && !printingElsewhere ? holdRun : null;
   // Labels still to send are said beside "Did they all come out?", like the run page.
   if (run.office) return { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) };
   // Nothing sent to the office yet: the run page (office printer by default) still says it waits, so the row does too.

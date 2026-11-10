@@ -38,7 +38,7 @@ import { startPrintQueue, type RunQueueHandle } from '@/lib/printQueue';
 import { dynamicFieldsForTemplate, generateLabelsForRunWithImages, previewLabelValues } from '@/lib/runBuilder';
 import { feedRangeForLabels, labelRangeCount, normalizeLabelRange, planRunStart } from '@/lib/runRanges';
 import { openInNewTab } from '@/lib/openTab';
-import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount, rewindPending, QUEUE_EVENT } from '@/lib/offlineQueue';
+import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount, rewindPending, QUEUE_EVENT, REWIND_SETTLED_EVENT } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import {
@@ -84,6 +84,15 @@ function isSheetPrintConfirmedMessage(value: unknown): value is SheetPrintConfir
 function runSourceMeta(source: string) {
   const icon = source === 'csv' ? FileSpreadsheet : source === 'manifest' ? Search : source === 'manual' ? Pencil : Clipboard;
   return { label: runSourceWords(source).label, icon };
+}
+
+/** Saved on this device, not confirmed by the server yet: printing waits. Named after the banner's own button. */
+const SYNC_WAIT_START = 'This run’s progress hasn’t reached the server yet, so nothing was printed. Press “Send now” at the top, then try again.';
+const SYNC_WAIT_GO_BACK = 'Going back hasn’t reached the server yet, so nothing was printed. It tries again on its own, or press “Send now” at the top.';
+const SYNC_WAITS: ReadonlySet<string> = new Set([SYNC_WAIT_START, SYNC_WAIT_GO_BACK]);
+/** Another device printed on after a go-back this page asked for: one line, and the button to press. */
+function movedOnWords(goBackTo: number, serverCount: number, total: number): string {
+  return `Another device printed up to label ${serverCount.toLocaleString('en-US')} after you went back to label ${(goBackTo + 1).toLocaleString('en-US')}, so nothing was printed here.${serverCount < total ? ` Press “Resume from label ${(serverCount + 1).toLocaleString('en-US')}” to carry on.` : ''}`;
 }
 
 function uiStatusForRunStatus(status: RunStatus): PrinterUiStatus {
@@ -266,6 +275,41 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     window.addEventListener('lw:event-synced', onEvent);
     return () => { window.removeEventListener(QUEUE_EVENT, check); window.removeEventListener('lw:event-synced', onEvent); };
   }, [runId]);
+  // A go-back this page is sending right now settles in its own code path.
+  const ownGoBack = useRef(false);
+  /**
+   * A go-back the server has now (a retry found it applied, or it went through
+   * late): the page follows the server's count, drops "not synced" words and
+   * says in one line when another device printed on since, with the button to
+   * press. Its history entry arrives through the outbox (lw:event-synced).
+   */
+  const settleGoBack = useCallback(async (goBackTo: number, serverCount: number | null) => {
+    if (statusRef.current === 'running') return;
+    const fresh = await fetchRun(runId).catch(() => null);
+    if (!mounted.current || (statusRef.current as PrinterUiStatus) === 'running') return;
+    const now = fresh ? Number(fresh.printedCount ?? 0) : serverCount;
+    setErrorMsg((prev) => (prev && SYNC_WAITS.has(prev) ? null : prev));
+    if (typeof now !== 'number' || !Number.isFinite(now)) { setRewindNotice(null); return; }
+    setPrintedCount(now);
+    if (now > goBackTo) {
+      clearRangeDrafts(); setStopAt(0); setStatus('paused');
+      setRewindNotice(movedOnWords(goBackTo, now, fresh?.totalLabels ?? total));
+    } else setRewindNotice(null);
+    // The server still says "printing" from the go-back's start; nothing prints here now.
+    if (fresh?.status === 'printing') { try { await setRunStatus(runId, 'paused', now); } catch { /* shown above already */ } }
+  }, [fetchRun, runId, setRunStatus, total]);
+  useEffect(() => {
+    const onSettled = (event: Event) => {
+      const detail = (event as CustomEvent<{ runId: string; goBackTo: number; printedCount: number | null } | undefined>).detail;
+      if (!detail || detail.runId !== runId || ownGoBack.current) return;
+      void settleGoBack(detail.goBackTo, detail.printedCount);
+    };
+    // Anything else saved here that reached the server: no "not synced" words left behind.
+    const onQueue = () => { if (!pendingPatchCount(runId)) setErrorMsg((prev) => (prev && SYNC_WAITS.has(prev) ? null : prev)); };
+    window.addEventListener(REWIND_SETTLED_EVENT, onSettled);
+    window.addEventListener(QUEUE_EVENT, onQueue);
+    return () => { window.removeEventListener(REWIND_SETTLED_EVENT, onSettled); window.removeEventListener(QUEUE_EVENT, onQueue); };
+  }, [runId, settleGoBack]);
   const serverRewoundAt = useMemo(() => lastRewindAt(eventsForRun), [eventsForRun]);
   const rewoundAt = rewindWaiting ? Number.POSITIVE_INFINITY : serverRewoundAt;
   // Ranges people confirmed came out of the office printer (print history).
@@ -306,10 +350,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const officeHeldBy = transport === 'office' ? panelHold.by : null;
   // What the office panel says (a send it isn't sure arrived, a refused send,
   // a paused printer), so the header and the panel never disagree.
-  type PanelState = { unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean; sending: string | null; held?: OfficeSpan | null };
+  type PanelState = { unsure: (OfficeSpan & { likely?: boolean }) | null; refused: OfficeSpan | null; paused: boolean; sending: string | null; held?: OfficeSpan | null };
   const [panelState, setPanelState] = useState<PanelState>({ unsure: null, refused: null, paused: false, sending: null, held: null });
   const onPanelState = useCallback((next: PanelState) => {
-    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to && prev.held?.from === next.held?.from && prev.held?.to === next.held?.to ? prev : next));
+    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.unsure?.likely === next.unsure?.likely && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to && prev.held?.from === next.held?.from && prev.held?.to === next.held?.to ? prev : next));
   }, []);
   const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null, held: null };
   // The labels the office panel's main button sends next (for "Print anyway" words).
@@ -742,7 +786,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
     setErrorMsg(null);
-    if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg('Sync pending print progress for this run before starting another batch. Use Retry sync above.'); return; } }
+    if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg(SYNC_WAIT_START); return; } }
+    setRewindNotice(null);
     // A From at or below what is already printed moves the run back, the same
     // as "Go back to label N". Without the explicit rewind the server would
     // keep the higher count and the next Resume would skip labels.
@@ -828,10 +873,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     preparation.current = controller;
     const refusedStart = { reason: '' };
     let started: Awaited<ReturnType<typeof setRunStatus>> = null;
-    try { started = await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
+    // A go-back whose first answer was lost and that the server already had.
+    const applied: { server?: number | null } = {};
+    ownGoBack.current = plan.rewind;
+    try { started = await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
+    finally { ownGoBack.current = false; }
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
-    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg(plan.rewind ? SYNC_WAIT_GO_BACK : SYNC_WAIT_START); return; }
+    // Already applied: the screen may be behind the server (another device
+    // printed on meanwhile). Nothing prints from a stale count.
+    if (plan.rewind && 'server' in applied) {
+      const fresh = await fetchRun(run.id).catch(() => null);
+      const now = fresh ? Number(fresh.printedCount ?? 0) : applied.server;
+      if (now === null || now === undefined || now !== startCount) {
+        setStatus('paused');
+        if (typeof now === 'number') { setPrintedCount(now); clearRangeDrafts(); setStopAt(0); setRewindNotice(now > startCount ? movedOnWords(startCount, now, total) : null); }
+        if (typeof now === 'number') { try { await setRunStatus(run.id, 'paused', now); } catch { /* the count above is still right */ } }
+        return;
+      }
+    }
     // The server keeps the highest progress any device saved. If it is ahead
     // of this screen, another device printed meanwhile: nothing prints here
     // until the person has looked, so no label comes out twice.
@@ -1084,7 +1145,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setShowReprint(false);
     const refused = { reason: '' };
     const before = printedCount;
-    await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason) => { refused.reason = reason; } });
+    const applied: { server?: number | null } = {};
+    ownGoBack.current = true;
+    try { await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason) => { refused.reason = reason; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
+    finally { ownGoBack.current = false; }
+    if ('server' in applied) { await settleGoBack(n - 1, applied.server ?? null); return; }
     if (refused.reason) {
       setPrintedCount(run.printedCount ?? 0); setErrorMsg(`Going back didn’t save. ${refused.reason}`);
       // Show the progress the other device saved.
@@ -1093,7 +1158,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       return;
     }
     if (pendingPatchCount(run.id)) {
-      setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
+      setRewindNotice(`Going back to label ${n} hasn’t reached the server yet. It tries again on its own. If another device prints more first, it isn’t applied and you’ll be told.`);
       return;
     }
   };

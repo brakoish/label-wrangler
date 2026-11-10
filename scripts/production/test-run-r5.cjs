@@ -69,7 +69,7 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
 {
   const run=(status,printedCount,totalLabels=100)=>({status,printedCount,totalLabels});
   const words=new Set(Object.values(D.RUN_STATUS_WORDS));
-  assert.deepEqual([...words],['Needs you','Needs a check','Sent','Printing','Paused','Ready','Done','Cancelled']);
+  assert.deepEqual([...words],['Needs you','Needs a check','Sent','Printing','Paused','Waiting','Ready','Done','Cancelled']);
   const cases=[
     [run('queued',0),null],[run('draft',0),null],[run('paused',40),null],[run('printing',10),null],[run('completed',100),null],[run('cancelled',3),null],
     [run('queued',0),{sent:0,onTheWay:20,failed:0}],[run('queued',0),{sent:0,onTheWay:20,failed:0,held:true}],[run('queued',0),{sent:100,onTheWay:0,failed:0}],[run('queued',0),{sent:20,onTheWay:0,failed:1}],
@@ -155,14 +155,14 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(paused.text, /^Paused/);
   const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
   const held = D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
-  // Round 11: nothing of this run waits at the office, so it is still "Ready" and says what it waits for.
-  assert.equal(held.label, 'Ready', 'held by another run, nothing waiting: not "Paused"');
-  assert.equal(held.detail, 'Waits for “Run A”');
+  // Round 12: nothing of this run waits at the office: "Waiting" (never "Ready · Waits for…"), and what for.
+  assert.equal(held.label, 'Waiting', 'held by another run, nothing waiting: not "Paused", not "Ready"');
+  assert.equal(held.detail, 'For “Run A” to be checked');
   const waiting = D.runDisplayStatus(run, { sent: 10, onTheWay: 10, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
   assert.equal(waiting.label, 'Paused', 'labels waiting behind another run: Paused, said once, in the detail');
   assert.equal(waiting.detail, '“Run A” needs a check first');
   const heldBack = D.runDisplayStatus(run, { sent: 75, onTheWay: 0, failed: 0, unchecked: 75, stillToSend: 1925, heldBack: { from: 76, to: 150 } });
-  assert.equal(heldBack.detail, 'Labels 76–150 held back · send them', 'held labels of a "Print in order" fix are named in the header');
+  assert.equal(heldBack.detail, 'Send labels 76–150 next', 'held labels of a "Print in order" fix are named in the header, as one plain step');
   assert.notEqual(D.runDisplayStatus({ ...run, status: 'draft' }, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } }).label, 'Paused', 'drafts are not "waiting"');
   assert.equal(D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print', from: 51, to: 100, reason: 'media out' } }).detail, 'Out of labels', 'the header names a known cause');
   // The fix dialog asks what came out, never for a tick the person can't verify; Pause is not red.
@@ -207,7 +207,8 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(office, /\{markShown && <div/);
   const list = read('src/app/runs/page.tsx');
   // Round 11: the list gives runDisplayStatus the same hold the run page does; only labels waiting there make it "Paused".
-  assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && unfinished \? holdRun : null;/, 'the station hold reaches every unfinished office run, like the run header');
+  assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && unfinished && !printingElsewhere \? holdRun : null;/, 'the station hold reaches every unfinished office run, like the run header (not one printing elsewhere with no office work)');
+  assert.match(list, /const printingElsewhere = !run\.office && run\.status === 'printing';/);
   assert.doesNotMatch(list, /officeDefault && leftToSend/);
   assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
   console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');

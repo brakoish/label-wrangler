@@ -60,7 +60,10 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
  const post=panel.indexOf("api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload),",save);
  assert.ok(save>0 && mark>save && beat>mark && post>beat,'saved request, then the in-flight mark (both under the lock), then the POST');
  assert.match(panel,/lw:office-sending:/,'the in-flight mark has its own key');
- assert.match(panel,/finally\{clearInterval\(beat\);unmark\(\);\}/,'and is cleared whatever the answer');
+ assert.match(panel,/finally\{clearInterval\(beat\);if\(!pageUnloading\)unmark\(\);\}/,'and is cleared whatever the answer, except when a reload cut the POST off (the next page reads it and keeps checking)');
+ assert.match(panel,/window\.addEventListener\('pagehide',\(\)=>\{pageUnloading=true;\}\);/);
+ assert.match(panel,/if\(pageUnloading\)return 'skipped';/,'a POST abandoned by a reload records no failure');
+ assert.match(panel,/const LOOK_AGAIN_MS=\[1000,2000,4000,8000,15_000\];/,'the saved send is looked up soon after a reload, then less often');
  assert.doesNotMatch(panel,/lw:office-pending:[^`]*`[^;]*tab:/,'nothing new in the saved request');
  // Start reads the count the server saved: another device ahead pauses with a word, nothing prints twice.
  const runPage=fs.readFileSync(path.join(__dirname,'../../src/components/runs/RunPrinter.tsx'),'utf8');

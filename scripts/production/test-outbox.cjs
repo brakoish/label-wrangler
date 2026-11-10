@@ -41,7 +41,10 @@ const queue=require('../../src/lib/offlineQueue.ts');
  assert.deepEqual(order,[['/api/runs/stuck',5],['/api/runs/other',7]],'later update for a blocked run was sent out of order, or another run was blocked');
  assert.equal(queue.pendingPatchCount('stuck'),2);assert.equal(queue.pendingPatchCount('other'),0);assert.match(queue.progressSyncError(),/503/);
  global.fetch=async()=>{throw new TypeError('Failed to fetch');};
- await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('stuck'),2);assert.match(queue.progressSyncError(),/offline/);assert.doesNotMatch(queue.progressSyncError(),/Failed to fetch/,'raw browser error shown');
+ await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('stuck'),2);assert.match(queue.progressSyncError(),/didn’t get an answer/,'no answer while the browser is online: never called offline');assert.doesNotMatch(queue.progressSyncError(),/Failed to fetch|offline/,'raw browser error shown');
+ {const before=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{value:{onLine:false},configurable:true,writable:true});
+ await queue.flushOfflineQueue();assert.match(queue.progressSyncError(),/offline/,'offline only when the browser says so');
+ if(before)Object.defineProperty(globalThis,'navigator',before);else delete globalThis.navigator;}
  global.fetch=async()=>new Response('{}',{status:401});
  await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('stuck'),2);assert.match(queue.progressSyncError(),/Sign in/);
  order.length=0;global.fetch=async(url,init)=>{order.push(JSON.parse(init.body).printedCount);return Response.json({id:'stuck'});};
@@ -169,6 +172,30 @@ const queue=require('../../src/lib/offlineQueue.ts');
   assert.deepEqual(sentBodies,[1,2]);assert.equal(queue.pendingPatchCount(),0);
   values.clear();
  }
+ // A go-back whose answer is lost is sent once more right away with the same
+ // key; the server answers it as already applied (409 progress_changed +
+ // written). It settles: nothing left pending, no offline words, the caller
+ // learns the server's count (another device printed on to 50), and its
+ // history entry is handed to the page once.
+ {
+  const events=[];const keys=[];let calls=0;
+  global.window.dispatchEvent=(e)=>{events.push(e);return true;};
+  global.CustomEvent=class extends Event{constructor(t,o){super(t);this.detail=o?.detail;}};
+  global.fetch=async(url,init)=>{calls++;keys.push(init.headers['X-LW-Rewind-Key']);
+   if(calls===1)throw new TypeError('Failed to fetch');
+   return Response.json({error:'Going back was already applied (now 50 printed).',code:'progress_changed',alreadyApplied:true,printedCount:50},{status:409,headers:{'x-lw-rewind-event':'written','x-lw-rewind-at':'2026-11-10T12:00:00.000Z'}});};
+  let server=null;
+  const then={eventType:'rewind',output:'roll-zpl',rangeFrom:11,rangeTo:50,labelCount:40,printedCountAfter:10,printerName:null,message:'Went back to label 11'};
+  const result=await queue.updateRunWithQueue('lost',{status:'printing',printedCount:10,resetProgress:true,expectedPrintedCount:50},undefined,then,(n)=>{server=n;});
+  assert.equal(result,null);assert.equal(calls,2,'sent once more right away');assert.equal(keys[0],keys[1],'with the same key');
+  assert.equal(queue.pendingPatchCount('lost'),0,'settled');assert.equal(queue.progressSyncError(),'','no offline or not-synced words');
+  assert.equal(server,50,'the caller learns the server moved on');
+  const settled=events.filter(e=>e.type==='lw:rewind-settled');assert.equal(settled.length,1);assert.deepEqual(settled[0].detail,{runId:'lost',goBackTo:10,printedCount:50});
+  const entry=events.filter(e=>e.type==='lw:event-synced');assert.equal(entry.length,1);assert.equal(entry[0].detail.message,'Went back to label 11');
+  assert.equal(queue.deadLetteredOps().length,0,'never set aside');
+  global.window.dispatchEvent=()=>true;values.clear();
+ }
+ console.log('PASS outbox: a go-back whose answer was lost is sent again once with the same key and settles as already applied (the caller gets the server count; no offline words)');
  console.log('PASS outbox: a rewind queued behind other progress is compare-and-set on the server (dropped with plain words when another device moved progress, applied otherwise); raw server text kept out of messages; no update left behind by a finishing flush');
  console.log('PASS outbox: origin refusal blocks (kept, not set aside); set-aside update returns null with its reason and drops the cached run');
  console.log('PASS outbox: permanent 4xx set aside (400/403/404/409/410/413/415/422), export/discard, per-run ordering, 5xx/401/network retained, corrupt entry isolated');
