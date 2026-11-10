@@ -454,13 +454,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try {
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     setErrorMsg(null);
-    if (pendingPatchCount()) { await flushOfflineQueue(); if (pendingPatchCount()) { setErrorMsg('Sync pending print progress before starting another batch. Use Retry sync above.'); return; } }
+    if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg('Sync pending print progress for this run before starting another batch. Use Retry sync above.'); return; } }
     setStatus('running');
     const controller = new AbortController();
     preparation.current = controller;
     try { await setRunStatus(run.id, 'printing', printedCount); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
-    if (pendingPatchCount()) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
     if (!mounted.current || controller.signal.aborted) return;
 
     const sender = {
