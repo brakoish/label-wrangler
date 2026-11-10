@@ -880,8 +880,7 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   const rawFontHDots = thermalLayout?.fontHeight ?? element.fontSize * (dpi / 72);
 
   // Calibration to match Zebra Font 0's visual footprint in the SVG preview.
-  // IBM Plex Mono (our new thermal default) renders somewhat closer to Zebra
-  // Font 0 than Arial did — 0.8 is a good starting point; tune if needed.
+  // 0.8 matches the cap height of the condensed canvas font to Font 0.
   const zebraHeightCalibration = isThermal ? 0.8 : 1.0;
 
   const svgFontSize = isThermal
@@ -899,10 +898,10 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
     : svgFontSize * (element.lineHeight || 1.2);
 
   // Word-wrap character width estimate.
-  // For thermal with default font (IBM Plex Mono), we use svgFontSize * 0.6.
-  // Plex Mono is a monospace font with ~0.6 em-width per glyph, and svgFontSize
+  // For thermal with the default font we use svgFontSize * 0.6. svgFontSize
   // already bakes in the 0.8 zebraHeightCalibration — so the effective char width
-  // in SVG/dot units is rawFontHDots × 0.8 × 0.6 = rawFontHDots × 0.48.
+  // in SVG/dot units is rawFontHDots × 0.8 × 0.6 = rawFontHDots × 0.48 (the
+  // rendered lines are forced to this width below).
   // Using rawFontHDots × 0.5 (old) caused the wrap to fire ~4% too early, which
   // at the boundary (e.g. 12–13 chars) produced an unwanted extra line break.
   // For user-picked fonts with textLength compression the ZPL ratio is still used.
@@ -944,18 +943,17 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
     }
   }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.autoFit, element.minFontSize, element.id, onMeasure]);
 
-  // Thermal text uses IBM Plex Mono to approximate Zebra Font 0's clean blocky
-  // monospace look — a much closer visual match than Arial/Helvetica and doesn't
-  // need horizontal compression tricks (monospace is already uniform-width).
-  // User-picked fonts win (so you can still override to Arial etc. if you want).
-  const thermalDefaultFont = 'var(--font-plex-mono), ui-monospace, "Menlo", "Courier New", monospace';
-  const isPlexMono = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
-  const effectiveFontFamily = isThermal && isPlexMono ? thermalDefaultFont : element.fontFamily;
-
-  // For non-default (user override) thermal fonts, still apply the textLength
-  // compression so Arial etc. match ZPL's character spacing. For Plex Mono
-  // we skip it since monospace is naturally close to Font 0's character grid.
-  const applyTextLengthCompression = isThermal && !isPlexMono;
+  // Native thermal labels always print in Zebra Font 0 (^A0), whatever
+  // family is picked, and Font 0 is a bold condensed sans. Draw it that way
+  // so the canvas looks like the printout. Line widths are forced with
+  // textLength to exactly what the old preview used (0.48 x fontH per glyph
+  // for the default fonts, fontH x charWidth for the others), so wrapping,
+  // selection boxes and printed bytes are unchanged; only glyph shapes differ.
+  const thermalPrintFont = 'var(--font-zebra), "Roboto Condensed", "Arial Narrow", sans-serif';
+  const isDefaultThermalFont = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
+  const effectiveFontFamily = isThermal ? thermalPrintFont : element.fontFamily;
+  const effectiveFontWeight = isThermal ? 700 : element.fontWeight;
+  const applyTextLengthCompression = isThermal;
 
   // Rotation handling: ZPL rotates around the field origin (^FO point, top-left
   // of the text box). SVG's rotate-around-center doesn't match. We use a <g>
@@ -981,14 +979,14 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
       ref={textRef}
       fontSize={svgFontSize}
       fontFamily={effectiveFontFamily}
-      fontWeight={element.fontWeight}
+      fontWeight={effectiveFontWeight}
       textAnchor={textAnchor}
       fill={color}
     >
       {visibleLines.map((line, i) => {
         const widthRatio = element.charWidth ?? 0.5;
-        const forcedLen = applyTextLengthCompression
-          ? line.length * rawFontHDots * widthRatio
+        const forcedLen = applyTextLengthCompression && line.length > 0
+          ? line.length * (isDefaultThermalFont ? svgFontSize * 0.6 : rawFontHDots * widthRatio)
           : undefined;
         const lineOffset = i * lineHeight;
         return (

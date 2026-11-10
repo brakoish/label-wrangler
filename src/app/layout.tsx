@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, IBM_Plex_Mono } from "next/font/google";
+import { Inter, Roboto_Condensed } from "next/font/google";
 import "./globals.css";
 import { StoreHydrator } from "@/components/StoreHydrator";
 import { FeedbackHost } from "@/components/ui/feedback";
@@ -9,13 +9,14 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-// IBM Plex Mono approximates Zebra Font 0's clean monospace thermal look.
-// Used only in the SVG designer preview for thermal labels so what you see
-// in the canvas is close to what ZPL will print.
-const plexMono = IBM_Plex_Mono({
+// Zebra Font 0 (what native thermal labels print in) is a bold condensed
+// sans. The designer canvas draws thermal text in this face so it looks like
+// the printout. Not preloaded: only the designer uses it.
+const zebraFace = Roboto_Condensed({
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-plex-mono",
+  weight: "700",
+  variable: "--font-zebra",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -40,7 +41,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} ${plexMono.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${zebraFace.variable} font-sans antialiased`}>
         <StoreHydrator>{children}</StoreHydrator>
         <FeedbackHost />
       </body>
