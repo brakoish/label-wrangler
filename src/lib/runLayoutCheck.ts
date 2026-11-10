@@ -172,7 +172,7 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
         : `Print anyway — ${name} will be cut off and won’t scan`;
   }
   const fixWords = fixIn === 'data'
-    ? 'Fix the spreadsheet rows listed above, then choose the file again.'
+    ? 'Fix those rows in your spreadsheet, then choose the file again.'
     : fixIn === 'both' ? 'Fix the items listed above.' : 'Fix the design (see the list above).';
   const waitReason = stops
     ? `${heading}, so nothing can print. ${fixWords}`

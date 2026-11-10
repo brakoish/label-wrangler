@@ -734,6 +734,8 @@ function NewRunContent() {
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
   useEffect(() => () => setSpreadsheetRowMap(null), []);
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : dataRows.length;
+  // The spreadsheet row a label (0-based, in this run) comes from.
+  const sheetRowOf = (index: number) => (keptRows ? keptRows[index] ?? index : index) + 1 + (fileInfo?.headerRow ?? 1);
 
   const manifestPackageSummaries = useMemo(() => {
     const packages = new Map<string, { row: ManifestRow; labelRows: number; missing: boolean }>();
@@ -1025,7 +1027,7 @@ function NewRunContent() {
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then choose the file again.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
     !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, labelCount)}. Search again, or tick to print without them.`,
@@ -1885,8 +1887,8 @@ function NewRunContent() {
                         </button>
                         <span className="text-zinc-400 tabular-nums" aria-live="polite">
                           {across > 1 && labelCount > 1
-                            ? <>Labels {feedStart + 1}–{Math.min(feedStart + across, labelCount)} of {labelCount.toLocaleString()}</>
-                            : <>Label {previewIndex + 1} of {labelCount.toLocaleString()}</>}
+                            ? <>Labels {feedStart + 1}–{Math.min(feedStart + across, labelCount)} of {labelCount.toLocaleString()}{inputMode === 'csv' && <span className="max-sm:hidden"> · rows {sheetRowOf(feedStart)}–{sheetRowOf(Math.min(feedStart + across, labelCount) - 1)}</span>}</>
+                            : <>Label {previewIndex + 1} of {labelCount.toLocaleString()}{inputMode === 'csv' && <span className="max-sm:hidden"> · row {sheetRowOf(previewIndex)}</span>}</>}
                         </span>
                         <button
                           onClick={() => setPreviewIndex(Math.min(labelCount - 1, feedStart + across))}
@@ -1943,12 +1945,14 @@ function NewRunContent() {
                         skipCount={skippable?.length ?? 0}
                         choice={blankChoiceNow}
                         onChoiceChange={setBlankChoice}
-                        onChooseFile={lastFile.current ? () => fileInputRef.current?.click() : undefined}
+                        sheetRow={(label) => label + (fileInfo?.headerRow ?? 1)}
                         showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
                       />
                     )}
                     {skipRows && skippable && (
-                      <p className="text-sm text-zinc-400">{skippable.length.toLocaleString()} label{skippable.length === 1 ? ' is' : 's are'} left out, so this run has {labelCount.toLocaleString()}.</p>
+                      <p className="text-sm text-zinc-400">
+                        {inputMode === 'csv' ? (skippable.length === 1 ? 'Row' : 'Rows') : (skippable.length === 1 ? 'Label' : 'Labels')} {(() => { const shown = skippable.slice(0, 5).map((i) => String(inputMode === 'csv' ? i + 1 + (fileInfo?.headerRow ?? 1) : i + 1)); return skippable.length > 5 ? `${shown.join(', ')} and ${(skippable.length - 5).toLocaleString()} more` : andList(shown); })()} {skippable.length === 1 ? 'is' : 'are'} left out, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}, numbered from 1 again.{inputMode === 'csv' ? ' Each label shows its spreadsheet row.' : ''}
+                      </p>
                     )}
                     <BarcodeWarning
                       items={barcodeItems}
@@ -1966,11 +1970,7 @@ function NewRunContent() {
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
-                        {barcodeWords.fixIn !== 'design' && lastFile.current && (
-                          <button type="button" onClick={() => fileInputRef.current?.click()} className="link inline-flex min-h-control-sm items-center gap-1.5">
-                            <Upload className="size-4" aria-hidden="true" /> Choose another file
-                          </button>
-                        )}
+
                       </>}
                     />
                     {runFixNote && template && runFixNote.templateId === template.id && (
@@ -2009,9 +2009,7 @@ function NewRunContent() {
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
                       actions={lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) ? (
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 link">
-                          <Upload className="size-4" aria-hidden="true" /> Choose another file
-                        </button>
+                        <span className="text-zinc-400">Fix them in your spreadsheet, then use “Choose another file” at the top.</span>
                       ) : undefined}
                     />
                     <ProblemList

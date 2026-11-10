@@ -257,7 +257,7 @@ async function renderNative(template, format, values) {
     const exactValue = runPrintCheck({ ...run([accented]), totalLabels: 1, dataSource: 'csv' }, design('4x6', 'bitmap-v1', barcode()), F['4x6']);
     assert.equal(exactValue.verdict.stops, true);
     assert.equal(exactValue.verdict.fixIn, 'data');
-    assert.match(exactValue.verdict.waitReason, /Fix the spreadsheet rows listed above, then choose the file again\./);
+    assert.match(exactValue.verdict.waitReason, /Fix those rows in your spreadsheet, then choose the file again\./);
     assert.doesNotMatch(exactValue.verdict.waitReason, /Fix the design/);
     assert.match(exactValue.blocking[0], /Fix row 2 of your spreadsheet/);
     assert.match(exactValue.verdict.heading, /barcode value it can’t print/);
