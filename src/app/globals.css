@@ -700,3 +700,17 @@ textarea:focus-visible {
   from { opacity: 0; transform: translateY(-2px); filter: blur(1px); }
 }
 /* end area B r5 */
+
+/* area A r6 */
+/* One inline link style: amber text, underlined on hover; inside a sentence
+   (p, li) it is always underlined, so it never relies on colour alone. */
+.link {
+  color: var(--color-amber-400);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  border-radius: var(--radius-sm);
+  transition: color 150ms var(--ease-out);
+}
+.link:hover { color: var(--color-amber-300); text-decoration-line: underline; }
+p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
+/* end area A r6 */

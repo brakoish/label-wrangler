@@ -1,5 +1,6 @@
 /**
- * Read the first sheet of an Excel (.xlsx) file into the same shape as
+ * Read one sheet of an Excel (.xlsx) file (the first with something on it, or
+ * the one asked for) into the same shape as
  * parseCsv: `{ headers, rows }`. Numbers come out as Excel shows them (dates
  * as dates, prices with their symbol), and a title row above the headings is
  * skipped. No dependency: an .xlsx is a zip of XML
@@ -98,47 +99,8 @@ function styleFormats(styles: Document | null): Array<string | undefined> {
   });
 }
 
-export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOptions = {}): Promise<ParsedCsv> {
-  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-  if (!isZipFile(bytes)) throw new XlsxReadError('Not an Excel file');
-  const entries = readEntries(bytes);
-  const find = (name: string) => entries.find((e) => e.name.toLowerCase() === name.toLowerCase());
-
-  // The first sheet in workbook order, resolved through the relationships file.
-  let sheetPath = 'xl/worksheets/sheet1.xml';
-  let sheetName: string | undefined;
-  let sheetCount = 1;
-  let date1904 = false;
-  const workbook = find('xl/workbook.xml');
-  const rels = find('xl/_rels/workbook.xml.rels');
-  if (workbook) {
-    const book = parseXml(await readEntry(bytes, workbook));
-    const pr = book.getElementsByTagName('workbookPr')[0];
-    date1904 = pr?.getAttribute('date1904') === '1' || pr?.getAttribute('date1904') === 'true';
-    const sheets = book.getElementsByTagName('sheet');
-    sheetCount = Math.max(1, sheets.length);
-    sheetName = sheets[0]?.getAttribute('name') ?? undefined;
-  }
-  if (workbook && rels) {
-    const firstSheet = parseXml(await readEntry(bytes, workbook)).getElementsByTagName('sheet')[0];
-    const relId = firstSheet?.getAttribute('r:id') ?? firstSheet?.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
-    if (relId) {
-      const rel = Array.from(parseXml(await readEntry(bytes, rels)).getElementsByTagName('Relationship')).find((r) => r.getAttribute('Id') === relId);
-      const target = rel?.getAttribute('Target');
-      if (target) sheetPath = target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`;
-    }
-  }
-  const sheetEntry = find(sheetPath);
-  if (!sheetEntry) throw new XlsxReadError('No sheet found');
-
-  const sharedEntry = find('xl/sharedStrings.xml');
-  const shared = sharedEntry ? Array.from(parseXml(await readEntry(bytes, sharedEntry)).getElementsByTagName('si')).map(textOf) : [];
-
-  const stylesEntry = find('xl/styles.xml');
-  let formats: Array<string | undefined> = [];
-  try { formats = styleFormats(stylesEntry ? parseXml(await readEntry(bytes, stylesEntry)) : null); } catch { formats = []; }
-
-  const sheet = parseXml(await readEntry(bytes, sheetEntry));
+/** One sheet's cells as text, as Excel shows them, with the plain digits of formatted numbers. */
+function sheetGrid(sheet: Document, shared: string[], formats: Array<string | undefined>, date1904: boolean): { grid: string[][]; plainGrid: Array<Array<string | undefined>>; leading: number } {
   const grid: string[][] = [];
   // Plain digits of formatted number cells, by grid row (see ParsedCsv.plainRows).
   const plainGrid: Array<Array<string | undefined>> = [];
@@ -176,7 +138,67 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOpt
   while (grid.length && grid[grid.length - 1].every((c) => !c.trim())) { grid.pop(); plainGrid.pop(); }
   let leading = 0;
   while (grid.length && grid[0].every((c) => !c.trim())) { grid.shift(); plainGrid.shift(); leading++; }
-  if (!grid.length) return { headers: [], rows: [], sheetName, sheetCount };
+  return { grid, plainGrid, leading };
+
+}
+
+export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOptions = {}): Promise<ParsedCsv> {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (!isZipFile(bytes)) throw new XlsxReadError('Not an Excel file');
+  const entries = readEntries(bytes);
+  const find = (name: string) => entries.find((e) => e.name.toLowerCase() === name.toLowerCase());
+
+  // The sheets in workbook order, each resolved through the relationships file.
+  let sheetNames: string[] = [];
+  let sheetPaths: string[] = ['xl/worksheets/sheet1.xml'];
+  let date1904 = false;
+  const workbook = find('xl/workbook.xml');
+  const rels = find('xl/_rels/workbook.xml.rels');
+  if (workbook) {
+    const book = parseXml(await readEntry(bytes, workbook));
+    const pr = book.getElementsByTagName('workbookPr')[0];
+    date1904 = pr?.getAttribute('date1904') === '1' || pr?.getAttribute('date1904') === 'true';
+    const sheets = Array.from(book.getElementsByTagName('sheet'));
+    sheetNames = sheets.map((sheet, i) => sheet.getAttribute('name') || `Sheet ${i + 1}`);
+    const relations = rels ? Array.from(parseXml(await readEntry(bytes, rels)).getElementsByTagName('Relationship')) : [];
+    if (sheets.length) {
+      sheetPaths = sheets.map((sheet, i) => {
+        const relId = sheet.getAttribute('r:id') ?? sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+        const target = relId ? relations.find((r) => r.getAttribute('Id') === relId)?.getAttribute('Target') : null;
+        return target ? (target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.\//, '')}`) : `xl/worksheets/sheet${i + 1}.xml`;
+      });
+    }
+  }
+  const sheetCount = Math.max(1, sheetNames.length);
+  if (!find(sheetPaths[0]) && !sheetPaths.some((path) => find(path))) throw new XlsxReadError('No sheet found');
+
+  const sharedEntry = find('xl/sharedStrings.xml');
+  const shared = sharedEntry ? Array.from(parseXml(await readEntry(bytes, sharedEntry)).getElementsByTagName('si')).map(textOf) : [];
+
+  const stylesEntry = find('xl/styles.xml');
+  let formats: Array<string | undefined> = [];
+  try { formats = styleFormats(stylesEntry ? parseXml(await readEntry(bytes, stylesEntry)) : null); } catch { formats = []; }
+
+  const readGrid = async (path: string) => {
+    const entry = find(path);
+    if (!entry) return null;
+    return sheetGrid(parseXml(await readEntry(bytes, entry)), shared, formats, date1904);
+  };
+  // The sheet asked for; otherwise the first one with something on it.
+  let sheetIndex = options.sheet !== undefined ? Math.min(Math.max(0, Math.floor(options.sheet)), sheetPaths.length - 1) : 0;
+  let read = await readGrid(sheetPaths[sheetIndex]);
+  if (options.sheet === undefined) {
+    for (let i = 0; (!read || !read.grid.length) && i < sheetPaths.length; i++) {
+      if (i === sheetIndex) continue;
+      const next = await readGrid(sheetPaths[i]);
+      if (next && next.grid.length) { read = next; sheetIndex = i; }
+    }
+  }
+  if (!read) throw new XlsxReadError('No sheet found');
+  const { grid, plainGrid, leading } = read;
+  const sheetName = sheetNames[sheetIndex];
+  const sheetInfo = { sheetName, sheetCount, sheetIndex, ...(sheetNames.length ? { sheetNames } : {}) };
+  if (!grid.length) return { headers: [], rows: [], ...sheetInfo };
 
   const headerIndex = options.headerRow ? Math.min(grid.length - 1, Math.max(0, options.headerRow - 1 - leading)) : findHeaderRow(grid);
   const { headers, rows } = gridToRows(grid, headerIndex);
@@ -190,5 +212,5 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOpt
     plainRows.push(plain);
   });
   const anyPlain = plainRows.some((row) => Object.keys(row).length > 0);
-  return { headers, rows, headerRow: leading + headerIndex + 1, titleSkipped: headerIndex > 0 && !options.headerRow, sheetName, sheetCount, ...(anyPlain ? { plainRows } : {}) };
+  return { headers, rows, headerRow: leading + headerIndex + 1, titleSkipped: headerIndex > 0 && !options.headerRow, ...sheetInfo, ...(anyPlain ? { plainRows } : {}) };
 }

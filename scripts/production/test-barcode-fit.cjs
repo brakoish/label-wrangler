@@ -285,7 +285,7 @@ async function renderNative(template, format, values) {
     const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
     const wizard = read('src/app/runs/new/page.tsx');
     assert.match(wizard, /const barcodesOk = barcodesClear \|\| barcodeGoAhead;/, 'the wizard goes ahead on an explicit tick');
-    assert.match(wizard, /confirmLabel=\{barcodeWords\.stops \? undefined : barcodeWords\.goAheadLabel\}/);
+    assert.match(wizard, /<BarcodeWarning[\s\S]*?stops=\{barcodeWords\.stops\}/, 'the wizard shows the shared barcode warning, with no tick when nothing can print');
     assert.match(wizard, /saved\.verdict\.carriesOver/, 'the wizard keeps a go-ahead for the run page only when it may carry over');
     const page = read('src/components/runs/RunPrinter.tsx');
     assert.match(page, /runPrintCheck\(run, template, format\)/, 'the run page checks with runPrintCheck');
@@ -293,8 +293,10 @@ async function renderNative(template, format, values) {
     assert.doesNotMatch(page, /runLayoutWarnings|anyway`/, 'no old layout-only "… anyway" path');
     const panel = read('src/components/runs/OfficePiPrinter.tsx');
     assert.doesNotMatch(panel, /Send anyway|layoutWarnings/, 'the office panel has no second, different ask');
-    const checks = read('src/components/checks/RunChecks.tsx');
-    assert.match(checks, /confirmLabel=\{check\.verdict\.stops \? undefined : check\.verdict\.goAheadLabel\}/);
+    const checks = read('src/components/runs/RunBarcodeCheck.tsx');
+    assert.match(checks, /stops=\{check\.verdict\.stops\}/, 'the run page shows the same barcode warning, with no tick when nothing can print');
+    const warning = read('src/components/checks/BarcodeWarning.tsx');
+    assert.match(warning, /const canTick = tickable && !stops && !!onTick;/, 'a problem that stops printing never gets a "Print anyway" tick');
   }
   console.log('PASS barcode fit: one verdict, matched to the native and exact renderers; Metrc tags pass on 4"×6", 3"×2" (tight), 300 dpi 2"×1" and every exact design; impossible values still blocked; never "shorten"');
 })().catch((error) => { console.error(error); process.exit(1); });

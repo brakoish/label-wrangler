@@ -4,7 +4,6 @@ import { useId, type ReactNode } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { describeRowList, type BlankFieldIssue, type RunDataCheck } from '@/lib/runDataCheck';
 import { friendlyFieldName, spreadsheetRow } from '@/lib/fieldLabels';
-import { LAYOUT_GO_AHEAD, type RunPrintCheck } from '@/lib/runLayoutCheck';
 
 /** Where the run's values come from: decides which advice fits. */
 export type CheckMode = 'manual' | 'paste' | 'csv' | 'manifest' | 'scan';
@@ -183,46 +182,6 @@ export function ProblemList({ heading, items, more, confirmLabel, confirmed, onC
           <span>{confirmLabel}</span>
         </label>
       )}
-    </div>
-  );
-}
-
-/**
- * The run page's check before printing or sending, in the wizard's words:
- * barcodes the printer would cut off first, in red, with their fix and an
- * explicit go-ahead (none when the exact renderer refuses them: nothing could
- * print); barcodes close to the edge; then items that overlap, with the same
- * "I checked the preview" tick as the wizard.
- */
-export function PrintCheckList({ check, barcodeGoAhead, layoutGoAhead, onBarcodeGoAhead, onLayoutGoAhead }: {
-  check: RunPrintCheck;
-  barcodeGoAhead: boolean;
-  layoutGoAhead: boolean;
-  onBarcodeGoAhead: (value: boolean) => void;
-  onLayoutGoAhead: (value: boolean) => void;
-}) {
-  if (!check.blocking.length && !check.tight.length && !check.layout.length) return null;
-  return (
-    <div className="space-y-3">
-      <ProblemList
-        tone="error"
-        heading={check.verdict.heading}
-        items={check.blocking.slice(0, MAX_ITEMS)}
-        more={check.blocking.length - Math.min(MAX_ITEMS, check.blocking.length)}
-        confirmLabel={check.verdict.stops ? undefined : check.verdict.goAheadLabel}
-        confirmed={barcodeGoAhead}
-        onConfirmedChange={onBarcodeGoAhead}
-      />
-      {check.blocking.length > 0 && check.verdict.stops && <p className="pl-5.5 text-sm text-zinc-300">Nothing can print until the design is fixed.</p>}
-      <ProblemList heading="Barcodes close to the edge" items={check.tight.slice(0, 3)} more={check.tight.length - Math.min(3, check.tight.length)} />
-      <ProblemList
-        heading="Some items overlap or run off the label"
-        items={check.layout.slice(0, MAX_ITEMS)}
-        more={check.layout.length - Math.min(MAX_ITEMS, check.layout.length)}
-        confirmLabel={LAYOUT_GO_AHEAD}
-        confirmed={layoutGoAhead}
-        onConfirmedChange={onLayoutGoAhead}
-      />
     </div>
   );
 }

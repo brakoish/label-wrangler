@@ -80,5 +80,22 @@ assert.equal(spreadsheetRow(12), 13);
     { SKU: '850010000001', Price: '20.00', 'Markup price': '2.68', Units: '1234567' },
     { Price: '1234.50', 'Markup price': '1.01', Units: '0' },
   ]);
-  console.log('PASS spreadsheet import: Excel number formats and rounding, plain digits, title rows, header row choice, row numbers');
+  // A workbook with several sheets: every sheet is named, the first one with
+  // something on it is read, and any other can be picked in the app.
+  {
+    const three = require('node:fs').readFileSync(require('node:path').join(__dirname, 'fixtures/three-sheets.xlsx'));
+    const first = await readXlsx(new Uint8Array(three));
+    assert.deepEqual(first.sheetNames, ['Notes', 'Labels', 'Prices']);
+    assert.equal(first.sheetIndex, 1, 'an empty first sheet is passed over');
+    assert.equal(first.sheetName, 'Labels');
+    assert.deepEqual(first.headers, ['Product Name', 'SKU']);
+    assert.equal(first.rows.length, 2);
+    const picked = await readXlsx(new Uint8Array(three), { sheet: 2 });
+    assert.equal(picked.sheetName, 'Prices');
+    assert.deepEqual(picked.headers, ['Item', 'Price']);
+    const empty = await readXlsx(new Uint8Array(three), { sheet: 0 });
+    assert.equal(empty.headers.length, 0, 'a picked empty sheet reads as empty, not as another sheet');
+    assert.equal(empty.sheetName, 'Notes');
+  }
+  console.log('PASS spreadsheet import: sheets can be picked; Excel number formats and rounding, plain digits, title rows, header row choice, row numbers');
 })().catch((error) => { console.error(error); process.exit(1); });

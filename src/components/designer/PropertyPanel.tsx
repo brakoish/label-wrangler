@@ -15,6 +15,7 @@ import { elementTypeName, friendlyFieldName, nextFieldName } from '@/lib/fieldLa
 import { Menu } from '@/components/ui/Menu';
 import { describeUnprintable, elementUnprintable, plainPrinterText } from '@/lib/printerCharacters';
 import { parseSizeInput, sizeProblem } from '@/lib/sizeInput';
+import { columnChoices, isMadeUpFieldName, readLastColumns } from '@/lib/lastColumns';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -28,18 +29,44 @@ interface PropertyPanelProps {
   allElements?: TemplateElement[];
   /** Layout problems that involve the selected item, in plain words. */
   problems?: string[];
+  /** Select an item from the list shown when nothing is selected. */
+  onPick?: (id: string) => void;
+}
+
+/** Each kind of item's icon, the same as in the items list. */
+const ITEM_ICONS: Record<string, React.ReactNode> = {
+  text: <Type className="size-4" />,
+  qr: <QrCode className="size-4" />,
+  barcode: <Barcode className="size-4" />,
+  line: <span className="w-3 h-0.5 bg-current rounded" />,
+  rectangle: <Square className="size-4" />,
+  image: <Image className="size-4" />,
+};
+
+/** "Package tag", "Net Wt 3.5g", "Box": what a person calls the item. */
+function itemLabel(el: TemplateElement): string {
+  if (!el.isStatic && el.fieldName) return friendlyFieldName(el.fieldName);
+  if ((el.type === 'text' || el.type === 'qr' || el.type === 'barcode') && el.content?.trim()) {
+    const text = el.content.trim();
+    return text.length > 28 ? `${text.slice(0, 27)}…` : text;
+  }
+  return elementTypeName(el.type);
 }
 
 /** The right-hand panel: a plain surface, no rules or borders. */
 const PANEL = 'w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 lg:bg-zinc-900 overflow-y-auto';
 
-export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange, allElements = [], problems = [] }: PropertyPanelProps) {
+export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange, allElements = [], problems = [], onPick }: PropertyPanelProps) {
   const [showManifest, setShowManifest] = useState(false);
+  // Columns to pick from: the last spreadsheet loaded on New run, then the ones other items use.
+  const [lastColumns] = useState(() => readLastColumns(typeof window === 'undefined' ? null : window.localStorage));
+  const designNames = allElements.filter((e) => e.id !== element?.id && !e.isStatic && e.fieldName && !isMadeUpFieldName(e.fieldName)).map((e) => e.fieldName!);
+  const columnList = columnChoices(lastColumns.headers, designNames);
   const multiSelected = selectedElements.length > 1;
   const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
 
   if (element?.locked || selectedElements.some(e => e.locked)) {
-    return <div className={`${PANEL} p-4 text-sm text-zinc-400`}>Some of these items are locked. Unlock them in Layers to change them.</div>;
+    return <div className={`${PANEL} p-4 text-sm text-zinc-400`}>Some of these items are locked. Unlock them in the items list to change them.</div>;
   }
 
   if (multiSelected) {
@@ -76,9 +103,24 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   }
 
   if (!element) {
+    const items = [...allElements].sort((a, b) => b.zIndex - a.zIndex);
     return (
       <div className={`${PANEL} min-h-20 lg:min-h-0`}>
-        <p className="p-4 text-sm text-zinc-400">Pick an item on the label to change it.</p>
+        <h2 className="px-4 pt-3 text-sm font-semibold text-zinc-100">Pick an item to change it</h2>
+        {onPick && items.length > 0 ? (
+          <ul className="px-2 pt-1 pb-3">
+            {items.map((item) => (
+              <li key={item.id}>
+                <button type="button" onClick={() => onPick(item.id)} className="press flex min-h-control-sm w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
+                  <span className="flex size-4 shrink-0 items-center justify-center text-zinc-400" aria-hidden="true">{ITEM_ICONS[item.type]}</span>
+                  <span className="min-w-0 truncate">{itemLabel(item)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 pt-1 pb-4 text-sm text-zinc-400">{items.length ? 'Tap or click an item on the label.' : 'Add an item to the label first.'}</p>
+        )}
       </div>
     );
   }
@@ -108,15 +150,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
       : { defaultValue: plainPrinterText(element.defaultValue || ''), prefix: plainPrinterText(element.prefix || ''), suffix: plainPrinterText(element.suffix || '') });
   };
 
-  // Element type badge
-  const typeIcons: Record<string, React.ReactNode> = {
-    text: <Type className="size-4" />,
-    qr: <QrCode className="size-4" />,
-    barcode: <Barcode className="size-4" />,
-    line: <span className="w-3 h-0.5 bg-current rounded" />,
-    rectangle: <Square className="size-4" />,
-    image: <Image className="size-4" />,
-  };
+  const typeIcons = ITEM_ICONS;
 
   return (
     <div className={PANEL}>
@@ -208,44 +242,29 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         <Divider />
 
         {/* Images are selected once per run, never bound to source rows. */}
-        {element.type !== 'image' && <div className="space-y-1.5 pt-1">
-          <span id="content-mode-label" className="block text-sm font-medium text-zinc-300">Content</span>
-          <div role="radiogroup" aria-labelledby="content-mode-label" className="segmented segmented-xs">
-            <SegmentedIndicator index={element.isStatic ? 0 : 1} count={2} />
-            <button
-              type="button"
-              role="radio"
-              aria-checked={element.isStatic}
-              onClick={() => onUpdate(contentModeUpdates(element, true))}
-              data-active={element.isStatic}
-            >
-              Same on every label
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={!element.isStatic}
-              // Keeps what was typed as the preview sample and picks a
-              // column name if there isn't one yet (renamable below).
-              onClick={() => onUpdate(contentModeUpdates(element, false, () => nextFieldName(element.type, allElements)))}
-              data-active={!element.isStatic}
-            >
-              Changes per label
-            </button>
+        {element.type !== 'image' && <div className="space-y-1 pt-1">
+          <h3 id="content-mode-label" className="text-sm font-medium text-zinc-300">Content</h3>
+          <div role="radiogroup" aria-labelledby="content-mode-label">
+            {([[true, 'Same on every label'], [false, 'Changes per label']] as const).map(([same, text]) => (
+              <label key={text} className="press flex min-h-control-sm cursor-pointer items-center gap-2.5 text-sm text-zinc-100">
+                <input
+                  type="radio"
+                  name={`content-mode-${element.id}`}
+                  className="size-4 shrink-0 accent-amber-500"
+                  checked={element.isStatic === same}
+                  // Per label keeps what was typed as the preview sample and
+                  // takes a column name (picked or typed below).
+                  onChange={() => onUpdate(same ? contentModeUpdates(element, true) : contentModeUpdates(element, false, () => nextFieldName(element.type, allElements)))}
+                />
+                {text}
+              </label>
+            ))}
           </div>
         </div>}
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
-            <StackedField label="Spreadsheet column" hint="Each label takes its value from the column with this name. Capitals and spaces don’t matter.">
-              {(id) => <>
-                <input id={id} type="text" list={`${id}-columns`} className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />
-                {/* Columns other items already use, to pick from instead of retyping. */}
-                <datalist id={`${id}-columns`}>
-                  {[...new Set(allElements.filter((e) => e.id !== element.id && !e.isStatic && e.fieldName).map((e) => e.fieldName!))].map((name) => <option key={name} value={name}>{friendlyFieldName(name)}</option>)}
-                </datalist>
-              </>}
-            </StackedField>
+            <ColumnPicker element={element} columns={columnList} fileName={lastColumns.fileName} onUpdate={onUpdate} />
             {(showManifest || usesManifest(allElements, element)) ? (
               <StackedField label="Or a Manifest field">
                 {(id) => <CustomSelect
@@ -380,12 +399,12 @@ function QRProps({ element, onUpdate }: { element: QRElement; onUpdate: (u: Part
       {element.isStatic
         ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Web address or text" full />
         : <p className="text-sm text-zinc-400">Each label gets its own value from the spreadsheet.</p>}
-      <Row label="Survives damage">
+      <Row label="Still scans if scuffed">
         <CompactSelect
           ariaLabel="How much damage the QR code survives"
           value={element.errorCorrection}
           options={['L', 'M', 'Q', 'H']}
-          labels={['A little (smallest)', 'Some (recommended)', 'More', 'Most (largest)']}
+          labels={['A little (smallest)', 'Some (best for most)', 'More', 'Most (largest)']}
           onChange={(v) => onUpdate({ errorCorrection: v as 'L' | 'M' | 'Q' | 'H' })}
         />
       </Row>
@@ -394,12 +413,12 @@ function QRProps({ element, onUpdate }: { element: QRElement; onUpdate: (u: Part
 }
 
 const BARCODE_TYPES: Array<[BarcodeFormat, string]> = [
-  ['CODE128', 'Code 128 (letters and numbers)'],
-  ['CODE39', 'Code 39 (capitals and numbers)'],
-  ['UPC', 'UPC-A (12 digits)'],
-  ['EAN13', 'EAN-13 (13 digits)'],
-  ['EAN8', 'EAN-8 (8 digits)'],
-  ['ITF14', 'ITF-14 (14 digits)'],
+  ['CODE128', 'Letters and numbers (most labels)'],
+  ['CODE39', 'Capitals and numbers only'],
+  ['UPC', 'Store product code, 12 digits'],
+  ['EAN13', 'Store product code, 13 digits'],
+  ['EAN8', 'Short product code, 8 digits'],
+  ['ITF14', 'Carton code, 14 digits'],
 ];
 
 function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate: (u: Partial<TemplateElement>) => void }) {
@@ -517,8 +536,51 @@ function StackedField({ label, hint, children }: { label: string; hint?: string;
     <div className="space-y-1">
       <label htmlFor={id} className="block text-sm text-zinc-400">{label}</label>
       {children(id)}
-      {hint && <p className="text-xs text-zinc-500">{hint}</p>}
+      {hint && <p className="text-xs text-zinc-400">{hint}</p>}
     </div>
+  );
+}
+
+const TYPE_A_NAME = '__type__';
+
+/**
+ * Which spreadsheet column fills a per-label item: picked from a list (the
+ * last file's headings, the columns other items use), or typed when the
+ * heading isn't there yet. The item takes the column's name, so a new
+ * spreadsheet with that heading fills it (capitals and spaces don't matter).
+ */
+function ColumnPicker({ element, columns, fileName, onUpdate }: { element: TemplateElement; columns: string[]; fileName?: string; onUpdate: (updates: Partial<TemplateElement>) => void }) {
+  const current = element.fieldName || '';
+  const simple = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const listed = columns.find((name) => simple(name) === simple(current));
+  const [typing, setTyping] = useState(false);
+  const pickFirst = columns.length > 0 && isMadeUpFieldName(current);
+  if (!columns.length || typing) {
+    return (
+      <StackedField label="Spreadsheet column" hint={columns.length ? undefined : 'Type the column’s heading. Capitals and spaces don’t matter.'}>
+        {(id) => <div className="space-y-1">
+          <input id={id} type="text" className="field field-sm w-full" value={current} autoFocus={typing} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />
+          {columns.length > 0 && <button type="button" className="link inline-flex min-h-control-sm items-center text-sm" onClick={() => setTyping(false)}>Pick from the list</button>}
+        </div>}
+      </StackedField>
+    );
+  }
+  const options = [
+    ...columns.map((name) => ({ value: name, label: name })),
+    ...(current && !listed && !pickFirst ? [{ value: current, label: current, sublabel: 'not in your last file' }] : []),
+    { value: TYPE_A_NAME, label: 'Type another name…' },
+  ];
+  return (
+    <StackedField label="Spreadsheet column" hint={fileName ? `From your last file, ${fileName}` : undefined}>
+      {(id) => <CustomSelect
+        compact
+        id={id}
+        value={listed ?? (pickFirst ? '' : current)}
+        placeholder="Pick a column"
+        onChange={(value) => { if (value === TYPE_A_NAME) setTyping(true); else if (value) onUpdate({ fieldName: value }); }}
+        options={options}
+      />}
+    </StackedField>
   );
 }
 

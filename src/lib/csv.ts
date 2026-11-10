@@ -15,6 +15,10 @@ export interface ParsedCsv {
   sheetName?: string;
   /** Excel only: how many sheets the workbook has. */
   sheetCount?: number;
+  /** Excel only: every sheet's name, in workbook order. */
+  sheetNames?: string[];
+  /** Excel only: which of them was read (0-based). */
+  sheetIndex?: number;
   /**
    * Excel only, one entry per row: the plain digits of number cells whose
    * format adds separators, currency or text ("1234.50" for "$1,234.50").
@@ -27,6 +31,8 @@ export interface ParsedCsv {
 export interface ReadOptions {
   /** Use this spreadsheet row (1-based) as the headings instead of finding it. */
   headerRow?: number;
+  /** Excel only: read this sheet (0-based, workbook order) instead of the first one with something on it. */
+  sheet?: number;
 }
 
 /**

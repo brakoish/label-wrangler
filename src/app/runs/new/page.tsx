@@ -20,6 +20,8 @@ import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
+import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
+import { barcodeWaitWords } from '@/lib/runBarcodeTicks';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
 import { LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
@@ -35,6 +37,7 @@ import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
+import { saveLastColumns } from '@/lib/lastColumns';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 const PASTE_COLUMN = '__paste__';
@@ -57,6 +60,17 @@ function pastedValues(text: string, field: string | null): { values: string[]; h
   return { values: heading ? lines.slice(1) : lines, heading, table };
 }
 const MANIFEST_HEADERS = [...MANIFEST_FIELDS];
+
+/**
+ * Whether row 1 looks like data or a title rather than column names (most
+ * cells blank, numbers, dates, prices or long tags): only then is "Column
+ * names aren't in row 1?" worth asking.
+ */
+function headingsLookLikeData(headers: ReadonlyArray<string>): boolean {
+  if (!headers.length) return false;
+  const valueLike = headers.filter((h) => !h.trim() || /^column \d+$/i.test(h.trim()) || /^[\d\s$€£.,:/%-]+$/.test(h.trim()) || /\d{5,}/.test(h) || h.trim().length > 40).length;
+  return valueLike * 2 >= headers.length;
+}
 
 const FIELD_ALIASES: Record<string, string[]> = {
   strain: ['strain', 'productName', 'itemName'],
@@ -500,10 +514,10 @@ function NewRunContent() {
   // "my headings are in row 3" and read it again.
   // The header-row box shows itself only when detection needed help; otherwise it waits behind a quiet question.
   const [headerRowAsked, setHeaderRowAsked] = useState(false);
-  const [fileInfo, setFileInfo] = useState<{ headerRow: number; titleSkipped: boolean; sheetName?: string; sheetCount?: number } | null>(null);
+  const [fileInfo, setFileInfo] = useState<{ headerRow: number; titleSkipped: boolean; sheetName?: string; sheetCount?: number; sheetNames?: string[]; sheetIndex?: number } | null>(null);
   const lastFile = useRef<File | null>(null);
   useEffect(() => () => setSpreadsheetHeaderRow(1), []);
-  const handleFile = async (file: File, headerRow?: number) => {
+  const handleFile = async (file: File, headerRow?: number, sheet?: number) => {
     setFileError(null);
     let parsed: ParsedCsv;
     try {
@@ -511,8 +525,14 @@ function NewRunContent() {
       if (isZipFile(bytes)) {
         // An Excel workbook. Read its first sheet; if that fails, say how to
         // make a CSV instead of showing the zip's bytes as "columns".
-        try { parsed = await readXlsx(bytes, { headerRow }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
-        if (!parsed.headers.length) { setFileError('This Excel file has nothing on its first sheet. Put the headings in row 1, then upload it again.'); return; }
+        try { parsed = await readXlsx(bytes, { headerRow, sheet }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
+        if (!parsed.headers.length && (parsed.sheetNames?.length ?? 1) > 1 && sheet !== undefined) {
+          // A picked sheet with nothing on it: say so, and keep the sheet list to pick another.
+          setFileInfo((info) => (info ? { ...info, sheetIndex: sheet } : info));
+          setFileError(`The sheet ‘${parsed.sheetName ?? ''}’ is empty. Pick another sheet.`);
+          return;
+        }
+        if (!parsed.headers.length) { setFileError('This Excel file has nothing in it. Put the headings in row 1, then upload it again.'); return; }
       } else if (isOleFile(bytes)) {
         setFileError('This is an older Excel file (.xls). In Excel choose File > Save As > CSV, then upload that.');
         return;
@@ -527,8 +547,10 @@ function NewRunContent() {
     }
     lastFile.current = file;
     setCsvFileName(file.name);
-    setFileInfo({ headerRow: parsed.headerRow ?? 1, titleSkipped: !!parsed.titleSkipped, sheetName: parsed.sheetName, sheetCount: parsed.sheetCount });
+    setFileInfo({ headerRow: parsed.headerRow ?? 1, titleSkipped: !!parsed.titleSkipped, sheetName: parsed.sheetName, sheetCount: parsed.sheetCount, sheetNames: parsed.sheetNames, sheetIndex: parsed.sheetIndex });
     setSpreadsheetHeaderRow(parsed.headerRow ?? 1);
+    // The designer offers these headings as a list ("Spreadsheet column").
+    saveLastColumns(typeof window === 'undefined' ? null : window.localStorage, parsed.headers, file.name);
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
     setCsvPlainRows(parsed.plainRows ?? null);
@@ -869,8 +891,18 @@ function NewRunContent() {
   const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
   const barcodeWords = barcodeVerdict(barcodeCheck.issues, barcodeCheck.badLabels, format, fieldIsFromSheet);
   const barcodeKey = useMemo(() => barcodeCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [barcodeCheck.issues]);
-  const [barcodeGoAheadKey, setBarcodeGoAheadKey] = useState('');
-  const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeGoAheadKey === barcodeKey;
+  // One plain sentence and one "Print anyway" tick per problem, as on the run page.
+  const barcodeItems = useMemo(() => describeBarcodeGroups(barcodeCheck.issues, barcodeCheck.checkedLabels, fieldIsFromSheet, 50, barcodeCheck.fitCounts).items,
+    // fieldIsFromSheet reads inputMode and the mappings, both in runDataForCheck.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [barcodeCheck, inputMode, runDataForCheck]);
+  const [barcodeTicks, setBarcodeTicks] = useState<{ key: string; items: string[] }>({ key: '', items: [] });
+  const barcodeItemTicked = (item: string) => barcodeTicks.key === barcodeKey && barcodeTicks.items.includes(item);
+  const tickBarcodeItem = (item: string, value: boolean) => setBarcodeTicks((current) => {
+    const items = current.key === barcodeKey ? current.items : [];
+    return { key: barcodeKey, items: value ? [...items.filter((i) => i !== item), item] : items.filter((i) => i !== item) };
+  });
+  const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
   const barcodesClear = barcodeCheck.issues.length === 0;
   const barcodesOk = barcodesClear || barcodeGoAhead;
 
@@ -927,7 +959,7 @@ function NewRunContent() {
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && barcodeWords.waitReason,
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then choose the file again.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
   ].filter((reason): reason is string => !!reason);
@@ -1201,13 +1233,28 @@ function NewRunContent() {
     { label: 'Review', done: canCreate },
   ];
   const currentStep = workflowSteps.findIndex((s) => !s.done);
-  const barcodeGroups = describeBarcodeGroups(barcodeCheck.issues, barcodeCheck.checkedLabels, fieldIsFromSheet, 5, barcodeCheck.fitCounts);
   const tightGroups = describeBarcodeGroups(barcodeCheck.warnings, barcodeCheck.checkedLabels, fieldIsFromSheet, 3, barcodeCheck.fitCounts);
   const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
   const previewMessage = previewState.status === 'error' && checkTemplate
     ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
     : '';
   const sheetWord = inputMode === 'manifest' ? 'Manifest' : 'spreadsheet';
+  // A workbook with several sheets: pick the labels' sheet here (no reordering in Excel).
+  const sheetNames = fileInfo?.sheetNames ?? [];
+  const sheetPicker = sheetNames.length > 1 && lastFile.current ? (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-300">
+      <span id={`${formId}-sheet`}>Sheet</span>
+      <div className="w-56 max-w-full">
+        <CustomSelect
+          compact
+          aria-labelledby={`${formId}-sheet`}
+          value={String(fileInfo?.sheetIndex ?? 0)}
+          onChange={(value) => { if (lastFile.current) void handleFile(lastFile.current, undefined, Number(value)); }}
+          options={sheetNames.map((name, i) => ({ value: String(i), label: name }))}
+        />
+      </div>
+    </div>
+  ) : null;
 
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
   // action is needed here.
@@ -1485,21 +1532,24 @@ function NewRunContent() {
                       }}
                     />
                     {fileError ? (
-                      <p role="alert" className="flex items-start gap-1.5 text-sm text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{fileError}</p>
+                      <div className="space-y-1">
+                        <p role="alert" className="flex items-start gap-1.5 text-sm text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{fileError}</p>
+                        {sheetPicker}
+                      </div>
                     ) : csvHeaders.length > 0 ? (
                       <div className="space-y-1 text-sm text-zinc-400">
                         <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
                           <span className="min-w-0 break-words">
-                            {csvFileName ? <span className="text-zinc-100">{csvFileName}</span> : 'Your file'}{fileInfo?.sheetName && (fileInfo.sheetCount ?? 1) > 1 ? <>, sheet ‘{fileInfo.sheetName}’</> : null}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
+                            {csvFileName ? <span className="text-zinc-100">{csvFileName}</span> : 'Your file'}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
                           </span>
                           <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
                             <Upload className="size-4" aria-hidden="true" /> Choose another file
                           </button>
                         </p>
-                        {fileInfo && (fileInfo.sheetCount ?? 1) > 1 && <p>Only the first sheet is read. Move the labels’ sheet first in Excel to use another one.</p>}
+                        {sheetPicker}
                         {/* Where the column names are: only asked when they weren't
                             in row 1 or some parts found no column. */}
-                        {fileInfo && lastFile.current && !fileInfo.titleSkipped && fileInfo.headerRow === 1 && unmatchedShown.length > 0 && !headerRowAsked && (
+                        {fileInfo && lastFile.current && !fileInfo.titleSkipped && fileInfo.headerRow === 1 && unmatchedShown.length > 0 && !headerRowAsked && headingsLookLikeData(csvHeaders) && (
                           <button type="button" onClick={() => setHeaderRowAsked(true)} className="inline-flex min-h-control-sm items-center text-zinc-400 underline-offset-2 hover:text-zinc-100 hover:underline">Column names aren’t in row 1?</button>
                         )}
                         {fileInfo && lastFile.current && (fileInfo.titleSkipped || fileInfo.headerRow !== 1 || (unmatchedShown.length > 0 && headerRowAsked)) && (
@@ -1799,22 +1849,17 @@ function NewRunContent() {
                     {skipRows && skippable && (
                       <p className="text-sm text-zinc-400">{skippable.length.toLocaleString()} label{skippable.length === 1 ? ' is' : 's are'} left out, so this run has {labelCount.toLocaleString()}.</p>
                     )}
-                    <ProblemList
-                      tone="error"
-                      heading={barcodeWords.heading}
-                      items={barcodeGroups.items}
-                      more={barcodeGroups.more}
-                      confirmLabel={barcodeWords.stops ? undefined : barcodeWords.goAheadLabel}
-                      confirmed={barcodeGoAhead}
-                      onConfirmedChange={(value) => setBarcodeGoAheadKey(value ? barcodeKey : '')}
-                      actions={<>
+                    <BarcodeWarning
+                      items={barcodeItems}
+                      stops={barcodeWords.stops}
+                      isTicked={barcodeItemTicked}
+                      onTick={tickBarcodeItem}
+                      fix={<>
                         {barcodeWords.fixIn !== 'data' && template && (
-                          <Link href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
-                            <Pencil className="size-4" aria-hidden="true" /> Fix in the designer
-                          </Link>
+                          <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
                         {barcodeWords.fixIn !== 'design' && lastFile.current && (
-                          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                          <button type="button" onClick={() => fileInputRef.current?.click()} className="link inline-flex min-h-control-sm items-center gap-1.5">
                             <Upload className="size-4" aria-hidden="true" /> Choose another file
                           </button>
                         )}
