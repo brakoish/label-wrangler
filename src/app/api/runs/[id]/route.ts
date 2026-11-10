@@ -46,7 +46,11 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     if ('sourceData' in body && Array.isArray(body.sourceData)) {
       updates.totalLabels = body.sourceData.length;
     }
-    if (body.progressOnly === true && body.printedCount !== undefined) updates.printedCount = sql`greatest(${runs.printedCount}, ${Number(body.printedCount)})`;
+    // Progress is a high-water mark: an older or out-of-order update (a stale
+    // tab, a sheet tab confirmed late, a delayed outbox entry) can never lower
+    // it. Only an explicit rewind (Reprint from / Reprint all) sends
+    // resetProgress:true to move the resume position backwards.
+    if (body.printedCount !== undefined && body.resetProgress !== true) updates.printedCount = sql`greatest(${runs.printedCount}, ${Number(body.printedCount)})`;
     const { sourceData: _source, designSnapshot: _design, ...summary } = getTableColumns(runs);
     const [updated] = await db.update(runs).set(updates).where(eq(runs.id, id)).returning(summary);
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });

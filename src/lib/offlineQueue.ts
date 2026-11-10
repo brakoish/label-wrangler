@@ -24,6 +24,9 @@ export interface RunPatch {
   status?: RunStatus;
   completedAt?: string | null;
   notes?: string | null;
+  /** Explicit rewind of the resume position. Without it the server keeps the
+   * highest printedCount it has seen. */
+  resetProgress?: boolean;
 }
 export interface QueuedRunPatch extends RunPatch { runId: string }
 type PrintEventData = Omit<RunPrintEvent,'id'|'runId'|'createdAt'>;

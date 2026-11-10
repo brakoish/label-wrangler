@@ -20,7 +20,7 @@ interface RunStore {
   // Runs
   createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections }) => Promise<Run>;
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
-  setRunStatus: (id: string, status: RunStatus, printedCount?: number) => Promise<Run | null>;
+  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean }) => Promise<Run | null>;
   deleteRun: (id: string) => Promise<void>;
   /** Toggle the pinned state of a run. Server stamps pinnedAt. */
   togglePin: (id: string) => Promise<Run | null>;
@@ -105,9 +105,10 @@ export const useRunStore = create<RunStore>((set, get) => ({
     return run;
   },
 
-  setRunStatus: async (id, status, printedCount) => {
+  setRunStatus: async (id, status, printedCount, options) => {
     const body: Record<string, unknown> = { status };
     if (typeof printedCount === 'number') body.printedCount = printedCount;
+    if (options?.resetProgress && typeof printedCount === 'number') body.resetProgress = true;
     if (status === 'completed') body.completedAt = new Date().toISOString();
     const run=await updateRunWithQueue(id,body as Partial<Run>);
     if(run) set(state=>({runs:state.runs.map(r=>r.id===id?{...r,...run}:r)}));

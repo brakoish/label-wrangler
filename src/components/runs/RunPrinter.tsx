@@ -607,7 +607,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setPrintedCount(newPrinted);
     setStatus('paused');
     setShowReprint(false);
-    await setRunStatus(run.id, 'paused', newPrinted);
+    await setRunStatus(run.id, 'paused', newPrinted, { resetProgress: true });
   };
 
   // Reset the whole run (printedCount -> 0, status -> queued) so user can hit
@@ -618,7 +618,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     clearRangeDrafts();
     setPrintedCount(0);
     setStatus('idle');
-    await setRunStatus(run.id, 'queued', 0);
+    await setRunStatus(run.id, 'queued', 0, { resetProgress: true });
   };
 
   const normalizeSheetRange = (range?: { from?: number; to?: number }) => normalizeLabelRange({
