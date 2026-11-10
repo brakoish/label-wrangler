@@ -819,10 +819,13 @@ function DesignerContent() {
     const buttons: ReactNode[] = [];
     const moveFix = problem === barcodeProblem ? autoFixes.fix : null;
     // Printer font bars can't get thinner, so when nothing on this design can
-    // move, Fix it for me offers the picture copy (its dialog says what it makes).
+    // move, the fix is a picture copy: a new design. Say so before the click.
     const copyIsTheFix = problem === copyProblem && !moveFix;
     if (moveFix) buttons.push(<button key="fix" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => applyFix(moveFix)}>{moveFix.label}</button>);
-    if (copyIsTheFix) buttons.push(<button key="copy" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Fix it for me</button>);
+    if (copyIsTheFix) buttons.push(
+      <p key="copy-note" className="basis-full text-zinc-400">This makes a picture copy of the design that draws thinner bars. Your original stays as it is.</p>,
+      <button key="copy" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Make a picture copy…</button>,
+    );
     if (problem === barcodeProblem && !autoFixes.fix && autoFixes.qr) buttons.push(<button key="qr" type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.qr!)}>{autoFixes.qr.label}</button>);
     if (problem === copyProblem && !copyIsTheFix) buttons.push(<button key="copy" type="button" className="btn btn-ghost btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Make a picture copy</button>);
     if (textProblem && textFix && problem.kind === 'overlap' && problem.ids.join() === textProblem.ids.join()) {
