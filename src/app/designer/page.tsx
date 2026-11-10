@@ -27,6 +27,7 @@ import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { safeNextPath } from '@/lib/safeRedirect';
 import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
 import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
@@ -53,10 +54,9 @@ function DesignerContent() {
   // template" from a run detail page). When present we swap the breadcrumb
   // for a 'Done' back button that sends the user home to where they started.
   // Only allow same-origin paths to avoid open-redirect mischief.
-  const rawReturnTo = searchParams.get('returnTo');
-  const returnTo = rawReturnTo && rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//')
-    ? rawReturnTo
-    : null;
+  // Resolved the way the browser would ("/\\evil.com" becomes another site),
+  // against a stand-in origin: only a path on this site is kept.
+  const returnTo = safeNextPath(searchParams.get('returnTo'), 'https://label-wrangler.invalid', '') || null;
 
   const {
     templates,
