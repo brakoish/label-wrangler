@@ -339,6 +339,11 @@ console.log('PASS field display names');
   assert.doesNotMatch(page, /label: 'Scan mode'/, 'scan mode is not offered in the menu where it cannot work');
   assert.match(page, /officeMarkPlan\(/, 'mark printed offers every sent stretch');
 
+  // Designer test print: a first send refused as signed out / no access queued nothing (plain refusal); a resend keeps its key.
+  const preview = read('src/components/designer/OfficePreviewPrint.tsx');
+  assert.match(preview, /const resend = !!pending;/);
+  assert.match(preview, /if \(!sendKeepsRequest\(status, code, resend\)\) \{/, 'the test print uses the same rule as the run panel');
+  assert.ok(preview.indexOf('localStorage.setItem(storageKey, JSON.stringify(payload))') < preview.indexOf("api('/api/office/preview', { method: 'POST'"), 'the key is saved before the POST');
   const controls = read('src/components/runs/OfficePrinterControls.tsx');
   assert.match(controls, /setInterval\(update,pending\|\|busy\?2000:15000\)/, 'controls read fast only while a pause or resume is on its way');
   assert.match(controls, /controlFailure\(r\.status,typeof answer\.code==='string'\?answer\.code:undefined,resend\)/, 'a resend keeps its key when signed out or refused');

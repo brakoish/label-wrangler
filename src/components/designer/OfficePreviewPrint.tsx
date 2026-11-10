@@ -8,7 +8,7 @@ import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { keepPendingAfter, officeFailureKind, officeStatusLine, plainOfficeRefusal, readRefusal, refusalStillApplies, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
+import { officeStatusLine, plainOfficeRefusal, readRefusal, refusalNeedsSomeoneElse, refusalStillApplies, sendKeepsRequest, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 
 type PrinterInfo = { station_id: string; id: string; name: string; online: boolean; available?: boolean; dispatch_enabled: boolean; paired_at?: string | null; needs_review: boolean; dispatch_hold_reason?: string | null; review_holds?: OfficeReviewHold[] };
 type Pending = { status?: number; code?: string; idempotencyKey: string; stationId: string; printerId: string; quantity: number; template: LabelTemplate; format: LabelFormat; testData: Record<string, string>; expectedPixelDigests?: string[] };
@@ -18,7 +18,9 @@ class OfficeRequestError extends Error { constructor(message: string, public sta
 function testPrintRefusal(message: string, status?: number) {
   if (/save this template/i.test(message)) return { reason: 'other' as const, message: 'Save the design first, then send a test print. Nothing was printed.' };
   const plain = plainOfficeRefusal(message, status);
-  const words = plain.reason === 'other' ? 'The office printer didn’t take this test print. Nothing was printed.' : plain.message.replace('Nothing new was sent.', 'Nothing was printed.').replace(' Check the office queue below.', ' Check Runs.');
+  const words = plain.reason === 'other' ? 'The office printer didn’t take this test print. Nothing was printed.'
+    : plain.reason === 'signed-out' || plain.reason === 'no-access' ? `${plain.message} Nothing was printed.`
+    : plain.message.replace('Nothing new was sent.', 'Nothing was printed.').replace(' Check the office queue below.', ' Check Runs.');
   return { reason: plain.reason, message: words };
 }
 function withoutAnswer(saved: Pending): Pending {
@@ -100,6 +102,8 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   const submit = async () => {
     if (inFlight.current || !printer || (bitmap && !pending && proofs?.key !== proofKey)) return;
     inFlight.current = true; setBusy(true); setError(''); setRunId('');
+    // A resend goes out with the saved key; a first send gets a new one.
+    const resend = !!pending;
     try {
       // The saved request goes out exactly as saved (same key); the last
       // answer's status is kept only for the words shown here.
@@ -117,17 +121,20 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
         localStorage.removeItem(storageKey); setPending(null); setRunId(result.runId);
       } catch (error) {
         // A definite refusal (400/404/409/413) means nothing was queued, so
-        // the saved print is cleared and not offered again. No answer, a 5xx,
-        // signed out (401), no access (403) or busy (429) might mean an
-        // earlier try arrived, so the same print (same key) is kept.
+        // the saved print is cleared and not offered again. So does a first
+        // send refused as signed out (401) or without print access (403): the
+        // server checks the account before queuing anything. No answer, a
+        // 5xx or busy (429), or signed out / no access on a resend, might mean
+        // an earlier try arrived, so the same print (same key) is kept.
         const status = error instanceof OfficeRequestError ? error.status : undefined;
-        if (!keepPendingAfter(officeFailureKind(status))) {
+        const code = error instanceof OfficeRequestError ? error.code : undefined;
+        if (!sendKeepsRequest(status, code, resend)) {
           localStorage.removeItem(storageKey); setPending(null);
           const plain = testPrintRefusal(error instanceof Error ? error.message : '', status);
           const record: OfficeRefusalRecord = { from: 1, to: payload.quantity, reason: plain.reason, message: plain.message, at: new Date().toISOString() };
           try { localStorage.setItem(refusedKey, JSON.stringify(record)); } catch { /* shown here anyway */ }
           setRefusal(record);
-        } else setPending({ ...payload, status, code: error instanceof OfficeRequestError ? error.code : undefined });
+        } else setPending({ ...payload, status, code });
       }
     } catch { setError('The test print wasn’t sent. Try again in a moment.'); }
     finally { inFlight.current = false; setBusy(false); }
@@ -158,7 +165,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       {bitmap && !pending && <div className="space-y-1">{proofs?.key === proofKey ? proofs.results.map((r, i) => <img key={i} src={r.proof} alt={`Test label ${i + 1} as it will print`} className="w-full bg-white" style={{ imageRendering: 'pixelated' }} />) : <p role="status" className="text-zinc-400">Drawing the label exactly as it will print…</p>}</div>}
       {pending && <p role="status" className="text-amber-300">We&apos;re not sure the office got your last test print. {pending.status === undefined || uncertainSendWords(pending.status, pending.code).cause === 'no-answer' ? 'Tap “Send again”. It resends that same print (not later edits), so it won’t print twice.' : uncertainSendWords(pending.status, pending.code).message}</p>}
       {shownRefusal && !pending && <p role="alert" className="text-amber-300">Your last test print wasn&apos;t sent. {shownRefusal.message}</p>}
-      <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending ? 'Send again' : shownRefusal ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
+      <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending ? 'Send again' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
       {error && <p role="alert" className="text-red-400">{error}</p>}
       {pending && !busy && <p className="text-zinc-400"><Link href="/runs" className="underline underline-offset-2">Check Runs</Link> first, or <button type="button" className="underline underline-offset-2" onClick={async () => {
         const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first. The office may already have this test print, and starting over doesn’t cancel anything already sent.', confirmLabel: 'Start over' });
