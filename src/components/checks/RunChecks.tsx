@@ -213,7 +213,7 @@ export function PrintCheckList({ check, barcodeGoAhead, layoutGoAhead, onBarcode
         confirmed={barcodeGoAhead}
         onConfirmedChange={onBarcodeGoAhead}
       />
-      {check.blocking.length > 0 && check.verdict.stops && <p className="pl-5.5 text-sm text-zinc-300">Nothing can print until the design is fixed. Use Edit design for next time in the More menu.</p>}
+      {check.blocking.length > 0 && check.verdict.stops && <p className="pl-5.5 text-sm text-zinc-300">Nothing can print until the design is fixed.</p>}
       <ProblemList heading="Barcodes close to the edge" items={check.tight.slice(0, 3)} more={check.tight.length - Math.min(3, check.tight.length)} />
       <ProblemList
         heading="Some items overlap or run off the label"

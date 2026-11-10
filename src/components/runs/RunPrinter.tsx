@@ -327,7 +327,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [woken, setWoken] = useState(false);
   const [officeChooser, setOfficeChooser] = useState(0);
   useEffect(() => { setBarcodeTicks(readRunBarcodeTicks(typeof window !== 'undefined' ? window.localStorage : null, runId)); }, [runId]);
-  const wizardBarcodeGoAhead = !!printCheck.blocking.length && goAhead.barcode === printCheck.blockingKey;
+  // A "neither label will scan" go-ahead never carries over from the wizard: ask again here.
+  const wizardBarcodeGoAhead = !!printCheck.blocking.length && printCheck.verdict.carriesOver && goAhead.barcode === printCheck.blockingKey;
   const barcodeOk = barcodeTicksAllow(printCheck.blocking, barcodeTicks, wizardBarcodeGoAhead);
   const tickBarcode = (item: string, value: boolean) => setBarcodeTicks((current) => {
     // Once someone ticks here, every problem's tick is its own.
@@ -1310,7 +1311,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       onTick={tickBarcode}
       layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
-      designHref={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
+      designHref={`/designer?id=${template.id}${printCheck.barcodeElementIds[0] ? `&select=${encodeURIComponent(printCheck.barcodeElementIds[0])}` : ''}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
     />
   );
   // Ranges counted as printed after a gap: the count above is "printed in
