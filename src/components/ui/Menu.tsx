@@ -26,7 +26,11 @@ export interface MenuItem {
  * screen (always fully on screen, drag down to close); elsewhere it is kept
  * inside the window.
  */
-export function Menu({ items, label = 'More', showLabel = true, className = '', align = 'end' }: { items: MenuItem[]; label?: string; showLabel?: boolean; className?: string; align?: 'start' | 'end' }) {
+export function Menu({ items, label = 'More', showLabel = true, className = '', align = 'end', closeKey }: {
+  items: MenuItem[]; label?: string; showLabel?: boolean; className?: string; align?: 'start' | 'end';
+  /** When this changes, an open menu closes (for example, a notice appeared that it would cover). */
+  closeKey?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number; up: boolean; sheet?: boolean } | null>(null);
@@ -42,6 +46,9 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  // A new closeKey closes the menu (focus stays where it is).
+  const [seenCloseKey, setSeenCloseKey] = useState(closeKey);
+  if (closeKey !== seenCloseKey) { setSeenCloseKey(closeKey); if (open) setOpen(false); }
   const enabled = items.map((item, index) => (item.disabled ? -1 : index)).filter((index) => index >= 0);
 
   useLayoutEffect(() => {

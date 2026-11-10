@@ -310,6 +310,7 @@ export default function NabisPage() {
   }, [query]);
 
   const canPrint = useMemo(() => label.itemName.trim() && label.uid.trim(), [label.itemName, label.uid]);
+  const printReason = label.itemName.trim() || label.uid.trim() ? `Add the ${!label.itemName.trim() ? 'item description' : 'package tag'} to print` : 'Pick a package or type the details to print';
   const visibleResults = useMemo(() => uniquePackageResults(results), [results]);
 
   const selectPackage = (pkg: PackageResult) => {
@@ -462,7 +463,7 @@ export default function NabisPage() {
               <div className="mb-4 flex min-h-control flex-wrap items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-zinc-100">Check the label</h2>
                 <div className="flex items-center gap-3">
-                  {!canPrint && <span id="nabis-print-reason" className="text-sm text-zinc-400">{label.itemName.trim() || label.uid.trim() ? `Add the ${!label.itemName.trim() ? 'item description' : 'package tag'} to print` : 'Pick a package or type the details to print'}</span>}
+                  {!canPrint && <span id="nabis-print-reason" className="text-sm text-zinc-400">{printReason}</span>}
                   <button
                     type="button"
                     disabled={!canPrint}
@@ -503,6 +504,20 @@ export default function NabisPage() {
                     {field === 'unitsPerCase' && !label.unitsPerCase.trim() && <span className="mt-1 block text-xs text-zinc-400">Empty prints a blank line to write on</span>}
                   </label>
                 ))}
+              </div>
+              {/* Print again at the end of the details, where the typing ends. */}
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!canPrint}
+                  aria-describedby={!canPrint ? 'nabis-print-reason-end' : undefined}
+                  onClick={() => window.print()}
+                  className="btn btn-primary"
+                >
+                  <Printer className="h-4 w-4" aria-hidden="true" />
+                  Print
+                </button>
+                {!canPrint && <span id="nabis-print-reason-end" className="text-sm text-zinc-400">{printReason}</span>}
               </div>
             </div>
           </section>

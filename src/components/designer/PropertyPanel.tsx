@@ -49,6 +49,8 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   const panelRef = useRef<HTMLDivElement>(null);
   useRubberBand(panelRef);
   const [showManifest, setShowManifest] = useState(false);
+  // Text before/after stays out of the way until someone asks for it (or it holds something).
+  const [affixFor, setAffixFor] = useState<string | null>(null);
   // Columns to pick from: the last spreadsheet loaded on New run, then the ones other items use.
   const [lastColumns] = useState(() => readLastColumns(typeof window === 'undefined' ? null : window.localStorage));
   // Another item's column is offered only to an item of the same kind (a
@@ -244,7 +246,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
             <ColumnPicker element={element} columns={columnList} fileName={lastColumns.fileName} onUpdate={onUpdate} placeholderName={() => nextFieldName(element.type, allElements.filter((e) => e.id !== element.id))} />
-            {(showManifest || usesManifest(allElements, element)) ? (
+            {(showManifest || readsNabis(element)) ? (
               <StackedField label="Or a Nabis detail">
                 {(id) => <CustomSelect
                   compact
@@ -261,7 +263,10 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
             <StackedField label="Sample for the preview">
               {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.defaultValue || ''} onChange={(e) => onUpdate({ defaultValue: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. 850010001234' : element.type === 'qr' ? 'e.g. https://lab.example/123' : 'Only shown here, never printed'} />}
             </StackedField>
-            {element.type === 'text' && (
+            {element.type === 'text' && !element.prefix && !element.suffix && affixFor !== element.id && (
+              <button type="button" className="min-h-control-sm text-left text-sm text-zinc-400 hover:text-zinc-100" onClick={() => setAffixFor(element.id)}>Add text before or after</button>
+            )}
+            {element.type === 'text' && (element.prefix || element.suffix || affixFor === element.id) && (
               <div className="grid grid-cols-2 gap-1.5">
                 <StackedField label="Text before">
                   {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.prefix || ''} onChange={(e) => onUpdate({ prefix: e.target.value })} placeholder="e.g. SKU:" />}
@@ -377,7 +382,7 @@ function QRProps({ element, onUpdate }: { element: QRElement; onUpdate: (u: Part
       <SectionLabel icon={<QrCode className="w-3 h-3" />} label="QR code" />
       {element.isStatic
         ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Web address or text" full />
-        : <p className="text-sm text-zinc-400">Each label gets its own value from the spreadsheet.</p>}
+        : null}
       <Row label="Still scans if scuffed">
         <CompactSelect
           ariaLabel="How much damage the QR code survives"
@@ -406,7 +411,7 @@ function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate
       <SectionLabel icon={<Barcode className="w-3 h-3" />} label="Barcode" />
       {element.isStatic
         ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Number or text" full />
-        : <p className="text-sm text-zinc-400">Each label gets its own value from the spreadsheet.</p>}
+        : null}
       <Row label="Type">
         <CompactSelect ariaLabel="Barcode type" value={element.barcodeFormat} options={BARCODE_TYPES.map(([v]) => v)} labels={BARCODE_TYPES.map(([, l]) => l)} onChange={(v) => onUpdate({ barcodeFormat: v as BarcodeFormat })} />
       </Row>
@@ -541,9 +546,15 @@ function ColumnPicker({ element, columns, fileName, onUpdate, placeholderName }:
   const simple = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
   const suggestions = columns.filter((name) => simple(name) !== simple(current)).slice(0, 6);
   const kind = element.type === 'barcode' ? 'barcode' : element.type === 'qr' ? 'QR code' : element.type === 'text' ? 'text' : 'item';
+  // The known headings show while choosing: the box is empty or being typed in.
+  const [choosing, setChoosing] = useState(false);
   return (
-    <StackedField label="What is this column called in your spreadsheet?" hint={madeUp ? `Until then it shows as “${kind}” on New run.` : 'Capitals and spaces don’t matter.'}>
-      {(id) => <div className="space-y-1.5">
+    <StackedField label="What is this column called in your spreadsheet?" hint={madeUp ? `Until then it shows as “${kind}” on New run.` : undefined}>
+      {(id) => <div
+        className="space-y-1.5"
+        onFocus={() => setChoosing(true)}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setChoosing(false); }}
+      >
         <input
           id={id}
           type="text"
@@ -553,12 +564,12 @@ function ColumnPicker({ element, columns, fileName, onUpdate, placeholderName }:
           onChange={(e) => onUpdate({ fieldName: e.target.value.trim() ? e.target.value : placeholderName() })}
           placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'}
         />
-        {suggestions.length > 0 && (
+        {suggestions.length > 0 && (madeUp || choosing) && (
           <div className="space-y-1">
             <p className="text-xs text-zinc-400">{fileName ? `From your last file, ${fileName}:` : 'Columns this design uses:'}</p>
             <div className="flex flex-wrap gap-1.5">
               {suggestions.map((name) => (
-                <button key={name} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => onUpdate({ fieldName: name })}>{name}</button>
+                <button key={name} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onMouseDown={(e) => e.preventDefault()} onClick={() => onUpdate({ fieldName: name })}>{name}</button>
               ))}
             </div>
           </div>
@@ -568,10 +579,9 @@ function ColumnPicker({ element, columns, fileName, onUpdate, placeholderName }:
   );
 }
 
-/** Show the Manifest picker only for designs that already use Manifest fields. */
-function usesManifest(elements: TemplateElement[], current: TemplateElement): boolean {
-  const names = new Set<string>(MANIFEST_FIELD_OPTIONS.map((o) => o.value));
-  return [...elements, current].some((el) => !!el.fieldName && names.has(el.fieldName));
+/** Show the Nabis picker for an item that already reads a Nabis detail (others get a link). */
+function readsNabis(current: TemplateElement): boolean {
+  return !!current.fieldName && MANIFEST_FIELD_OPTIONS.some((o) => o.value === current.fieldName);
 }
 
 function CompactInput({ label, value, onChange, step, min, max, unit = '', what }: {

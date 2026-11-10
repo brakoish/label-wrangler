@@ -1,7 +1,8 @@
 'use client';
 
 import { SegmentedIndicator } from '@/components/ui/Segmented';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react';
+import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
 import { Printer, PrinterCheck, Plug, Target, Loader2, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL, generateZPLWithImages, prepareZplImages } from '@/lib/zplGenerator';
@@ -65,6 +66,11 @@ export function PrintControls({ format, template, testData, proofReady = true }:
   // Calibration print options — persisted for convenience.
   const [calibCount, setCalibCount] = useState<number>(1);
   const [calibMenuOpen, setCalibMenuOpen] = useState(false);
+  // Both popovers close on Escape, a press outside, or a dialog opening.
+  const dazzlePickerRef = useRef<HTMLDivElement>(null), dazzleTriggerRef = useRef<HTMLButtonElement>(null);
+  const calibMenuRef = useRef<HTMLDivElement>(null), calibTriggerRef = useRef<HTMLButtonElement>(null);
+  useDismiss(dazzlePickerOpen, () => setDazzlePickerOpen(false), [dazzlePickerRef, dazzleTriggerRef]);
+  useDismiss(calibMenuOpen, () => setCalibMenuOpen(false), [calibMenuRef, calibTriggerRef]);
   // Printer adjustment knobs (sent as ZPL control commands with every
   // calibration print, and individually via the Apply button). Persisted in
   // localStorage so user doesn't lose their dialed-in settings.
@@ -350,7 +356,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
           </button>
           <button
             onClick={() => setTransport('webusb')}
-            title="Use WebUSB (direct browser→USB, no app needed, fails on Windows without driver swap)"
+            title="Print straight to a USB printer from this browser, no app needed"
             aria-pressed={transport === 'webusb'}
           >
             WebUSB
@@ -365,7 +371,9 @@ export function PrintControls({ format, template, testData, proofReady = true }:
             // Dazzle: printer dropdown
             <div className="relative">
               <button
+                ref={dazzleTriggerRef}
                 onClick={() => setDazzlePickerOpen((v) => !v)}
+                aria-expanded={dazzlePickerOpen}
                 className="btn btn-secondary btn-sm"
                 title="Click to choose a printer"
               >
@@ -373,8 +381,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                 <span className="max-w-[160px] truncate">{selectedDazzlePrinter ?? 'Select printer'}</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
-              {dazzlePickerOpen && (
-                <div className="popover-enter absolute top-full left-0 mt-1 min-w-[200px] rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50 p-1 [--origin:top_left]">
+              <PopLayer ref={dazzlePickerRef} open={dazzlePickerOpen} className="absolute top-full left-0 mt-1 min-w-[200px] rounded-lg bg-zinc-900 shadow-xl shadow-black/50 z-50 p-1 [--origin:top_left]">
                   {dazzlePrinters.map((p) => (
                     <button
                       key={p.name}
@@ -387,8 +394,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                       {p.name} {p.is_default && <span className="text-zinc-400">(default)</span>}
                     </button>
                   ))}
-                </div>
-              )}
+              </PopLayer>
             </div>
           ) : (
             <span className="text-xs text-zinc-400">No printers found</span>
@@ -463,16 +469,18 @@ export function PrintControls({ format, template, testData, proofReady = true }:
               Calibrate {calibCount > 1 && <span className="text-zinc-400">×{calibCount}</span>}
             </button>
             <button
+              ref={calibTriggerRef}
               onClick={() => setCalibMenuOpen((v) => !v)}
+              aria-expanded={calibMenuOpen}
+              aria-label="Calibration options"
               title="Calibration options"
               className="btn btn-sm btn-icon rounded-l-none border-l border-l-zinc-700 text-zinc-300 hover:bg-zinc-700"
             >
               <ChevronDown className="size-4" />
             </button>
-            {calibMenuOpen && (
-              // Anchor to the right edge of the trigger so the menu opens
-              // leftward — keeps it inside the viewport on narrow screens.
-              <div className="popover-enter absolute top-full mt-1 right-0 w-[300px] max-w-[calc(100vw-2rem)] rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50 p-3 space-y-4 [--origin:top_right]">
+            {/* Anchored to the right edge of the trigger so it opens
+                leftward and stays inside the window on narrow screens. */}
+            <PopLayer ref={calibMenuRef} open={calibMenuOpen} className="absolute top-full mt-1 right-0 w-[300px] max-w-[calc(100vw-2rem)] rounded-lg bg-zinc-900 shadow-xl shadow-black/50 z-50 p-3 space-y-4 [--origin:top_right]">
                 <div>
                   <div className="section-title mb-1.5">Copies</div>
                   <div className="segmented segmented-xs" role="group" aria-label="Calibration copies">
@@ -487,7 +495,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-zinc-400 mt-1.5">3+ copies help detect feed drift between labels</p>
+                  <p className="text-xs text-zinc-400 mt-1.5">Print 3 or more to see if labels creep</p>
                 </div>
 
                 {/* Printer adjustments */}
@@ -500,7 +508,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                     onChange={setTopOffset}
                     min={-120} max={120} step={1}
                     unit="dots"
-                    hint="+ down / − up"
+                    hint="+ moves it down"
                   />
                   <NumberRow
                     label="Left shift"
@@ -508,23 +516,21 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                     onChange={setLeftShift}
                     min={-200} max={200} step={1}
                     unit="dots"
-                    hint="+ right / − left"
+                    hint="+ moves it right"
                   />
                   <NumberRow
                     label="Darkness"
                     value={darkness}
                     onChange={setDarkness}
                     min={0} max={30} step={1}
-                    unit=""
-                    hint="0–30"
+                    unit="of 30"
                   />
                   <NumberRow
                     label="Speed"
                     value={speed}
                     onChange={setSpeed}
                     min={1} max={14} step={1}
-                    unit="ips"
-                    hint="in/sec"
+                    unit="in/s"
                   />
 
                   <div className="flex gap-1 pt-1">
@@ -532,7 +538,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                       onClick={() => handleApplyAdjustments(false)}
                       disabled={!canPrint || !!printing}
                       className="btn btn-secondary btn-sm flex-1"
-                      title="Send current values to the printer now (temporary, resets on power cycle)"
+                      title="Sends these values now, until the printer is turned off"
                     >
                       Apply
                     </button>
@@ -540,22 +546,21 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                       onClick={() => handleApplyAdjustments(true)}
                       disabled={!canPrint || !!printing}
                       className="btn btn-primary btn-sm flex-1"
-                      title="Send values + save persistently (~^JUS stores in printer memory)"
+                      title="Sends these values and keeps them after the printer is turned off"
                     >
-                      Apply & Save
+                      Apply and keep
                     </button>
                   </div>
                   <button
                     onClick={handleAutoCalibrate}
                     disabled={!canPrint || !!printing}
                     className="btn btn-secondary btn-sm w-full"
-                    title="Send ~JC to have the printer re-sense media gaps/length"
+                    title="The printer feeds a few labels to find the gaps between them"
                   >
-                    Auto-calibrate media (~JC)
+                    Measure the label roll again
                   </button>
                 </div>
-              </div>
-            )}
+            </PopLayer>
           </div>
         </>
       )}
@@ -589,17 +594,22 @@ function NumberRow({
   unit?: string;
   hint?: string;
 }) {
+  const id = useId();
   return (
     <div className="flex items-center gap-2">
-      <label className="text-sm text-zinc-400 w-20 shrink-0">{label}</label>
+      {/* The hint sits under its label, so it never wraps into a narrow column. */}
+      <label htmlFor={id} className="w-24 shrink-0 text-sm text-zinc-400">{label}{hint && <span className="block text-xs text-zinc-500">{hint}</span>}</label>
       <div className="flex items-center gap-0.5">
         <button
+          type="button"
+          aria-label={`Less ${label.toLowerCase()}`}
           onClick={() => onChange(Math.max(min ?? -Infinity, value - (step ?? 1)))}
           className="btn btn-secondary btn-icon btn-sm"
         >
           −
         </button>
         <input
+          id={id}
           type="number"
           value={value}
           min={min}
@@ -612,6 +622,8 @@ function NumberRow({
           className="field field-sm w-14 text-center"
         />
         <button
+          type="button"
+          aria-label={`More ${label.toLowerCase()}`}
           onClick={() => onChange(Math.min(max ?? Infinity, value + (step ?? 1)))}
           className="btn btn-secondary btn-icon btn-sm"
         >
@@ -619,7 +631,6 @@ function NumberRow({
         </button>
       </div>
       {unit && <span className="text-xs text-zinc-400">{unit}</span>}
-      {hint && <span className="text-xs text-zinc-400 ml-auto">{hint}</span>}
     </div>
   );
 }
