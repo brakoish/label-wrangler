@@ -27,7 +27,8 @@ const { restyleSheetPrintToolbar } = require('../../src/lib/sheetPrintChrome.ts'
   // Page structure and phone fit (screen only).
   assert.match(out, /<html lang="en">/);
   assert.match(out, /<main>\s*<div class="toolbar">/);
-  assert.match(out, /<h1 class="toolbar-title">Run · labels 1-1<\/h1>/);
+  assert.match(out, /<h1 class="toolbar-title">Run · labels 1–1<\/h1>/, 'an en dash, as everywhere else');
+  assert.match(out, /<meta name="viewport" content="width=device-width, initial-scale=1" \/>/, 'phones lay the page out at their own width, so the sheet fits');
   assert.match(out, /@media screen \{\s*\.sheet-page \{ zoom: var\(--sheet-zoom, 1\); \}/);
   assert.match(out, /min-height: 44px/);
   // The print rules (toolbar hidden on paper) are untouched too.

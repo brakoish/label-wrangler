@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet, CheckCircle2, Loader2, X } from 'lucide-react';
+import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, CheckCircle2, Loader2, X } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Menu } from '@/components/ui/Menu';
 import { PageTitle } from '@/components/PageTitle';
@@ -501,7 +501,7 @@ export default function RunsPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold text-zinc-100">Print runs</h1>
-                <p className="mt-1 text-sm text-zinc-400">Start a run, or pick up where you left off.</p>
+                <p className="mt-1 text-sm text-zinc-400">{runs.length > 0 ? 'Start a run, or pick up where you left off.' : 'A run prints one design with your data, one label per row.'}</p>
               </div>
               {/* One primary on screen: with no runs (empty or couldn't load), the body has it. */}
               {runs.length > 0 && <div className="flex flex-wrap gap-2">
@@ -511,18 +511,7 @@ export default function RunsPage() {
                   label="New run"
                   primary
                 />
-                <QuickAction
-                  href="/runs/new?source=manifest"
-                  icon={<Search className="h-4 w-4" aria-hidden="true" />}
-                  label="Search packages"
-                  secondary
-                />
-                <QuickAction
-                  href="/runs/new?source=csv"
-                  icon={<FileSpreadsheet className="h-4 w-4" aria-hidden="true" />}
-                  label="From a spreadsheet"
-                  secondary
-                />
+                {/* One way in: where the data comes from is chosen inside the new run. */}
               </div>}
             </div>
           </section>
@@ -537,8 +526,8 @@ export default function RunsPage() {
             </p>
           )}
 
-          {/* The office printer can be paused even with no run open. */}
-          <OfficePrinterBar onHeld={onPrinterHeld} runs={active as ListRun[]} />
+          {/* The office printer can be paused even with no run open (once there are runs). */}
+          {runs.length > 0 && <OfficePrinterBar onHeld={onPrinterHeld} runs={active as ListRun[]} />}
 
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (

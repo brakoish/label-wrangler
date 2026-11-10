@@ -776,3 +776,19 @@ p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
   .arc-in { animation: none !important; }
 }
 /* end area B r6 */
+
+/* area B r7 -----------------------------------------------------------------
+ * - .run-row presses to 0.97, like every other pressable thing.
+ * - On touch screens an inline text action (.link) gets a hit area at least
+ *   44px tall from an invisible box around it, so no text moves.
+ */
+@layer components {
+  @media (prefers-reduced-motion: no-preference) {
+    .run-row:active:has(> a:active) { transform: scale(0.97); }
+  }
+  @media (pointer: coarse) {
+    .link { position: relative; }
+    .link::after { content: ""; position: absolute; inset: -12px -6px; }
+  }
+}
+/* end area B r7 */

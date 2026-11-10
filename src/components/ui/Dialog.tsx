@@ -32,6 +32,26 @@ interface DialogProps {
  * Escape closes, Tab is trapped inside, and focus returns to whatever
  * opened it. Keep the existing panel look so later restyling has one place.
  */
+/**
+ * Where the last press happened (pointer, or the focused element on Enter or
+ * Space), kept briefly so a dialog opened from a menu item that has already
+ * closed still grows out of the spot that opened it.
+ */
+let lastPress: { x: number; y: number; at: number } | null = null;
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', (event) => { lastPress = { x: event.clientX, y: event.clientY, at: Date.now() }; }, true);
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target instanceof Element ? event.target.getBoundingClientRect() : null;
+    if (target && (target.width || target.height)) lastPress = { x: target.left + target.width / 2, y: target.top + target.height / 2, at: Date.now() };
+  }, true);
+}
+function originFromLastPress(panel: Element | null): string | undefined {
+  if (!panel || !lastPress || Date.now() - lastPress.at > 1500) return undefined;
+  const p = panel.getBoundingClientRect();
+  return `${Math.round(lastPress.x - p.left)}px ${Math.round(lastPress.y - p.top)}px`;
+}
+
 export function Dialog({ open, onClose, title, description, children, className = 'max-w-md', hideClose = false, dismissible = true, initialFocus, role = 'dialog' }: DialogProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -92,7 +112,8 @@ export function Dialog({ open, onClose, title, description, children, className 
     if (!open) return;
     const active = document.activeElement;
     const trigger = active && active !== document.body && !panelRef.current?.contains(active) ? active : null;
-    setOrigin(originFromTrigger(trigger, panelRef.current));
+    // A menu item that opened the dialog is gone by now: grow from where it was pressed.
+    setOrigin(originFromTrigger(trigger, panelRef.current) ?? originFromLastPress(panelRef.current));
   }, [open]);
 
   if (!present || typeof document === 'undefined') return null;
