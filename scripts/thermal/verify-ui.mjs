@@ -98,10 +98,10 @@ try{
  await send('Page.reload');
  await waitFor('!window.__beforeReload && !!document.body');await waitFor('window.saves?.length===0 && document.body?.innerText.includes("Exact bitmap")');assert.equal(await evaluate('window.fixture.thermalRenderMode'),'bitmap-v1');
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Print Preview')).click()");
- await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Office printer')");await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Office printer').click()");
- await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Print preview to Office'&&!b.disabled)");
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Print preview to Office').click()");await waitFor("document.body?.innerText.includes('Simulated lost response')");
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Retry same preview').click()");await waitFor("document.body?.innerText.includes('Preview queued.')");
+ await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Test print at the office')");await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Test print at the office').click()");
+ await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Send 1 test label'&&!b.disabled)");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Send 1 test label').click()");await waitFor("document.body?.innerText.includes('Simulated lost response')");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Check again').click()");await waitFor("document.body?.innerText.includes('Test print sent to the office.')");
  const requests=await evaluate('window.previewRequests');assert.deepEqual(requests[0],requests[1]);assert.equal(requests[0].expectedPixelDigests.length,1);assert.ok(await evaluate(`window.proofs.some(p=>p.pixelDigest===${JSON.stringify(requests[0].expectedPixelDigests[0])})`));
  // A failed final proof must not erase editable text or become printable artwork.
  await evaluate('window.forceRenderFailure=true');
@@ -119,22 +119,23 @@ try{
  await waitFor('window.downloads.length===1');
  const pdfBytes=await evaluate('window.downloads[0].arrayBuffer().then(b=>Array.from(new Uint8Array(b)))');
  const pdf=await PDFDocument.load(Uint8Array.from(pdfBytes));assert.equal(pdf.getPageCount(),3);assert.equal(pdf.getPage(0).getWidth(),144);assert.equal(pdf.getPage(0).getHeight(),72);
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Office Pi').click()");
- await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Prepare exact range proof')");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('Office printer (remote)')).click()");
+ await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Check labels & send to office printer')");
  // Hold preparation until cancellation, without letting a print request escape.
  await evaluate(`window.holdPreparation=true;window.rangeFetch=window.fetch;window.fetch=(url,options={})=>String(url)==='/api/thermal/render'&&window.holdPreparation?new Promise((resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true});}):window.rangeFetch(url,options)`);
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Prepare exact range proof').click()");
- await waitFor("document.body.innerText.includes('Preparing 0 / 3 labels')");
- assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Working…').disabled"),true);
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Cancel preparation').click()");
- await waitFor("!document.body.innerText.includes('Cancel preparation')");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Check labels & send to office printer').click()");
+ await waitFor("document.body.innerText.includes('Checked 0 of 3 labels')");
+ assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Checking labels…').disabled"),true);
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Stop checking').click()");
+ await waitFor("!document.body.innerText.includes('Stop checking')");
  assert.equal(await evaluate('window.previewRequests.length'),0);
- assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Start Printing').disabled"),true);
+ // Without a finished check the only action is to check again; nothing can be sent.
+ assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).some(b=>/^Send .*to office printer$/.test(b.textContent))"),false);
  await evaluate('window.holdPreparation=false');
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Prepare exact range proof').click()");
- await waitFor(`!!document.querySelector('img[alt="Office range bitmap proof"]')`);
- await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Start Printing'&&!b.disabled)");
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Start Printing'&&!b.disabled).click()");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Check labels & send to office printer').click()");
+ await waitFor(`!!document.querySelector('img[alt^="Checked label"]')`);
+ await waitFor("Array.from(document.querySelectorAll('button')).some(b=>/^Send .*to office printer$/.test(b.textContent)&&!b.disabled)");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>/^Send .*to office printer$/.test(b.textContent)&&!b.disabled).click()");
  await waitFor('window.previewRequests.length===1');assert.equal((await evaluate('window.previewRequests[0].expectedBitmapDigest')).length,64);
  await evaluate("localStorage.setItem('testAcross','2')");await send('Page.reload');
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('Export labels'))");
