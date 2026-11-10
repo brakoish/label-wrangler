@@ -444,6 +444,15 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
+/**
+ * A Metrc answer that means "couldn't get it" rather than "there is none":
+ * rate limited (429), timed out (408), refused (401, 403) or a server
+ * error (5xx). The caller flags those rows as missing details.
+ */
+function metrcAnswerMissing(status: number): boolean {
+  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
+}
+
 async function fetchMetrcLabPotency(packageId: string, budget?: AbortSignal): Promise<LabPotency> {
   const baseUrl = process.env.METRC_BASE_URL;
   const license = process.env.METRC_LICENSE_DISTRIBUTOR;
@@ -465,7 +474,11 @@ async function fetchMetrcLabPotency(packageId: string, budget?: AbortSignal): Pr
     signal: upstreamSignal(budget),
   });
 
-  if (!response.ok) return empty;
+  if (!response.ok) {
+    // Busy, down or refused: the potency is missing, not "none".
+    if (metrcAnswerMissing(response.status)) throw new Error(`Metrc returned ${response.status}`);
+    return empty;
+  }
   const data = await response.json();
   return extractPotencyFromLabResults(Array.isArray(data) ? data : data?.Data);
 }
@@ -580,7 +593,12 @@ async function fetchMetrcRetailIdUnits(packageTag: string, budget?: AbortSignal)
     signal: upstreamSignal(budget),
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    // Busy, down or refused: the retail IDs are missing (one label instead of
+    // one per unit), not "none". 404 means the package has none.
+    if (metrcAnswerMissing(response.status)) throw new Error(`Metrc returned ${response.status}`);
+    return null;
+  }
   const data = (await response.json()) as MetrcRetailIds;
   const eaches = Array.isArray(data.Eaches) ? data.Eaches : [];
   const indices = expandRanges(data.Ranges);
@@ -705,7 +723,11 @@ async function fetchManifestLabelRows(packageTag: string, budget?: AbortSignal) 
     signal: upstreamSignal(budget),
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    // Manifest answered but was busy or down: its per-unit rows are missing.
+    if (response.status === 429 || response.status >= 500) { const busy = new Error(`Manifest returned ${response.status}`); busy.name = 'ManifestBusy'; throw busy; }
+    return null;
+  }
   const data = await response.json();
   return rowsFromLabelData(data as ManifestPackage);
 }
@@ -720,11 +742,15 @@ async function enrichWithManifestLabelData(
   const enriched = await mapLimit(
     packages.slice(0, 25), ENRICH_CONCURRENCY, async (pkg) => {
       if (options.budget?.aborted) { incomplete++; return [withMissing(pkg, skippedDetails(pkg, options.preferLabThc))]; }
-      const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag, options.budget).catch(() => null);
+      let manifestBusy = false;
+      const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag, options.budget).catch((error) => { manifestBusy = error instanceof Error && error.name === 'ManifestBusy'; return null; });
       const labPkg = await rowWithMetrcLabFallback(pkg, options);
-      const result = await (rows && rows.length > 0
+      let result = await (rows && rows.length > 0
         ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row, options)))
         : rowsWithMetrcRetailIds(labPkg, options.budget));
+      // Manifest was busy and Metrc gave no units either: the per-unit retail
+      // IDs are missing (one label instead of one per unit), so say so.
+      if (manifestBusy && (pkg.packageTag || pkg.tag) && result.length === 1 && !(result[0] as { retailId?: string }).retailId) result = [withMissing(result[0], ['retailIds'])];
       if (options.budget?.aborted || result.some((row) => 'detailsMissing' in row)) incomplete++;
       return result;
     },

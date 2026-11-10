@@ -59,5 +59,42 @@ const pkg = { packageTag: '1A4060300002EE1000012345', itemName: 'Blue Dream 1g',
   const good = await fine('Blue Dream');
   assert.equal(good.body.detailsIncomplete, undefined);
   assert.ok(good.body.packages.every((row) => !row.detailsMissing), 'a complete row has no flag');
+  // Metrc busy (429) or down (503): flagged, never "no retail IDs" / "no potency".
+  for (const [retailStatus, labStatus] of [[429, 503], [503, 429], [401, 500]]) {
+    const busy = load((url) => {
+      const u = String(url);
+      if (u.includes('/packages?')) return Promise.resolve(ok([pkg]));
+      if (u.includes('/retail-labels/label-data/')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+      if (u.includes('/retailid/')) return Promise.resolve({ ok: false, status: retailStatus, json: async () => ({}) });
+      if (u.startsWith('http://metrc.test')) return Promise.resolve({ ok: false, status: labStatus, json: async () => ({}) });
+      throw new Error(`unexpected ${u}`);
+    });
+    const out = await busy('Blue Dream');
+    assert.equal(out.body.detailsIncomplete, true, `Metrc ${retailStatus}/${labStatus} is reported`);
+    const missing = String(out.body.packages[0].detailsMissing || '').split(' ');
+    assert.ok(missing.includes('retailIds'), `retail IDs flagged on ${retailStatus}`);
+    assert.ok(missing.includes('labPotency'), `lab potency flagged on ${labStatus}`);
+  }
+  // 404 from Metrc means "none": not flagged.
+  const none = load((url) => {
+    const u = String(url);
+    if (u.includes('/packages?')) return Promise.resolve(ok([pkg]));
+    if (u.includes('/retail-labels/label-data/')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    if (u.startsWith('http://metrc.test')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    throw new Error(`unexpected ${u}`);
+  });
+  const noneOut = await none('Blue Dream');
+  assert.equal(noneOut.body.detailsIncomplete, undefined, 'a 404 is a real "none"');
+  // Manifest busy (503) and Metrc has no units: the retail IDs are flagged.
+  const manifestBusy = load((url) => {
+    const u = String(url);
+    if (u.includes('/packages?')) return Promise.resolve(ok([pkg]));
+    if (u.includes('/retail-labels/label-data/')) return Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+    if (u.includes('/retailid/')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+    if (u.startsWith('http://metrc.test')) return Promise.resolve(ok([]));
+    throw new Error(`unexpected ${u}`);
+  });
+  const busyOut = await manifestBusy('Blue Dream');
+  assert.ok(String(busyOut.body.packages[0].detailsMissing || '').split(' ').includes('retailIds'), 'Manifest 503 with no Metrc units is flagged');
   console.log('PASS Nabis search: rows cut short by the time limit or a Metrc failure are flagged with what is missing');
 })().catch((error) => { console.error(error); process.exit(1); });
