@@ -58,12 +58,13 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
         .then(result => { if (active) setBitmapProof({ advisories: result.advisories || [], key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
-        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements, 1, testData)); });
+        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements, 1, testData, format)); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
   }, [bitmap, bitmapKey, elements, format, testData]);
   const hatchId = useId().replace(/:/g, '');
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showAllProblems, setShowAllProblems] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{
@@ -505,19 +506,35 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const badQr = bitmapProof?.key === bitmapKey ? elements.find(e => e.type === 'qr' && [...bitmapProof.warnings, ...bitmapProof.advisories].some(w => w.elementId === e.id) && bitmapProof.qrBounds[e.id]) : undefined;
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
+  // Problems that stop printing first; each says what to change.
+  const shownProblems = [...layoutProblems].sort((a, b) => Number(!!b.blocking) - Number(!!a.blocking));
+  const problemText = (problem: LayoutProblem) => `${problem.message}${problem.fix ? ` ${problem.fix.replace(/\.$/, '')}.` : ''}`;
   return (
-    <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-2 pt-12 pb-4 sm:px-6 sm:pt-16 sm:pb-6 overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
-      {!bitmap && layoutProblems.length > 0 && <p role="status" className="absolute top-1 left-3 right-3 text-sm text-amber-300">{layoutProblems[0].message}{layoutProblems.length > 1 ? ` (and ${layoutProblems.length - 1} more)` : ''}</p>}
-      {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
+    <div data-designer-canvas className="relative flex-1 shrink-0 flex flex-col overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
+      {/* Notices sit above the label, in the page flow, so the canvas never
+          covers them (the space is kept so the label doesn't jump). */}
+      <div className="shrink-0 space-y-1 px-3 pt-2 min-h-12 sm:min-h-16 sm:px-6">
+      {bitmap && <p role="status" className={`text-sm ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
+      {!bitmap && shownProblems.length > 0 && (
+        <div role="status" className={`text-sm ${shownProblems[0].blocking ? 'text-red-400' : 'text-amber-300'}`}>
+          <p>
+            {problemText(shownProblems[0])}
+            {shownProblems.length > 1 && <> <button type="button" aria-expanded={showAllProblems} onClick={() => setShowAllProblems((v) => !v)} className="font-medium underline underline-offset-2">{showAllProblems ? 'Show less' : `and ${shownProblems.length - 1} more`}</button></>}
+          </p>
+          {showAllProblems && <ul className="mt-1 list-disc space-y-1 pl-5">{shownProblems.slice(1).map((problem) => <li key={problem.ids.join(',') + problem.kind} className={problem.blocking ? 'text-red-400' : 'text-amber-300'}>{problemText(problem)}</li>)}</ul>}
+        </div>
+      )}
+      {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });
         onDragEnd?.();
       }}>Fit QR inside label</button>}
+      </div>
       {editing && <div className="fixed z-40 bg-zinc-950 border border-amber-400 rounded p-2" style={{ left: Math.max(0, Math.min(editing.left, window.innerWidth - editing.width - 20)), top: Math.max(0, Math.min(editing.top, window.innerHeight - editing.height - 70)), width: editing.width + 16 }}>
         <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Sample for ${friendlyFieldName(editing.field)} (the spreadsheet fills it when printing)` : 'Edit text'}. Ctrl or ⌘ + Enter saves, Esc cancels.</p>
         <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
       </div>}
+      <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center px-2 pb-4 pt-2 sm:px-6 sm:pb-6">
       <svg
         ref={svgRef}
         tabIndex={0}
@@ -804,6 +821,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           ))}
         </g>
       </svg>
+      </div>
     </div>
   );
 }

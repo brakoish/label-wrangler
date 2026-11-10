@@ -1,6 +1,7 @@
 import type { RunPrintEvent, RunPrintOutput, RunStatus, TemplateElement } from './types';
 import { friendlyFieldName } from './fieldLabels';
 import { barcodeValueProblem } from './barcodeValue';
+import { barcodeFit, barcodeFitFix, barcodeFitProblem } from './barcodeFit';
 
 /**
  * Plain-language wrappers for messages that come from frozen or low-level code
@@ -93,7 +94,8 @@ function barcodeValue(element: TemplateElement | undefined, values?: Record<stri
   return `${element.prefix || ''}${fromValues || element.defaultValue || content}${element.suffix || ''}`;
 }
 
-const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record<string, string>) => string]> = [
+type RenderFormat = Parameters<typeof barcodeFit>[2];
+const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record<string, string>, format?: RenderFormat) => string]> = [
   // The artwork renderer throws a bare "Artwork failed" (or the barcode
   // library's own words) when a value doesn't suit the barcode type.
   [/^(Artwork failed|Invalid barcode content.*|.*is not a valid input for.*)$/i, (el, values) => {
@@ -110,21 +112,30 @@ const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record
   [/^Missing QR\/barcode value$/i, (el) => el && !el.isStatic ? 'has no value — type a sample under "Sample for the preview", or fill it from your data.' : 'has no value — type one in the properties panel.'],
   [/^Text overflows its box/i, () => 'doesn\'t fit its box — make the box bigger, use a smaller size, or turn on Auto-fit.'],
   [/^Artwork is entirely outside the label$/i, () => 'is outside the label — drag it back onto the label.'],
-  [/^Barcode box is too small/i, () => 'is too small to scan — make its box bigger.'],
+  [/^Barcode box is too small/i, (el, values, format) => {
+    // The exact renderer's own limit, from the shared verdict: how wide the box must be.
+    if (el?.type === 'barcode' && format) {
+      const value = barcodeValue(el, values);
+      const fit = barcodeFit(el, value, format, true);
+      if (fit.level === 'blocked' && fit.reason !== 'characters') return `${barcodeFitProblem(fit, value)}. ${barcodeFitFix(fit)}.`;
+    }
+    return 'is too small to scan — make its box wider.';
+  }],
+  [/clipped outside the label/i, () => 'runs off the label edge, so it won’t scan — move it fully onto the label.'],
 ];
 
 /**
  * Turn "Lane 1, 087b8c70-…: Image is missing" (render server wording) into
  * "The picture box has no picture yet — choose a file or delete the box."
  */
-export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1, values?: Record<string, string>): string {
+export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1, values?: Record<string, string>, format?: RenderFormat): string {
   return message.replace(/Lane (\d+), ([^:]+): ([^\n]+)/g, (_match, lane: string, ref: string, detail: string) => {
     const element = elements.find((el) => el.id === ref.trim()) ?? elements.find((el) => el.fieldName === ref.trim());
     const subject = element ? elementNoun(element) : UUID.test(ref) ? 'One item' : `The ${friendlyFieldName(ref.trim())} item`;
     UUID.lastIndex = 0;
     const phrase = RENDER_PHRASES.find(([re]) => re.test(detail.trim()));
     const where = labelsAcross > 1 ? ` (label position ${lane})` : '';
-    return phrase ? `${subject}${where} ${phrase[1](element, values)}` : `${subject}${where}: ${detail}`;
+    return phrase ? `${subject}${where} ${phrase[1](element, values, format)}` : `${subject}${where}: ${detail}`;
   }).replace(UUID, '').trim();
 }
 

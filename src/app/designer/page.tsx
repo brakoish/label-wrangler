@@ -879,7 +879,7 @@ function DesignerContent() {
           onUpdateSelected={handleUpdateSelectedElements}
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
           allElements={currentTemplate.elements}
-          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => p.message) : []}
+          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => (p.fix ? `${p.message} ${p.fix.replace(/\.$/, "")}.` : p.message)) : []}
           onArrange={(action: AlignAction) => {
             beginGesture();
             const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id) && !e.locked), action);

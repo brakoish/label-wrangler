@@ -227,7 +227,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
-            <StackedField label="Fill from the column named">
+            <StackedField label="Field name" hint="New run fills it from the spreadsheet column with this name.">
               {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. SKU' : element.type === 'qr' ? 'e.g. Lab Results Link' : 'e.g. Product Name'} />}
             </StackedField>
             {(showManifest || usesManifest(allElements, element)) ? (

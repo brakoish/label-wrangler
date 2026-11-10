@@ -60,3 +60,10 @@ assert.deepEqual(doubled, [{ field: 'Price', column: 'Price', symbol: '$', print
 assert.deepEqual(c.doubledCurrencyRisks(template, { Price: { mode: 'column', csvColumn: 'Price' } }, rows.map((r) => ({ ...r, Price: '20.00' }))), []);
 
 console.log('PASS run code columns: best barcode/QR column, example values caught, plain numbers for barcodes, doubled currency spotted');
+
+const { runSourceWords, columnSourceWords } = require('../../src/lib/fieldLabels.ts');
+assert.equal(runSourceWords('csv').label, 'From a spreadsheet');
+assert.deepEqual(columnSourceWords('csv', 'coa_url'), { text: 'From the spreadsheet column COA link', title: 'coa_url' });
+assert.equal(columnSourceWords('csv', 'Price (plain number)').text, 'From the spreadsheet column Price (number only)');
+assert.equal(columnSourceWords('manifest', 'packageTag').text, 'From Manifest: Package tag');
+console.log('PASS run source words for the run page');

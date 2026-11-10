@@ -1145,7 +1145,7 @@ function NewRunContent() {
   const tightGroups = describeBarcodeGroups(barcodeCheck.warnings, barcodeCheck.checkedLabels, fieldIsFromSheet, 3, barcodeCheck.fitCounts);
   const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
   const previewMessage = previewState.status === 'error' && checkTemplate
-    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues)
+    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
     : '';
   const sheetWord = inputMode === 'manifest' ? 'Manifest' : 'spreadsheet';
 

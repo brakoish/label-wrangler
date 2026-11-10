@@ -33,9 +33,10 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
   const proofReady = template.thermalRenderMode !== 'bitmap-v1' || (signature === renderedSignature && !loading && !error);
   // Zoom level as multiplier of "fit" size. 1 = fit to container, 2 = double.
   const [zoom, setZoom] = useState<number>(1);
-  // Overlay label outlines so the user can see lane boundaries on multi-across rolls.
+  // Label edges are off by default: this is exactly what the printer makes.
+  // On rolls with 2+ across they can be turned on to see where each label is.
   // Default on when labelsAcross > 1 (where it actually helps), off otherwise.
-  const [showOutlines, setShowOutlines] = useState<boolean>((format.labelsAcross || 1) > 1);
+  const [showOutlines, setShowOutlines] = useState(false);
 
   const fetchPreview = useCallback(async () => {
     if (format.type !== 'thermal') return;
@@ -52,7 +53,7 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
-      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData)));
+      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData, format)));
       setPreviewUrl(null); setZpl('');
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {
@@ -130,8 +131,8 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
           </button>
           {(format.labelsAcross || 1) > 1 && <button
             onClick={() => setShowOutlines((s) => !s)}
-            title={showOutlines ? 'Hide label outlines' : 'Show label outlines'}
-            aria-label="Label outlines"
+            title={showOutlines ? 'Hide label edges' : 'Show label edges'}
+            aria-label="Show label edges"
             aria-pressed={showOutlines}
             className={`btn btn-ghost btn-icon btn-sm ${showOutlines ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'}`}
           >
@@ -143,13 +144,6 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
       {expanded && (
         <div className="px-4 pb-4 pt-1 flex flex-col sm:px-6" style={{ minHeight: '320px', maxHeight: '65vh' }}>
           {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Fix this before printing: {error}</p>}
-          {/* ZPL Code view */}
-          {showPrinterCode && showZPL && (
-            <div className="mb-3 p-3 bg-zinc-950 rounded-lg max-h-[200px] overflow-auto">
-              <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
-            </div>
-          )}
-
           {/* The print image opens large enough to inspect alignment. Zoomed
               output can scroll without shrinking the design canvas above. */}
           <div className="flex-1 flex items-center justify-center min-h-0 overflow-auto">
@@ -196,10 +190,15 @@ export function ZPLPreview({ format, template, testData, showPrinterCode = false
           </div>
         )}
           </div>
-          {/* The raw printer commands, for whoever sets up printers. */}
-          {showPrinterCode && <button type="button" onClick={() => setShowZPL(!showZPL)} aria-pressed={showZPL} className="mt-2 inline-flex min-h-control-sm items-center gap-1.5 self-start text-xs text-zinc-400 hover:text-zinc-100">
-            <Code2 className="size-3.5" aria-hidden="true" />{showZPL ? 'Hide printer code' : 'Show printer code (admin)'}
+          {/* The raw printer commands, for admins who set up printers. */}
+          {showPrinterCode && <button type="button" onClick={() => setShowZPL(!showZPL)} aria-expanded={showZPL} className="mt-2 inline-flex min-h-control-sm items-center gap-1.5 self-start text-xs text-zinc-400 hover:text-zinc-100">
+            <Code2 className="size-3.5" aria-hidden="true" />{showZPL ? 'Hide the printer commands' : 'Printer setup (admins): show the commands sent to the printer'}
           </button>}
+          {showPrinterCode && showZPL && (
+            <div className="mt-2 max-h-[200px] overflow-auto rounded-lg bg-zinc-950 p-3">
+              <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
+            </div>
+          )}
         </div>
       )}
     </div>
