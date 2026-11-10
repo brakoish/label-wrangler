@@ -78,3 +78,30 @@ assert.equal(printEventLabel({ eventType: 'sent', output: 'roll-zpl', rangeFrom:
 assert.equal(printEventLabel({ eventType: 'confirmed', output: 'sheet-pdf', rangeFrom: 3, rangeTo: 3, message: null }), 'Printed label 3 on the sheet printer / PDF');
 assert.doesNotMatch(printEventLabel({ eventType: 'sent', output: 'roll-pdf', rangeFrom: 1, rangeTo: 9, message: 'Exported PDF' }), /roll-/);
 console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe override), remembered choice, plain user messages');
+
+// Office Pi panel: suggested range skips queued work, Start waits on overlap,
+// and only print-affecting run fields invalidate a checked range.
+{
+  const { firstUnsentLabel, rangeOverlapsQueued, isValidOfficeRange, officeProofKey } = require('../../src/lib/officeRange.ts');
+  const jobs = [{ from: 1, to: 50, state: 'sent_to_printer' }, { from: 51, to: 100, state: 'queued' }, { from: 150, to: 200, state: 'sent_to_printer' }];
+  assert.equal(firstUnsentLabel(jobs, 300), 101, 'queued labels are not suggested again');
+  assert.equal(firstUnsentLabel([{ from: 1, to: 50, state: 'rejected' }], 300), 1, 'rejected work is suggested again');
+  assert.equal(firstUnsentLabel([{ from: 1, to: 300, state: 'sent_to_printer' }], 300), 300);
+  assert.equal(rangeOverlapsQueued(jobs, 90, 120), true);
+  assert.equal(rangeOverlapsQueued(jobs, 101, 300), false);
+  assert.equal(rangeOverlapsQueued([{ from: 1, to: 10, state: 'needs_review' }], 1, 10), false);
+  assert.equal(isValidOfficeRange('1', '20', 20), true);
+  assert.equal(isValidOfficeRange('0', '20', 20), false);
+  assert.equal(isValidOfficeRange('5', '4', 20), false);
+  assert.equal(isValidOfficeRange('1', '21', 20), false);
+  assert.equal(isValidOfficeRange('', '3', 20), false);
+  assert.equal(isValidOfficeRange('1.5', '3', 20), false);
+  const run = { id: 'r', sourceData: [{ a: '1' }], fieldMappings: {}, staticValues: {}, printedCount: 0, status: 'queued' };
+  const key = officeProofKey(run, { t: 1 }, { f: 1 }, '1', '1');
+  assert.equal(officeProofKey({ ...run, printedCount: 40, status: 'printing' }, { t: 1 }, { f: 1 }, '1', '1'), key, 'progress updates keep the check');
+  assert.notEqual(officeProofKey({ ...run, sourceData: [{ a: '2' }] }, { t: 1 }, { f: 1 }, '1', '1'), key, 'new data needs a new check');
+  assert.notEqual(officeProofKey({ ...run, staticValues: { x: 'y' } }, { t: 1 }, { f: 1 }, '1', '1'), key);
+  assert.notEqual(officeProofKey(run, { t: 2 }, { f: 1 }, '1', '1'), key);
+  assert.notEqual(officeProofKey(run, { t: 1 }, { f: 1 }, '1', '2'), key);
+  console.log('PASS: office range helpers (skip queued, overlap wait, validation, print-only check key)');
+}

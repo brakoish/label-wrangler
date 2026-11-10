@@ -1501,7 +1501,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           )}
 
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk} />}
           {/* Export section — preserved for every transport */}
           <div className="pt-3 border-t border-zinc-800/60">
             {!showExport ? (
