@@ -115,7 +115,7 @@ export function Dialog({ open, onClose, title, description, children, className 
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-lg font-semibold text-zinc-50">{view.title}</h2>
+            <h2 id={titleId} className="text-lg font-semibold text-zinc-100">{view.title}</h2>
             {view.description && <p id={descriptionId} className="mt-1 text-sm text-zinc-400">{view.description}</p>}
           </div>
           {!hideClose && (

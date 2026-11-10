@@ -27,11 +27,11 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   useRegisterShell();
   const banners = useShellBanners();
 
-  const navItems: Array<{ href: string; label: string; active: boolean }> = [
+  const navItems: Array<{ href: string; label: string; short?: string; active: boolean }> = [
     { href: '/runs', label: 'Runs', active: isRuns },
     { href: '/nabis', label: 'Nabis', active: isNabis },
     { href: '/designer', label: 'Designs', active: isDesigner },
-    { href: '/formats', label: 'Label sizes', active: isFormats },
+    { href: '/formats', label: 'Label sizes', short: 'Sizes', active: isFormats },
   ];
 
   const activeLabel = navItems.find(item => item.active)?.label ?? '';
@@ -95,13 +95,14 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
                 key={item.href}
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
-                className={`shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`press shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
                   item.active
-                    ? 'bg-zinc-800 text-zinc-50'
+                    ? 'bg-zinc-800 text-zinc-100'
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
                 }`}
               >
-                {item.label}
+                {/* Short names on phones so the whole nav fits at 360px. */}
+                {item.short ? <><span className="sm:hidden">{item.short}</span><span className="max-sm:hidden">{item.label}</span></> : item.label}
               </Link>
             ))}
           </nav>
