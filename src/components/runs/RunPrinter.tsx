@@ -211,7 +211,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setLocalPrintRunning(status === 'running' && transport !== 'office' && !isSheetFormat);
     const guard = (event: MouseEvent) => {
       if (!(event.target instanceof Element) || !event.target.closest('a[href]') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      if (!canLeaveLocalPrint()) { event.preventDefault(); event.stopPropagation(); }
+      const href = event.target.closest('a[href]')?.getAttribute('href') ?? '';
+      if (!canLeaveLocalPrint(href && !href.startsWith('#') ? () => window.location.assign(href) : undefined)) { event.preventDefault(); event.stopPropagation(); }
     };
     document.addEventListener('click', guard, true);
     return () => { setLocalPrintRunning(false); document.removeEventListener('click', guard, true); };
@@ -1551,7 +1552,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 With the office printer chosen, its panel says it once. */}
             {transport !== 'office' && sentLine && <p className="text-sm text-zinc-400 tabular-nums">{sentLine}</p>}
             {officeSummary && officeSummary.failed > 0 && transport !== 'office' && (
-              <p className="text-sm text-red-400">{officeSummary.failedLabels ? `${officeSummary.failedLabels.toLocaleString()} office label${officeSummary.failedLabels === 1 ? '' : 's'} need${officeSummary.failedLabels === 1 ? 's' : ''} attention.` : 'Part of an office print needs attention.'} <button type="button" className="font-medium underline underline-offset-2" onClick={() => chooseTransport('office')}>Open the office printer</button></p>
+              <p className="text-sm text-red-400">{officeSummary.failedLabels ? `${officeSummary.failedLabels.toLocaleString()} office label${officeSummary.failedLabels === 1 ? '' : 's'} need${officeSummary.failedLabels === 1 ? 's' : ''} attention.` : 'Part of an office print needs attention.'} <button type="button" className="link" onClick={() => chooseTransport('office')}>Open the office printer</button></p>
             )}
             {transport !== 'office' && officeMark.ranges.length > 0 && status !== 'running' && (
               <button type="button" onClick={() => void markOfficePrinted()} className="btn btn-secondary btn-sm w-full">

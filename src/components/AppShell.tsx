@@ -9,6 +9,12 @@ import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 import { NewVersionNotice } from '@/components/NewVersionNotice';
 
+/**
+ * Where the nav's highlight was on the last page. Each page mounts its own
+ * shell, so the highlight starts here and slides to the new page's link.
+ */
+let lastNavIndicator: { left: number; width: number } | null = null;
+
 interface AppShellProps {
   children: React.ReactNode;
   /** Optional action button in header right side (e.g. "New Format", "New Template") */
@@ -27,6 +33,26 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   const isFormats = pathname === '/formats' || pathname.startsWith('/formats');
   useRegisterShell();
   const banners = useShellBanners();
+  const navRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const measure = () => {
+      const link = nav?.querySelector<HTMLElement>('a[aria-current="page"]');
+      return link ? { left: link.offsetLeft, width: link.offsetWidth } : null;
+    };
+    const next = measure();
+    const from = lastNavIndicator;
+    lastNavIndicator = next;
+    let frame = 0;
+    if (next && from && (from.left !== next.left || from.width !== next.width)) {
+      setIndicator(from);
+      frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => setIndicator(next)); });
+    } else setIndicator(next);
+    const onResize = () => { const now = measure(); lastNavIndicator = now; setIndicator(now); };
+    window.addEventListener('resize', onResize);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', onResize); };
+  }, [pathname]);
 
   const navItems: Array<{ href: string; label: string; short?: string; active: boolean }> = [
     { href: '/runs', label: 'Runs', active: isRuns },
@@ -73,8 +99,8 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         if (!link || link.getAttribute('href')?.startsWith('#')) return;
         event.preventDefault();
         event.stopPropagation();
-        if (!canLeaveLocalPrint()) return;
         const href = link.getAttribute('href')!;
+        if (!canLeaveLocalPrint(() => router.push(href))) return;
         void (beforeLeave ? beforeLeave() : Promise.resolve(true)).then(ready => { if (ready) router.push(href); });
       }}>
         <div className="max-w-[1600px] mx-auto h-14 px-2 sm:px-6 flex items-center gap-1 sm:gap-6">
@@ -90,20 +116,24 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
             <span className="hidden sm:block text-base font-semibold text-zinc-100 whitespace-nowrap">Label Wrangler</span>
           </Link>
 
-          <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
+          <nav ref={navRef} aria-label="Main" className="relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
+            {/* One highlight that slides between links (shared layout), drawn under them. */}
+            {indicator && <span aria-hidden="true" className="nav-indicator pointer-events-none absolute left-0 top-1/2 h-control-sm rounded-lg bg-zinc-800" style={{ width: indicator.width, transform: `translate(${indicator.left}px, -50%)` }} />}
             {navItems.map(item => (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
-                className={`press shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
+                // One accessible name, not the short and long names run together.
+                aria-label={item.short ? item.label : undefined}
+                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
                   item.active
-                    ? 'bg-zinc-800 text-zinc-100'
+                    ? `${indicator ? '' : 'bg-zinc-800 '}text-zinc-100`
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
                 }`}
               >
                 {/* Short names on phones so the whole nav fits at 360px. */}
-                {item.short ? <><span className="sm:hidden">{item.short}</span><span className="max-sm:hidden">{item.label}</span></> : item.label}
+                {item.short ? <><span aria-hidden="true" className="sm:hidden">{item.short}</span><span aria-hidden="true" className="max-sm:hidden">{item.label}</span></> : item.label}
               </Link>
             ))}
           </nav>

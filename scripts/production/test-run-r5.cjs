@@ -102,7 +102,7 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   assert.match(panel,/:sendingHeld\?`Send \$\{range\(fromNumber,toNumber\)\} now`/,'after the reprint: "Send labels 76–150 now"');
   assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
-  assert.match(panel,/setOfficeSeriesRunning\(true\)/,'in-app links ask too');
+  assert.match(panel,/setOfficeSeriesRunning\(true,\(\)=>\{stopSeries\.current=true;\}\)/,'in-app links ask too, and can stop after this part');
   assert.match(panel,/const ok=await confirmDialog\(\{title:`Send \$\{plural\(sendCount\)\} in \$\{parts\.length\} parts\?`/,'one confirm before a multi-part send');
   assert.match(panel,/if\(!resend\)\{\s*const after=partsAfterPrinted\(\[part\],printedRef\.current\);/,'a new part leaves out labels printed meanwhile; an unsure part resends exactly what it saved');
   assert.match(panel,/seriesLocks\.has\(runId\)/,'one series per run');
