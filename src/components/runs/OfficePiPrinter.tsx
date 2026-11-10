@@ -20,6 +20,7 @@ import { officeFailureKind, officeStatusLine, plainJobReason, plainOfficeRefusal
 import { officeProblemWords } from '@/lib/officeProblem';
 import type { OfficeJobBrief, OfficeRequest } from './useOfficeRequests';
 import { readOfficeJobs } from './officeCancel';
+import { useRunStore } from '@/lib/runStore';
 interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean; dispatch_hold_reason?:string|null; review_holds?:OfficeReviewHold[] }
 /** HTTP error that remembers its status, so a definite refusal reads differently from "not sure it arrived". */
 class OfficeRequestError extends Error { constructor(message:string, public status:number, public code?:string){ super(message); } }
@@ -498,7 +499,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       if(!response.ok)throw new Error(String(response.status));
       const fresh=await response.json().catch(()=>null) as {status?:string}|null;
       if(fresh?.status){runStatusRef.current=fresh.status as RunStatus;}
-      return ended(fresh?.status);
+      const words=ended(fresh?.status);
+      // The page shows what happened on the other device.
+      if(words)void useRunStore.getState().fetchRun(runId).catch(()=>null);
+      return words;
     }catch{
       return `${where}: couldn’t check the run just now. The rest are kept on this device: send the remaining parts when the connection is back.`;
     }
@@ -542,7 +546,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           setSeries(s=>s?{...s,phase:'sending',progress:undefined}:s);
         }
         if(stopSeries.current)break;
-        if(runStatusRef.current==='cancelled' || runStatusRef.current==='completed'){setError(`Stopped before part ${i+1} of ${current.parts.length}: this run ${runStatusRef.current==='cancelled'?'was cancelled':'is marked done'}, so nothing more was sent.`);break;}
+        // Read again right before the send: checking a part can take a while.
+        if(!resend){const late=await runEndedWords(i,current.parts.length);if(late){setError(late);break;}}
+        if(stopSeries.current)break;
         const outcome=await submit(part);
         if(outcome!=='sent')break;
         current={...current,next:i+1};savePartsPlan(current);
@@ -579,6 +585,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // Parts the office already has (a resend that did arrive) drop out.
     return {leftParts:after.parts.filter(p=>officeSendPlan(jobs,p.from,p.to).kind==='new'),leftTrimmed:after.trimmed};
   },[partsPlan,jobs,requestsEverLoaded,printedCount]);
+  // A cancelled run never offers its unsent parts again.
+  useEffect(()=>{if(partsPlan && runStatus==='cancelled' && !seriesOn){setPartsPlan(null);try{localStorage.removeItem(partsKey);}catch{/* nothing saved */}}},[partsPlan,runStatus,seriesOn,partsKey]);
   useEffect(()=>{if(partsPlan && requestsEverLoaded && !seriesRunning.current && remainingParts(partsPlan).length && !leftParts.length){setPartsPlan(null);try{localStorage.removeItem(partsKey);}catch{/* nothing saved */}}},[partsPlan,leftParts.length,requestsEverLoaded,partsKey]);
   const planPrinterHere=!!partsPlan && !!printer && partsPlan.stationId===printer.station_id && partsPlan.printerId===printer.id;
   // The unsure send is the next part of a saved plan: "Send again" resends it
@@ -955,7 +963,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="text-zinc-400">Keep this page open until the last part is queued.</p>
       <button type="button" onClick={()=>{stopSeries.current=true;}} className="btn btn-secondary btn-sm">Stop after this part</button>
     </div>}
-    {!series && leftParts.length>0 && <div className="space-y-2 text-sm">
+    {!series && leftParts.length>0 && !cancelled && <div className="space-y-2 text-sm">
       {!pending && <p className="text-amber-300">{leftParts.length===1?`The last part (${range(leftParts[0].from,leftParts[0].to)}) wasn’t sent yet.`:`${leftParts.length} parts (${range(leftParts[0].from,leftParts[leftParts.length-1].to)}) weren’t sent yet.`}</p>}
       {!pending && <p className="text-zinc-400">{leftTrimmed?`${Range(leftTrimmed.from,leftTrimmed.to)} ${leftTrimmed.from===leftTrimmed.to?'is':'are'} already counted as printed, so ${leftTrimmed.from===leftTrimmed.to?'it’s':'they’re'} left out.`:''}</p>}
       {pending
