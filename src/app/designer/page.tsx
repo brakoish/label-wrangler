@@ -16,7 +16,7 @@ import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
-import { LabelPreview } from '@/components/designer/LabelPreview';
+import { LabelPreview, type InkOffset } from '@/components/designer/LabelPreview';
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
 import { TemplateList, NewTemplateDialog, DuplicateTemplateDialog, RenameTemplateDialog } from '@/components/designer/TemplateList';
@@ -28,6 +28,7 @@ import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { freeSpot, layoutProblems, printedBounds, type Box } from '@/lib/designerLayout';
+import { designSampleValues } from '@/lib/sampleValues';
 import { elementTypeName } from '@/lib/fieldLabels';
 import { friendlyError } from '@/lib/userMessages';
 
@@ -170,7 +171,15 @@ function DesignerContent() {
     if (!currentTemplate?.id) return;
     try { setTestData(JSON.parse(localStorage.getItem(`lw:test-data:${currentTemplate.id}`) || '{}')); } catch { setTestData({}); }
   }, [currentTemplate?.id]);
-  const showThermalOrientationPicker = currentFormat?.type === 'thermal' && currentFormat.width > currentFormat.height;
+  // "Readable" only means something when text is printed sideways: it turns
+  // the view so that text reads left to right.
+  const sidewaysText = useMemo(() => {
+    const texts = currentTemplate?.summaryOnly ? [] : (currentTemplate?.elements ?? []).filter((e) => e.type === 'text');
+    const turn = (e: TemplateElement) => (((Math.round(e.rotation || 0) % 360) + 360) % 360);
+    return { ccw: texts.filter((e) => turn(e) === 90).length, cw: texts.filter((e) => turn(e) === 270).length };
+  }, [currentTemplate]);
+  const showThermalOrientationPicker = currentFormat?.type === 'thermal' && (sidewaysText.ccw + sidewaysText.cw) > 0;
+  const uprightTurn: 'ccw' | 'cw' = sidewaysText.cw > sidewaysText.ccw ? 'cw' : 'ccw';
   const thermalEditorOrientationKey = currentTemplate
     ? `label-wrangler:thermal-editor-orientation:${currentTemplate.id}`
     : null;
@@ -268,18 +277,20 @@ function DesignerContent() {
       const arrow = arrowMap[e.key];
       if (arrow && currentTemplate && selectedIds.size > 0) {
         e.preventDefault();
-        // Step: 1 dot (thermal) / 0.01" (sheet). Shift → 10×.
+        // Step: 0.01" (the smallest change the panel shows). Shift → 0.1".
         const isThermal = currentFormat?.type === 'thermal';
-        const baseStep = isThermal ? 1 : 0.01;
+        const baseStep = isThermal ? (currentFormat.dpi || 203) / 100 : 0.01;
         const step = (e.shiftKey ? 10 : 1) * baseStep;
         beginGesture();
-        const direction = isThermal && thermalEditorOrientation === 'upright' && currentFormat.width > currentFormat.height ? { dx: -arrow.dy, dy: arrow.dx } : arrow;
+        const upright = isThermal && thermalEditorOrientation === 'upright' && showThermalOrientationPicker;
+        const direction = upright ? (uprightTurn === 'cw' ? { dx: arrow.dy, dy: -arrow.dx } : { dx: -arrow.dy, dy: arrow.dx }) : arrow;
         for (const id of selectedIds) {
           const el = useTemplateStore.getState().getTemplateById(currentTemplate.id)?.elements.find((x) => x.id === id);
           if (!el || el.locked) continue;
+          const round = (v: number) => (isThermal ? Math.round(v * 100) / 100 : Math.round(v * 1000) / 1000);
           updateElementLocal(currentTemplate.id, id, {
-            x: el.x + direction.dx * step,
-            y: el.y + direction.dy * step,
+            x: round(el.x + direction.dx * step),
+            y: round(el.y + direction.dy * step),
           });
         }
         // Debounce save to avoid hammering the DB on held arrow keys.
@@ -292,7 +303,7 @@ function DesignerContent() {
     const finishNudge = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow')) { if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current); finishGesture(); } };
     window.addEventListener('keydown', handler); window.addEventListener('keyup', finishNudge);
     return () => { window.removeEventListener('keydown', handler); window.removeEventListener('keyup', finishNudge); };
-  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation]);
+  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation, showThermalOrientationPicker, uprightTurn]);
 
   // Clear undo history + selection when switching templates
   useEffect(() => {
@@ -325,11 +336,22 @@ function DesignerContent() {
 
   // Items that cover each other or run off the label, as the printer draws
   // them (native thermal only; bitmap labels have their own exact proof).
+  // Every preview shows the same sample for each per-label field.
+  const previewValues = useMemo(() => designSampleValues(currentTemplate && !currentTemplate.summaryOnly ? currentTemplate.elements : [], testData), [currentTemplate, testData]);
+  const [inks, setInks] = useState<Record<string, InkOffset>>({});
+  const measured = useMemo(() => {
+    const boxes: Record<string, Box> = {};
+    for (const el of currentTemplate && !currentTemplate.summaryOnly ? currentTemplate.elements : []) {
+      const ink = inks[el.id];
+      if (ink) boxes[el.id] = { x: el.x + ink.dx, y: el.y + ink.dy, width: ink.width, height: ink.height };
+    }
+    return boxes;
+  }, [currentTemplate, inks]);
   const designProblems = useMemo(() => (
     currentTemplate && currentFormat && !currentTemplate.summaryOnly && currentTemplate.thermalRenderMode !== 'bitmap-v1'
-      ? layoutProblems(currentTemplate.elements, currentFormat, testData)
+      ? layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured)
       : []
-  ), [currentTemplate, currentFormat, testData]);
+  ), [currentTemplate, currentFormat, previewValues, measured]);
 
   // If no template is selected, show template list view
   if (!currentTemplate || currentTemplate.summaryOnly || !currentFormat) {
@@ -539,7 +561,7 @@ function DesignerContent() {
     const margin = isThermal ? Math.max(6, Math.round(unit * 0.03)) : Math.round(unit * 0.03 * 100) / 100 || 0.03;
     const taken: Box[] = currentTemplate.elements.map((el) => {
       const box = { x: el.x, y: el.y, width: el.width, height: Math.max(el.height, el.type === 'line' ? (el as { strokeWidth?: number }).strokeWidth ?? 1 : 0) };
-      const printed = isThermal && currentTemplate.thermalRenderMode !== 'bitmap-v1' ? printedBounds(el, currentFormat, testData) : null;
+      const printed = isThermal && currentTemplate.thermalRenderMode !== 'bitmap-v1' ? measured[el.id] ?? printedBounds(el, currentFormat, previewValues) : null;
       if (!printed) return box;
       const x = Math.min(box.x, printed.x), y = Math.min(box.y, printed.y);
       return { x, y, width: Math.max(box.x + box.width, printed.x + printed.width) - x, height: Math.max(box.y + box.height, printed.y + printed.height) - y };
@@ -767,7 +789,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
@@ -775,7 +797,9 @@ function DesignerContent() {
             format={currentFormat}
             elements={currentTemplate.elements}
             selectedElementIds={selectedIds}
-            editorOrientation={thermalEditorOrientation}
+            editorOrientation={showThermalOrientationPicker ? thermalEditorOrientation : 'printer'}
+            uprightTurn={uprightTurn}
+            onInkChange={setInks}
             onSelectElement={(id, addToSelection) => {
               if (id === null) {
                 setSelectedIds(new Set());
@@ -801,14 +825,14 @@ function DesignerContent() {
             onDragStart={beginGesture}
             onDragEnd={finishGesture}
             onGestureCancel={cancelGesture}
-            testData={testData}
+            testData={previewValues}
             layoutProblems={designProblems}
           />
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} />
           ) : (
-            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={testData} />
+            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}
         </div>
 

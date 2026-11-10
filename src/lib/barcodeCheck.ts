@@ -1,5 +1,7 @@
-import type { BarcodeFormat, FieldMapping, LabelTemplate, TemplateElement } from './types';
+import JsBarcode from 'jsbarcode';
+import type { BarcodeElement, BarcodeFormat, FieldMapping, LabelFormat, LabelTemplate, TemplateElement } from './types';
 import { friendlyFieldName, spreadsheetRow } from './fieldLabels';
+import { printedBarcodeWidth } from './designerLayout';
 
 /**
  * Whole-run check that every barcode value is one the barcode type can hold.
@@ -79,6 +81,36 @@ export interface BarcodeIssue {
   label: number;
   value: string;
   problem: string;
+  /** 'too-long': the value is valid but doesn't fit where the barcode prints. */
+  kind?: 'characters' | 'too-long';
+  /** For 'too-long' on a native label: it runs off the label edge. */
+  offLabel?: boolean;
+}
+
+/**
+ * Whether a valid value fits its barcode, using the numbers the printer
+ * uses. Native Zebra labels draw Code 128 at 2 dots a module whatever the
+ * box (zplGenerator ^BY2), so a value is too long when the bars run off the
+ * label. Exact (bitmap) labels scale whole-dot modules into the box with a
+ * 10-module quiet zone each side (thermal/render.server.ts), so a value is
+ * too long when even 1-dot modules don't fit the box.
+ */
+export function barcodeFits(el: Pick<BarcodeElement, 'barcodeFormat' | 'x' | 'width' | 'rotation'>, value: string, format: Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'>, bitmap: boolean): { fits: boolean; offLabel: boolean } {
+  if (!value || format.type !== 'thermal') return { fits: true, offLabel: false };
+  if (bitmap) {
+    const target = {} as { encodings?: Array<{ data: string }> };
+    try { JsBarcode(target, value, { format: el.barcodeFormat, displayValue: false, margin: 0, width: 1 }); } catch { return { fits: true, offLabel: false }; }
+    const bits = target.encodings?.map((v) => v.data).join('') || '';
+    if (!bits) return { fits: true, offLabel: false };
+    return { fits: Math.floor(Math.round(el.width) / (bits.length + 20)) >= 1, offLabel: false };
+  }
+  const rotated = (((Math.round(el.rotation || 0) % 360) + 360) % 360) % 180 !== 0;
+  const dpi = format.dpi || 203;
+  const room = rotated ? Math.round(format.height * dpi) : Math.round(format.width * dpi) - Math.round(el.x);
+  // Only sideways bars can be measured against the label edge simply.
+  if (rotated) return { fits: true, offLabel: false };
+  const fits = printedBarcodeWidth(el.barcodeFormat, value) <= room + 2;
+  return { fits, offLabel: !fits };
 }
 
 export interface BarcodeCheck {
@@ -117,7 +149,13 @@ function printedValue(el: TemplateElement, values: Record<string, string>): stri
 
 const MAX_ISSUES = 50;
 
-export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'>, run: RunData): BarcodeCheck {
+export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format?: Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'> | null): BarcodeCheck {
+  const bitmap = template.thermalRenderMode === 'bitmap-v1';
+  const fitProblem = (el: TemplateElement, value: string): BarcodeIssue | null => {
+    if (!format || el.type !== 'barcode') return null;
+    const fit = barcodeFits(el, value, format, bitmap);
+    return fit.fits ? null : { field: el.fieldName || '', label: 0, value, problem: 'is too long for its barcode', kind: 'too-long', offLabel: fit.offLabel };
+  };
   const barcodes = template.elements.filter((el) => el.type === 'barcode');
   const issues: BarcodeIssue[] = [];
   let badLabels = 0;
@@ -128,9 +166,12 @@ export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'>, run:
     const value = printedValue(el, {});
     const problem = el.type === 'barcode' ? barcodeValueProblem(el.barcodeFormat, value) : null;
     if (problem) {
-      issues.push({ field: '', label: 0, value, problem });
+      issues.push({ field: '', label: 0, value, problem, kind: 'characters' });
       badLabels = total;
+      continue;
     }
+    const tooLong = fitProblem(el, value);
+    if (tooLong) { issues.push({ ...tooLong, field: '' }); badLabels = total; }
   }
   const dynamic = barcodes.filter((b) => !b.isStatic);
   for (let index = 0; index < total && dynamic.length; index++) {
@@ -140,11 +181,12 @@ export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'>, run:
       if (el.type !== 'barcode') continue;
       const value = printedValue(el, values);
       const problem = barcodeValueProblem(el.barcodeFormat, value);
-      if (!problem) continue;
+      const found: BarcodeIssue | null = problem
+        ? { field: el.fieldName || '', label: index + 1, value, problem, kind: 'characters' }
+        : (() => { const long = fitProblem(el, value); return long ? { ...long, label: index + 1 } : null; })();
+      if (!found) continue;
       bad = true;
-      if (issues.length < MAX_ISSUES && !issues.some((i) => i.label === index + 1 && i.field === el.fieldName)) {
-        issues.push({ field: el.fieldName || '', label: index + 1, value, problem });
-      }
+      if (issues.length < MAX_ISSUES && !issues.some((i) => i.label === index + 1 && i.field === el.fieldName)) issues.push(found);
     }
     if (bad) badLabels++;
   }
@@ -160,6 +202,14 @@ function shorten(value: string, max = 24): string {
  * Fix row 11 of your spreadsheet." `fromSpreadsheet` adds the row hint.
  */
 export function describeBarcodeIssue(issue: BarcodeIssue, fromSpreadsheet: boolean): string {
+  if (issue.kind === 'too-long') {
+    const chars = `${Array.from(issue.value).length} characters`;
+    const room = issue.offLabel ? 'give the barcode more room on the label' : 'make the barcode box wider';
+    if (!issue.label) return `The fixed barcode "${shorten(issue.value)}" is too long for its barcode box (${chars}) — shorten it or ${room} in the design.`;
+    const row = spreadsheetRow(issue.label).toLocaleString();
+    const where = fromSpreadsheet ? `label ${issue.label.toLocaleString()} (row ${row})` : `label ${issue.label.toLocaleString()}`;
+    return `${friendlyFieldName(issue.field)} on ${where} is too long for its barcode (${chars}${issue.offLabel ? ', it would run off the label' : ''}) — shorten it${fromSpreadsheet ? ` in row ${row}` : ''} or ${room} in the design.`;
+  }
   if (!issue.label) return `The fixed barcode "${shorten(issue.value)}" ${issue.problem}. Change it in the design.`;
   const name = friendlyFieldName(issue.field);
   const fix = fromSpreadsheet ? ` Fix row ${spreadsheetRow(issue.label)} of your spreadsheet.` : '';
