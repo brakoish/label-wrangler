@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { ChevronLeft, Search } from 'lucide-react';
 import { useFormatStore } from '@/lib/store';
 import type { ApiError } from '@/lib/apiClient';
 import { FormatCard } from '@/components/FormatCard';
@@ -53,107 +54,73 @@ export default function Home() {
   const thermalCount = formats.filter((f) => f.type === 'thermal').length;
   const sheetCount = formats.filter((f) => f.type === 'sheet').length;
 
+  // Below the wide layout the list and the detail are separate views.
+  const [phoneView, setPhoneView] = useState<'list' | 'detail'>('list');
+  const openFormat = (id: string) => { selectFormat(id); setPhoneView('detail'); };
+
+  // On a wide screen, show the first size instead of an empty "pick one" pane.
+  useEffect(() => {
+    if (selectedFormat || !filteredFormats.length) return;
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches) selectFormat(filteredFormats[0].id);
+  }, [selectedFormat, filteredFormats, selectFormat]);
+
+  const hasFormats = formats.length > 0;
+  const tabLabel = (text: string, n: number) => (n > 0 ? `${text} (${n})` : text);
+
   return (
     <AppShell>
       <PageTitle title="Label sizes" />
-      {/* Main content */}
-      <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
-        {/* Left sidebar */}
-        <div className="w-full xl:w-[400px] xl:shrink-0 flex flex-col border-b xl:border-b-0 xl:border-r border-zinc-800 max-h-[48vh] xl:max-h-none">
-          {/* Search & filters */}
-          <div className="p-4 space-y-4">
-            {/* New Format button */}
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="btn btn-primary w-full"
-            >
-              <PlusIcon className="w-4 h-4" />
-              New label size
-            </button>
-
-            {/* Search */}
-            <div className="relative">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+      <div className="flex-1 flex flex-col min-h-0 max-w-[1600px] mx-auto w-full">
+        <div className={`flex items-center justify-between gap-3 px-4 pt-6 pb-4 sm:px-8 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
+          <h1 className="text-2xl font-semibold text-zinc-50">Label sizes</h1>
+          <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+            <PlusIcon className="w-4 h-4" />
+            New label size
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 xl:px-8 overflow-auto xl:overflow-hidden">
+        {/* List */}
+        <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full xl:w-[360px] xl:shrink-0 flex-col min-h-0`}>
+          {hasFormats && (
+            <div className="px-4 pb-3 space-y-3 sm:px-8 xl:px-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-500" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label="Search label sizes"
+                  placeholder="Search label sizes…"
+                  className="field w-full pl-10 pr-4"
                 />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Search label sizes"
-                placeholder="Search label sizes…"
-                className="field w-full pl-10 pr-4"
-              />
+              </div>
+              {thermalCount > 0 && sheetCount > 0 && (
+                <div className="segmented" role="group" aria-label="Filter by type">
+                  <SegmentedIndicator index={['all', 'thermal', 'sheet'].indexOf(activeTab)} count={3} />
+                  <button onClick={() => setActiveTab('all')} aria-pressed={activeTab === 'all'}>{tabLabel('All', formats.length)}</button>
+                  <button onClick={() => setActiveTab('thermal')} aria-pressed={activeTab === 'thermal'}>{tabLabel('Rolls', thermalCount)}</button>
+                  <button onClick={() => setActiveTab('sheet')} aria-pressed={activeTab === 'sheet'}>{tabLabel('Sheets', sheetCount)}</button>
+                </div>
+              )}
             </div>
+          )}
 
-            {/* Tabs */}
-            <div className="segmented" role="group" aria-label="Filter by type">
-              <SegmentedIndicator index={['all', 'thermal', 'sheet'].indexOf(activeTab)} count={3} />
-              <button
-                onClick={() => setActiveTab('all')}
-                aria-pressed={activeTab === 'all'}
-              >
-                All ({formats.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('thermal')}
-                aria-pressed={activeTab === 'thermal'}
-              >
-                Thermal ({thermalCount})
-              </button>
-              <button
-                onClick={() => setActiveTab('sheet')}
-                aria-pressed={activeTab === 'sheet'}
-              >
-                Sheet ({sheetCount})
-              </button>
-            </div>
-          </div>
-
-          {/* Format list */}
-          <div className="flex-1 overflow-auto px-4 pb-4 space-y-1 stagger">
+          <div className="flex-1 xl:overflow-auto px-4 pb-6 space-y-1 stagger sm:px-8 xl:px-0">
             {!hydrated && formats.length === 0 ? (
               <div role="status" aria-label="Loading label sizes" className="space-y-2">
                 {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 rounded-lg bg-zinc-900 animate-pulse" />)}
                 <span className="sr-only">Loading label sizes…</span>
               </div>
             ) : loadError && formats.length === 0 ? (
-              <div role="alert" className="text-center py-12 space-y-3">
+              <div role="alert" className="py-12 space-y-3">
                 <p className="text-zinc-200 text-sm font-medium">We couldn&apos;t load your label sizes</p>
-                <p className="text-zinc-500 text-xs">{friendlyError(loadError, 'Something went wrong.')}</p>
+                <p className="text-zinc-400 text-sm">{friendlyError(loadError, 'Something went wrong.')}</p>
                 <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>
               </div>
             ) : filteredFormats.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-zinc-200 text-sm font-medium">
-                  {searchQuery || activeTab !== 'all'
-                    ? 'No label sizes match'
-                    : 'No label sizes yet'}
-                </p>
-                <p className="text-zinc-400 text-sm mt-1">
-                  {searchQuery || activeTab !== 'all'
-                    ? 'Try adjusting your search or filter'
-                    : 'Add the size of the labels you print on to get started'}
-                </p>
-                {!searchQuery && activeTab === 'all' && (
-                  <button
-                    onClick={() => setIsAddModalOpen(true)}
-                    className="btn btn-secondary mt-4"
-                  >
-                    Add your first label size
-                  </button>
-                )}
+              <div className="py-12">
+                <p className="text-zinc-200 text-sm font-medium">{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</p>
+                <p className="text-zinc-400 text-sm mt-1">{hasFormats ? 'Try another name, or show all types.' : 'Add the size of label you print on.'}</p>
               </div>
             ) : (
               filteredFormats.map((format) => (
@@ -161,35 +128,33 @@ export default function Home() {
                   key={format.id}
                   format={format}
                   isSelected={selectedFormatId === format.id}
-                  onClick={() => selectFormat(format.id)}
+                  onClick={() => openFormat(format.id)}
                 />
               ))
             )}
           </div>
         </div>
 
-        {/* Right panel - Format detail */}
-        <div className="flex-1 min-w-0 overflow-auto">
+        {/* Detail */}
+        <div className={`${phoneView === 'detail' && selectedFormat ? 'block' : 'max-xl:hidden'} flex-1 min-w-0 xl:overflow-auto`}>
           {selectedFormat ? (
-            <FormatDetail
-              format={selectedFormat}
-              onDelete={async () => {
-                const ok = await confirmDialog({ title: `Delete “${selectedFormat.name}”?`, body: 'This can’t be undone. A label size that a design or run still uses can’t be deleted.', confirmLabel: 'Delete', danger: true });
-                if (!ok) return;
-                void deleteFormat(selectedFormat.id).catch(error=>{ if ((error as ApiError).status === 409) void alertDialog('This label size is still in use', friendlyError(error)); else useFormatStore.setState({error:friendlyError(error)}); });
-              }}
-              onUpdate={updateFormat}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center max-w-sm">
-                <h3 className="text-zinc-200 font-semibold text-lg">Pick a label size</h3>
-                <p className="text-zinc-400 text-sm mt-1">
-                  Choose one from the list to see its measurements and a preview.
-                </p>
-              </div>
-            </div>
-          )}
+            <>
+              <button type="button" onClick={() => setPhoneView('list')} className="xl:hidden btn btn-ghost btn-sm mx-2 mt-4">
+                <ChevronLeft className="size-4" aria-hidden="true" /> All label sizes
+              </button>
+              <FormatDetail
+                format={selectedFormat}
+                onDelete={async () => {
+                  const ok = await confirmDialog({ title: `Delete “${selectedFormat.name}”?`, body: 'This can’t be undone. A label size that a design or run still uses can’t be deleted.', confirmLabel: 'Delete', danger: true });
+                  if (!ok) return;
+                  setPhoneView('list');
+                  void deleteFormat(selectedFormat.id).catch(error=>{ if ((error as ApiError).status === 409) void alertDialog('This label size is still in use', friendlyError(error)); else useFormatStore.setState({error:friendlyError(error)}); });
+                }}
+                onUpdate={updateFormat}
+              />
+            </>
+          ) : null}
+        </div>
         </div>
       </div>
 

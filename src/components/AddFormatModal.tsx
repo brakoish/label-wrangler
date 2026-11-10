@@ -163,6 +163,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <SegmentedIndicator index={type === 'sheet' ? 1 : 0} count={2} />
             <button
               type="button"
+              data-autofocus
               onClick={() => setType('thermal')}
               aria-pressed={type === 'thermal'}
             >
@@ -242,7 +243,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           <div className="space-y-4">
             <div>
               <label htmlFor={`${uid}-2`} className="field-label mb-1.5">
-                Format name
+                Name
               </label>
               <input id={`${uid}-2`}
                 type="text"
@@ -323,13 +324,14 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label id={`${uid}-6-label`} className="field-label mb-1.5">
-                  DPI
+                  Dots per inch
                 </label>
                 <CustomSelect aria-labelledby={`${uid}-6-label`}
                   value={dpi.toString()}
                   onChange={(v) => setDpi(parseInt(v))}
-                  options={COMMON_DPI_VALUES.map((d) => ({ value: d.toString(), label: `${d} DPI` }))}
+                  options={COMMON_DPI_VALUES.map((d) => ({ value: d.toString(), label: String(d) }))}
                 />
+                <p className="mt-1 text-xs text-zinc-500">On the printer&rsquo;s sticker, usually 203.</p>
               </div>
               <div>
                 <label htmlFor={`${uid}-7`} className="field-label mb-1.5">
@@ -381,7 +383,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor={`${uid}-10`} className="field-label mb-1.5">
-                  Label gap (vertical)
+                  Label gap <span className="font-normal text-zinc-500">(inches)</span>
                 </label>
                 <input id={`${uid}-10`}
                   type="number"
@@ -391,10 +393,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   placeholder="0.125"
                   className="field w-full"
                 />
+                <p className="mt-1 text-xs text-zinc-500">Space between labels on the roll.</p>
               </div>
               <div>
                 <label htmlFor={`${uid}-11`} className="field-label mb-1.5">
-                  Liner width (optional)
+                  Backing width <span className="font-normal text-zinc-500">(optional)</span>
                 </label>
                 <input id={`${uid}-11`}
                   type="number"
@@ -404,6 +407,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   placeholder="Auto"
                   className="field w-full"
                 />
+                <p className="mt-1 text-xs text-zinc-500">Width of the paper the labels sit on. Auto suits most rolls.</p>
               </div>
             </div>
             </>
