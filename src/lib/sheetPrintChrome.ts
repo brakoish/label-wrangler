@@ -1,28 +1,57 @@
 /**
  * The sheet print page's toolbar, restyled to match the app. The HTML comes
  * from sheetPrint.ts, which stays untouched; this only adds a style block for
- * the on-screen toolbar (hidden when printing) and rewords its text. Label
- * pages, their SVG and the mark-printed script are left exactly as built.
+ * the on-screen toolbar (hidden when printing), rewords its text, gives the
+ * page a language, a main landmark and a heading, and shrinks the sheet to
+ * fit a phone screen (screen only: paper always prints at 100%). Label pages,
+ * their SVG and the mark-printed script are left exactly as built.
  */
 const TOOLBAR_STYLE = `
   <style data-lw-toolbar>
     .toolbar { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; padding: 12px 16px; background: #18181b; color: #e4e4e7; }
     .toolbar-main { gap: 2px; }
     .print-warning { border: 0; border-radius: 0; padding: 0; background: none; color: #fcd34d; font-weight: 500; text-transform: none; letter-spacing: 0; }
-    .toolbar button, .toolbar .back { min-height: 40px; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+    .toolbar-title { margin: 0; font-size: 14px; font-weight: 600; color: #f4f4f5; }
+    .toolbar button, .toolbar .back { min-height: 44px; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
     .toolbar button.secondary, .toolbar .back { background: #27272a; color: #f4f4f5; border: 0; }
     .toolbar button.done { background: #f59e0b; color: #18181b; }
     .toolbar button:focus-visible, .toolbar .back:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
     .toolbar .back { display: inline-flex; align-items: center; text-decoration: none; }
     .track-status { font-size: 13px; color: #a1a1aa; }
+    @media screen {
+      .sheet-page { zoom: var(--sheet-zoom, 1); }
+    }
+    @media screen and (max-width: 640px) {
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .toolbar-actions { justify-content: flex-start; }
+      .track-status { text-align: left; }
+    }
   </style>
 `;
+
+/** Shrink the on-screen sheet to the window width (never on paper). */
+function fitScript(sheetWidthInches: number): string {
+  const px = Math.round(sheetWidthInches * 96);
+  return `
+  <script data-lw-fit>
+    (function () {
+      function fit() { document.documentElement.style.setProperty('--sheet-zoom', String(Math.min(1, (window.innerWidth - 24) / ${px}))); }
+      fit();
+      window.addEventListener('resize', fit);
+    })();
+  </script>
+`;
+}
 
 export function restyleSheetPrintToolbar(html: string, runId: string): string {
   if (html.includes('data-lw-toolbar')) return html;
   const back = `<a class="back" href="/runs/${encodeURIComponent(runId)}">Back to run</a>`;
+  const sheetWidth = Number(/\.sheet-page \{\s*position: relative;\s*width: ([\d.]+)in;/.exec(html)?.[1] ?? '8.5') || 8.5;
   return html
-    .replace('</head>', `${TOOLBAR_STYLE}</head>`)
+    .replace('<html>', '<html lang="en">')
+    .replace('</head>', `${TOOLBAR_STYLE}${fitScript(sheetWidth)}</head>`)
+    .replace(/<body>\s*<div class="toolbar">\s*<div class="toolbar-main">\s*<div>([^<]*)<\/div>/, (_m, title: string) => `<body>\n  <main>\n  <div class="toolbar">\n    <div class="toolbar-main">\n      <h1 class="toolbar-title">${title}</h1>`)
+    .replace(/<\/body>(?![\s\S]*<\/body>)/, '</main>\n</body>')
     .replace('Print setting: 100% / Actual size. Do not use Fit to page.', 'Print at 100% (Actual size), not Fit to page')
     .replace('<div class="toolbar-actions">', `<div class="toolbar-actions">\n      ${back}`)
     .replace('>Print / Save PDF</button>', '>Print or save PDF</button>')

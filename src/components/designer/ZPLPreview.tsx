@@ -16,9 +16,11 @@ interface ZPLPreviewProps {
   format: LabelFormat;
   template: LabelTemplate;
   testData?: Record<string, string>;
+  /** The raw printer commands, for admins who set up printers. */
+  showPrinterCode?: boolean;
 }
 
-export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
+export function ZPLPreview({ format, template, testData, showPrinterCode = false }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [zpl, setZpl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,7 +52,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
-      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1)));
+      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData)));
       setPreviewUrl(null); setZpl('');
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {
@@ -126,24 +128,15 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           >
             <Maximize2 className="w-4 h-4" />
           </button>
-          <button
+          {(format.labelsAcross || 1) > 1 && <button
             onClick={() => setShowOutlines((s) => !s)}
             title={showOutlines ? 'Hide label outlines' : 'Show label outlines'}
             aria-label="Label outlines"
             aria-pressed={showOutlines}
-            className={`btn btn-ghost btn-icon btn-sm ${showOutlines ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400'}`}
+            className={`btn btn-ghost btn-icon btn-sm ${showOutlines ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'}`}
           >
             <SquareDashed className="w-4 h-4" />
-          </button>
-          <button
-            onClick={fetchPreview}
-            disabled={loading}
-            title="Refresh preview"
-            aria-label="Refresh preview"
-            className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          </button>}
         </div>}
       </div>
 
@@ -151,7 +144,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
         <div className="px-4 pb-4 pt-1 flex flex-col sm:px-6" style={{ minHeight: '320px', maxHeight: '65vh' }}>
           {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Fix this before printing: {error}</p>}
           {/* ZPL Code view */}
-          {showZPL && (
+          {showPrinterCode && showZPL && (
             <div className="mb-3 p-3 bg-zinc-950 rounded-lg max-h-[200px] overflow-auto">
               <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all">{zpl}</pre>
             </div>
@@ -204,9 +197,9 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
         )}
           </div>
           {/* The raw printer commands, for whoever sets up printers. */}
-          <button type="button" onClick={() => setShowZPL(!showZPL)} aria-pressed={showZPL} className="mt-2 inline-flex min-h-control-sm items-center gap-1.5 self-start text-xs text-zinc-500 hover:text-zinc-300">
-            <Code2 className="size-3.5" aria-hidden="true" />{showZPL ? 'Hide printer code' : 'Show printer code'}
-          </button>
+          {showPrinterCode && <button type="button" onClick={() => setShowZPL(!showZPL)} aria-pressed={showZPL} className="mt-2 inline-flex min-h-control-sm items-center gap-1.5 self-start text-xs text-zinc-400 hover:text-zinc-100">
+            <Code2 className="size-3.5" aria-hidden="true" />{showZPL ? 'Hide printer code' : 'Show printer code (admin)'}
+          </button>}
         </div>
       )}
     </div>

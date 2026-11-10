@@ -1,24 +1,25 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from 'react';
-import QRCode from 'qrcode';
-import JsBarcode from 'jsbarcode';
-import { LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
+import { LabelFormat, TemplateElement, TextElement, QRElement, ImageElement } from '@/lib/types';
 import { getBitmapProof, type EditorLayer } from '@/lib/thermal/client';
 import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorGeometry';
 import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
-import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
-import { barcodeViewBox } from '@/lib/barcodeViewBox';
+import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
 import { friendlyFieldName } from '@/lib/fieldLabels';
-import { plainRenderWarning, printedBounds, type LayoutProblem } from '@/lib/designerLayout';
+import { plainRenderWarning, type Box, type LayoutProblem } from '@/lib/designerLayout';
 
 interface LabelPreviewProps {
   format: LabelFormat;
   elements: TemplateElement[];
   selectedElementIds: Set<string>;
   editorOrientation?: 'printer' | 'upright';
+  /** Which way "Readable" turns the label: counter-clockwise for text printed at 90°, clockwise for 270°. */
+  uprightTurn?: 'ccw' | 'cw';
+  /** Printed ink of each item, measured from the print renderer (relative to the item's position). */
+  onInkChange?: (inks: Record<string, InkOffset>) => void;
   onSelectElement: (id: string | null, addToSelection?: boolean) => void;
   onUpdateElement?: (id: string, updates: Partial<TemplateElement>) => void;
   onDragStart?: () => void;
@@ -32,7 +33,10 @@ interface LabelPreviewProps {
   layoutProblems?: LayoutProblem[];
 }
 
-export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [] }: LabelPreviewProps) {
+/** An item's printed ink relative to its x/y, in label units. */
+export interface InkOffset { dx: number; dy: number; width: number; height: number }
+
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', uprightTurn = 'ccw', onInkChange, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [] }: LabelPreviewProps) {
   const problemIdSet = useMemo(() => new Set(layoutProblems.flatMap(p => p.ids)), [layoutProblems]);
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
   const [bitmapProof, setBitmapProof] = useState<{ advisories: Array<{ elementId: string; message: string }>; key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
@@ -54,10 +58,11 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
         .then(result => { if (active) setBitmapProof({ advisories: result.advisories || [], key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
-        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements)); });
+        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements, 1, testData)); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
   }, [bitmap, bitmapKey, elements, format, testData]);
+  const hatchId = useId().replace(/:/g, '');
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
@@ -68,16 +73,20 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     origPositions: Map<string, { x: number; y: number }>;
   } | null>(null);
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
-  const [measuredTextBounds, setTextBounds] = useState<Record<string, { w: number; h: number }>>({});
-
-  const textBounds = useMemo(() => bitmap ? {} : measuredTextBounds, [bitmap, measuredTextBounds]);
-
-  const handleTextMeasure = useCallback((id: string, w: number, h: number) => {
-    setTextBounds((prev) => {
-      if (prev[id]?.w === w && prev[id]?.h === h) return prev;
-      return { ...prev, [id]: { w, h } };
+  // Printed ink per item, measured from the same renderer as the print
+  // preview, so selection, problem outlines and the drawn item agree.
+  const [inks, setInks] = useState<Record<string, InkOffset | undefined>>({});
+  const handleInk = useCallback((id: string, ink: InkOffset | null) => {
+    setInks((prev) => {
+      const old = prev[id];
+      if (!ink ? !old : old && old.dx === ink.dx && old.dy === ink.dy && old.width === ink.width && old.height === ink.height) return prev;
+      const next = { ...prev };
+      if (ink) next[id] = ink; else delete next[id];
+      return next;
     });
   }, []);
+  const nativeThermal = format.type === 'thermal' && !bitmap;
+  useEffect(() => { onInkChange?.(inks as Record<string, InkOffset>); }, [inks, onInkChange]);
 
   // Observe container size
   useEffect(() => {
@@ -100,12 +109,29 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const viewBoxHeight = format.type === 'thermal' && format.dpi
     ? format.height * format.dpi
     : format.height;
-  const useUprightThermalEditor = editorOrientation === 'upright' && format.type === 'thermal' && viewBoxWidth > viewBoxHeight;
+  // "Readable" turns the view so text printed sideways reads left to right.
+  const useUprightThermalEditor = editorOrientation === 'upright' && format.type === 'thermal';
+  const clockwise = uprightTurn === 'cw';
   const editorViewBoxWidth = useUprightThermalEditor ? viewBoxHeight : viewBoxWidth;
   const editorViewBoxHeight = useUprightThermalEditor ? viewBoxWidth : viewBoxHeight;
   const editorContentTransform = useUprightThermalEditor
-    ? `translate(0 ${viewBoxWidth}) rotate(-90)`
+    ? clockwise ? `translate(${viewBoxHeight} 0) rotate(90)` : `translate(0 ${viewBoxWidth}) rotate(-90)`
     : undefined;
+
+  // One box per item for hit area, selection, handles and problem outline:
+  // the printed ink, stopped at the label edge (text keeps its whole box,
+  // which sets where it wraps).
+  const liveInk = useCallback((el: TemplateElement): Box | null => {
+    const ink = nativeThermal ? inks[el.id] : undefined;
+    return ink ? { x: el.x + ink.dx, y: el.y + ink.dy, width: ink.width, height: ink.height } : null;
+  }, [inks, nativeThermal]);
+  const boundsOf = useCallback((el: TemplateElement): Box => {
+    const box = elementVisualBounds(el);
+    const ink = liveInk(el);
+    if (!ink) return box;
+    const clipped = clipBox(ink, viewBoxWidth, viewBoxHeight) ?? ink;
+    return el.type === 'text' ? unionBox(box, clipped) : clipped;
+  }, [liveInk, viewBoxWidth, viewBoxHeight]);
 
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
   // Padding
@@ -142,19 +168,16 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const displayDy = (screenDy / svgH) * totalH;
 
     if (useUprightThermalEditor) {
-      return {
-        dx: -displayDy,
-        dy: displayDx,
-      };
+      return clockwise ? { dx: displayDy, dy: -displayDx } : { dx: -displayDy, dy: displayDx };
     }
 
     return { dx: displayDx, dy: displayDy };
-  }, [svgW, svgH, totalW, totalH, useUprightThermalEditor]);
+  }, [svgW, svgH, totalW, totalH, useUprightThermalEditor, clockwise]);
 
   const beginText = useCallback((id: string) => {
     const element = elements.find((e): e is TextElement => e.id === id && e.type === 'text');
     if (!element || element.locked || format.type !== 'thermal' || !svgRef.current) return;
-    const node = svgRef.current.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
+    const node = svgRef.current.querySelector(`[data-element-id="${CSS.escape(id)}"] [data-hit]`) ?? svgRef.current.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
     const rect = node?.getBoundingClientRect();
     if (!rect) return;
     onDragStart?.();
@@ -172,7 +195,8 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const matrix = svgRef.current?.getScreenCTM();
     if (!matrix) return { x: 0, y: 0 };
     const point = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse());
-    return useUprightThermalEditor ? { x: viewBoxWidth - point.y, y: point.x } : { x: point.x, y: point.y };
+    if (!useUprightThermalEditor) return { x: point.x, y: point.y };
+    return clockwise ? { x: point.y, y: viewBoxHeight - point.x } : { x: viewBoxWidth - point.y, y: point.x };
   };
   const startMarquee = (e: React.PointerEvent) => {
     if (format.type !== 'thermal' || !onSelectElements) return;
@@ -258,7 +282,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     // For text elements, use rendered textBounds (if measured) so the group
     // bbox reflects what the user actually sees.
     const isMultiResize = selectedElementIds.size > 1 && selectedElementIds.has(elementId);
-    const getEffectiveBounds = (el: TemplateElement) => elementInteractionBounds(el, textBounds);
+    const getEffectiveBounds = (el: TemplateElement) => boundsOf(el);
     const selectedSnapshots = isMultiResize ? new Map(
       elements
         .filter((el) => selectedElementIds.has(el.id) && !el.locked)
@@ -412,7 +436,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, textBounds, testData, bitmap, bitmapProof, liveBounds, onGestureCancel]);
+  }, [elements, onUpdateElement, screenToSvg, selectedElementIds, onDragStart, onDragEnd, format, boundsOf, testData, bitmap, bitmapProof, liveBounds, onGestureCancel]);
 
   // Snap threshold in viewBox units (~2% of smallest dimension)
   const snapThreshold = format.type === 'thermal' ? 6 * totalW / svgW : Math.min(viewBoxWidth, viewBoxHeight) * 0.02;
@@ -483,7 +507,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
     <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-2 pt-12 pb-4 sm:px-6 sm:pt-16 sm:pb-6 overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
       {!bitmap && layoutProblems.length > 0 && <p role="status" className="absolute top-1 left-3 right-3 text-sm text-amber-300">{layoutProblems[0].message}{layoutProblems.length > 1 ? ` (and ${layoutProblems.length - 1} more)` : ''}</p>}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();
@@ -491,11 +515,14 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         onDragEnd?.();
       }}>Fit QR inside label</button>}
       {editing && <div className="fixed z-40 bg-zinc-950 border border-amber-400 rounded p-2" style={{ left: Math.max(0, Math.min(editing.left, window.innerWidth - editing.width - 20)), top: Math.max(0, Math.min(editing.top, window.innerHeight - editing.height - 70)), width: editing.width + 16 }}>
-        <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Default for ${editing.field} (binding preserved)` : 'Edit text'} · Ctrl/⌘ Enter saves · Esc cancels</p>
+        <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Sample for ${friendlyFieldName(editing.field)} (the spreadsheet fills it when printing)` : 'Edit text'}. Ctrl or ⌘ + Enter saves, Esc cancels.</p>
         <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
       </div>}
       <svg
         ref={svgRef}
+        tabIndex={0}
+        role="group"
+        aria-label="Label. Arrow keys move the selected item; hold Shift for bigger steps."
         width={svgW}
         height={svgH}
         viewBox={`${-padX} ${-padY} ${totalW} ${totalH}`}
@@ -511,12 +538,18 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         onPointerUp={() => {
           if (marquee) {
             const x = Math.min(marquee.x, marquee.endX), y = Math.min(marquee.y, marquee.endY), w = Math.abs(marquee.x - marquee.endX), h = Math.abs(marquee.y - marquee.endY);
-            const hit = w + h < 2 ? [] : elements.filter(el => { if (el.locked) return false; const b = elementInteractionBounds(el, textBounds); return b.x < x + w && b.x + b.width > x && b.y < y + h && b.y + b.height > y; }).map(el => el.id);
+            const hit = w + h < 2 ? [] : elements.filter(el => { if (el.locked) return false; const b = boundsOf(el); return b.x < x + w && b.x + b.width > x && b.y < y + h && b.y + b.height > y; }).map(el => el.id);
             onSelectElements?.([...new Set([...marquee.initial, ...hit])]); setMarquee(null);
           }
           handlePointerUp();
         }}
       >
+        <defs>
+          <pattern id={hatchId} patternUnits="userSpaceOnUse" width={Math.max(4, viewBoxWidth * 0.02)} height={Math.max(4, viewBoxWidth * 0.02)} patternTransform="rotate(45)">
+            <rect width={Math.max(4, viewBoxWidth * 0.02)} height={Math.max(4, viewBoxWidth * 0.02)} fill="#ef444433" />
+            <line x1={0} y1={0} x2={0} y2={Math.max(4, viewBoxWidth * 0.02)} stroke="#ef4444" strokeWidth={Math.max(1, viewBoxWidth * 0.006)} />
+          </pattern>
+        </defs>
         {/* Dark surround — click to deselect */}
         <rect
           x={-padX}
@@ -565,19 +598,21 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 style={{ cursor: dragging?.elementId === element.id ? 'grabbing' : 'grab' }}
               >
                 <g pointerEvents="none">
-                  {!bitmap && renderElement(element, format, elements, handleTextMeasure, testData)}
+                  {nativeThermal && (element.type === 'image'
+                    ? <ImageElementRenderer element={element as ImageElement} transform={element.rotation ? `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})` : undefined} />
+                    : <ThermalItem element={element} format={format} values={testData} onInk={handleInk} />)}
+                  {format.type === 'sheet' && <SheetItem element={element} format={format} values={testData} />}
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {
-                  const box = liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) ?? elementInteractionBounds(element, textBounds);
-                  // What the printer really draws (a Code 128 is as wide as its
-                  // value needs), so the bars you can see are the bars you can grab.
-                  const printed = !bitmap && format.type === 'thermal' && element.type === 'barcode' ? printedBounds(element, format, testData) : null;
-                  const bounds = printed ? unionBox(box, printed) : box;
+                  const bounds = liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) ?? boundsOf(element);
                   const problem = problemIdSet.has(element.id);
+                  const ink = liveInk(element);
+                  const pad = viewBoxWidth * 0.005;
                   return (
                     <>
                       <rect
+                        data-hit
                         x={bounds.x}
                         y={bounds.y}
                         width={Math.max(bounds.width, viewBoxWidth * 0.02)}
@@ -587,10 +622,11 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                         strokeWidth={1}
                         strokeDasharray="3 2"
                       />
-                      {problem && (() => {
-                        const outline = (format.type === 'thermal' && !bitmap ? printedBounds(element, format, testData) : null) ?? box;
-                        return <rect data-layout-problem={element.id} x={outline.x} y={outline.y} width={outline.width} height={outline.height} fill="none" stroke="#ef4444" strokeWidth={Math.max(1.5, Math.min(viewBoxWidth, viewBoxHeight) * 0.006)} pointerEvents="none" />;
-                      })()}
+                      {problem && <rect data-layout-problem={element.id} x={bounds.x - pad} y={bounds.y - pad} width={bounds.width + pad * 2} height={bounds.height + pad * 2} fill="none" stroke="#ef4444" strokeWidth={Math.max(1.5, Math.min(viewBoxWidth, viewBoxHeight) * 0.006)} pointerEvents="none" />}
+                      {/* The part the printer cuts off: hatched, outside the label edge. */}
+                      {ink && outsideParts(ink, viewBoxWidth, viewBoxHeight, labelPadX, labelPadY).map((part, index) => (
+                        <rect key={index} data-off-label={element.id} x={part.x} y={part.y} width={part.width} height={part.height} fill={`url(#${hatchId})`} stroke="#ef4444" strokeWidth={Math.max(1, Math.min(viewBoxWidth, viewBoxHeight) * 0.003)} pointerEvents="none" />
+                      ))}
                     </>
                   );
                 })()}
@@ -598,7 +634,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                   <>
                     {/* Selection border — use measured bounds for text */}
                     {(() => {
-                      const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? elementInteractionBounds(element, textBounds);
+                      const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? boundsOf(element);
                       const pad = viewBoxWidth * 0.005;
                       return (
                         <rect
@@ -617,7 +653,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                     {(() => {
                       const hs = Math.min(viewBoxWidth, viewBoxHeight) * 0.025; // handle size
                       const half = hs / 2;
-                      const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? elementInteractionBounds(element, textBounds);
+                      const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? boundsOf(element);
                       const ex = bounds.x;
                       const ey = bounds.y;
                       const ew = bounds.width;
@@ -652,7 +688,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 )}
                 {/* Multi-select: subtle dashed outline on each member element */}
                 {selectedElementIds.has(element.id) && selectedElementIds.size > 1 && (() => {
-                  const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? elementInteractionBounds(element, textBounds);
+                  const bounds = (bitmap ? liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) : undefined) ?? boundsOf(element);
                   return (
                     <rect
                       x={bounds.x}
@@ -680,7 +716,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
           for (const id of ids) {
             const el = elements.find((e) => e.id === id);
             if (!el) continue;
-            const bounds = elementInteractionBounds(el, textBounds);
+            const bounds = boundsOf(el);
             minX = Math.min(minX, bounds.x);
             minY = Math.min(minY, bounds.y);
             maxX = Math.max(maxX, bounds.x + bounds.width);
@@ -772,30 +808,6 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   );
 }
 
-function renderElement(element: TemplateElement, format: LabelFormat, elements: TemplateElement[], onTextMeasure?: (id: string, w: number, h: number) => void, testData?: Record<string, string>): React.ReactNode {
-  const transform = element.rotation !== 0
-    ? `rotate(${element.rotation} ${element.x + element.width / 2} ${element.y + element.height / 2})`
-    : undefined;
-
-  switch (element.type) {
-    case 'text':
-      // Text handles its own rotation to match ZPL's field-origin rotation.
-      return <TextElementRenderer key={element.id} element={element as TextElement} format={format} onMeasure={onTextMeasure} testData={testData} />;
-    case 'qr':
-      return <QRElementRenderer key={element.id} element={element as QRElement} format={format} transform={transform} testData={testData} />;
-    case 'barcode':
-      return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} format={format} transform={transform} testData={testData} />;
-    case 'line':
-      return <LineElementRenderer key={element.id} element={element as LineElement} transform={transform} format={format} />;
-    case 'rectangle':
-      return <RectangleElementRenderer key={element.id} element={element as RectangleElement} transform={transform} format={format} />;
-    case 'image':
-      return <ImageElementRenderer key={element.id} element={element as ImageElement} transform={transform} />;
-    default:
-      return null;
-  }
-}
-
 function unionBox(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
   const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
   return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
@@ -820,20 +832,8 @@ function resizeCursor(handle: string, uprightEditor: boolean): string {
   return (uprightEditor ? uprightOrientation : printerOrientation)[handle] || 'default';
 }
 
-function elementInteractionBounds(
-  element: TemplateElement,
-  textBounds: Record<string, { w: number; h: number }>,
-): { x: number; y: number; width: number; height: number } {
-  return elementVisualBounds(element, textBounds);
-}
-
-function elementVisualBounds(
-  element: TemplateElement,
-  textBounds: Record<string, { w: number; h: number }>,
-): { x: number; y: number; width: number; height: number } {
-  const measured = element.type === 'text' ? textBounds[element.id] : null;
-  const width = measured?.w ?? element.width;
-  const height = measured?.h ?? element.height;
+function elementVisualBounds(element: TemplateElement): Box {
+  const { width, height } = element;
   const rotation = normalizedRightAngle(element.rotation);
 
   if (rotation === 0) {
@@ -858,6 +858,26 @@ function elementVisualBounds(
   return { x: element.x, y: element.y, width, height };
 }
 
+function clipBox(box: Box, width: number, height: number): Box | null {
+  const x = Math.max(0, box.x), y = Math.max(0, box.y);
+  const right = Math.min(width, box.x + box.width), bottom = Math.min(height, box.y + box.height);
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
+}
+
+/** The pieces of `box` outside the label, kept inside the canvas margin. */
+function outsideParts(box: Box, width: number, height: number, padX: number, padY: number): Box[] {
+  const parts: Box[] = [];
+  const top = Math.max(box.y, -padY), bottom = Math.min(box.y + box.height, height + padY);
+  const left = Math.max(box.x, -padX), right = Math.min(box.x + box.width, width + padX);
+  if (bottom <= top || right <= left) return parts;
+  if (right > width) parts.push({ x: Math.max(width, left), y: top, width: right - Math.max(width, left), height: bottom - top });
+  if (left < 0) parts.push({ x: left, y: top, width: Math.min(0, right) - left, height: bottom - top });
+  const innerL = Math.max(0, left), innerR = Math.min(width, right);
+  if (innerR > innerL && bottom > height) parts.push({ x: innerL, y: Math.max(height, top), width: innerR - innerL, height: bottom - Math.max(height, top) });
+  if (innerR > innerL && top < 0) parts.push({ x: innerL, y: top, width: innerR - innerL, height: Math.min(0, bottom) - top });
+  return parts.filter((part) => part.width > 0.5 && part.height > 0.5);
+}
+
 function resolveElementContent(element: TemplateElement, testData?: Record<string, string>): string {
   if (element.isStatic) {
     if ('content' in element) return element.content || '';
@@ -869,218 +889,95 @@ function resolveElementContent(element: TemplateElement, testData?: Record<strin
   return `${element.prefix || ''}${rawContent}${element.suffix || ''}`;
 }
 
-function TextElementRenderer({ element, format, onMeasure, testData }: { element: TextElement; format: LabelFormat; onMeasure?: (id: string, w: number, h: number) => void; testData?: Record<string, string> }) {
-  const textRef = useRef<SVGTextElement>(null);
-
-  // Resolve display content: test data > default value > field placeholder
-  let rawContent: string;
-  if (element.isStatic) {
-    rawContent = element.content;
-  } else {
-    const testValue = element.fieldName && testData?.[element.fieldName];
-    // No sample yet: show the field's plain name, never a {{code}} token.
-    rawContent = testValue || element.defaultValue || friendlyFieldName(element.fieldName);
-  }
-  const prefix = (!element.isStatic && element.prefix) ? element.prefix : '';
-  const suffix = (!element.isStatic && element.suffix) ? element.suffix : '';
-  const displayContent = `${prefix}${rawContent}${suffix}`;
-
-  const color = format.type === 'thermal' ? '#000000' : element.color;
-
-  const isThermal = format.type === 'thermal';
-  const dpi = format.dpi || 203;
-  const thermalLayout = isThermal && element.autoFit === true
-    ? layoutThermalText({
-        content: displayContent,
-        width: element.width,
-        height: element.height,
-        fontSize: element.fontSize,
-        dpi,
-        lineHeight: element.lineHeight,
-        charWidth: element.charWidth,
-        autoFit: element.autoFit,
-        minFontSize: element.minFontSize,
-      })
-    : null;
-  // Raw dots-per-point height (ZPL's fontH equivalent).
-  const rawFontHDots = thermalLayout?.fontHeight ?? element.fontSize * (dpi / 72);
-
-  // Calibration to match Zebra Font 0's visual footprint in the SVG preview.
-  // For thermal, svgFontSize only feeds the wrap metric below (0.8 x 0.6 =
-  // 0.48 x fontH); glyphs are drawn at glyphFontSize further down.
-  const zebraHeightCalibration = isThermal ? 0.8 : 1.0;
-
-  const svgFontSize = isThermal
-    ? rawFontHDots * zebraHeightCalibration
-    : element.fontSize / 72;
-
-  // Line height: ZPL Font 0 fits cleanly at 1.0× fontH between lines (no extra
-  // leading). Browsers/Arial need a little more. We use element.lineHeight as
-  // a multiplier on the RAW fontH (not the scaled svgFontSize) so spacing
-  // between lines matches ZPL exactly.
-  const lineHeight = thermalLayout
-    ? thermalLayout.lineAdvance
-    : isThermal
-      ? rawFontHDots * (element.lineHeight || 1.0)
-    : svgFontSize * (element.lineHeight || 1.2);
-
-  // Word-wrap character width estimate.
-  // For thermal with the default font we use svgFontSize * 0.6. svgFontSize
-  // already bakes in the 0.8 zebraHeightCalibration — so the effective char width
-  // in SVG/dot units is rawFontHDots × 0.8 × 0.6 = rawFontHDots × 0.48 (the
-  // rendered lines are forced to this width below).
-  // Using rawFontHDots × 0.5 (old) caused the wrap to fire ~4% too early, which
-  // at the boundary (e.g. 12–13 chars) produced an unwanted extra line break.
-  // For user-picked fonts with textLength compression the ZPL ratio is still used.
-  // For sheet labels Arial averages ~0.5 × em.
-  const textCharWidthRatio = element.charWidth ?? 0.5;
-  const isDefaultFontForWrap = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
-  const charWidthThermal = isThermal && isDefaultFontForWrap
-    ? svgFontSize * 0.6
-    : rawFontHDots * textCharWidthRatio;
-  const charWidth = isThermal ? charWidthThermal : svgFontSize * 0.5;
-  const maxCharsPerLine = Math.max(1, Math.floor(element.width / Math.max(charWidth, 0.001)));
-  const lines = thermalLayout?.lines ?? wrapThermalText(displayContent, maxCharsPerLine);
-
-  // Thermal ZPL uses ^FB with a fixed maximum line count. Keep the editable
-  // preview inside that same field capacity; the print preview remains the
-  // source of truth for exact Zebra glyph metrics.
-  const maxLines = thermalLayout?.maxLines ?? (isThermal
-    ? Math.max(1, Math.floor(element.height / (rawFontHDots * (element.lineHeight || 1.2))))
-    : Number.POSITIVE_INFINITY);
-  const visibleLines = (lines.length > 0 ? lines : [displayContent]).slice(0, maxLines);
-
-  let textAnchor: 'start' | 'middle' | 'end' = 'start';
-  if (element.textAlign === 'center') textAnchor = 'middle';
-  else if (element.textAlign === 'right') textAnchor = 'end';
-
-  let baseX = element.x;
-  if (element.textAlign === 'center') baseX = element.x + element.width / 2;
-  else if (element.textAlign === 'right') baseX = element.x + element.width;
-
-  // Native thermal labels always print in Zebra Font 0 (^A0), whatever
-  // family is picked. Font 0 is a bold condensed sans whose glyphs are
-  // squeezed horizontally by the ^A0 width/height ratio. Draw it the same
-  // way: a bold condensed face at the field height, scaled by that ratio.
-  // Wrapping above still uses the established 0.48 x fontH metric, so line
-  // breaks and printed bytes are unchanged; only the drawn glyphs differ.
-  const thermalPrintFont = 'var(--font-zebra), "Roboto Condensed", "Arial Narrow", sans-serif';
-  const effectiveFontFamily = isThermal ? thermalPrintFont : element.fontFamily;
-  const effectiveFontWeight = isThermal ? 700 : element.fontWeight;
-  const glyphFontSize = isThermal ? rawFontHDots : svgFontSize;
-  const glyphScaleX = isThermal
-    ? Math.min(2, Math.max(0.2, thermalLayout ? thermalLayout.fontWidth / Math.max(1, thermalLayout.fontHeight) : (element.charWidth ?? 0.5)))
-    : 1;
-
-  // Measure and report
-  useEffect(() => {
-    if (textRef.current && onMeasure) {
-      try {
-        const bbox = textRef.current.getBBox();
-        if (bbox.width > 0) {
-          onMeasure(element.id, Math.max(bbox.width * glyphScaleX, element.width), Math.max(bbox.height, element.height));
-        }
-      } catch {}
-    }
-  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.autoFit, element.minFontSize, element.id, onMeasure, glyphScaleX]);
-
-
-  // Rotation handling: ZPL rotates around the field origin (^FO point, top-left
-  // of the text box). SVG's rotate-around-center doesn't match. We use a <g>
-  // transform: translate to the origin, then rotate, then render text at (0,0).
-  // This makes the preview match what ZPL prints.
-  const rotation = element.rotation || 0;
-  const needsRotation = rotation !== 0;
-
-  // ZPL positions the TOP of the character box at ^FO. SVG positions text by
-  // its baseline. The baseline is roughly 0.8× fontH below the top of the box.
-  // For the preview to match ZPL, we offset text by this amount so the top
-  // of the text aligns with the field origin.
-  const baselineOffset = isThermal ? rawFontHDots * 0.8 : svgFontSize * 0.85;
-
-  const localBaseX = element.textAlign === 'center'
-    ? element.width / 2
-    : element.textAlign === 'right'
-      ? element.width
-      : 0;
-
-  const textContent = (
-    <text
-      ref={textRef}
-      fontSize={glyphFontSize}
-      fontFamily={effectiveFontFamily}
-      fontWeight={effectiveFontWeight}
-      textAnchor={textAnchor}
-      fill={color}
-      transform={glyphScaleX !== 1 ? `scale(${glyphScaleX} 1)` : undefined}
-    >
-      {visibleLines.map((line, i) => {
-        const lineOffset = i * lineHeight;
-        return (
-          <tspan
-            key={i}
-            x={(needsRotation ? localBaseX : baseX) / glyphScaleX}
-            y={needsRotation ? (baselineOffset + lineOffset) : (element.y + baselineOffset + lineOffset)}
-          >
-            {line}
-          </tspan>
-        );
-      })}
-    </text>
-  );
-
-  if (!needsRotation) {
-    return textContent;
-  }
-
-  // Wrap in a group that translates to the element's origin then rotates.
-  // This matches ZPL's ^FO + ^A0R behavior: rotate around the field origin.
-  return (
-    <g transform={`translate(${element.x}, ${element.y}) rotate(${rotation})`}>
-      {textContent}
-    </g>
-  );
-}
+type SoloRaster = { key: string; url: string; ox: number; oy: number; padX: number; padY: number; w: number; h: number; ink: InkOffset | null; failed?: boolean };
 
 /**
- * One element drawn by the same ZPL renderer the print preview uses, so the
- * canvas shows exactly what the printer makes (a Code 128 as wide as its
- * value needs, a QR at its whole-dot size). Preview only: the printed bytes
- * come from generateZPL as before. While a new raster is drawn, the last one
- * follows the element, so dragging stays smooth.
+ * One item drawn alone by the same ZPL generator and renderer as the print
+ * preview, on a label with a margin around it so a part that runs off the
+ * edge can still be measured. Preview only: the printed bytes come from
+ * generateZPL with the real format, untouched.
  */
-function useElementRaster(element: TemplateElement, format: LabelFormat, testData: Record<string, string> | undefined, enabled: boolean) {
-  const [raster, setRaster] = useState<{ url: string; x: number; y: number; failed?: boolean } | null>(null);
-  useEffect(() => {
-    if (!enabled) return;
-    let active = true;
-    const timer = setTimeout(() => {
-      const zpl = generateZPL({ id: `${element.id}-canvas`, name: 'Canvas', formatId: format.id, elements: [element], createdAt: '', updatedAt: '' }, format, testData);
-      renderZplToDataUrl(zpl, format)
-        .then((url) => { if (active) setRaster({ url, x: element.x, y: element.y }); })
-        .catch(() => { if (active) setRaster({ url: '', x: element.x, y: element.y, failed: true }); });
-    }, 60);
-    return () => { active = false; clearTimeout(timer); };
-  }, [element, format, testData, enabled]);
-  return enabled ? raster : null;
+function soloRasterInput(element: TemplateElement, format: LabelFormat, values: Record<string, string> | undefined) {
+  const dpi = format.dpi || 203;
+  const labelW = Math.round(format.width * dpi), labelH = Math.round(format.height * dpi);
+  const padX = Math.ceil(labelW * 0.15), padY = Math.ceil(labelH * 0.15);
+  const w = labelW + padX * 2, h = labelH + padY * 2;
+  const solo: LabelFormat = { ...format, labelsAcross: 1, linerWidth: undefined, sideMarginThermal: 0, horizontalGapThermal: 0 };
+  const shifted = { ...element, x: element.x + padX, y: element.y + padY } as TemplateElement;
+  const zpl = generateZPL({ id: 'canvas', name: 'Canvas', formatId: format.id, elements: [shifted], createdAt: '', updatedAt: '' }, solo, values)
+    .replace(/\^PW\d+/, `^PW${w}`).replace(/\^LL\d+/, `^LL${h}`);
+  return { zpl, padX, padY, w, h, renderFormat: { width: w / dpi, height: h / dpi, dpi, labelsAcross: 1, sideMarginThermal: 0, horizontalGapThermal: 0 } };
 }
 
-function ThermalRaster({ raster, element, format }: { raster: { url: string; x: number; y: number }; element: TemplateElement; format: LabelFormat }) {
+/** Bounding box of the dark pixels of a rendered PNG, in label dots. */
+async function inkOf(url: string, w: number, h: number): Promise<Box | null> {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context || !canvas.width || !canvas.height) return null;
+  context.drawImage(image, 0, 0);
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
+  for (let y = 0; y < canvas.height; y++) {
+    const row = y * canvas.width * 4;
+    for (let x = 0; x < canvas.width; x++) {
+      if (data[row + x * 4] < 128 && data[row + x * 4 + 3] > 0) {
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null;
+  const sx = w / canvas.width, sy = h / canvas.height;
+  return { x: minX * sx, y: minY * sy, width: (maxX - minX + 1) * sx, height: (maxY - minY + 1) * sy };
+}
+
+function ThermalItem({ element, format, values, onInk }: { element: TemplateElement; format: LabelFormat; values?: Record<string, string>; onInk: (id: string, ink: InkOffset | null) => void }) {
   const clipId = useId().replace(/:/g, '');
-  const geometry = thermalRenderGeometry(format);
+  const [raster, setRaster] = useState<SoloRaster | null>(null);
+  // Moving an item doesn't change how it prints, only where.
+  const key = JSON.stringify([{ ...element, x: Math.round(element.x) - element.x, y: Math.round(element.y) - element.y, zIndex: 0, locked: false }, values, format]);
+  const current = useRef(element);
+  useEffect(() => { current.current = element; });
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      const el = current.current;
+      const input = soloRasterInput(el, format, values);
+      const base = { key, ox: Math.round(el.x), oy: Math.round(el.y), padX: input.padX, padY: input.padY, w: input.w, h: input.h };
+      if (!/\^FO/.test(input.zpl)) { setRaster({ ...base, url: '', ink: null }); return; }
+      renderZplToDataUrl(input.zpl, input.renderFormat)
+        .then(async (url) => {
+          const ink = await inkOf(url, input.w, input.h);
+          if (active) setRaster({ ...base, url, ink: ink && { dx: ink.x - input.padX - base.ox, dy: ink.y - input.padY - base.oy, width: ink.width, height: ink.height } });
+        })
+        .catch(() => { if (active) setRaster({ ...base, url: '', ink: null, failed: true }); });
+    }, 40);
+    return () => { active = false; clearTimeout(timer); };
+  }, [key, format, values]);
+  useEffect(() => { onInk(element.id, raster?.ink ?? null); }, [raster, element.id, onInk]);
+  useEffect(() => () => onInk(element.id, null), [element.id, onInk]);
+
   const dpi = format.dpi || 203;
+  if (!raster || !raster.url) {
+    if (!raster?.failed) return null;
+    return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#f4f4f5" stroke="#a1a1aa" strokeWidth={1} strokeDasharray="4 3" />;
+  }
   return (
     <>
       <clipPath id={clipId}>
-        <rect x={0} y={0} width={format.width * dpi} height={format.height * dpi} />
+        <rect x={0} y={0} width={Math.round(format.width * dpi)} height={Math.round(format.height * dpi)} />
       </clipPath>
       {/* The clip sits on the image itself: a clipped group would isolate
           the multiply blend and paint white over the items below. */}
       <image
-        x={-geometry.effectiveSideMDots + element.x - raster.x}
-        y={element.y - raster.y}
-        width={geometry.linerDots}
-        height={geometry.heightDots}
+        x={element.x - raster.ox - raster.padX}
+        y={element.y - raster.oy - raster.padY}
+        width={raster.w}
+        height={raster.h}
         href={raster.url}
         clipPath={`url(#${clipId})`}
         preserveAspectRatio="none"
@@ -1090,130 +987,29 @@ function ThermalRaster({ raster, element, format }: { raster: { url: string; x: 
   );
 }
 
-function QRElementRenderer({ element, format, transform, testData }: { element: QRElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
-  const [dataUrl, setDataUrl] = useState<string>('');
-  const content = resolveElementContent(element, testData) || 'QR';
-  const thermal = format.type === 'thermal';
-  const raster = useElementRaster(element, format, testData, thermal);
+function extractSvgBody(svg: string): string {
+  const start = svg.indexOf('>');
+  const end = svg.lastIndexOf('</svg>');
+  return start === -1 || end <= start ? '' : svg.slice(start + 1, end);
+}
 
+/** One sheet item drawn by the same code that prints the sheet. */
+function SheetItem({ element, format, values }: { element: TemplateElement; format: LabelFormat; values?: Record<string, string> }) {
+  const [drawn, setDrawn] = useState<{ body: string; ox: number; oy: number } | null>(null);
+  const key = JSON.stringify([{ ...element, x: 0, y: 0, zIndex: 0, locked: false }, values, format]);
+  const current = useRef(element);
+  useEffect(() => { current.current = element; });
   useEffect(() => {
-    if (thermal) return;
     let active = true;
-    QRCode.toDataURL(content, { errorCorrectionLevel: element.errorCorrection, width: 256, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
-      .then((url: string) => { if (active) setDataUrl(url); })
-      .catch(() => { if (active) setDataUrl(''); });
+    const el = current.current;
+    renderSheetLabelSvg([el], format, values || {})
+      .then((svg) => { if (active) setDrawn({ body: extractSvgBody(svg), ox: el.x, oy: el.y }); })
+      .catch(() => { if (active) setDrawn({ body: '', ox: el.x, oy: el.y }); });
     return () => { active = false; };
-  }, [content, element.errorCorrection, thermal]);
-
-  if (thermal && raster?.url) return <ThermalRaster raster={raster} element={element} format={format} />;
-
-  return dataUrl && !thermal ? (
-    <image x={element.x} y={element.y} width={element.width} height={element.height} href={dataUrl} transform={transform} preserveAspectRatio="xMidYMid meet" />
-  ) : (
-    // Placeholder while the QR is drawn
-    <rect
-      x={element.x}
-      y={element.y}
-      width={element.width}
-      height={element.height}
-      fill="#f4f4f5"
-      stroke="#a1a1aa"
-      strokeWidth={element.width * 0.02}
-      strokeDasharray={`${element.width * 0.05} ${element.width * 0.03}`}
-      transform={transform}
-    />
-  );
-}
-
-function BarcodeElementRenderer({ element, format, transform, testData }: { element: BarcodeElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
-  const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
-  const content = resolveElementContent(element, testData) || '123456789';
-  const thermal = format.type === 'thermal';
-  // A per-label barcode with no sample yet still shows bars, as the old canvas did.
-  const values = useMemo(() => (!element.isStatic && element.fieldName && !testData?.[element.fieldName] && !element.defaultValue ? { ...testData, [element.fieldName]: content } : testData), [element.isStatic, element.fieldName, element.defaultValue, testData, content]);
-  const raster = useElementRaster(element, format, values, thermal);
-
-  useEffect(() => {
-    try {
-      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      document.body.appendChild(tempSvg);
-      try {
-        JsBarcode(tempSvg, content, { format: element.barcodeFormat, width: 2, height: 80, displayValue: element.showText, margin: 0, fontSize: 14 });
-        setBarcodeData({ svg: tempSvg.innerHTML, viewBox: barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height')) });
-      } finally {
-        // Also on a JsBarcode error (e.g. a partial EAN13), so nodes don't leak.
-        tempSvg.remove();
-      }
-    } catch {
-      setBarcodeData(null);
-    }
-  }, [content, element.barcodeFormat, element.showText]);
-
-  if (thermal && raster?.url && !raster.failed) return <ThermalRaster raster={raster} element={element} format={format} />;
-
-  if (!barcodeData) {
-    return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#f4f4f5" stroke="#a1a1aa" strokeWidth={element.width * 0.01} transform={transform} />;
-  }
-
-  // On a thermal label the bars are as wide as the printer makes them, not
-  // stretched to the box; elsewhere they fit the box as before.
-  const printed = thermal ? printedBounds({ ...element, rotation: 0 }, format, values) : null;
-  return (
-    <svg
-      x={element.x}
-      y={element.y}
-      width={printed?.width ?? element.width}
-      height={printed?.height ?? element.height}
-      viewBox={barcodeData.viewBox}
-      preserveAspectRatio={printed ? 'none' : 'xMidYMid meet'}
-      transform={transform}
-      overflow="visible"
-    >
-      <g dangerouslySetInnerHTML={{ __html: barcodeData.svg }} />
-    </svg>
-  );
-}
-
-function LineElementRenderer({ element, transform, format }: { element: LineElement; transform?: string; format: LabelFormat }) {
-  // Convert strokeWidth from points to viewBox units
-  const isThermal = format.type === 'thermal';
-  const dpi = format.dpi || 203;
-  const sw = isThermal ? element.strokeWidth * (dpi / 72) : element.strokeWidth / 72;
-
-  return (
-    <line
-      x1={element.x}
-      y1={element.y}
-      x2={element.x + element.width}
-      y2={element.y + element.height}
-      stroke={isThermal ? '#000000' : element.color}
-      strokeWidth={sw}
-      strokeDasharray={element.lineStyle === 'dotted' ? `0 ${sw * 3}` : element.lineStyle === 'dashed' ? `${sw * 4} ${sw * 2}` : undefined}
-      strokeLinecap={element.lineStyle === 'dotted' ? 'round' : undefined}
-      transform={transform}
-    />
-  );
-}
-
-function RectangleElementRenderer({ element, transform, format }: { element: RectangleElement; transform?: string; format: LabelFormat }) {
-  const isThermal = format.type === 'thermal';
-  const dpi = format.dpi || 203;
-  const sw = isThermal ? element.strokeWidth * (dpi / 72) : element.strokeWidth / 72;
-  const br = isThermal ? element.borderRadius * (dpi / 72) : element.borderRadius / 72;
-
-  return (
-    <rect
-      x={element.x}
-      y={element.y}
-      width={element.width}
-      height={element.height}
-      rx={br}
-      stroke={isThermal ? '#000000' : element.strokeColor}
-      strokeWidth={sw}
-      fill={element.fillColor || 'none'}
-      transform={transform}
-    />
-  );
+  }, [key, format, values]);
+  if (!drawn) return null;
+  if (!drawn.body) return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#f4f4f5" stroke="#a1a1aa" strokeWidth={0.01} />;
+  return <g transform={`translate(${element.x - drawn.ox} ${element.y - drawn.oy})`} dangerouslySetInnerHTML={{ __html: drawn.body }} />;
 }
 
 function ImageElementRenderer({ element, transform }: { element: ImageElement; transform?: string }) {

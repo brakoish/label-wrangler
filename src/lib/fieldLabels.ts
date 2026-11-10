@@ -108,7 +108,18 @@ export function nextFieldName(type: string, existing: ReadonlyArray<{ fieldName?
   return nextItemName(type, existing.map((el) => el.fieldName ?? '').filter(Boolean));
 }
 
-/** Spreadsheet row the person sees for a label: the header is row 1. */
+let headerRow = 1;
+
+/**
+ * The row the uploaded spreadsheet's headings are in (1 unless a title sits
+ * above them). Set by New run when a file is read, so row numbers in its
+ * checks match what the person sees in Excel.
+ */
+export function setSpreadsheetHeaderRow(row: number): void {
+  headerRow = Number.isFinite(row) && row >= 1 ? Math.floor(row) : 1;
+}
+
+/** Spreadsheet row the person sees for a label: the row after the headings. */
 export function spreadsheetRow(labelNumber: number): number {
-  return labelNumber + 1;
+  return labelNumber + headerRow;
 }

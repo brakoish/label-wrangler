@@ -499,3 +499,46 @@ textarea:focus-visible {
     transform: none;
   }
 }
+
+/* area A r3 */
+/* Fold-out sections (<details>) open and close instead of snapping:
+   ease-out in 200ms, out 160ms (about 20% shorter). Browsers without
+   ::details-content simply snap, as before. */
+@supports selector(::details-content) {
+  :root { interpolate-size: allow-keywords; }
+  details::details-content {
+    block-size: 0;
+    overflow: clip;
+    opacity: 0;
+    transition: block-size 160ms ease-in, opacity 160ms ease-in, content-visibility 160ms ease-in allow-discrete;
+  }
+  details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+    transition-duration: 200ms;
+    transition-timing-function: var(--ease-out);
+  }
+}
+/* Pressed controls shrink a little, like buttons (0.97). */
+.segmented > button,
+.segmented > a,
+[role="menuitem"],
+[data-layer-id] {
+  transition-property: color, background-color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.segmented > button:active:not(:disabled),
+.segmented > a:active,
+[role="menuitem"]:active:not([aria-disabled="true"]),
+[data-layer-id]:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  details::details-content { transition: none; }
+  .segmented > button:active:not(:disabled),
+  .segmented > a:active,
+  [role="menuitem"]:active,
+  [data-layer-id]:active { transform: none; }
+}
+/* end area A r3 */

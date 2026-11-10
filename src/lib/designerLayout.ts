@@ -2,6 +2,7 @@ import type { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextEleme
 import { zplQrGeometry } from './zplGenerator';
 import { layoutThermalText, wrapThermalText } from './thermalTextLayout';
 import { elementTypeName, friendlyFieldName } from './fieldLabels';
+import { font0Width, font0Wrap } from './zebraFont0';
 
 /**
  * Where each item really prints on a native thermal label, and the layout
@@ -89,14 +90,27 @@ export function printedBounds(el: TemplateElement, format: LabelFormat, values?:
       const content = resolvedValue(el, values);
       if (!content) return null;
       const t = el as TextElement;
-      const layout = layoutThermalText({ content, width: t.width, height: t.height, fontSize: t.fontSize, dpi, lineHeight: t.lineHeight, charWidth: t.charWidth, autoFit: t.autoFit === true, minFontSize: t.minFontSize });
-      const fontH = layout.fontHeight;
-      const lines = t.autoFit === true ? layout.visibleLines : wrapThermalText(content, Math.max(1, Math.floor(t.width / Math.max(1, fontH * 0.48)))).slice(0, layout.maxLines);
-      const longest = Math.max(1, ...lines.map((line) => line.length));
-      const inkWidth = Math.min(t.width, Math.round(longest * fontH * 0.48));
-      const offset = t.textAlign === 'center' ? (t.width - inkWidth) / 2 : t.textAlign === 'right' ? t.width - inkWidth : 0;
-      const box = { x: t.x + offset, y: t.y, width: inkWidth, height: Math.max(fontH, lines.length * layout.lineAdvance - layout.lineSpacing) };
+      // The same numbers zplGenerator.textToZPL sends: ^A0 height and width,
+      // ^FB block width, line count and spacing.
+      const autoFit = t.autoFit === true;
+      const layout = autoFit ? layoutThermalText({ content, width: Math.round(t.width), height: t.height, fontSize: t.fontSize, dpi, lineHeight: t.lineHeight, charWidth: t.charWidth, autoFit: true, minFontSize: t.minFontSize }) : null;
+      const fontH = layout?.fontHeight ?? Math.round(t.fontSize * (dpi / 72));
+      const fontW = layout?.fontWidth ?? Math.max(1, Math.round(fontH * (t.charWidth ?? 0.5)));
+      const maxLines = layout?.maxLines ?? Math.max(1, Math.floor(t.height / (fontH * (t.lineHeight || 1.2))));
+      const lineSpacing = layout?.lineSpacing ?? Math.round(fontH * ((t.lineHeight || 1.2) - 1));
+      const blockWidth = Math.round(t.width);
       const r = rotation(t);
+      // Unrotated fields are wrapped by the printer (^FB); rotated ones are
+      // broken into lines by the generator with its own character estimate.
+      const lines = layout?.visibleLines
+        ?? (r === 0 ? font0Wrap(content, blockWidth, fontW) : wrapThermalText(content, Math.max(1, Math.floor(blockWidth / Math.max(1, fontH * 0.48))))).slice(0, maxLines);
+      const widths = lines.map((line) => Math.min(blockWidth, Math.round(font0Width(line, fontW))));
+      const inkWidth = Math.max(1, ...widths);
+      const offset = t.textAlign === 'center' ? Math.round((blockWidth - inkWidth) / 2) : t.textAlign === 'right' ? blockWidth - inkWidth : 0;
+      // Font 0 capitals fill the top 3/4 of the ^A0 height; descenders reach about 0.93.
+      const last = lines[lines.length - 1] ?? '';
+      const glyphH = Math.round(fontH * (/[gjpqy,;()[\]{}|@$]/.test(last) ? 0.93 : 0.76));
+      const box = { x: t.x + offset, y: t.y, width: inkWidth, height: Math.max(1, (lines.length - 1) * (fontH + lineSpacing) + glyphH) };
       if (r === 0) return box;
       // Text rotates around its field origin (top-left), as ZPL does.
       if (r === 90) return { x: t.x - box.height, y: t.y + offset, width: box.height, height: box.width };
@@ -119,19 +133,21 @@ function intersection(a: Box, b: Box): number {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
-export type LayoutProblemKind = 'overlap' | 'off-label' | 'wider-than-box';
+export type LayoutProblemKind = 'overlap' | 'off-label' | 'wider-than-box' | 'characters';
 
 export interface LayoutProblem {
+  /** The main problem; `kinds` lists all of them for this item. */
   kind: LayoutProblemKind;
+  kinds: LayoutProblemKind[];
   /** Element ids involved (the item first). */
   ids: string[];
   message: string;
 }
 
-/** "the barcode Package tag", "the text Product name", "the QR code". */
+/** "the Package tag barcode", "the THC text", "the text “Net Wt 3.5g”", "the QR code". */
 export function itemName(el: TemplateElement): string {
   const type = elementTypeName(el.type).toLowerCase().replace(/^qr code$/, 'QR code');
-  if (!el.isStatic && el.fieldName) return `the ${type} ${friendlyFieldName(el.fieldName)}`;
+  if (!el.isStatic && el.fieldName) return `the ${friendlyFieldName(el.fieldName)} ${type}`;
   if (el.type === 'text' && el.isStatic && el.content?.trim()) {
     const text = el.content.trim();
     return `the text “${text.length > 18 ? `${text.slice(0, 17)}…` : text}”`;
@@ -141,36 +157,51 @@ export function itemName(el: TemplateElement): string {
 
 function capitalise(text: string) { return text.charAt(0).toUpperCase() + text.slice(1); }
 
+function listNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 /** Items whose overlap can make a label unreadable or unscannable. */
 const CONTENT = new Set(['text', 'barcode', 'qr', 'image']);
 
 /**
- * Layout problems on one label for native thermal designs. Overlaps are only
- * reported when a barcode, QR code or picture is involved, or two texts
- * really print on top of each other; frames and lines around text are fine.
+ * Layout problems on one label for native thermal designs, one line per
+ * item: "The Package tag barcode is too wide: it runs off the label and
+ * prints over the QR code — it may not scan." Overlaps are only reported when
+ * a barcode, QR code or picture is involved, or two texts really print on
+ * top of each other; frames and lines around text are fine.
+ *
+ * `measured` replaces the computed footprint for items whose printed ink was
+ * measured from the print renderer (the designer canvas does this).
  */
-export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format: LabelFormat, values?: Record<string, string>): LayoutProblem[] {
+export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format: LabelFormat, values?: Record<string, string>, measured?: Readonly<Record<string, Box | undefined>>): LayoutProblem[] {
   if (format.type !== 'thermal') return [];
   const dpi = format.dpi || 203;
   const labelW = Math.round(format.width * dpi);
   const labelH = Math.round(format.height * dpi);
-  const problems: LayoutProblem[] = [];
   const placed = elements
     .filter((el) => CONTENT.has(el.type))
-    .map((el) => ({ el, box: printedBounds(el, format, values) }))
+    .map((el) => ({ el, box: measured?.[el.id] ?? printedBounds(el, format, values) }))
     .filter((item): item is { el: TemplateElement; box: Box } => !!item.box);
 
   // A Code 128 is as wide as its value needs, whatever its box says. That
   // only matters when the extra width lands on something or off the label,
   // so it is named inside those problems rather than on its own.
   const wider = new Set(placed.filter(({ el, box }) => el.type === 'barcode' && rotation(el) % 180 === 0 && box.width > el.width + 2).map(({ el }) => el.id));
-  const widerNote = (el: TemplateElement) => (wider.has(el.id) ? ' is wider than its box and' : '');
+  const scannable = (el: TemplateElement) => el.type === 'barcode' || el.type === 'qr';
 
+  type Entry = { el: TemplateElement; offLabel: boolean; over: TemplateElement[] };
+  const byItem = new Map<string, Entry>();
+  const entry = (el: TemplateElement) => {
+    const found = byItem.get(el.id) ?? { el, offLabel: false, over: [] };
+    byItem.set(el.id, found);
+    return found;
+  };
+
+  const tolerance = 2;
   for (const { el, box } of placed) {
-    const tolerance = 2;
-    if (box.x < -tolerance || box.y < -tolerance || box.x + box.width > labelW + tolerance || box.y + box.height > labelH + tolerance) {
-      problems.push({ kind: 'off-label', ids: [el.id], message: `${capitalise(itemName(el))}${widerNote(el)} runs off the edge of the label${wider.has(el.id) ? '' : ' and will be cut off'}.` });
-    }
+    if (box.x < -tolerance || box.y < -tolerance || box.x + box.width > labelW + tolerance || box.y + box.height > labelH + tolerance) entry(el).offLabel = true;
   }
 
   for (let i = 0; i < placed.length; i++) {
@@ -179,21 +210,31 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
       const area = intersection(a.box, b.box);
       if (area <= 0) continue;
       const smaller = Math.min(a.box.width * a.box.height, b.box.width * b.box.height);
-      const scannable = a.el.type === 'barcode' || a.el.type === 'qr' || b.el.type === 'barcode' || b.el.type === 'qr';
+      const scan = scannable(a.el) || scannable(b.el);
       // Ignore slivers: a couple of dots of touching boxes prints fine.
-      if (area < Math.max(16, smaller * (scannable ? 0.01 : 0.15))) continue;
-      // Name the item drawn on top first.
-      const [top, under] = a.el.zIndex >= b.el.zIndex ? [a.el, b.el] : [b.el, a.el];
-      const scan = top.type === 'barcode' || top.type === 'qr' || under.type === 'barcode' || under.type === 'qr';
-      const wide = wider.has(top.id) ? top : wider.has(under.id) ? under : null;
-      problems.push({
-        kind: 'overlap',
-        ids: [top.id, under.id],
-        message: wide
-          ? `${capitalise(itemName(wide))}${widerNote(wide)} prints over ${itemName(wide === top ? under : top)} — it may not scan.`
-          : `${capitalise(itemName(top))} covers ${itemName(under)}${scan ? ' — it may not scan' : ''}.`,
-      });
+      if (area < Math.max(16, smaller * (scan ? 0.01 : 0.15))) continue;
+      // The too-wide barcode is the one to fix; otherwise the item drawn on top.
+      const [main, other] = wider.has(a.el.id) && !wider.has(b.el.id) ? [a.el, b.el]
+        : wider.has(b.el.id) && !wider.has(a.el.id) ? [b.el, a.el]
+          : a.el.zIndex >= b.el.zIndex ? [a.el, b.el] : [b.el, a.el];
+      entry(main).over.push(other);
     }
+  }
+
+  const problems: LayoutProblem[] = [];
+  for (const { el, offLabel, over } of byItem.values()) {
+    const parts: string[] = [];
+    if (offLabel) parts.push(wider.has(el.id) ? 'runs off the label' : 'runs off the edge of the label and will be cut off');
+    if (over.length) parts.push(`${el.type === 'text' && over.every((o) => o.type === 'text') ? 'covers' : 'prints over'} ${listNames(over.map(itemName))}`);
+    const tooWide = wider.has(el.id);
+    const mayNotScan = over.length > 0 && (scannable(el) || over.some(scannable));
+    const kinds: LayoutProblemKind[] = [...(offLabel ? ['off-label' as const] : []), ...(over.length ? ['overlap' as const] : []), ...(tooWide ? ['wider-than-box' as const] : [])];
+    problems.push({
+      kind: kinds[0],
+      kinds,
+      ids: [el.id, ...over.map((o) => o.id)],
+      message: `${capitalise(itemName(el))} ${tooWide ? 'is too wide: it ' : ''}${parts.join(' and ')}${mayNotScan || (tooWide && offLabel) ? ' — it may not scan' : ''}.`,
+    });
   }
   return problems;
 }

@@ -16,7 +16,7 @@ import { useUndoStore } from '@/lib/undoStore';
 import { ElementType, LabelTemplate, TemplateElement } from '@/lib/types';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
-import { LabelPreview } from '@/components/designer/LabelPreview';
+import { LabelPreview, type InkOffset } from '@/components/designer/LabelPreview';
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
 import { TemplateList, NewTemplateDialog, DuplicateTemplateDialog, RenameTemplateDialog } from '@/components/designer/TemplateList';
@@ -27,7 +27,9 @@ import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
-import { freeSpot, layoutProblems, printedBounds, type Box } from '@/lib/designerLayout';
+import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
+import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
+import { designSampleValues } from '@/lib/sampleValues';
 import { elementTypeName } from '@/lib/fieldLabels';
 import { friendlyError } from '@/lib/userMessages';
 
@@ -38,6 +40,10 @@ type NewTemplateElement = TemplateElement extends infer T
   : never;
 
 type ThermalEditorOrientation = 'printer' | 'upright';
+
+function designLabel(name?: string) {
+  return name ? `‘${name}’` : 'this design';
+}
 
 function DesignerContent() {
   const router = useRouter();
@@ -170,7 +176,15 @@ function DesignerContent() {
     if (!currentTemplate?.id) return;
     try { setTestData(JSON.parse(localStorage.getItem(`lw:test-data:${currentTemplate.id}`) || '{}')); } catch { setTestData({}); }
   }, [currentTemplate?.id]);
-  const showThermalOrientationPicker = currentFormat?.type === 'thermal' && currentFormat.width > currentFormat.height;
+  // "Readable" only means something when text is printed sideways: it turns
+  // the view so that text reads left to right.
+  const sidewaysText = useMemo(() => {
+    const texts = currentTemplate?.summaryOnly ? [] : (currentTemplate?.elements ?? []).filter((e) => e.type === 'text');
+    const turn = (e: TemplateElement) => (((Math.round(e.rotation || 0) % 360) + 360) % 360);
+    return { ccw: texts.filter((e) => turn(e) === 90).length, cw: texts.filter((e) => turn(e) === 270).length };
+  }, [currentTemplate]);
+  const showThermalOrientationPicker = currentFormat?.type === 'thermal' && (sidewaysText.ccw + sidewaysText.cw) > 0;
+  const uprightTurn: 'ccw' | 'cw' = sidewaysText.cw > sidewaysText.ccw ? 'cw' : 'ccw';
   const thermalEditorOrientationKey = currentTemplate
     ? `label-wrangler:thermal-editor-orientation:${currentTemplate.id}`
     : null;
@@ -268,18 +282,20 @@ function DesignerContent() {
       const arrow = arrowMap[e.key];
       if (arrow && currentTemplate && selectedIds.size > 0) {
         e.preventDefault();
-        // Step: 1 dot (thermal) / 0.01" (sheet). Shift → 10×.
+        // Step: 0.01" (the smallest change the panel shows). Shift → 0.1".
         const isThermal = currentFormat?.type === 'thermal';
-        const baseStep = isThermal ? 1 : 0.01;
+        const baseStep = isThermal ? (currentFormat.dpi || 203) / 100 : 0.01;
         const step = (e.shiftKey ? 10 : 1) * baseStep;
         beginGesture();
-        const direction = isThermal && thermalEditorOrientation === 'upright' && currentFormat.width > currentFormat.height ? { dx: -arrow.dy, dy: arrow.dx } : arrow;
+        const upright = isThermal && thermalEditorOrientation === 'upright' && showThermalOrientationPicker;
+        const direction = upright ? (uprightTurn === 'cw' ? { dx: arrow.dy, dy: -arrow.dx } : { dx: -arrow.dy, dy: arrow.dx }) : arrow;
         for (const id of selectedIds) {
           const el = useTemplateStore.getState().getTemplateById(currentTemplate.id)?.elements.find((x) => x.id === id);
           if (!el || el.locked) continue;
+          const round = (v: number) => (isThermal ? Math.round(v * 100) / 100 : Math.round(v * 1000) / 1000);
           updateElementLocal(currentTemplate.id, id, {
-            x: el.x + direction.dx * step,
-            y: el.y + direction.dy * step,
+            x: round(el.x + direction.dx * step),
+            y: round(el.y + direction.dy * step),
           });
         }
         // Debounce save to avoid hammering the DB on held arrow keys.
@@ -292,7 +308,7 @@ function DesignerContent() {
     const finishNudge = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow')) { if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current); finishGesture(); } };
     window.addEventListener('keydown', handler); window.addEventListener('keyup', finishNudge);
     return () => { window.removeEventListener('keydown', handler); window.removeEventListener('keyup', finishNudge); };
-  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation]);
+  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation, showThermalOrientationPicker, uprightTurn]);
 
   // Clear undo history + selection when switching templates
   useEffect(() => {
@@ -311,10 +327,18 @@ function DesignerContent() {
     fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
     return () => { active = false; };
   }, []);
+  // A design link that can't open says so, instead of quietly showing the list.
+  const [openState, setOpenState] = useState<{ id: string; status: 'opening' | 'failed' | 'missing' } | null>(null);
+  const openDesign = useCallback(async (id: string) => {
+    setOpenState({ id, status: 'opening' });
+    const result = await useTemplateStore.getState().fetchTemplate(id, { quiet: true });
+    const opened = useTemplateStore.getState().getTemplateById(id);
+    setOpenState(opened && !opened.summaryOnly ? null : { id, status: result === 'missing' ? 'missing' : 'failed' });
+  }, []);
   useEffect(() => {
-    if (templateId) void useTemplateStore.getState().fetchTemplate(templateId);
+    if (templateId) void openDesign(templateId);
     try { setRecovery(templateId ? readDrafts(templateId) : []); } catch { setSaveError('Draft recovery storage is unavailable. Keep this tab open until changes save.'); }
-  }, [templateId]);
+  }, [templateId, openDesign]);
   const recoverCopy = async (draft: LabelTemplate) => {
     try {
       const created = await addTemplate({ name:draft.name+' (recovered)', description:draft.description, formatId:draft.formatId, elements:draft.elements, thermalRenderMode:draft.thermalRenderMode });
@@ -325,11 +349,33 @@ function DesignerContent() {
 
   // Items that cover each other or run off the label, as the printer draws
   // them (native thermal only; bitmap labels have their own exact proof).
+  // Every preview shows the same sample for each per-label field.
+  const previewValues = useMemo(() => designSampleValues(currentTemplate && !currentTemplate.summaryOnly ? currentTemplate.elements : [], testData), [currentTemplate, testData]);
+  const [inks, setInks] = useState<Record<string, InkOffset>>({});
+  const measured = useMemo(() => {
+    const boxes: Record<string, Box> = {};
+    for (const el of currentTemplate && !currentTemplate.summaryOnly ? currentTemplate.elements : []) {
+      const ink = inks[el.id];
+      if (ink) boxes[el.id] = { x: el.x + ink.dx, y: el.y + ink.dy, width: ink.width, height: ink.height };
+    }
+    return boxes;
+  }, [currentTemplate, inks]);
   const designProblems = useMemo(() => (
     currentTemplate && currentFormat && !currentTemplate.summaryOnly && currentTemplate.thermalRenderMode !== 'bitmap-v1'
-      ? layoutProblems(currentTemplate.elements, currentFormat, testData)
+      ? layoutProblems(currentTemplate.elements, currentFormat, previewValues, measured)
       : []
-  ), [currentTemplate, currentFormat, testData]);
+  ), [currentTemplate, currentFormat, previewValues, measured]);
+  // Characters the printer's own font can't print, outlined on the canvas too.
+  const canvasProblems = useMemo<LayoutProblem[]>(() => {
+    if (!currentTemplate || currentTemplate.summaryOnly || !usesPrinterFont(currentFormat, currentTemplate)) return designProblems;
+    const characters = currentTemplate.elements.flatMap((el): LayoutProblem[] => {
+      const chars = elementUnprintable(el, previewValues);
+      if (!chars.length) return [];
+      const name = itemName(el);
+      return [{ kind: 'characters', kinds: ['characters'], ids: [el.id], message: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${describeUnprintable(chars).replace(/^The printer/, 'the printer')}` }];
+    });
+    return [...designProblems, ...characters];
+  }, [currentTemplate, currentFormat, designProblems, previewValues]);
 
   // If no template is selected, show template list view
   if (!currentTemplate || currentTemplate.summaryOnly || !currentFormat) {
@@ -338,6 +384,13 @@ function DesignerContent() {
         {/* Template List */}
         <div className="flex-1 overflow-auto">
           <TemplateList
+            notice={templateId && openState?.id === templateId ? (
+              openState.status === 'opening'
+                ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
+                : openState.status === 'missing'
+                  ? <p role="alert" className="mb-4 text-sm text-amber-300">That design link doesn’t go to a design any more — it may have been deleted. Pick one below.</p>
+                  : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="text-amber-400 hover:underline">Try again</button></p>
+            ) : null}
             templates={templates}
             onSelectTemplate={(id) => {
               selectTemplate(id);
@@ -539,7 +592,7 @@ function DesignerContent() {
     const margin = isThermal ? Math.max(6, Math.round(unit * 0.03)) : Math.round(unit * 0.03 * 100) / 100 || 0.03;
     const taken: Box[] = currentTemplate.elements.map((el) => {
       const box = { x: el.x, y: el.y, width: el.width, height: Math.max(el.height, el.type === 'line' ? (el as { strokeWidth?: number }).strokeWidth ?? 1 : 0) };
-      const printed = isThermal && currentTemplate.thermalRenderMode !== 'bitmap-v1' ? printedBounds(el, currentFormat, testData) : null;
+      const printed = isThermal && currentTemplate.thermalRenderMode !== 'bitmap-v1' ? measured[el.id] ?? printedBounds(el, currentFormat, previewValues) : null;
       if (!printed) return box;
       const x = Math.min(box.x, printed.x), y = Math.min(box.y, printed.y);
       return { x, y, width: Math.max(box.x + box.width, printed.x + printed.width) - x, height: Math.max(box.y + box.height, printed.y + printed.height) - y };
@@ -625,7 +678,7 @@ function DesignerContent() {
 
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
-      <PageTitle title="Designer" />
+      <PageTitle title={`${currentTemplate.name} · Designer`} />
       {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
@@ -700,15 +753,17 @@ function DesignerContent() {
                 Designs
               </a>
             )}
-            <span className={`text-zinc-600 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
-            <button
-              onClick={() => setRenameSource(currentTemplate)}
-              className="group flex min-h-control-sm min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 rounded-md text-zinc-100 font-semibold transition-colors"
-              title="Rename template"
-            >
-              <span className="truncate">{currentTemplate.name}</span>
-              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-200" aria-hidden="true" />
-            </button>
+            <span className={`text-zinc-500 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
+            <h1 className="min-w-0 max-w-[min(100%,24rem)] text-sm font-semibold text-zinc-100">
+              <button
+                onClick={() => setRenameSource(currentTemplate)}
+                className="group flex min-h-control-sm min-w-0 max-w-full items-center gap-1.5 rounded-md transition-colors"
+                title="Rename design"
+              >
+                <span className="truncate">{currentTemplate.name}</span>
+                <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-100" aria-hidden="true" />
+              </button>
+            </h1>
             {compatibleFormats.length > 1 && (
               <div className="w-44 shrink-0 max-sm:hidden">
                 <CustomSelect
@@ -717,7 +772,7 @@ function DesignerContent() {
                   options={compatibleFormats.map((format) => ({
                     value: format.id,
                     label: format.name,
-                    sublabel: `${format.width}" × ${format.height}"`,
+                    sublabel: format.name.includes(`${format.width}"`) ? undefined : `${format.width}" × ${format.height}"`,
                   }))}
                 />
               </div>
@@ -767,7 +822,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
@@ -775,7 +830,9 @@ function DesignerContent() {
             format={currentFormat}
             elements={currentTemplate.elements}
             selectedElementIds={selectedIds}
-            editorOrientation={thermalEditorOrientation}
+            editorOrientation={showThermalOrientationPicker ? thermalEditorOrientation : 'printer'}
+            uprightTurn={uprightTurn}
+            onInkChange={setInks}
             onSelectElement={(id, addToSelection) => {
               if (id === null) {
                 setSelectedIds(new Set());
@@ -801,14 +858,14 @@ function DesignerContent() {
             onDragStart={beginGesture}
             onDragEnd={finishGesture}
             onGestureCancel={cancelGesture}
-            testData={testData}
-            layoutProblems={designProblems}
+            testData={previewValues}
+            layoutProblems={canvasProblems}
           />
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={testData} />
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} showPrinterCode={isAdmin} />
           ) : (
-            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={testData} />
+            <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}
         </div>
 

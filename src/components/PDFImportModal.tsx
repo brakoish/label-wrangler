@@ -125,8 +125,8 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
       <div className="w-full max-w-xl bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-50">Import from PDF</h2>
+        <div className="flex items-center justify-between px-6 py-5">
+          <h2 className="text-lg font-semibold text-zinc-100">Import from PDF</h2>
           <button
             onClick={handleClose}
             className="btn btn-ghost btn-icon" aria-label="Close"
@@ -159,7 +159,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
 
               <UploadIcon className="w-8 h-8 mx-auto mb-3 text-zinc-400" />
 
-              <h3 className="text-lg font-semibold text-zinc-200 mb-2">
+              <h3 className="text-lg font-semibold text-zinc-100 mb-2">
                 Drop your label sheet PDF
               </h3>
               <p className="text-sm text-zinc-500 mb-4">
@@ -198,7 +198,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-zinc-50">Format detected</h3>
+                  <h3 className="font-semibold text-zinc-100">Format detected</h3>
                   <p className="text-sm text-zinc-500">
                     Confidence: <span className={`
                       ${parseResult.spec.confidence === 'high' ? 'text-emerald-400' : ''}
@@ -213,11 +213,11 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-lg bg-zinc-950 p-3">
                   <div className="text-xs text-zinc-400 mb-1">Type</div>
-                  <div className="font-medium text-zinc-200 capitalize">{parseResult.spec.type}</div>
+                  <div className="font-medium text-zinc-100 capitalize">{parseResult.spec.type}</div>
                 </div>
                 <div className="rounded-lg bg-zinc-950 p-3">
                   <div className="text-xs text-zinc-400 mb-1">Label size</div>
-                  <div className="font-medium text-zinc-200">
+                  <div className="font-medium text-zinc-100">
                     {parseResult.spec.width.toFixed(3)}&quot; × {parseResult.spec.height.toFixed(3)}&quot;
                   </div>
                 </div>
@@ -226,13 +226,13 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                   <>
                     <div className="rounded-lg bg-zinc-950 p-3">
                       <div className="text-xs text-zinc-400 mb-1">Grid</div>
-                      <div className="font-medium text-zinc-200">
+                      <div className="font-medium text-zinc-100">
                         {parseResult.spec.columns} × {parseResult.spec.rows}
                       </div>
                     </div>
                     <div className="rounded-lg bg-zinc-950 p-3">
                       <div className="text-xs text-zinc-400 mb-1">Per sheet</div>
-                      <div className="font-medium text-zinc-200">
+                      <div className="font-medium text-zinc-100">
                         {(parseResult.spec.columns || 1) * (parseResult.spec.rows || 1)} labels
                       </div>
                     </div>

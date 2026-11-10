@@ -36,7 +36,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a,b) 
  }
  const page=fs.readFileSync('src/app/runs/new/page.tsx','utf8');
  assert.equal(page.split('disabled={!canCreate || !previewReady || isCreatingRun}').length - 1,1,'the single (sticky) Start control is gated');
- assert.ok(/blanksOk &&\s*sameOk &&\s*barcodesOk &&\s*layoutOk/.test(page),'whole-run checks (blanks, same-value, barcodes, layout) gate Start');
+ assert.ok(/blanksOk &&\s*sameOk &&\s*barcodesOk &&\s*charactersOk &&\s*layoutOk/.test(page),'whole-run checks (blanks, same-value, barcodes, printer characters, layout) gate Start');
  assert.ok(page.includes("router.replace(`/runs/${run.id}`)"),'created run gets its own URL');
  assert.ok(page.includes('beforeLeave={confirmLeave}'),'half-filled run warns before leaving');
  assert.ok(page.includes('if (!canCreate || !previewReady || !template || isCreatingRun)'));

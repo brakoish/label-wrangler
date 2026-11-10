@@ -2,7 +2,7 @@
 
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Printer, PrinterCheck, Plug, Target, Loader2, AlertCircle, Download, ChevronDown } from 'lucide-react';
+import { Printer, PrinterCheck, Plug, Target, Loader2, Download, ChevronDown } from 'lucide-react';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { generateZPL, generateZPLWithImages, prepareZplImages } from '@/lib/zplGenerator';
 import {
@@ -331,17 +331,9 @@ export function PrintControls({ format, template, testData, proofReady = true }:
     return usbPrinter?.productName ?? '';
   }, [transport, selectedDazzlePrinter, usbPrinter]);
 
-  if (!webUsbSupported && !dazzleAvailable) {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-zinc-500" title="Need Chromium browser or Dazzle desktop app">
-        <AlertCircle className="w-3.5 h-3.5" />
-        <span>Local printing needs Chrome/Edge or Dazzle.</span>
-        <a href={DAZZLE_DOWNLOAD_URL} target="_blank" rel="noreferrer" className="text-amber-300 underline-offset-2 hover:underline inline-flex items-center gap-1">
-          <Download className="w-3 h-3" /> Dazzle
-        </a>
-      </div>
-    );
-  }
+  // No way to print from this browser: say nothing here; the office printer
+  // and the run page still work.
+  if (!webUsbSupported && !dazzleAvailable) return null;
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -390,7 +382,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                         setSelectedDazzlePrinter(p.name);
                         setDazzlePickerOpen(false);
                       }}
-                      className={`flex w-full min-h-control-sm items-center rounded-md text-left px-2.5 text-sm hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-300' : 'text-zinc-200'}`}
+                      className={`flex w-full min-h-control-sm items-center rounded-md text-left px-2.5 text-sm hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-300' : 'text-zinc-100'}`}
                     >
                       {p.name} {p.is_default && <span className="text-zinc-500">(default)</span>}
                     </button>
@@ -399,7 +391,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
               )}
             </div>
           ) : (
-            <span className="text-xs text-zinc-500">No printers found in Dazzle</span>
+            <span className="text-xs text-zinc-500">No printers found</span>
           )
         ) : (
           <a
@@ -414,7 +406,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
           </a>
         )
       ) : !webUsbSupported ? (
-        <span className="text-xs text-zinc-500">WebUSB not supported</span>
+        <span className="text-xs text-zinc-500">This browser can’t print over USB</span>
       ) : !usbPrinter ? (
         <button
           onClick={handleConnectUsb}

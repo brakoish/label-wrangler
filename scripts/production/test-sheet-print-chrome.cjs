@@ -19,7 +19,14 @@ const { restyleSheetPrintToolbar } = require('../../src/lib/sheetPrintChrome.ts'
   // Everything from the first label page on is unchanged.
   const pagesAt = html.indexOf('<section class="sheet-page"');
   assert.ok(pagesAt > 0, 'sheet pages present');
-  assert.equal(out.slice(out.indexOf('<section class="sheet-page"')), html.slice(pagesAt), 'label pages and script untouched');
+  const outPages = out.slice(out.indexOf('<section class="sheet-page"'));
+  assert.equal(outPages.replace('</main>\n</body>', '</body>'), html.slice(pagesAt), 'label pages and script untouched (only the main landmark closes before </body>)');
+  // Page structure and phone fit (screen only).
+  assert.match(out, /<html lang="en">/);
+  assert.match(out, /<main>\s*<div class="toolbar">/);
+  assert.match(out, /<h1 class="toolbar-title">Run · labels 1-1<\/h1>/);
+  assert.match(out, /@media screen \{\s*\.sheet-page \{ zoom: var\(--sheet-zoom, 1\); \}/);
+  assert.match(out, /min-height: 44px/);
   // The print rules (toolbar hidden on paper) are untouched too.
   assert.ok(out.includes('.toolbar { display: none; }'));
   assert.equal(restyleSheetPrintToolbar(out, 'run 1'), out, 'applying twice changes nothing');

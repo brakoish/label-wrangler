@@ -46,7 +46,7 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
           {filtered.length === 0 ? (
             <div className="text-center py-10">
               
-              <p className="text-zinc-200 text-sm font-medium">
+              <p className="text-zinc-100 text-sm font-medium">
                 {search ? 'Nothing matches your search' : 'No reusable elements yet'}
               </p>
               {!search && (

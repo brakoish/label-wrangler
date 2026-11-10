@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { LabelGlyph } from '@/components/LabelGlyph';
-import { LabelFormat, formatDimensions } from '@/lib/types';
+import { LabelFormat, formatDimensions, COMMON_DPI_VALUES } from '@/lib/types';
 import { TrashIcon, EditIcon } from '@/app/icons';
 import { Check, X } from 'lucide-react';
-import { SegmentedIndicator } from '@/components/ui/Segmented';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 interface FormatDetailProps {
   format: LabelFormat;
@@ -64,7 +64,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     className="field text-lg font-semibold"
                   />
                 ) : (
-                  <h2 className="text-xl font-semibold text-zinc-50">{format.name}</h2>
+                  <h2 className="text-xl font-semibold text-zinc-100">{format.name}</h2>
                 )}
                 {editing ? (
                   <input
@@ -128,13 +128,13 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
           <SpecCard label="Label size" editing={editing}>
             {editing ? (
               <div className="flex items-center gap-1">
-                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="field field-sm w-16 text-lg font-semibold" />
+                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="field w-20 text-lg font-semibold" />
                 <span className="text-base font-normal text-zinc-400">×</span>
-                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="field field-sm w-16 text-lg font-semibold" />
+                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="field w-20 text-lg font-semibold" />
                 <span className="text-base font-normal text-zinc-400">&quot;</span>
               </div>
             ) : (
-              <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{formatDimensions(format.width, format.height)}</div>
+              <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{formatDimensions(format.width, format.height)}</div>
             )}
           </SpecCard>
 
@@ -142,24 +142,26 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
             <>
               <SpecCard label="Dots per inch" hint="On the printer’s sticker, usually 203" editing={editing}>
                 {editing ? (
-                  <div className="segmented segmented-xs w-40" role="radiogroup" aria-label="Dots per inch">
-                    <SegmentedIndicator index={(d('dpi') as number || 203) === 300 ? 1 : 0} count={2} />
-                    {[203, 300].map((dpi) => (
-                      <button key={dpi} type="button" role="radio" aria-checked={(d('dpi') as number || 203) === dpi} onClick={() => setD('dpi', dpi)}>{dpi}</button>
-                    ))}
+                  <div className="w-40">
+                    <CustomSelect
+                      aria-label="Dots per inch"
+                      value={String(d('dpi') as number || 203)}
+                      onChange={(v) => setD('dpi', parseInt(v, 10))}
+                      options={COMMON_DPI_VALUES.map((value) => ({ value: String(value), label: String(value) }))}
+                    />
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.dpi || 203}</div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.dpi || 203}</div>
                 )}
               </SpecCard>
               <SpecCard label="Labels across the roll" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="field field-sm w-16 text-lg font-semibold" />
+                    <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="field w-20 text-lg font-semibold" />
                     <span className="text-base font-normal text-zinc-400">labels</span>
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.labelsAcross || 1} <span className="text-base font-normal text-zinc-400">{(format.labelsAcross || 1) === 1 ? 'label' : 'labels'}</span></div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.labelsAcross || 1} <span className="text-base font-normal text-zinc-400">{(format.labelsAcross || 1) === 1 ? 'label' : 'labels'}</span></div>
                 )}
               </SpecCard>
             </>
@@ -168,22 +170,22 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Per sheet" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={(d('columns') as number || 1) * (d('rows') as number || 1)} disabled className="field field-sm w-16 text-lg font-semibold" />
+                    <input type="number" value={(d('columns') as number || 1) * (d('rows') as number || 1)} disabled className="field w-20 text-lg font-semibold" />
                     <span className="text-base font-normal text-zinc-400">labels</span>
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.labelsPerSheet} <span className="text-base font-normal text-zinc-400">{format.labelsPerSheet === 1 ? 'label' : 'labels'}</span></div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.labelsPerSheet} <span className="text-base font-normal text-zinc-400">{format.labelsPerSheet === 1 ? 'label' : 'labels'}</span></div>
                 )}
               </SpecCard>
               <SpecCard label="Grid" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={d('columns') as number || 1} onChange={(e) => setD('columns', parseInt(e.target.value))} min="1" className="field field-sm w-12 text-lg font-semibold" />
+                    <input type="number" value={d('columns') as number || 1} onChange={(e) => setD('columns', parseInt(e.target.value))} min="1" className="field w-16 text-lg font-semibold" />
                     <span className="text-base font-normal text-zinc-400">×</span>
-                    <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="field field-sm w-12 text-lg font-semibold" />
+                    <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="field w-16 text-lg font-semibold" />
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.columns} × {format.rows}</div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.columns} × {format.rows}</div>
                 )}
               </SpecCard>
             </>
@@ -193,14 +195,14 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
         {/* Thermal-specific details */}
         {isThermal && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="card p-4 sm:p-5">
+            <div>
               <h3 className="section-title mb-3">Roll spacing</h3>
               <div className="space-y-3">
                 <DetailRow label="Label gap" hint="Space between labels on the roll" editing={editing}>
                   {editing ? (
                     <EditNum value={d('labelGap') as number || 0} onChange={(v) => setD('labelGap', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.labelGap || 0}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.labelGap || 0}&quot;</span>
                   )}
                 </DetailRow>
                 {(d('labelsAcross') as number || 1) > 1 && (
@@ -209,29 +211,29 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                       {editing ? (
                         <EditNum value={d('horizontalGapThermal') as number || 0} onChange={(v) => setD('horizontalGapThermal', v)} />
                       ) : (
-                        <span className="text-zinc-200 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
+                        <span className="text-zinc-100 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
                       )}
                     </DetailRow>
                     <DetailRow label="Side margin" hint="Backing paper left of the first label" editing={editing}>
                       {editing ? (
                         <EditNum value={d('sideMarginThermal') as number || 0} onChange={(v) => setD('sideMarginThermal', v)} />
                       ) : (
-                        <span className="text-zinc-200 font-medium">{format.sideMarginThermal || 0}&quot;</span>
+                        <span className="text-zinc-100 font-medium">{format.sideMarginThermal || 0}&quot;</span>
                       )}
                     </DetailRow>
                   </>
                 )}
                 <DetailRow label="Backing width" hint="Width of the paper the labels sit on. Auto works for most rolls." editing={editing}>
                   {editing ? (
-                    <EditNum value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} />
+                    <EditNum value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} emptyLabel="Auto" />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.linerWidth ? `${format.linerWidth}"` : 'Auto'}</span>
+                    <span className="text-zinc-100 font-medium">{format.linerWidth ? `${format.linerWidth}"` : 'Auto'}</span>
                   )}
                 </DetailRow>
               </div>
             </div>
 
-            <div className="card p-4 sm:p-5">
+            <div>
               <h3 className="section-title mb-3">Roll preview</h3>
               <RollPreview format={editing ? { ...format, ...draft } as LabelFormat : format} />
             </div>
@@ -248,41 +250,41 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                 <DetailRow label="Sheet size" editing={editing}>
                   {editing ? (
                     <div className="flex items-center gap-1">
-                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="field field-sm w-14" />
+                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="field w-20" />
                       <span className="text-zinc-500">×</span>
-                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="field field-sm w-14" />
+                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="field w-20" />
                       <span className="text-zinc-500">&quot;</span>
                     </div>
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.sheetWidth}&quot; × {format.sheetHeight}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.sheetWidth}&quot; × {format.sheetHeight}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Top margin" editing={editing}>
                   {editing ? (
                     <EditNum value={d('topMargin') as number} onChange={(v) => setD('topMargin', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.topMargin}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.topMargin}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Side margin" editing={editing}>
                   {editing ? (
                     <EditNum value={d('sideMargin') as number} onChange={(v) => setD('sideMargin', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.sideMargin}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.sideMargin}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Gap across" editing={editing}>
                   {editing ? (
                     <EditNum value={d('horizontalGap') as number} onChange={(v) => setD('horizontalGap', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.horizontalGap}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.horizontalGap}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Gap down" editing={editing}>
                   {editing ? (
                     <EditNum value={d('verticalGap') as number} onChange={(v) => setD('verticalGap', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.verticalGap}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.verticalGap}&quot;</span>
                   )}
                 </DetailRow>
               </div>
@@ -325,15 +327,16 @@ function DetailRow({ label, hint, editing, children }: { label: string; hint?: s
   );
 }
 
-function EditNum({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function EditNum({ value, onChange, emptyLabel }: { value: number; onChange: (v: number) => void; emptyLabel?: string }) {
   return (
     <div className="flex items-center gap-1">
       <input
         type="number"
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
+        value={emptyLabel && !value ? '' : value}
+        placeholder={emptyLabel}
+        onChange={(e) => onChange(e.target.value === '' && emptyLabel ? 0 : parseFloat(e.target.value))}
         step="0.001"
-        className="field field-sm w-20 text-right"
+        className="field w-24 text-right"
       />
       <span className="text-zinc-500">&quot;</span>
     </div>
@@ -395,14 +398,15 @@ function RollPreview({ format }: { format: LabelFormat }) {
   }
 
   return (
-    <div className="flex justify-center py-4">
+    <figure className="flex flex-col items-center gap-2 py-4">
       <svg
         width={displayW}
         height={displayH}
         viewBox={`0 0 ${viewW} ${viewH}`}
-        className="rounded-xl"
+        role="img"
+        aria-label={`Roll preview, ${linerW.toFixed(2)} inch backing`}
       >
-        <rect width={viewW} height={viewH} fill="#0a0a0c" rx={viewW * 0.02} />
+
         {/* Liner backing */}
         <rect
           x={pad}
@@ -415,19 +419,9 @@ function RollPreview({ format }: { format: LabelFormat }) {
         />
         {/* Labels */}
         {labels}
-        {/* Dimension annotation — liner width */}
-        <text
-          x={pad + linerW / 2}
-          y={viewH - pad * 0.3}
-          textAnchor="middle"
-          fill="#71717a"
-          fontSize={linerW * 0.04}
-          fontFamily="Arial"
-        >
-          {linerW.toFixed(2)}&quot; liner
-        </text>
       </svg>
-    </div>
+      <figcaption className="text-xs text-zinc-400">{linerW.toFixed(2)}&quot; backing</figcaption>
+    </figure>
   );
 }
 
