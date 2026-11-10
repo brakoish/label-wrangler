@@ -140,8 +140,11 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOpt
 
   const sheet = parseXml(await readEntry(bytes, sheetEntry));
   const grid: string[][] = [];
+  // Plain digits of formatted number cells, by grid row (see ParsedCsv.plainRows).
+  const plainGrid: Array<Array<string | undefined>> = [];
   for (const row of Array.from(sheet.getElementsByTagName('row'))) {
     const cells: string[] = [];
+    const plainCells: Array<string | undefined> = [];
     let next = 0;
     for (const cell of Array.from(row.getElementsByTagName('c'))) {
       const ref = cell.getAttribute('r');
@@ -155,21 +158,37 @@ export async function readXlsx(input: ArrayBuffer | Uint8Array, options: ReadOpt
       else if (type === 'b') value = v === '1' ? 'TRUE' : 'FALSE';
       else if (type === 'str' || type === 'e') value = v;
       else if (type === 'd') value = v;
-      else value = v === '' ? '' : formatExcelNumber(v, formats[Number(cell.getAttribute('s') ?? 0)], date1904);
+      else {
+        const code = formats[Number(cell.getAttribute('s') ?? 0)];
+        value = v === '' ? '' : formatExcelNumber(v, code, date1904);
+        const plain = value === '' ? '' : formatExcelNumber(v, code, date1904, { plain: true });
+        if (plain !== value) plainCells[index] = plain;
+      }
       cells[index] = value;
     }
     // Keep each row at its sheet row number (Excel leaves empty rows out).
     const rowNumber = Number(row.getAttribute('r'));
     const at = Number.isInteger(rowNumber) && rowNumber >= 1 && rowNumber <= 1_048_576 ? Math.max(rowNumber - 1, grid.length) : grid.length;
-    while (grid.length < at) grid.push([]);
+    while (grid.length < at) { grid.push([]); plainGrid.push([]); }
     grid.push(Array.from(cells, (c) => c ?? ''));
+    plainGrid.push(plainCells);
   }
-  while (grid.length && grid[grid.length - 1].every((c) => !c.trim())) grid.pop();
+  while (grid.length && grid[grid.length - 1].every((c) => !c.trim())) { grid.pop(); plainGrid.pop(); }
   let leading = 0;
-  while (grid.length && grid[0].every((c) => !c.trim())) { grid.shift(); leading++; }
+  while (grid.length && grid[0].every((c) => !c.trim())) { grid.shift(); plainGrid.shift(); leading++; }
   if (!grid.length) return { headers: [], rows: [], sheetName, sheetCount };
 
   const headerIndex = options.headerRow ? Math.min(grid.length - 1, Math.max(0, options.headerRow - 1 - leading)) : findHeaderRow(grid);
   const { headers, rows } = gridToRows(grid, headerIndex);
-  return { headers, rows, headerRow: leading + headerIndex + 1, titleSkipped: headerIndex > 0 && !options.headerRow, sheetName, sheetCount };
+  // The same rows gridToRows keeps (non-blank, below the headings).
+  const names = (grid[headerIndex] ?? []).map((h) => h.trim());
+  const plainRows: Record<string, string>[] = [];
+  grid.forEach((cells, i) => {
+    if (i <= headerIndex || !cells.some((c) => c.trim())) return;
+    const plain: Record<string, string> = {};
+    plainGrid[i]?.forEach((value, col) => { if (value !== undefined && names[col]) plain[names[col]] = value; });
+    plainRows.push(plain);
+  });
+  const anyPlain = plainRows.some((row) => Object.keys(row).length > 0);
+  return { headers, rows, headerRow: leading + headerIndex + 1, titleSkipped: headerIndex > 0 && !options.headerRow, sheetName, sheetCount, ...(anyPlain ? { plainRows } : {}) };
 }

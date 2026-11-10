@@ -15,6 +15,13 @@ export interface ParsedCsv {
   sheetName?: string;
   /** Excel only: how many sheets the workbook has. */
   sheetCount?: number;
+  /**
+   * Excel only, one entry per row: the plain digits of number cells whose
+   * format adds separators, currency or text ("1234.50" for "$1,234.50").
+   * Only cells that differ are listed. Barcodes use these, so a format can't
+   * put commas or a "$" into a barcode.
+   */
+  plainRows?: Record<string, string>[];
 }
 
 export interface ReadOptions {
