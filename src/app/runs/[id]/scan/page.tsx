@@ -159,7 +159,16 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<'ok' | 'error' | null>(null);
   const [history, setHistory] = useState<ScanEntry[]>([]);
+  // A scan of a label that was already printed waits here until the person
+  // says to print it again (Enter) or skips it (Esc). Scanners double-read.
+  const [repeat, setRepeat] = useState<{ value: string; label: number | null; what: string; times: number; again: boolean } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!repeat) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); setRepeat(null); setValue(''); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [repeat]);
 
   // Keep the input focused at all times. If the user clicks away, any
   // keydown on the page refocuses it so the scanner's next volley lands
@@ -196,10 +205,11 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  const handleSubmit = useCallback(async (raw: string) => {
+  const handleSubmit = useCallback(async (raw: string, printAgain = false) => {
     const v = raw.trim();
     if (!v || !run || !template || !format || !targetField) return;
     setBusy(true);
+    let held = false;
     const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     try {
       const label = scanLabelValues(run, fields, targetField, v);
@@ -214,8 +224,6 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
         const problem = barcodeValueProblem(el.barcodeFormat, `${el.prefix || ''}${label.values[el.fieldName] || ''}${el.suffix || ''}`);
         if (problem) throw new Error(`The ${friendlyFieldName(el.fieldName)} ${problem}. Nothing was printed.`);
       }
-      const zpl = await generateZPLWithImages(template, format, label.values);
-      await sendLabel(zpl);
       // Name the label ("Label 6 · Purple Punch 3.5g") and count repeats.
       const nameField = template.elements
         .filter((el) => el.type === 'text' && !el.isStatic && el.fieldName && el.fieldName !== targetField && (label.values[el.fieldName] ?? '').trim())
@@ -223,8 +231,19 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       const what = nameField ? label.values[nameField] : '';
       const labelNumber = label.matchedLabel;
       const earlier = labelNumber
-        ? useRunStore.getState().printEvents.filter((e) => e.runId === run.id && e.output === 'scan' && e.rangeFrom === labelNumber).length
+        // The print history, or this page's own scans if the history hasn't caught up yet.
+        ? Math.max(useRunStore.getState().printEvents.filter((e) => e.runId === run.id && e.output === 'scan' && e.rangeFrom === labelNumber).length, history.filter((entry) => entry.status === 'ok' && entry.label === labelNumber).length)
         : history.filter((entry) => entry.status === 'ok' && entry.value === v).length;
+      // Already printed (by the run or by an earlier scan): ask before printing it again.
+      const printedByRun = !!labelNumber && labelNumber <= (run.printedCount ?? 0);
+      if (!printAgain && (earlier > 0 || printedByRun)) {
+        held = true;
+        setRepeat({ value: v, label: labelNumber, what, times: earlier + (printedByRun ? 1 : 0), again: false });
+        return;
+      }
+      const zpl = await generateZPLWithImages(template, format, label.values);
+      await sendLabel(zpl);
+      setRepeat(null);
       setHistory((h) => [{ id: entryId, value: v, at: Date.now(), status: 'ok' as ScanStatus, label: labelNumber, what, times: earlier + 1 }, ...h].slice(0, 20));
       // Leave a record in the run's print history.
       if (labelNumber) {
@@ -234,6 +253,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       setFlash('ok');
       setTimeout(() => setFlash(null), 600);
     } catch (err) {
+      setRepeat(null);
       setHistory((h) => [{
         id: entryId,
         value: v,
@@ -246,6 +266,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
     } finally {
       setBusy(false);
       setValue('');
+      if (held) setFlash(null);
       // Re-focus happens automatically via the refocus listener but be explicit.
       requestAnimationFrame(() => inputRef.current?.focus());
     }
@@ -360,7 +381,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 {transport === 'webusb' && usbPrinter && (
                   <span className="text-zinc-300">Prints on <span className="text-zinc-100">{usbPrinter.productName}</span> (USB)</span>
                 )}
-                {transport === 'webusb' && !usbPrinter && <span className="text-zinc-300">No printer connected to this computer yet.</span>}
+                {transport === 'webusb' && !usbPrinter && <span className="text-zinc-300">Plug a label printer into this computer and connect it, or <Link href={`/runs/${run.id}`} className="link">use the office printer</Link> from the run page.</span>}
                 {!transport && <span className="text-zinc-300">{transportError || 'Looking for a printer…'}</span>}
               </div>
               {transport === 'webusb' && !usbPrinter && (
@@ -373,9 +394,9 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 </button>
               )}
             </div>
-            {!printerReady && (
+            {!printerReady && transport !== 'webusb' && (
               <p className="text-sm text-zinc-400">
-                Plug a label printer into this computer, or <Link href={`/runs/${run.id}`} className="text-amber-400 hover:underline">use the office printer</Link>{' '}from the run page.
+                Or <Link href={`/runs/${run.id}`} className="link">use the office printer</Link> from the run page.
               </p>
             )}
             {transportError && transport && <p role="alert" className="text-sm text-red-400">{transportError}</p>}
@@ -415,7 +436,17 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           )}
 
           {/* The big input. Autofocus + keep-focused. Submit on Enter. */}
-          {!officeOnly && <form onSubmit={(e) => { e.preventDefault(); void handleSubmit(value); }}>
+          {!officeOnly && <form onSubmit={(e) => {
+            e.preventDefault();
+            if (repeat) {
+              const next = value.trim();
+              // Enter on an empty box prints it again; the same code again is a double read.
+              if (!next) { void handleSubmit(repeat.value, true); return; }
+              if (next === repeat.value) { setValue(''); setRepeat({ ...repeat, again: true }); return; }
+              setRepeat(null);
+            }
+            void handleSubmit(value);
+          }}>
             <label htmlFor="scan-input" className="field-label mb-1.5">
               Scan or type, then press Enter
             </label>
@@ -424,7 +455,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 ? 'border-emerald-500'
                 : flash === 'error'
                   ? 'border-red-500'
-                  : 'border-transparent focus-within:border-amber-500'
+                  : repeat ? 'border-amber-300' : 'border-zinc-800 focus-within:border-amber-500'
             }`}>
               <input
                 ref={inputRef}
@@ -432,7 +463,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 type="text"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder={waitingFor}
+                placeholder={repeat ? 'Press Enter to print it again' : waitingFor}
                 autoFocus
                 disabled={!canPrint || busy}
                 className="w-full bg-zinc-900 rounded-[10px] text-xl sm:text-2xl tabular-nums text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:text-base placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-60"
@@ -451,6 +482,16 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 </span>
               </div>
             </div>
+            {repeat && (
+              <div role="alert" className="reveal mt-3 space-y-2 text-sm">
+                <p className="font-medium text-amber-300">{repeat.label ? `Label ${repeat.label.toLocaleString()}` : `“${repeat.value}”`}{repeat.what ? ` (${repeat.what})` : ''} was already printed{repeat.times > 1 ? ` ${repeat.times} times` : ''}. Print it again?</p>
+                {repeat.again && <p className="text-zinc-400">That was the same code again, so nothing printed.</p>}
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={busy} className="btn btn-primary btn-sm" onClick={() => void handleSubmit(repeat.value, true)}>Print again <span className="text-xs font-normal opacity-80">Enter</span></button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setRepeat(null); setValue(''); }}>Skip <span className="text-xs font-normal opacity-80">Esc</span></button>
+                </div>
+              </div>
+            )}
             {!targetField && (
               <p className="mt-2 text-sm text-red-400 flex items-start gap-1.5">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
