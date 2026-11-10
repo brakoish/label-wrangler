@@ -2,7 +2,9 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LogOut } from 'lucide-react';
+import { pageHasOwnTitle } from '@/components/PageTitle';
 import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 
@@ -32,13 +34,36 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
     { href: '/formats', label: 'Label sizes', active: isFormats },
   ];
 
+  const activeLabel = navItems.find(item => item.active)?.label ?? '';
+
+  // Every page gets a tab title: pages set their own with <PageTitle>, and
+  // the section name fills in for any that don't.
+  useEffect(() => {
+    if (!pageHasOwnTitle()) document.title = activeLabel ? `${activeLabel} — Label Wrangler` : 'Label Wrangler';
+  }, [pathname, activeLabel]);
+
+  // Exactly one h1 per page: when the page content has none, a visually
+  // hidden one names the section for screen readers.
+  const mainRef = useRef<HTMLElement>(null);
+  const [needsHeading, setNeedsHeading] = useState(false);
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const check = () => setNeedsHeading(!main.querySelector('h1:not([data-fallback-heading])'));
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(main, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="h-dvh flex flex-col bg-zinc-950">
+      <a href="#main" className="skip-link btn btn-primary btn-sm">Skip to content</a>
       {/* One 56px bar on every screen size: logo, nav, sign out. */}
-      <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950" onClickCapture={event => {
+      <header className="sticky top-0 z-40 bg-zinc-950" onClickCapture={event => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         const link = (event.target as HTMLElement).closest('a[href]');
-        if (!link) return;
+        if (!link || link.getAttribute('href')?.startsWith('#')) return;
         event.preventDefault();
         event.stopPropagation();
         if (!canLeaveLocalPrint()) return;
@@ -46,15 +71,16 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         void (beforeLeave ? beforeLeave() : Promise.resolve(true)).then(ready => { if (ready) router.push(href); });
       }}>
         <div className="max-w-[1600px] mx-auto h-14 px-2 sm:px-6 flex items-center gap-1 sm:gap-6">
-          <Link href="/runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 sm:p-0">
+          <Link href="/runs" aria-label="Label Wrangler, go to print runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 sm:p-0">
             <img
               src="/logo.png"
-              alt="Label Wrangler"
+              alt=""
+              aria-hidden="true"
               className="w-8 h-8 sm:w-9 sm:h-9"
               style={{ filter: 'brightness(0) invert(1)' }}
             />
             {/* Wordmark from sm up; on phones the logo alone leaves room for the nav. */}
-            <h1 className="hidden sm:block text-base font-semibold text-zinc-100 whitespace-nowrap">Label Wrangler</h1>
+            <span className="hidden sm:block text-base font-semibold text-zinc-100 whitespace-nowrap">Label Wrangler</span>
           </Link>
 
           <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
@@ -87,9 +113,10 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
 
       {banners}
       {/* Page content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <main ref={mainRef} id="main" tabIndex={-1} className="flex-1 flex flex-col overflow-hidden outline-none">
+        {needsHeading && <h1 data-fallback-heading className="sr-only">{activeLabel || 'Label Wrangler'}</h1>}
         {children}
-      </div>
+      </main>
     </div>
   );
 }

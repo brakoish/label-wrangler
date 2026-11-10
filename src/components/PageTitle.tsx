@@ -9,7 +9,15 @@ import { useEffect } from 'react';
  *
  * Renders nothing.
  */
+let mounted = 0;
+/** True while a page has set its own title (AppShell falls back otherwise). */
+export function pageHasOwnTitle() { return mounted > 0; }
+
 export function PageTitle({ title }: { title: string }) {
+  useEffect(() => {
+    mounted += 1;
+    return () => { mounted -= 1; };
+  }, []);
   useEffect(() => {
     const full = title ? `${title} — Label Wrangler` : 'Label Wrangler';
     document.title = full;
