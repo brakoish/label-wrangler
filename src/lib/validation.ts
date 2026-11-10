@@ -19,19 +19,39 @@ function strings(value: unknown, field: string) {
   if (Object.keys(record).length > 500) invalid(field);
   for (const [k,v] of Object.entries(record)) { text(k, field, 200); text(v, field, 20000); }
 }
-const ENUMS: Record<string, readonly string[]> = {
-  fontWeight: ['normal','bold','100','200','300','400','500','600','700','800','900'],
-  fontStyle: ['normal','italic'],
-  textAlign: ['left','center','right'],
-  verticalAlign: ['top','middle','bottom'],
-  objectFit: ['contain','cover','fill'],
-  barcodeFormat: ['CODE128','CODE39','UPC','EAN13','EAN8','ITF14'],
-  errorCorrection: ['L','M','Q','H'],
+/**
+ * Style choices with a fixed list. Old rows can hold other values (early
+ * imports, '' from older designers). Refusing them made those designs
+ * impossible to save, so an unknown value is replaced with what the printers
+ * already do with it, and the printed label stays the same:
+ * - textAlign: ZPL prints anything else as left (^FB ...,L), the sheet as start.
+ * - objectFit: ZPL and the sheet both draw anything else as contain.
+ * - barcodeFormat: ZPL prints anything else as CODE128 (^BC).
+ * - verticalAlign, fontStyle: only the bitmap renderer reads them, and it
+ *   treats a missing value as top / normal.
+ * These values are escaped wherever they are rendered, so this is about
+ * saving, not safety.
+ */
+const COERCED: Record<string, { allowed: readonly string[]; fallback: string }> = {
+  fontStyle: { allowed: ['normal','italic'], fallback: 'normal' },
+  textAlign: { allowed: ['left','center','right'], fallback: 'left' },
+  verticalAlign: { allowed: ['top','middle','bottom'], fallback: 'top' },
+  objectFit: { allowed: ['contain','cover','fill'], fallback: 'contain' },
+  barcodeFormat: { allowed: ['CODE128','CODE39','UPC','EAN13','EAN8','ITF14'], fallback: 'CODE128' },
 };
-/** Hex, named, rgb()/hsl() colors, 'none'/'transparent' or empty (no fill). No quotes or markup. */
-const COLOR = /^[#a-zA-Z0-9(),.%\s-]{0,64}$/;
-/** Font names, including PDF-embedded ones like "ABCDEF+Arial-BoldMT". No quotes or markup. */
-const FONT_FAMILY = /^[a-zA-Z0-9 _.,'+-]{0,200}$/;
+/** fontWeight: ZPL ignores it and the sheet passes any CSS weight through as
+ * written, so valid CSS weights are kept. Anything else is ignored by the
+ * browser (prints normal) and is stored as 'normal'. */
+function cssFontWeight(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 1 && value <= 1000;
+  if (typeof value !== 'string') return false;
+  if (['normal','bold','bolder','lighter'].includes(value)) return true;
+  return /^\d{1,4}(\.\d+)?$/.test(value) && Number(value) >= 1 && Number(value) <= 1000;
+}
+/** QR error correction is written into the ZPL ^BQ command as is, and ZPL is
+ * not escaped, so command and parameter separators are refused. Empty prints
+ * as M. Any other value is kept so the printed bytes don't change. */
+const ZPL_SEPARATORS = /[\^~,\r\n]/;
 function elements(value: unknown) {
   if (!Array.isArray(value) || value.length > 500) invalid('elements');
   const ids = new Set();
@@ -45,12 +65,14 @@ function elements(value: unknown) {
     for (const k of ['fontSize','minFontSize','lineHeight','charWidth']) if (e[k] !== undefined) number(e[k],k,0.01,10000);
     for (const k of ['strokeWidth','borderRadius']) if (e[k] !== undefined) number(e[k],k,0,10000);
     if (e.lineStyle !== undefined && !['solid','dotted','dashed'].includes(String(e.lineStyle))) invalid('line style');
-    // Style fields end up in SVG/HTML attributes (sheet print, previews), so
-    // only known values are stored. Rendering escapes them as well.
-    for (const [k, allowed] of Object.entries(ENUMS)) if (e[k] !== undefined && e[k] !== null && !allowed.includes(String(e[k]))) invalid(k);
-    if (e.fontWeight !== undefined && typeof e.fontWeight !== 'string' && typeof e.fontWeight !== 'number') invalid('fontWeight');
-    for (const k of ['color','strokeColor','fillColor']) if (e[k] !== undefined && e[k] !== null && (typeof e[k] !== 'string' || !COLOR.test(String(e[k])))) invalid(k);
-    if (e.fontFamily !== undefined && e.fontFamily !== null && (typeof e.fontFamily !== 'string' || !FONT_FAMILY.test(e.fontFamily))) invalid('fontFamily');
+    // Unknown style values in old rows are coerced (see COERCED), not refused.
+    // Colors and font names are escaped by every renderer (sheet SVG/HTML,
+    // React previews) and the bitmap renderer checks its own, so any string
+    // is stored as written.
+    for (const [k, { allowed, fallback }] of Object.entries(COERCED)) if (e[k] !== undefined && e[k] !== null && !allowed.includes(String(e[k]))) e[k] = fallback;
+    if (e.fontWeight !== undefined && e.fontWeight !== null && !cssFontWeight(e.fontWeight)) e.fontWeight = 'normal';
+    if (e.errorCorrection === '') e.errorCorrection = 'M';
+    else if (e.errorCorrection !== undefined && e.errorCorrection !== null && ZPL_SEPARATORS.test(String(e.errorCorrection))) invalid('errorCorrection');
     for (const [k,v] of Object.entries(e)) {
       if (typeof v === 'number' && !Number.isFinite(v)) invalid(k);
       if (typeof v === 'string') text(v,k,k==='src'?3_000_000:20000);

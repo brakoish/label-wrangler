@@ -31,18 +31,26 @@ const {renderSheetLabelSvg}=require('../../src/lib/sheetPrint.ts');
  const {buildSheetPrintHtml}=require('../../src/lib/sheetPrint.ts');
  const html=await buildSheetPrintHtml({id:'r',name:'<img src=x onerror=alert(1)>',sourceData:['a'],totalLabels:1,printedCount:0},{elements:[{...base,type:'text',content:'v',fontWeight:evil,textAlign:'left',fontSize:10}]},{...format,columns:1,rows:1,sheetWidth:'8.5}</style><script>x</script>'},{autoPrint:false});
  assert.ok(!/<img src=x|<image href="x"|<\/style><script>x/.test(html),'unescaped markup in sheet print HTML');
- // API validation rejects hostile style values outright.
+ // API validation: style values are escaped wherever they render, so unknown
+ // list values are coerced (legacy rows still save) and only values that
+ // would reach unescaped ZPL are refused.
  const {validate}=require('../../src/lib/validation.ts');
  const el={id:'e',type:'text',x:0,y:0,width:1,height:1,rotation:0,zIndex:0,isStatic:true,content:'x',fontFamily:'Arial',fontSize:10,fontWeight:'bold',textAlign:'left',color:'#000000',lineHeight:1.2};
  validate({elements:[el]},'template');
  validate({elements:[{...el,fontWeight:700,fontStyle:'italic',verticalAlign:'middle',fontFamily:'ABCDEF+Arial-BoldMT',color:'rgb(0, 0, 0)'}]},'template');
  validate({elements:[{...el,id:'r',type:'rectangle',strokeColor:'#000',fillColor:'',strokeWidth:1,borderRadius:0}]},'global');
- for(const bad of [{fontWeight:evil},{fontStyle:'oblique"'},{textAlign:'justify'},{verticalAlign:'x'},{color:'red" onclick="x'},{fontFamily:'Arial"><script>'},{fillColor:'url("javascript:x")'}])
-  assert.throws(()=>validate({elements:[{...el,...bad}]},'template'),/Invalid/,JSON.stringify(bad));
- assert.throws(()=>validate({elements:[{...el,id:'q',type:'qr',errorCorrection:'Z'}]},'template'),/Invalid/);
- assert.throws(()=>validate({elements:[{...el,id:'b',type:'barcode',barcodeFormat:'CODE128"'}]},'template'),/Invalid/);
- assert.throws(()=>validate({elements:[{...el,id:'i',type:'image',src:'data:image/png;base64,AA',objectFit:'scale-down'}]},'template'),/Invalid/);
- console.log('PASS sheet SVG: numeric barcode viewBox; hostile style values escaped in SVG/HTML and rejected by API validation');
+ for(const [bad,key,expected] of [[{fontWeight:evil},'fontWeight','normal'],[{fontStyle:'oblique"'},'fontStyle','normal'],[{textAlign:'justify'},'textAlign','left'],[{verticalAlign:'x'},'verticalAlign','top']]){
+  const data={elements:[{...el,...bad}]};validate(data,'template');assert.equal(data.elements[0][key],expected,JSON.stringify(bad));
+ }
+ const coerced=(extra)=>{const data={elements:[{...el,...extra}]};validate(data,'template');return data.elements[0];};
+ assert.equal(coerced({id:'b',type:'barcode',barcodeFormat:'CODE128"'}).barcodeFormat,'CODE128');
+ assert.equal(coerced({id:'i',type:'image',src:'data:image/png;base64,AA',objectFit:'scale-down'}).objectFit,'contain');
+ // Colors and fonts are stored as written; the sheet output above escapes them.
+ assert.equal(coerced({color:'red" onclick="x'}).color,'red" onclick="x');
+ // QR correction reaches ZPL unescaped: separators are refused, '' prints as M.
+ assert.throws(()=>validate({elements:[{...el,id:'q',type:'qr',errorCorrection:'M^FO0,0^FDX'}]},'template'),/Invalid errorCorrection/);
+ assert.equal(coerced({id:'q',type:'qr',errorCorrection:''}).errorCorrection,'M');
+ console.log('PASS sheet SVG: numeric barcode viewBox; hostile style values escaped in SVG/HTML; API coerces unknown list values and refuses ZPL separators');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 // pdf.js: the served worker must be the installed version, and the version
 // must be pinned exactly so the API and worker cannot drift apart again.
