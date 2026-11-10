@@ -44,7 +44,7 @@ export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhe
       </ul>
       <p className="text-amber-200">{remedy ?? blankRemedy(check)}</p>
       {check.canLeaveBlank && (
-        <label htmlFor={checkboxId} className="flex items-start gap-2 rounded-md bg-zinc-950 p-2.5 text-zinc-200">
+        <label htmlFor={checkboxId} className="flex items-start gap-2 rounded-md bg-zinc-950 p-2.5 text-zinc-300">
           <input id={checkboxId} type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />
           <span>Print {check.blankLabels === 1 ? 'this label' : `these ${check.blankLabels.toLocaleString()} labels`} with {check.issues.length === 1 ? 'that field' : 'those fields'} left blank.</span>
         </label>
