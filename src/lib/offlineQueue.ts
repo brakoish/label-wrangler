@@ -53,6 +53,7 @@ const syncedRuns = new Map<string, Run>();
 /** Plain reasons for operations set aside during a flush, by operation id, so
  * the caller that queued one can tell its own update was refused. */
 const setAsideOps = new Map<string, string>();
+const rewindDropOps = new Set<string>();
 /** Operations a flush has tried to send (cleared by the caller that queued them). */
 const attemptedOps = new Set<string>();
 export const QUEUE_EVENT = 'lw:progress-sync';
@@ -200,6 +201,7 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
             deadLetter(PREFIX + op.id, { id: op.id, runId, kind: 'rewind-dropped', status: 409, message, op });
             syncedRuns.delete(runId);
             setAsideOps.set(op.id, message);
+            rewindDropOps.add(op.id);
             if (setAsideOps.size > 128) setAsideOps.delete(setAsideOps.keys().next().value!);
             announce(pendingError);
             continue;
@@ -260,6 +262,9 @@ export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAs
   const refused = setAsideOps.get(id);
   if (refused !== undefined) {
     setAsideOps.delete(id);
+    // A dropped "go back" the page is told about right away needs no second,
+    // app-wide notice; one that drops later (offline) still gets it.
+    if (rewindDropOps.delete(id) && onSetAside) discardDeadLetters([id]);
     onSetAside?.(refused);
     return null;
   }

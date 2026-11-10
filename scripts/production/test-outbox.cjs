@@ -123,6 +123,11 @@ const queue=require('../../src/lib/offlineQueue.ts');
   await queue.flushOfflineQueue();
   assert.equal(server.rw2,39,'a single-device rewind behind its own progress applies');
   assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.deadLetteredOps().length,0);
+  // Online: the page is told right away, so no second app-wide notice is kept.
+  server.rw3=70;let told=null;
+  assert.equal(await queue.updateRunWithQueue('rw3',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:40},r=>{told=r;}),null);
+  assert.match(told,/another device/);assert.equal(server.rw3,70);
+  assert.equal(queue.deadLetteredOps().length,0,'the page shows it; no banner repeats it');
   // A rewind refused straight away tells the caller in plain words.
   server.rw3=60;aside=null;
   assert.equal(await queue.updateRunWithQueue('rw3',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:40},r=>{aside=r;}),null);

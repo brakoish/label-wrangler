@@ -657,7 +657,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const refusedStart = { reason: '' };
     try { await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
-    if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); return; }
+    if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
     if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
     if (!mounted.current || controller.signal.aborted) return;
 
@@ -848,7 +848,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const refused = { reason: '' };
     const before = printedCount;
     await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason) => { refused.reason = reason; } });
-    if (refused.reason) { setPrintedCount(run.printedCount ?? 0); setErrorMsg(`Going back didn’t save. ${refused.reason}`); return; }
+    if (refused.reason) {
+      setPrintedCount(run.printedCount ?? 0); setErrorMsg(`Going back didn’t save. ${refused.reason}`);
+      // Show the progress the other device saved.
+      const fresh = await fetchRun(run.id).catch(() => null);
+      if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0);
+      return;
+    }
     if (pendingPatchCount(run.id)) setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
   };
 
