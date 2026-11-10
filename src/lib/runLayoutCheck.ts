@@ -2,7 +2,7 @@ import type { LabelFormat, LabelTemplate, Run } from './types';
 import { layoutProblems, type LayoutProblem } from './designerLayout';
 import { previewLabelValues } from './runBuilder';
 import { checkRunBarcodes, describeBarcodeGroups, type BarcodeIssue } from './barcodeCheck';
-import { friendlyFieldName } from './fieldLabels';
+import { fieldItemWords, friendlyFieldName, placeholderDescription } from './fieldLabels';
 import { NOT_AS_WRITTEN_NOTE } from './barcodeValue';
 
 /** The run data the checks read (a Run, or the new-run wizard's data before the run exists). */
@@ -101,8 +101,10 @@ export interface BarcodeVerdict {
   /** One plain line for why printing waits, next to the disabled button. */
   waitReason: string;
   /**
-   * False when a go-ahead given in the new-run wizard must not carry over to
-   * the run page: the run page asks again ('neither-scans').
+   * Whether a go-ahead given in the new-run wizard is kept for the run page.
+   * True unless nothing can print; the run page still asks again, item by
+   * item, for a barcode that prints over the next label's ("neither label
+   * will scan", see runBarcodeTicks.barcodeProblemSevere).
    */
   carriesOver: boolean;
   /** What to change: the spreadsheet rows, the design, or both. */
@@ -114,8 +116,10 @@ function joinNames(names: ReadonlyArray<string>): string {
 }
 
 function codeNames(issues: ReadonlyArray<VerdictIssue>): string {
-  const names = Array.from(new Set(issues.map((issue) => (issue.label && issue.field ? friendlyFieldName(issue.field) : 'fixed'))));
+  const names = Array.from(new Set(issues.map((issue) => (issue.label && issue.field ? (placeholderDescription(issue.field) ?? friendlyFieldName(issue.field)) : 'fixed'))));
   if (!names.length) return 'the barcode';
+  // An item with no column yet is just "the barcode" (never "Barcode 1").
+  if (names.length === 1 && placeholderDescription(issues.find((i) => i.field)?.field)) return `the ${fieldItemWords(issues.find((i) => i.field)?.field, 'barcode')}`;
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   return `the ${list} barcode${names.length === 1 ? '' : 's'}`;
 }
@@ -170,12 +174,12 @@ export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: n
         : `Print anyway — ${name} will be cut off and won’t scan`;
   }
   const fixWords = fixIn === 'data'
-    ? 'Fix the spreadsheet rows listed above, then choose the file again.'
+    ? 'Fix those rows in your spreadsheet, then choose the file again.'
     : fixIn === 'both' ? 'Fix the items listed above.' : 'Fix the design (see the list above).';
   const waitReason = stops
     ? `${heading}, so nothing can print. ${fixWords}`
-    : `${heading}. Fix it, or tick “Print anyway” for each problem.`;
-  return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: severity !== 'neither-scans', fixIn };
+    : `${heading}. Fix it, or tick each “Print … anyway”.`;
+  return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: !stops, fixIn };
 }
 
 /** The line under a stop: what has to change before anything prints. */

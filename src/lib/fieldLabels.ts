@@ -56,6 +56,8 @@ function splitWords(key: string): string[] {
 export function friendlyFieldName(key: string | null | undefined): string {
   const raw = (key ?? '').trim();
   if (!raw) return 'Unnamed field';
+  const placeholder = placeholderDescription(raw);
+  if (placeholder) return placeholder.charAt(0).toUpperCase() + placeholder.slice(1);
   if (/\s/.test(raw) && !/[_]/.test(raw)) return raw;
   const words = splitWords(raw).map((word) => {
     const lower = word.toLowerCase();
@@ -65,6 +67,31 @@ export function friendlyFieldName(key: string | null | undefined): string {
   const text = words.join(' ');
   // Capitalise the first letter unless it is already an acronym.
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const ORDINALS = ['', '', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+
+/**
+ * The designer's stand-in name for an item that has no column yet ("Text 1",
+ * "Barcode 2") read as a plain description: "text", "second barcode". Null
+ * for a real column name. Keeps "Barcode 1" out of messages and data labels.
+ */
+export function placeholderDescription(key: string | null | undefined): string | null {
+  const match = (key ?? '').trim().match(/^(text|barcode|qr code|qr|picture|image) (\d+)$/i);
+  if (!match) return null;
+  const type = match[1].toLowerCase() === 'qr' || match[1].toLowerCase() === 'qr code' ? 'QR code' : match[1].toLowerCase() === 'image' ? 'picture' : match[1].toLowerCase();
+  const n = Number(match[2]);
+  return n <= 1 ? type : `${ORDINALS[n] ?? `number ${n}`} ${type}`;
+}
+
+/**
+ * A field's item in a sentence: "SKU barcode", or for an item with no column
+ * yet just "barcode" / "second barcode" (never "Barcode 1 barcode").
+ */
+export function fieldItemWords(key: string | null | undefined, typeWord: string): string {
+  const placeholder = placeholderDescription(key);
+  if (placeholder) return placeholder.endsWith(typeWord) ? placeholder : `${placeholder} ${typeWord}`;
+  return `${friendlyFieldName(key)} ${typeWord}`;
 }
 
 /** "Package tag (package_tag)" when the friendly name hides the exact key. */

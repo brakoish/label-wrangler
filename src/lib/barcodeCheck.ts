@@ -1,5 +1,5 @@
 import type { BarcodeElement, FieldMapping, LabelFormat, LabelTemplate, TemplateElement } from './types';
-import { friendlyFieldName, spreadsheetRow } from './fieldLabels';
+import { fieldItemWords, friendlyFieldName, spreadsheetRow } from './fieldLabels';
 import { barcodeFit, barcodeFitFix, barcodeFitProblem, type BarcodeFit } from './barcodeFit';
 import { itemName, layoutProblems } from './designerLayout';
 
@@ -76,7 +76,7 @@ interface RunData {
   mappedField?: string | null;
 }
 
-function valuesFor(run: RunData, index: number): Record<string, string> {
+export function valuesFor(run: RunData, index: number): Record<string, string> {
   const values: Record<string, string> = { ...(run.staticValues || {}) };
   const row = run.sourceData[index];
   const mappings = run.fieldMappings || {};
@@ -196,7 +196,7 @@ function shorten(value: string, max = 24): string {
 export function describeBarcodeIssue(issue: BarcodeIssue, fromSpreadsheet: boolean): string {
   if (issue.kind === 'too-long' || issue.kind === 'tight') {
     const fix = issue.fit ? barcodeFitFix(issue.fit) : '';
-    const name = issue.label ? `${friendlyFieldName(issue.field)} barcode` : 'fixed barcode';
+    const name = issue.label ? fieldItemWords(issue.field, 'barcode') : 'fixed barcode';
     const where = issue.label ? ` on label ${issue.label.toLocaleString()}${fromSpreadsheet ? ` (row ${spreadsheetRow(issue.label).toLocaleString()})` : ''}` : '';
     return `The ${name}${where} ${issue.problem}.${describeOverprints(issue)}${fix ? ` ${fix}.` : ''}`;
   }
@@ -242,7 +242,7 @@ export function describeBarcodeGroups(issues: ReadonlyArray<BarcodeIssue>, total
     const count = Math.max(list.length, fitCounts[`${widest.field}|${widest.fit?.reason}`] ?? 0);
     const fix = widest.fit ? barcodeFitFix(widest.fit) : '';
     const over = list.find((i) => i.overprints?.length) ?? widest;
-    grouped.push(`The ${friendlyFieldName(widest.field)} barcode on ${whichLabels(labels, Math.min(count, totalLabels), totalLabels, fromSpreadsheet(widest.field))} ${widest.problem}.${describeOverprints(over)}${fix ? ` ${fix}.` : ''}`);
+    grouped.push(`The ${fieldItemWords(widest.field, 'barcode')} on ${whichLabels(labels, Math.min(count, totalLabels), totalLabels, fromSpreadsheet(widest.field))} ${widest.problem}.${describeOverprints(over)}${fix ? ` ${fix}.` : ''}`);
   }
   const all = [...grouped, ...lines];
   return { items: all.slice(0, limit), more: Math.max(0, all.length - limit) };

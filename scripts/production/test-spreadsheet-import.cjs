@@ -96,6 +96,11 @@ assert.equal(spreadsheetRow(12), 13);
     const empty = await readXlsx(new Uint8Array(three), { sheet: 0 });
     assert.equal(empty.headers.length, 0, 'a picked empty sheet reads as empty, not as another sheet');
     assert.equal(empty.sheetName, 'Notes');
+    // With the design's fields, the sheet whose headings match is read.
+    const matched = await readXlsx(new Uint8Array(three), { preferHeaders: ['item', 'PRICE'] });
+    assert.equal(matched.sheetName, 'Prices', 'the sheet whose headings match the design');
+    const noMatch = await readXlsx(new Uint8Array(three), { preferHeaders: ['Lab Results Link'] });
+    assert.equal(noMatch.sheetName, 'Labels', 'no match: the first sheet with something on it');
   }
   console.log('PASS spreadsheet import: sheets can be picked; Excel number formats and rounding, plain digits, title rows, header row choice, row numbers');
 })().catch((error) => { console.error(error); process.exit(1); });

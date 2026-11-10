@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback, useId } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight } from 'lucide-react';
+import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight, RotateCcw } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { IconSwap } from '@/components/motion/IconSwap';
@@ -22,19 +22,22 @@ import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
 import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
-import { barcodeWaitWords } from '@/lib/runBarcodeTicks';
+import { barcodeTickLabel, barcodeWaitWords } from '@/lib/runBarcodeTicks';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
-import { stopFixWords, LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
+import { stopFixWords, LAYOUT_GO_AHEAD, barcodeIssueStops, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
 import { friendlyError, friendlyRenderError, isNetworkError, SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
-import type { FieldMapping, RunDataSource } from '@/lib/types';
+import type { FieldMapping, RunDataSource, TemplateElement } from '@/lib/types';
 import { contentModeUpdates } from '@/lib/elementBinding';
 import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow, setSpreadsheetRowMap } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
+import { runBarcodeFixes } from '@/lib/runBarcodeFix';
+import { labelsWords, missingDetailsWords, rowMissingDetails, runMissingDetails } from '@/lib/nabisDetails';
+import type { BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
@@ -253,7 +256,7 @@ function NewRunContent() {
   // preserved too so same-batch re-prints are one click.
   const duplicateFrom = searchParams.get('duplicateFrom');
 
-  const { templates, addTemplate, updateElementLocal, saveTemplate } = useTemplateStore();
+  const { templates, addTemplate, updateElementLocal, saveTemplate, updateTemplate } = useTemplateStore();
   const templatesLoadError = useTemplateStore((state) => state.error);
   const templatesHydrated = useTemplateStore((state) => state.hydrated);
   const { formats, getFormatById } = useFormatStore();
@@ -534,7 +537,8 @@ function NewRunContent() {
       if (isZipFile(bytes)) {
         // An Excel workbook. Read its first sheet; if that fails, say how to
         // make a CSV instead of showing the zip's bytes as "columns".
-        try { parsed = await readXlsx(bytes, { headerRow, sheet }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
+        // With no sheet picked, the sheet whose headings match the design's fields.
+        try { parsed = await readXlsx(bytes, { headerRow, sheet, preferHeaders: sheet === undefined ? dynamicFields : undefined }); } catch { setFileError(EXCEL_SAVE_AS_CSV); return; }
         if (!parsed.headers.length && (parsed.sheetNames?.length ?? 1) > 1 && sheet !== undefined) {
           // A picked sheet with nothing on it: say so, and keep the sheet list to pick another.
           setFileInfo((info) => (info ? { ...info, sheetIndex: sheet } : info));
@@ -731,17 +735,21 @@ function NewRunContent() {
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
   useEffect(() => () => setSpreadsheetRowMap(null), []);
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : dataRows.length;
+  // The spreadsheet row a label (0-based, in this run) comes from.
+  const sheetRowOf = (index: number) => (keptRows ? keptRows[index] ?? index : index) + 1 + (fileInfo?.headerRow ?? 1);
 
   const manifestPackageSummaries = useMemo(() => {
-    const packages = new Map<string, { row: ManifestRow; labelRows: number }>();
+    const packages = new Map<string, { row: ManifestRow; labelRows: number; missing: boolean }>();
     for (const row of manifestRows) {
       const key = manifestPackageKey(row);
+      const missing = rowMissingDetails(row).length > 0;
       const existing = packages.get(key);
       if (existing) {
         existing.labelRows += 1;
+        existing.missing ||= missing;
         continue;
       }
-      packages.set(key, { row, labelRows: 1 });
+      packages.set(key, { row, labelRows: 1, missing });
     }
     return Array.from(packages.values());
   }, [manifestRows]);
@@ -919,6 +927,44 @@ function NewRunContent() {
   const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
   const barcodesClear = barcodeCheck.issues.length === 0;
   const barcodesOk = barcodesClear || barcodeGoAhead;
+  // "Fix it for me" / "Use a QR code instead" right here, offered only when
+  // the changed design prints that barcode whole on every label and lands on
+  // nothing. It changes the design's barcode only, is saved, and has Undo.
+  const barcodeFixes = useMemo(
+    () => (barcodeCheck.issues.some((issue) => issue.kind === 'too-long') && template && !template.summaryOnly
+      ? runBarcodeFixes(checkTemplate, runDataForCheck, format, barcodeCheck.issues, Math.min(labelCount || 1, 2000))
+      : null),
+    [barcodeCheck.issues, template, checkTemplate, runDataForCheck, format, labelCount],
+  );
+  const [runFixNote, setRunFixNote] = useState<{ templateId: string; text: string; before: TemplateElement[]; tone: 'ok' | 'error' } | null>(null);
+  const [runFixBusy, setRunFixBusy] = useState(false);
+  const applyRunFix = async (fix: BarcodeAutoFix, elementId: string) => {
+    if (!template || runFixBusy) return;
+    const changed = fix.elements.find((el) => el.id === elementId);
+    if (!changed) return;
+    const before = template.elements;
+    setRunFixBusy(true);
+    try {
+      await updateTemplate(template.id, { elements: before.map((el) => (el.id === elementId ? changed : el)) });
+      setRunFixNote({ templateId: template.id, text: `${fix.done} Saved to the design.`, before, tone: 'ok' });
+    } catch {
+      setRunFixNote({ templateId: template.id, text: 'The design couldn’t be saved, so nothing changed. Check your connection and try again.', before, tone: 'error' });
+    } finally {
+      setRunFixBusy(false);
+    }
+  };
+  const undoRunFix = async () => {
+    if (!runFixNote || runFixBusy) return;
+    setRunFixBusy(true);
+    try {
+      await updateTemplate(runFixNote.templateId, { elements: runFixNote.before });
+      setRunFixNote(null);
+    } catch {
+      setRunFixNote({ ...runFixNote, text: 'Undo couldn’t be saved. Check your connection and try again.', tone: 'error' });
+    } finally {
+      setRunFixBusy(false);
+    }
+  };
 
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
@@ -932,8 +978,17 @@ function NewRunContent() {
   const [layoutConfirmedKey, setLayoutConfirmedKey] = useState('');
   const layoutOk = !layoutIssues.length || layoutConfirmedKey === layoutKey;
 
+  // A Nabis search cut short by its time limit leaves rows without their
+  // retail IDs or lab potency: Start waits until the person searches again
+  // or ticks that these labels print without them (named).
+  const nabisGap = useMemo(() => (inputMode === 'manifest' ? runMissingDetails(dataRows, dataMappings) : { labels: [], missing: [], signature: '' }), [inputMode, dataRows, dataMappings]);
+  const [nabisGapOkKey, setNabisGapOkKey] = useState('');
+  const nabisOk = !nabisGap.labels.length || nabisGapOkKey === nabisGap.signature;
+  const nabisGapWhat = missingDetailsWords(nabisGap.missing);
+
   const canCreate =
     !imageBusy &&
+    nabisOk &&
     name.trim().length > 0 &&
     !!template &&
     !!format &&
@@ -967,15 +1022,26 @@ function NewRunContent() {
                 : inputMode === 'paste' && !pasteField
                   ? 'Choose which field the pasted values fill.'
                   : null;
+  // Spreadsheet rows and design problems counted apart, so the footer never
+  // blames the design for a value in the file.
+  const barcodeStopCounts = () => {
+    const stopping = barcodeCheck.issues.filter((issue) => barcodeIssueStops(issue, format));
+    const rows = new Set(stopping.filter((issue) => issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field)).map((issue) => issue.label)).size;
+    const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
+    return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
+  };
   const checkReasons = setupReason || !format ? [] : [
     !blanksOk && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then choose the file again.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length)),
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.'
+      : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
+        : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
+    !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, labelCount)}. Search again, or tick to print without them.`,
   ].filter((reason): reason is string => !!reason);
   const previewReason = setupReason || !format || checkReasons.length ? null
     : format.type === 'thermal' && previewState.status === 'error'
@@ -1005,7 +1071,8 @@ function NewRunContent() {
   const formDirty = !leavingAfterCreate && (name.trim().length > 0 || !!templateId || csvRows.length > 0 || pasteText.trim().length > 0 || manifestRows.length > 0);
   const confirmLeave = useCallback(async () => {
     if (!formDirty) return true;
-    return confirmDialog({ title: 'Leave this new run?', body: 'We keep it in this browser tab, so you can pick it up again from New run.', confirmLabel: 'Leave', cancelLabel: 'Stay here' });
+    // "Stay here" has the focus: Enter or Space never throws the run away.
+    return confirmDialog({ title: 'Leave this new run?', body: 'We keep it in this browser tab, so you can pick it up again from New run.', confirmLabel: 'Leave', cancelLabel: 'Stay here', focusCancel: true });
   }, [formDirty]);
   useEffect(() => {
     if (!formDirty) return;
@@ -1023,9 +1090,13 @@ function NewRunContent() {
   useEffect(() => { routerRef.current = router; }, [router]);
   const confirmLeaveRef = useRef(confirmLeave);
   useEffect(() => { confirmLeaveRef.current = confirmLeave; }, [confirmLeave]);
+  // A same-page link ("Skip to content", #main) adds a history entry with a
+  // new #hash and fires popstate too: that is not leaving.
+  const guardHashRef = useRef('');
   useEffect(() => {
     if (!formDirty || guardRef.current) return;
     guardRef.current = true;
+    guardHashRef.current = window.location.hash;
     window.history.pushState(null, '', window.location.href);
   }, [formDirty]);
   useEffect(() => {
@@ -1036,6 +1107,10 @@ function NewRunContent() {
         routerRef.current.replace(target);
         return;
       }
+      if (window.location.hash !== guardHashRef.current) {
+        guardHashRef.current = window.location.hash;
+        return;
+      }
       if (!guardRef.current) return;
       guardRef.current = false;
       void confirmLeaveRef.current().then((leave) => {
@@ -1044,6 +1119,7 @@ function NewRunContent() {
           window.history.back();
         } else {
           guardRef.current = true;
+          guardHashRef.current = window.location.hash;
           window.history.pushState(null, '', window.location.href);
         }
       });
@@ -1270,10 +1346,9 @@ function NewRunContent() {
   const sheetNames = fileInfo?.sheetNames ?? [];
   const sheetPicker = sheetNames.length > 1 && lastFile.current ? (
     <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-300">
-      <span id={`${formId}-sheet`}>Sheet</span>
-      <div className="w-56 max-w-full">
+      <span id={`${formId}-sheet`}>Using sheet</span>
+      <div className="w-64 max-w-full">
         <CustomSelect
-          compact
           aria-labelledby={`${formId}-sheet`}
           value={String(fileInfo?.sheetIndex ?? 0)}
           onChange={(value) => { if (lastFile.current) void handleFile(lastFile.current, undefined, Number(value)); }}
@@ -1363,8 +1438,8 @@ function NewRunContent() {
                   <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
                 ) : templates.length === 0 ? (
                   <p className="text-sm text-zinc-400 py-2">
-                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="link disabled:opacity-40">Make one</button>
-                    {formats.length === 0 && <> (add a <Link href="/formats" className="link">label size</Link> first)</>}
+                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="link -my-3 inline-block py-3 disabled:opacity-40">Make one</button>
+                    {formats.length === 0 && <> (add a <Link href="/formats" className="link -my-3 inline-block py-3">label size</Link> first)</>}
                   </p>
                 ) : (
                   <CustomSelect
@@ -1639,7 +1714,7 @@ function NewRunContent() {
                           </span>
                         </div>
                         <div className="max-h-64 overflow-auto rounded-lg bg-zinc-950">
-                        {manifestPackageSummaries.map(({ row, labelRows }) => {
+                        {manifestPackageSummaries.map(({ row, labelRows, missing }) => {
                           const key = manifestPackageKey(row);
                           const isSelected = key === selectedManifestPackageKey;
                           return (
@@ -1661,6 +1736,7 @@ function NewRunContent() {
                               <span className="min-w-0">
                                 <span className="block truncate text-zinc-100" title={row.itemName}>{row.itemName || 'No item name'}</span>
                                 <span className="block truncate tabular-nums text-zinc-400" title={row.tag}>{row.tag || 'No tag'}</span>
+                                {missing && <span className="block text-amber-300">Some details didn’t arrive</span>}
                               </span>
                               <span className="min-w-0 truncate text-zinc-400" title={row.lotNumber || row.batch}>
                                 {row.lotNumber || row.batch ? `Lot ${row.lotNumber || row.batch}` : 'No lot'}
@@ -1831,8 +1907,8 @@ function NewRunContent() {
                         </button>
                         <span className="text-zinc-400 tabular-nums" aria-live="polite">
                           {across > 1 && labelCount > 1
-                            ? <>Labels {feedStart + 1}–{Math.min(feedStart + across, labelCount)} of {labelCount.toLocaleString()}</>
-                            : <>Label {previewIndex + 1} of {labelCount.toLocaleString()}</>}
+                            ? <>Labels {feedStart + 1}–{Math.min(feedStart + across, labelCount)} of {labelCount.toLocaleString()}{inputMode === 'csv' && <span className="max-sm:hidden"> · rows {sheetRowOf(feedStart)}–{sheetRowOf(Math.min(feedStart + across, labelCount) - 1)}</span>}</>
+                            : <>Label {previewIndex + 1} of {labelCount.toLocaleString()}{inputMode === 'csv' && <span className="max-sm:hidden"> · row {sheetRowOf(previewIndex)}</span>}</>}
                         </span>
                         <button
                           onClick={() => setPreviewIndex(Math.min(labelCount - 1, feedStart + across))}
@@ -1863,6 +1939,23 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="space-y-4">
+                    {nabisGap.labels.length > 0 && (
+                      <div role="alert" className="space-y-1 text-sm">
+                        <p className="flex items-start gap-1.5 text-zinc-100">
+                          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
+                          <span>Nabis didn’t send the {nabisGapWhat} in time, so {labelsWords(nabisGap.labels, labelCount)} would print without {nabisGap.missing.length > 1 || nabisGap.missing[0] === 'retailIds' ? 'them' : 'it'}{nabisGap.missing.includes('retailIds') ? ', and a package may get one label instead of one per unit' : ''}.</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-4 pl-5.5">
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={isSearchingManifest || manifestSearch.trim().length < 2} onClick={() => void handleManifestSearch()}>
+                            <RotateCcw className="size-4" aria-hidden="true" /> {isSearchingManifest ? 'Searching' : 'Search again'}
+                          </button>
+                          <label className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
+                            <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={nabisGapOkKey === nabisGap.signature} onChange={(e) => setNabisGapOkKey(e.target.checked ? nabisGap.signature : '')} />
+                            <span>Print {nabisGap.labels.length === 1 ? 'it' : 'them'} without the {nabisGapWhat}</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
                     {hasData && template && (
                       <BlankSummary
                         check={blankCheck}
@@ -1872,12 +1965,14 @@ function NewRunContent() {
                         skipCount={skippable?.length ?? 0}
                         choice={blankChoiceNow}
                         onChoiceChange={setBlankChoice}
-                        onChooseFile={lastFile.current ? () => fileInputRef.current?.click() : undefined}
+                        sheetRow={(label) => label + (fileInfo?.headerRow ?? 1)}
                         showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
                       />
                     )}
                     {skipRows && skippable && (
-                      <p className="text-sm text-zinc-400">{skippable.length.toLocaleString()} label{skippable.length === 1 ? ' is' : 's are'} left out, so this run has {labelCount.toLocaleString()}.</p>
+                      <p className="text-sm text-zinc-400">
+                        {inputMode === 'csv' ? (skippable.length === 1 ? 'Row' : 'Rows') : (skippable.length === 1 ? 'Label' : 'Labels')} {(() => { const shown = skippable.slice(0, 5).map((i) => String(inputMode === 'csv' ? i + 1 + (fileInfo?.headerRow ?? 1) : i + 1)); return skippable.length > 5 ? `${shown.join(', ')} and ${(skippable.length - 5).toLocaleString()} more` : andList(shown); })()} {skippable.length === 1 ? 'is' : 'are'} left out, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}, numbered from 1 again.{inputMode === 'csv' ? ' Each label shows its spreadsheet row.' : ''}
+                      </p>
                     )}
                     <BarcodeWarning
                       items={barcodeItems}
@@ -1886,16 +1981,24 @@ function NewRunContent() {
                       isTicked={barcodeItemTicked}
                       onTick={tickBarcodeItem}
                       fix={<>
+                        {barcodeFixes?.fix && (
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
+                        )}
+                        {!barcodeFixes?.fix && barcodeFixes?.qr && (
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>
+                        )}
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
-                        {barcodeWords.fixIn !== 'design' && lastFile.current && (
-                          <button type="button" onClick={() => fileInputRef.current?.click()} className="link inline-flex min-h-control-sm items-center gap-1.5">
-                            <Upload className="size-4" aria-hidden="true" /> Choose another file
-                          </button>
-                        )}
+
                       </>}
                     />
+                    {runFixNote && template && runFixNote.templateId === template.id && (
+                      <p role="status" className={`fold-reveal flex flex-wrap items-center gap-x-3 text-sm ${runFixNote.tone === 'ok' ? 'text-emerald-400' : 'text-red-300'}`}>
+                        <span>{runFixNote.text}</span>
+                        {runFixNote.tone === 'ok' && <button type="button" className="link inline-flex min-h-11 items-center" disabled={runFixBusy} onClick={() => void undoRunFix()}>Undo</button>}
+                      </p>
+                    )}
                     <ProblemList
                       heading="Barcodes close to the edge"
                       items={tightGroups.items}
@@ -1926,9 +2029,7 @@ function NewRunContent() {
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
                       actions={lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) ? (
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 link">
-                          <Upload className="size-4" aria-hidden="true" /> Choose another file
-                        </button>
+                        <span className="text-zinc-400">Fix them in your spreadsheet, then use “Choose another file” at the top.</span>
                       ) : undefined}
                     />
                     <ProblemList

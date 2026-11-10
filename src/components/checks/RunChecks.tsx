@@ -22,7 +22,7 @@ export function blankHeading(check: RunDataCheck): string {
 }
 
 /** "labels 7, 212 (rows 8, 213)" in spreadsheet modes, "labels 7, 212" otherwise. */
-function where(issue: BlankFieldIssue, total: number, mode: CheckMode): string {
+function where(issue: BlankFieldIssue, total: number, mode: CheckMode, sheetRow?: (label: number) => number): string {
   if (issue.kind === 'no-value') {
     if (mode === 'manual') return 'type a value above';
     if (mode === 'scan') return 'a scan can’t fill it';
@@ -32,6 +32,11 @@ function where(issue: BlankFieldIssue, total: number, mode: CheckMode): string {
   if (issue.count >= total && total > 1) return 'empty on every label';
   const labels = describeRowList(issue.rows, issue.count);
   const plural = issue.count === 1 ? '' : 's';
+  if (mode === 'csv' && sheetRow) {
+    // The new run: these rows may be left out (the labels then number again
+    // from 1), so name the spreadsheet rows only.
+    return `empty in spreadsheet row${plural} ${describeRowList(issue.rows.map(sheetRow), issue.count)}`;
+  }
   if (mode === 'csv') {
     const rows = describeRowList(issue.rows.map(spreadsheetRow), issue.count);
     return `empty on label${plural} ${labels} (spreadsheet row${plural} ${rows})`;
@@ -52,7 +57,7 @@ function consequence(check: RunDataCheck): string {
  */
 export type BlankChoice = '' | 'skip' | 'blank';
 
-export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, showWhenOk = true, extra, skipCount = 0, choice, onChoiceChange, onChooseFile }: {
+export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, showWhenOk = true, extra, skipCount = 0, choice, onChoiceChange, sheetRow }: {
   check: RunDataCheck;
   mode: CheckMode;
   leaveBlank: boolean;
@@ -65,8 +70,8 @@ export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, show
   /** New run: the person's plain choice, shown as radio buttons instead of the tick. */
   choice?: BlankChoice;
   onChoiceChange?: (choice: BlankChoice) => void;
-  /** New run: open the file picker again (fix the rows in the spreadsheet). */
-  onChooseFile?: () => void;
+  /** New run: the spreadsheet row of a label of the whole file (before any are left out). */
+  sheetRow?: (label: number) => number;
 }) {
   const checkboxId = useId();
   const groupName = useId();
@@ -90,12 +95,12 @@ export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, show
       </p>
       <ul className="space-y-0.5 pl-5.5 text-zinc-300">
         {shown.map((issue) => (
-          <li key={issue.field}><span className="text-zinc-100">{friendlyFieldName(issue.field)}</span>: {where(issue, check.checkedLabels, mode)}</li>
+          <li key={issue.field}><span className="text-zinc-100">{friendlyFieldName(issue.field)}</span>: {where(issue, check.checkedLabels, mode, sheetRow)}</li>
         ))}
         {hidden > 0 && <li>and {hidden} more field{hidden === 1 ? '' : 's'}</li>}
       </ul>
       {onChoiceChange ? (
-        <BlankChoices check={check} groupName={groupName} skipCount={skipCount} choice={choice ?? ''} onChoiceChange={onChoiceChange} onChooseFile={onChooseFile} mode={mode} />
+        <BlankChoices check={check} groupName={groupName} skipCount={skipCount} choice={choice ?? ''} onChoiceChange={onChoiceChange} mode={mode} />
       ) : note && <p className="pl-5.5 text-zinc-400">{note}</p>}
       {!onChoiceChange && check.canLeaveBlank && (
         <label htmlFor={checkboxId} className="ml-5.5 flex min-h-11 items-center gap-3 text-zinc-100">
@@ -112,8 +117,8 @@ export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, show
  * rest print), print them with the field blank (only where the design really
  * prints blank, never the design's sample text), or fix the spreadsheet.
  */
-function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, onChooseFile, mode }: {
-  check: RunDataCheck; groupName: string; skipCount: number; choice: BlankChoice; onChoiceChange: (choice: BlankChoice) => void; onChooseFile?: () => void; mode: CheckMode;
+function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, mode }: {
+  check: RunDataCheck; groupName: string; skipCount: number; choice: BlankChoice; onChoiceChange: (choice: BlankChoice) => void; mode: CheckMode;
 }) {
   const fields = check.issues.map((issue) => friendlyFieldName(issue.field));
   const fieldWords = fields.length === 1 ? fields[0] : 'those fields';
@@ -125,25 +130,29 @@ function BlankChoices({ check, groupName, skipCount, choice, onChoiceChange, onC
   if (check.canLeaveBlank) options.push({ value: 'blank', label: `Print ${check.blankLabels === 1 ? 'it' : `all ${check.blankLabels.toLocaleString()}`} with ${fieldWords} blank` });
   // A part with no column at all is fixed in the matching above, not in the file.
   if (check.issues.every((issue) => issue.kind === 'no-value')) return null;
-  const fix = mode === 'csv' ? 'Or fill them in your spreadsheet and choose the file again.' : mode === 'manifest' ? 'Or pick another package.' : 'Or fill them in above.';
+  const fix = mode === 'csv' ? `Or fill ${check.blankLabels === 1 ? 'it' : 'them'} in your spreadsheet, then use “Choose another file” at the top.` : mode === 'manifest' ? 'Or pick another package.' : 'Or fill them in above.';
   return (
     <div className="space-y-1 pl-5.5">
       {sample && <p className="text-zinc-400">A blank {friendlyFieldName(sample.field)} would print the design’s sample “{sample.sample}”, so it can’t print blank.</p>}
       {!sample && check.issues.some((issue) => issue.outcome === 'error') && <p className="text-zinc-400">A barcode or QR code can’t print without a value.</p>}
-      {options.length > 0 && (
+      {options.length === 1 && (
+        // One way on: a tick that can be taken back, not a lone radio button.
+        <label className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
+          <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={choice === options[0].value} onChange={(e) => onChoiceChange(e.target.checked ? options[0].value : '')} />
+          <span>{options[0].label}</span>
+        </label>
+      )}
+      {options.length > 1 && (
         <div role="radiogroup" aria-label="What to do with the blank labels" className="space-y-0.5">
-          {options.map((option) => (
-            <label key={option.value} className="press flex min-h-11 cursor-pointer items-center gap-3 text-zinc-100">
+          {[...options, { value: '' as BlankChoice, label: mode === 'csv' ? 'Neither: I’ll fix the spreadsheet' : 'Neither yet' }].map((option) => (
+            <label key={option.value || 'none'} className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
               <input type="radio" name={groupName} className="size-5 shrink-0 accent-amber-500" checked={choice === option.value} onChange={() => onChoiceChange(option.value)} />
               <span>{option.label}</span>
             </label>
           ))}
         </div>
       )}
-      <p className="flex flex-wrap items-center gap-x-3 text-zinc-400">
-        <span>{options.length ? fix : fix.replace(/^Or f/, 'F').replace(/^Or p/, 'P')}</span>
-        {onChooseFile && mode === 'csv' && <button type="button" onClick={onChooseFile} className="inline-flex min-h-control-sm items-center link">Choose another file</button>}
-      </p>
+      <p className="text-zinc-400">{options.length ? fix : fix.replace(/^Or f/, 'F').replace(/^Or p/, 'P')}</p>
     </div>
   );
 }

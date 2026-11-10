@@ -79,6 +79,8 @@ export interface BarcodeFit {
   boxDots?: number;
   /** 'into-next-label': the bars reach the next label's barcode. */
   overNextBarcode?: boolean;
+  /** 'off-label' / 'box-off-label': the label edge it runs off. */
+  edge?: 'left' | 'right' | 'top' | 'bottom';
   /** Layout changes that would fix it, best first. */
   fixes: BarcodeFix[];
 }
@@ -201,7 +203,11 @@ function bitmapFit(el: FitElement, value: string, labelW: number, labelH: number
   const r = rotationOf(el);
   const [bw, bh] = r === 90 || r === 270 ? [height, width] : [width, height];
   const left = Math.round(el.x) + Math.round((width - bw) / 2), top = Math.round(el.y) + Math.round((height - bh) / 2);
-  if (left < 0 || top < 0 || left + bw > labelW || top + bh > labelH) return { ...base, ...along, level: 'blocked', reason: 'box-off-label', fixes: ['move-inside'] };
+  if (left < 0 || top < 0 || left + bw > labelW || top + bh > labelH) {
+    const over = { left: -left, top: -top, right: left + bw - labelW, bottom: top + bh - labelH };
+    const edge = (Object.keys(over) as Array<keyof typeof over>).reduce((a, b) => (over[b] > over[a] ? b : a));
+    return { ...base, ...along, level: 'blocked', reason: 'box-off-label', edge, fixes: ['move-inside'] };
+  }
   return { ...base, ...along };
 }
 
@@ -227,7 +233,7 @@ function nativeFit(el: FitElement, value: string, format: FitFormat, labelW: num
   };
   const end = start + bars;
   const tolerance = 2;
-  if (start < -tolerance) return { ...base, level: 'blocked', reason: 'off-label', fixes: blockedFixes() };
+  if (start < -tolerance) return { ...base, level: 'blocked', reason: 'off-label', edge: sideways ? 'top' : 'left', fixes: blockedFixes() };
   if (end > labelDots + tolerance) {
     const across = Math.max(1, format.labelsAcross || 1);
     if (!sideways && across > 1) {
@@ -235,7 +241,7 @@ function nativeFit(el: FitElement, value: string, format: FitFormat, labelW: num
       // The next label's copy of this barcode starts at labelW + gap + start.
       return { ...base, level: 'blocked', reason: 'into-next-label', overNextBarcode: end > labelW + gap + start, fixes: blockedFixes() };
     }
-    return { ...base, level: 'blocked', reason: 'off-label', fixes: blockedFixes() };
+    return { ...base, level: 'blocked', reason: 'off-label', edge: sideways ? 'bottom' : 'right', fixes: blockedFixes() };
   }
   if (start < TIGHT_MARGIN_DOTS || labelDots - end < TIGHT_MARGIN_DOTS) return { ...base, level: 'tight', reason: 'quiet-zone', fixes: ['move'] };
   return base;
@@ -262,12 +268,13 @@ export function barcodeFitProblem(fit: BarcodeFit, value: string): string {
     case 'box-too-small':
       return `needs a box at least ${width} wide for ${characters(value)}; its box is ${inches(fit.boxDots ?? 0, fit.dpi)} wide, so it can’t be drawn`;
     case 'box-too-short': return 'has a box too short to draw the bars and the number under them';
-    case 'box-off-label': return 'crosses the label edge, so it can’t be drawn';
+    case 'box-off-label': return fit.edge ? `runs off the ${fit.edge} edge of the label, so it can’t be drawn` : 'crosses the label edge, so it can’t be drawn';
     case 'off-label': {
       const room = Math.max(0, fit.labelDots - Math.max(0, fit.startDots));
-      return fit.startDots < 0
-        ? 'starts off the label, so the printer cuts it off and it won’t scan'
-        : `prints ${width} wide for ${characters(value)} but only ${inches(room, fit.dpi)} fits, so the printer cuts it off and it won’t scan`;
+      if (fit.startDots < 0) return `starts off the ${fit.edge ?? 'left'} edge of the label, so the printer cuts it off and it won’t scan`;
+      // Bars that would fit on the label just start too far along: it is where it sits, not its width.
+      if (fit.barsDots <= fit.labelDots) return `runs off the ${fit.edge ?? 'right'} edge of the label: its ${width} of bars for ${characters(value)} start where only ${inches(room, fit.dpi)} fits, so the printer cuts it off and it won’t scan`;
+      return `prints ${width} wide for ${characters(value)} but only ${inches(room, fit.dpi)} fits, so the printer cuts it off and it won’t scan`;
     }
     case 'into-next-label':
       return fit.overNextBarcode

@@ -592,11 +592,43 @@ async function fetchMetrcRetailIdUnits(packageTag: string, budget?: AbortSignal)
   }));
 }
 
+/**
+ * Details a row is missing because Metrc didn't answer in time (or at all):
+ * 'retailIds' (the per-unit retail IDs) and 'labPotency' (lab THC/CBD).
+ * Space-separated in `detailsMissing`, so the new-run page can name them and
+ * ask for an explicit go-ahead. Never a design field: the run keeps only the
+ * mapped Nabis columns.
+ */
+type MissingDetail = 'retailIds' | 'labPotency';
+function withMissing<T extends object>(row: T, missing: ReadonlyArray<MissingDetail>): T {
+  if (!missing.length) return row;
+  const before = String((row as { detailsMissing?: unknown }).detailsMissing ?? '').split(' ').filter(Boolean);
+  return { ...row, detailsMissing: Array.from(new Set([...before, ...missing])).join(' ') };
+}
+
+function labPotencyComplete(pkg: ReturnType<typeof normalizePackage>): boolean {
+  return hasPositiveNumber(pkg.tacPercent) && (
+    (hasPositiveNumber(pkg.thcMgPackage) && hasPositiveNumber(pkg.thcMgServing)) ||
+    (hasPositiveNumber(pkg.tacMgPackage) && hasPositiveNumber(pkg.tacMgServing)) ||
+    (hasPositiveNumber(pkg.cbdMgPackage) && hasPositiveNumber(pkg.cbdMgServing))
+  );
+}
+
+/** What a package skipped by the search's time limit is missing. */
+function skippedDetails(pkg: ReturnType<typeof normalizePackage>, preferLabThc?: boolean): MissingDetail[] {
+  const missing: MissingDetail[] = [];
+  if ((pkg.packageTag || pkg.tag) && !pkg.retailId) missing.push('retailIds');
+  if (pkg.metrcPackageId && (preferLabThc || !labPotencyComplete(pkg))) missing.push('labPotency');
+  return missing;
+}
+
 async function rowsWithMetrcRetailIds(pkg: ReturnType<typeof normalizePackage>, budget?: AbortSignal) {
   const packageTag = pkg.packageTag || pkg.tag;
   if (!packageTag) return [pkg];
 
-  const units = await fetchMetrcRetailIdUnits(packageTag, budget).catch(() => null);
+  let failed = false;
+  const units = await fetchMetrcRetailIdUnits(packageTag, budget).catch(() => { failed = true; return null; });
+  if (failed) return [withMissing(pkg, ['retailIds'])];
   if (!units || units.length === 0) return [pkg];
 
   return rowsFromLabelData({
@@ -611,21 +643,15 @@ async function rowWithMetrcLabFallback(
   options: { preferLabThc?: boolean; budget?: AbortSignal } = {},
 ) {
   if (!pkg.metrcPackageId) return pkg;
-  if (
-    !options.preferLabThc &&
-    hasPositiveNumber(pkg.tacPercent) &&
-    (
-      (hasPositiveNumber(pkg.thcMgPackage) && hasPositiveNumber(pkg.thcMgServing)) ||
-      (hasPositiveNumber(pkg.tacMgPackage) && hasPositiveNumber(pkg.tacMgServing)) ||
-      (hasPositiveNumber(pkg.cbdMgPackage) && hasPositiveNumber(pkg.cbdMgServing))
-    )
-  ) {
+  if (!options.preferLabThc && labPotencyComplete(pkg)) {
     return pkg;
   }
 
-  const potency = await fetchMetrcLabPotency(pkg.metrcPackageId, options.budget).catch(() => ({
-    ...EMPTY_LAB_POTENCY,
-  }));
+  let failed = false;
+  const potency = await fetchMetrcLabPotency(pkg.metrcPackageId, options.budget).catch(() => {
+    failed = true;
+    return { ...EMPTY_LAB_POTENCY };
+  });
   const thcPercent = options.preferLabThc ? potency.thcPercent || pkg.thcPercent : pkg.thcPercent || potency.thcPercent;
   const tacPercent = hasPositiveNumber(pkg.tacPercent) ? pkg.tacPercent : potency.tacPercent;
   const thcMgPackage = potency.thcMgPackage || pkg.thcMgPackage;
@@ -640,7 +666,7 @@ async function rowWithMetrcLabFallback(
   const tacMgServing = potency.tacMgServing || pkg.tacMgServing || divideDecimalValue(tacMgPackage, servingCount);
   const cbdMgServing = potency.cbdMgServing || pkg.cbdMgServing || divideDecimalValue(cbdMgPackage, servingCount);
 
-  return {
+  return withMissing({
     ...pkg,
     thcPercent,
     thcMgG: potency.thcMgG || pkg.thcMgG,
@@ -662,7 +688,7 @@ async function rowWithMetrcLabFallback(
     servingCount,
     numberOfDoses: servingCount,
     servingsPerPackage: servingCount,
-  };
+  }, failed ? ['labPotency'] : []);
 }
 
 async function fetchManifestLabelRows(packageTag: string, budget?: AbortSignal) {
@@ -693,13 +719,13 @@ async function enrichWithManifestLabelData(
   let incomplete = 0;
   const enriched = await mapLimit(
     packages.slice(0, 25), ENRICH_CONCURRENCY, async (pkg) => {
-      if (options.budget?.aborted) { incomplete++; return [pkg]; }
+      if (options.budget?.aborted) { incomplete++; return [withMissing(pkg, skippedDetails(pkg, options.preferLabThc))]; }
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag, options.budget).catch(() => null);
       const labPkg = await rowWithMetrcLabFallback(pkg, options);
       const result = await (rows && rows.length > 0
         ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row, options)))
         : rowsWithMetrcRetailIds(labPkg, options.budget));
-      if (options.budget?.aborted) incomplete++;
+      if (options.budget?.aborted || result.some((row) => 'detailsMissing' in row)) incomplete++;
       return result;
     },
   );
@@ -863,7 +889,7 @@ async function handleGET(request: NextRequest) {
     const labelRows = isExactPackageSearch ? await fetchManifestLabelRows(search, budget).catch(() => null) : null;
     if (labelRows && labelRows.length > 0) {
       const packages = finalizeLabelRows(await Promise.all(labelRows.map((row) => rowWithMetrcLabFallback(row, { preferLabThc: true, budget }))));
-      return searchResult({ packages, detailsIncomplete: budget.aborted });
+      return searchResult({ packages, detailsIncomplete: budget.aborted || packages.some((row) => 'detailsMissing' in row) });
     }
 
     const metrcPackages = await searchMetrcByExactTag(search, budget);

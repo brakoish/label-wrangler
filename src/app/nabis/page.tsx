@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { IconSwap } from '@/components/motion/IconSwap';
-import { SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 
 type PackageResult = {
   id: string;
@@ -290,8 +289,9 @@ export default function NabisPage() {
         });
         const data = await response.json();
         setResults(Array.isArray(data.packages) ? data.packages : []);
+        // The case label prints none of the details a slow search can miss
+        // (retail IDs, lab potency), so a cut-short search needs no warning here.
         if (data.error) setError(data.error);
-        else if (data.detailsIncomplete) setError(SEARCH_DETAILS_INCOMPLETE);
       } catch (fetchError) {
         if (!controller.signal.aborted) {
           setError(fetchError instanceof Error ? fetchError.message : 'Search failed');
@@ -398,7 +398,7 @@ export default function NabisPage() {
                   <button
                     type="button"
                     onClick={() => setQuery('')}
-                    className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                    className="absolute right-0 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 sm:right-1 sm:size-8"
                     aria-label="Clear search"
                   >
                     <X className="h-4 w-4" />
@@ -413,6 +413,9 @@ export default function NabisPage() {
                 <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
                   Searching Nabis…
                 </div>
+              )}
+              {!isSearching && query.trim().length < 2 && (
+                <p className="px-1 text-sm text-zinc-400">Type two or more letters of an item name, or a Metrc tag. Packages show here.</p>
               )}
               {!isSearching && query.trim().length >= 2 && results.length === 0 && (
                 <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">

@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertCircle, Pencil } from 'lucide-react';
-import { barcodeHasDetails, barcodePlainSentence, FIX_IN_DESIGNER, PRINT_ANYWAY } from '@/lib/runBarcodeTicks';
+import { barcodeHasDetails, barcodePlainSentence, barcodeTickLabel, FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
 
 /**
  * "Why?" under a plain sentence: the measurements and the fix, folded away
@@ -15,7 +15,7 @@ export function WhyToggle({ children, label = 'Why?' }: { children: ReactNode; l
   const id = useId();
   return (
     <>
-      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="link -my-3 py-3">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="link -mx-1.5 -my-3 px-1.5 py-3">
         {open ? 'Hide why' : label}
       </button>
       <div id={id} className="fold" data-open={open}>
@@ -74,7 +74,7 @@ export function BarcodeWarning({ items, stops, stopWords, isTicked, onTick, fix,
               {canTick && (
                 <label htmlFor={`${uid}-${i}`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
                   <input id={`${uid}-${i}`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={ticked(item)} onChange={(e) => onTick!(item, e.target.checked)} />
-                  <span>{PRINT_ANYWAY}</span>
+                  <span>{barcodeTickLabel(item)}</span>
                 </label>
               )}
             </li>
@@ -89,7 +89,7 @@ export function BarcodeWarning({ items, stops, stopWords, isTicked, onTick, fix,
             {canTick && (
               <label htmlFor={`${uid}-more`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
                 <input id={`${uid}-more`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={rest.every(ticked)} onChange={(e) => { for (const item of rest) onTick!(item, e.target.checked); }} />
-                <span>{PRINT_ANYWAY}</span>
+                <span>{rest.length === 1 ? 'Print that one anyway' : `Print those ${rest.length.toLocaleString()} anyway`}</span>
               </label>
             )}
           </li>
@@ -102,10 +102,10 @@ export function BarcodeWarning({ items, stops, stopWords, isTicked, onTick, fix,
 }
 
 /** The one way out to the designer, named and drawn the same on every page. */
-export function FixInDesignerLink({ href }: { href: string }) {
+export function FixInDesignerLink({ href, label = FIX_IN_DESIGNER }: { href: string; label?: string }) {
   return (
-    <Link href={href} className="link inline-flex min-h-control-sm items-center gap-1.5">
-      <Pencil className="size-4" aria-hidden="true" />{FIX_IN_DESIGNER}
+    <Link href={href} className="link inline-flex min-h-11 items-center gap-1.5">
+      <Pencil className="size-4" aria-hidden="true" />{label}
     </Link>
   );
 }

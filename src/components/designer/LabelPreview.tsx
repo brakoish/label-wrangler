@@ -515,6 +515,15 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     setGuides({ x: [], y: [] });
   }, [dragging, onDragEnd]);
 
+  // The exact renderer's own warnings, named by item. One the notice already says isn't repeated.
+  const namedWarning = (warning: { elementId: string; message: string }) => {
+    const el = elements.find((e) => e.id === warning.elementId);
+    const message = el && !/^Lane \d+, /.test(warning.message) ? `Lane 1, ${el.id}: ${warning.message}` : warning.message;
+    return plainRenderWarning(message, (m) => friendlyRenderError(m, elements, 1, testData, format));
+  };
+  const covered = new Set(layoutProblems.flatMap((p) => p.ids));
+  const uncovered = bitmapProof?.key === bitmapKey ? bitmapProof.warnings.find((w) => !covered.has(w.elementId)) : undefined;
+  const otherWarning = uncovered ? namedWarning(uncovered) : '';
   const badQr = bitmapProof?.key === bitmapKey ? elements.find(e => e.type === 'qr' && [...bitmapProof.warnings, ...bitmapProof.advisories].some(w => w.elementId === e.id) && bitmapProof.qrBounds[e.id]) : undefined;
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
@@ -523,8 +532,8 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       {/* Notices sit above the label, in the page flow, so the canvas never
           covers them (the space is kept so the label doesn't jump). */}
       <div className="shrink-0 space-y-1 px-3 pt-2 min-h-12 sm:min-h-16 sm:px-6">
-      {bitmap && <p role="status" className={`text-sm ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format)) : `This is exactly how it will print. ${coarsePointer ? 'Double-tap' : 'Double-click'} text to edit it.` : 'Updating the print preview…')}</p>}
-      {!bitmap && <DesignNotice problems={layoutProblems} action={noticeAction} />}
+      {bitmap && (bitmapError || !layoutProblems.length || otherWarning) && <p role="status" className={`text-sm ${bitmapError ? 'text-red-400' : otherWarning ? 'text-amber-300' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? otherWarning ? otherWarning : bitmapProof.advisories.length ? namedWarning(bitmapProof.advisories[0]) : `This is exactly how it will print. ${coarsePointer ? 'Double-tap' : 'Double-click'} text to edit it.` : 'Updating the print preview…')}</p>}
+      <DesignNotice problems={layoutProblems} action={noticeAction} />
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });
