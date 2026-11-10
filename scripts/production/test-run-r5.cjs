@@ -211,7 +211,7 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   const list = read('src/app/runs/page.tsx');
   // Round 11: the list gives runDisplayStatus the same hold the run page does; only labels waiting there make it "Paused".
   assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && unfinished && !printingElsewhere \? holdRun : null;/, 'the station hold reaches every unfinished office run, like the run header (not one printing elsewhere with no office work)');
-  assert.match(list, /const printingElsewhere = !run\.office && run\.status === 'printing';/);
+  assert.match(list, /const printingElsewhere = !run\.office && run\.status === 'printing' && lastPrinterIsLocal\(\);/);
   assert.doesNotMatch(list, /officeDefault && leftToSend/);
   assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
   console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');
