@@ -5,7 +5,7 @@ import { ORIGIN_NOT_ALLOWED } from './errorCodes';
 import { RUN_CLIENT_HEADER, RUN_CLIENT_VERSION } from './runClientVersion';
 
 /**
- * Two namespaces, so a rollback to the previous build (main, ffda577) is
+ * Two namespaces, so a rollback to the previous build (main, 50ea233; same queue as ffda577) is
  * safe. Main's outbox reads every key starting with PREFIX under the same
  * lock and stops its whole queue on any refusal, so only operations main can
  * send are stored there: ordinary progress and print events, which main then
@@ -69,7 +69,7 @@ type PrintEventData = Omit<RunPrintEvent,'id'|'runId'|'createdAt'>;
  * when the update is set aside. */
 type Operation = { id: string; createdAt: number; patch: QueuedRunPatch; event?: PrintEventData; then?: PrintEventData; v?: number };
 type Stored = Operation & { key: string };
-/** True when main (ffda577) could send this operation as it is. */
+/** True when main (50ea233, same rules as ffda577) could send this operation as it is. */
 function mainCanSend(op: Pick<Operation, 'patch' | 'event' | 'then'>): boolean {
   if (op.event) return MAIN_EVENT_TYPES.has(String(op.event.eventType)) && MAIN_OUTPUTS.has(String(op.event.output));
   return !op.then && !op.patch.resetProgress && op.patch.expectedPrintedCount === undefined;
