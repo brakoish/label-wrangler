@@ -397,21 +397,91 @@ textarea:focus-visible {
   .stagger > :nth-child(9) { animation-delay: 240ms; }
   .stagger > :nth-child(n + 10) { animation-delay: 270ms; }
 
-  /* Dialogs: fade + scale in; exits are ~20% shorter. */
+}
+
+/* area B ------------------------------------------------------------------
+ * Layers that come and go (dialogs, menus, select lists, toasts) use CSS
+ * transitions, not keyframes: closing part-way through and reopening turns
+ * around from where it is instead of restarting from zero. Entrances use
+ * @starting-style; exits are about 20% shorter than entrances and use ease-in.
+ * Popovers grow from their trigger (scale 0.95, transform-origin --origin).
+ */
+@theme {
+  --duration-layer-in: 200ms;
+  --duration-layer-out: 160ms;
+  --duration-popover-in: 160ms;
+  --duration-popover-out: 130ms;
+}
+@layer components {
   .dialog-backdrop {
-    animation: fade 200ms var(--ease-out) both;
+    opacity: 1;
+    transition: opacity var(--duration-layer-in) var(--ease-out);
   }
   .dialog-panel {
-    animation: pop 200ms var(--ease-out) both;
+    opacity: 1;
+    transform: none;
+    transform-origin: var(--origin, center);
+    transition: opacity var(--duration-layer-in) var(--ease-out), transform var(--duration-layer-in) var(--ease-out);
   }
-  .dialog-backdrop[data-closing] {
-    animation: fade-out 160ms var(--ease-in) both;
+  .dialog-backdrop[data-state="closed"] {
+    opacity: 0;
     pointer-events: none;
+    transition-duration: var(--duration-layer-out);
+    transition-timing-function: var(--ease-in);
   }
-  .dialog-backdrop[data-closing] .dialog-panel {
-    animation: pop-out 160ms var(--ease-in) both;
+  .dialog-backdrop[data-state="closed"] .dialog-panel {
+    opacity: 0;
+    transform: scale(0.95);
+    transition-duration: var(--duration-layer-out);
+    transition-timing-function: var(--ease-in);
+  }
+
+  .pop-layer {
+    opacity: 1;
+    transform: none;
+    transform-origin: var(--origin, top);
+    transition: opacity var(--duration-popover-in) var(--ease-out), transform var(--duration-popover-in) var(--ease-out);
+  }
+  .pop-layer[data-state="closed"] {
+    opacity: 0;
+    transform: scale(0.95);
+    pointer-events: none;
+    transition-duration: var(--duration-popover-out);
+    transition-timing-function: var(--ease-in);
+  }
+
+  .toast-layer {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--duration-layer-in) var(--ease-out), transform var(--duration-layer-in) var(--ease-out);
+  }
+  .toast-layer[data-state="closed"] {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+    transition-duration: var(--duration-layer-out);
+    transition-timing-function: var(--ease-in);
+  }
+
+  /* Visually hidden until focused: "Skip to content". */
+  .skip-link {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 200;
+    transform: translateY(-200%);
+    transition: transform var(--duration-popover-in) var(--ease-out);
+  }
+  .skip-link:focus-visible {
+    transform: none;
   }
 }
+@starting-style {
+  .dialog-backdrop { opacity: 0; }
+  .dialog-panel { opacity: 0; transform: scale(0.95); }
+  .pop-layer[data-state="open"] { opacity: 0; transform: scale(0.95); }
+  .toast-layer[data-state="open"] { opacity: 0; transform: translateY(4px); }
+}
+/* end area B */
 
 /* Motion off for anyone who asks for less of it — spinners included. */
 @media (prefers-reduced-motion: reduce) {

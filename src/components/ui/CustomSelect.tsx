@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
+import { usePresence } from './usePresence';
 
 interface SelectOption {
   value: string;
@@ -42,10 +43,12 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const selected = options.find((o) => o.value === value);
+  // Stays mounted for a short exit; reopening mid-exit turns it around.
+  const { present, state: menuState } = usePresence(open, 130);
 
   // Recalculate menu position when opening + on scroll/resize.
   useLayoutEffect(() => {
-    if (!open || !triggerRef.current) {
+    if (!present || !triggerRef.current) {
       setMenuRect(null);
       return;
     }
@@ -66,7 +69,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
       window.removeEventListener('scroll', update, true);
       window.removeEventListener('resize', update);
     };
-  }, [open]);
+  }, [present]);
 
   // Close on click outside (allow clicks inside the portaled menu too).
   useEffect(() => {
@@ -146,7 +149,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   // Render the dropdown menu into document.body so it isn't clipped by
   // parent stacking contexts and overflow-hidden panels.
   const renderPortalMenu = (content: React.ReactNode, minWidth?: number) => {
-    if (!open || !menuRect || typeof window === 'undefined') return null;
+    if (!present || !menuRect || typeof window === 'undefined') return null;
     return createPortal(
       <div
         ref={menuRef}
@@ -159,7 +162,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
           zIndex: 1000,
         }}
       >
-        <div style={{ maxHeight: menuRect.maxHeight }} className="overflow-y-auto popover-enter rounded-lg">
+        <div style={{ maxHeight: menuRect.maxHeight }} data-state={menuState} className="pop-layer overflow-y-auto rounded-lg">
           {content}
         </div>
       </div>,
