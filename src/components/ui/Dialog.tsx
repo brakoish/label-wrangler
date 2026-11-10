@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { isTopDialogLayer, pushDialogLayer, removeDialogLayer } from './dialogStack';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -47,8 +48,10 @@ export function Dialog({ open, onClose, title, description, children, className 
       target?.focus();
     };
     const frame = requestAnimationFrame(focusFirst);
+    const layer = pushDialogLayer();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!panelRef.current) return;
+      // A dialog opened on top of this one handles the keys.
+      if (!panelRef.current || !isTopDialogLayer(layer)) return;
       if (event.key === 'Escape') {
         if (!dismissibleRef.current) return;
         event.stopPropagation();
@@ -68,6 +71,7 @@ export function Dialog({ open, onClose, title, description, children, className 
     return () => {
       cancelAnimationFrame(frame);
       document.removeEventListener('keydown', onKeyDown, true);
+      removeDialogLayer(layer);
       if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
     };
   }, [open, initialFocus]);
