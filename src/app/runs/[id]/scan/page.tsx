@@ -108,7 +108,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           const saved = typeof window !== 'undefined' ? localStorage.getItem('lw:dazzle-printer') : null;
           const match = saved ? ps.find((p) => p.name === saved) : undefined;
           setDazzleSelected(match?.name ?? ps.find((p) => p.is_default)?.name ?? ps[0]?.name ?? null);
-        } catch (err) {
+        } catch {
           setTransportError('Couldn\u2019t get the printer list from the Dazzle app. Check it\u2019s open, then reload this page.');
         }
       } else if (webUsbSupported) {
