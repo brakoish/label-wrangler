@@ -2,7 +2,7 @@
  * The sheet print page's toolbar, restyled to match the app. The HTML comes
  * from sheetPrint.ts, which stays untouched; this only adds a style block for
  * the on-screen toolbar (hidden when printing), rewords its text, gives the
- * page a language, a main landmark and a heading, and shrinks the sheet to
+ * page a language, a viewport, a main landmark and a heading, and shrinks the sheet to
  * fit a phone screen (screen only: paper always prints at 100%). Label pages,
  * their SVG and the mark-printed script are left exactly as built.
  */
@@ -56,15 +56,20 @@ const AFTER_PRINT_SCRIPT = `
   </script>
 `;
 
+/** "labels 1-90" reads "labels 1–90", as everywhere else in the app. */
+const enDash = (text: string) => text.replace(/(\d)-(\d)/g, '$1–$2');
+
 export function restyleSheetPrintToolbar(html: string, runId: string): string {
   if (html.includes('data-lw-toolbar')) return html;
   const back = `<a class="back" href="/runs/${encodeURIComponent(runId)}">Back to run</a>`;
   const sheetWidth = Number(/\.sheet-page \{\s*position: relative;\s*width: ([\d.]+)in;/.exec(html)?.[1] ?? '8.5') || 8.5;
   return html
     .replace('<html>', '<html lang="en">')
-    .replace(/<title>([^<]*)<\/title>/, (m, title: string) => (/Label Wrangler/.test(title) ? m : `<title>${title} — Label Wrangler</title>`))
-    .replace('</head>', `${TOOLBAR_STYLE}${fitScript(sheetWidth)}${AFTER_PRINT_SCRIPT}</head>`)
-    .replace(/<body>\s*<div class="toolbar">\s*<div class="toolbar-main">\s*<div>([^<]*)<\/div>/, (_m, title: string) => `<body>\n  <main>\n  <div class="toolbar">\n    <div class="toolbar-main">\n      <h1 class="toolbar-title">${title}</h1>`)
+    .replace(/<title>([^<]*)<\/title>/, (m, title: string) => (/Label Wrangler/.test(title) ? m : `<title>${enDash(title)} — Label Wrangler</title>`))
+    // Without a viewport, a phone lays the page out 980px wide and the sheet
+    // never shrinks to the screen, so the page scrolls sideways.
+    .replace('</head>', `  <meta name="viewport" content="width=device-width, initial-scale=1" />\n${TOOLBAR_STYLE}${fitScript(sheetWidth)}${AFTER_PRINT_SCRIPT}</head>`)
+    .replace(/<body>\s*<div class="toolbar">\s*<div class="toolbar-main">\s*<div>([^<]*)<\/div>/, (_m, title: string) => `<body>\n  <main>\n  <div class="toolbar">\n    <div class="toolbar-main">\n      <h1 class="toolbar-title">${enDash(title)}</h1>`)
     .replace(/<\/body>(?![\s\S]*<\/body>)/, '</main>\n</body>')
     .replace('Print setting: 100% / Actual size. Do not use Fit to page.', 'Print at 100% (Actual size), not Fit to page')
     .replace('<div class="toolbar-actions">', `<div class="toolbar-actions">\n      ${back}`)

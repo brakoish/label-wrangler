@@ -73,8 +73,13 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
     return () => { document.removeEventListener('pointerdown', onDown, true); stop(); };
   }, [open]);
 
+  // Opened by a tap or click: focus the menu itself, so no item shows a focus
+  // ring the person didn't ask for. Arrow keys still move to the items.
+  const byPointer = useRef(false);
   useEffect(() => {
-    if (open) menuRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.focus();
+    if (!open || !menuRef.current) return;
+    if (byPointer.current) { byPointer.current = false; menuRef.current.focus({ preventScroll: true }); return; }
+    menuRef.current.querySelector<HTMLElement>(`[data-index="${active}"]`)?.focus();
   }, [open, active, pos]);
 
   const close = (focusTrigger = true) => { setOpen(false); if (focusTrigger) triggerRef.current?.focus(); };
@@ -121,8 +126,9 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
         aria-controls={open ? menuId : undefined}
         aria-label={showLabel ? undefined : label}
         title={showLabel ? undefined : label}
+        onPointerDown={() => { byPointer.current = true; }}
         onClick={() => (open ? close() : openMenu())}
-        onKeyDown={(event) => { if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); openMenu(); } }}
+        onKeyDown={(event) => { byPointer.current = false; if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); openMenu(); } }}
         className={`btn btn-ghost btn-sm ${showLabel ? '' : 'btn-icon'} text-zinc-300 ${className}`}
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -138,6 +144,7 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
           id={menuId}
           role="menu"
           aria-label={label}
+          tabIndex={-1}
           data-state={state}
           data-dragging={drag !== null ? '' : undefined}
           onKeyDown={onMenuKey}
@@ -154,8 +161,8 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
             ['--origin' as string]: `${pos.up ? 'bottom' : 'top'} ${align === 'end' ? 'right' : 'left'}`,
           }}
           className={pos.sheet
-            ? 'menu-sheet rounded-t-2xl bg-zinc-900 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl shadow-black/50'
-            : 'pop-layer min-w-[220px] max-w-[calc(100vw-1.5rem)] rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/50 ring-1 ring-zinc-700'}
+            ? 'menu-sheet outline-none rounded-t-2xl bg-zinc-900 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-xl shadow-black/50'
+            : 'pop-layer outline-none min-w-[220px] max-w-[calc(100vw-1.5rem)] rounded-lg bg-zinc-900 p-1 shadow-xl shadow-black/50 ring-1 ring-zinc-700'}
         >
           {pos.sheet && <div className="flex h-6 touch-none cursor-grab items-center justify-center" onPointerDown={onSheetDown} onPointerMove={onSheetMove} onPointerUp={onSheetUp} onPointerCancel={onSheetUp}>
             <span aria-hidden="true" className="h-1 w-10 rounded-full bg-zinc-700" />

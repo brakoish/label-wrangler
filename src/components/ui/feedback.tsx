@@ -24,13 +24,17 @@ export interface ConfirmOptions {
    * the dialog picks neither, so the primary button can be the safe choice.
    */
   altLabel?: string;
+  /** A third choice (choiceDialog only), shown as a quiet text button. */
+  extraLabel?: string;
+  /** Keep a Cancel button beside the alt choice (choiceDialog only). */
+  cancelAlso?: boolean;
   /**
    * Start with Cancel focused, for a dialog that can open in the middle of
    * typing or scanning (a scanner's trailing Enter must not confirm it).
    */
   focusCancel?: boolean;
 }
-type Outcome = 'confirm' | 'alt' | 'dismiss';
+type Outcome = 'confirm' | 'alt' | 'extra' | 'dismiss';
 type Toast = { id: number; message: string; tone: 'success' | 'error' | 'info'; closing?: boolean };
 type State = { confirm: (ConfirmOptions & { resolve: (outcome: Outcome) => void }) | null; toasts: Toast[] };
 
@@ -45,15 +49,16 @@ let nextToastId = 1;
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     state.confirm?.resolve('dismiss');
-    emit({ ...state, confirm: { ...options, altLabel: undefined, resolve: (outcome) => resolve(outcome === 'confirm') } });
+    emit({ ...state, confirm: { ...options, altLabel: undefined, extraLabel: undefined, cancelAlso: false, resolve: (outcome) => resolve(outcome === 'confirm') } });
   });
 }
 
 /**
  * Two real choices, with the safe one as the primary button. Resolves
- * 'confirm' (primary), 'alt' (the quieter choice) or null when closed.
+ * 'confirm' (primary), 'alt' (the quieter choice), 'extra' (an optional
+ * third choice) or null when closed.
  */
-export function choiceDialog(options: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | null> {
+export function choiceDialog(options: ConfirmOptions & { altLabel: string }): Promise<'confirm' | 'alt' | 'extra' | null> {
   return new Promise((resolve) => {
     state.confirm?.resolve('dismiss');
     emit({ ...state, confirm: { ...options, resolve: (outcome) => resolve(outcome === 'dismiss' ? null : outcome) } });
@@ -101,7 +106,17 @@ export function FeedbackHost() {
       hideClose
     >
       {confirm?.body && <div className="text-sm text-zinc-300 leading-relaxed">{confirm.body}</div>}
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+        {confirm?.altLabel && confirm.cancelAlso && (
+          <button type="button" data-autofocus={confirm.focusCancel ? true : undefined} onClick={() => settle('dismiss')} className="btn btn-ghost sm:mr-auto">
+            {confirm.cancelLabel ?? 'Cancel'}
+          </button>
+        )}
+        {confirm?.altLabel && confirm.extraLabel && (
+          <button type="button" onClick={() => settle('extra')} className="btn btn-secondary">
+            {confirm.extraLabel}
+          </button>
+        )}
         {confirm?.altLabel ? (
           <button type="button" onClick={() => settle('alt')} className="btn btn-secondary">
             {confirm.altLabel}

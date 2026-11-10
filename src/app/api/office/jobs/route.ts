@@ -22,9 +22,10 @@ export async function GET(req: Request){
     if (found.length <= REQUEST_LIMIT) return json({requests:found});
     const requests=found.slice(0,REQUEST_LIMIT);
     // More sends than the list shows: say so (truncated), and give every job
-    // of the run in a compact form so the page plans from all of them.
+    // of the run in a compact form so the page plans from all of them
+    // (with its send's time, so "after a go-back" reads every send).
     // Additive and read-only.
-    const jobs=await sql`SELECT j.id,j.request_id AS "requestId",j.range_from AS "from",j.range_to AS "to",j.state,
+    const jobs=await sql`SELECT j.id,j.request_id AS "requestId",r.created_at AS "requestAt",j.range_from AS "from",j.range_to AS "to",j.state,
       (j.review_required OR (j.state='claimed' AND j.claimed_at<now()-interval '5 minutes') OR (j.state='submitted' AND j.submitted_at<now()-interval '30 minutes')) AS review,j.reason
       FROM office_jobs j JOIN office_requests r ON r.id=j.request_id JOIN office_printer_access a ON a.station_id=r.station_id AND a.printer_id=r.printer_id AND a.user_id=${user.id}
       WHERE r.run_id=${runId} ORDER BY j.sequence LIMIT 20000`;

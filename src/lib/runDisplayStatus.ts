@@ -17,11 +17,12 @@ export interface RunOfficeSummary {
 }
 
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'paused' | 'cancelled' | 'idle';
-/** The five run statuses, used the same way in rows, the run header and the filter. */
-export type RunStatusBucket = 'needs-you' | 'printing' | 'ready' | 'done' | 'cancelled';
+/** The six run statuses, used the same way in rows, the run header and the filter. */
+export type RunStatusBucket = 'needs-you' | 'printing' | 'paused' | 'ready' | 'done' | 'cancelled';
 export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
   'needs-you': 'Needs you',
   printing: 'Printing',
+  paused: 'Paused',
   ready: 'Ready',
   done: 'Done',
   cancelled: 'Cancelled',
@@ -29,8 +30,10 @@ export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
 
 /**
  * One status for a run, shared by the run header and the Runs list: one of
- * five words (Needs you, Printing, Ready, Done, Cancelled), with the detail
- * beside it. Office deliveries are shown as "Sent", never as "Printed": the
+ * six words (Needs you, Printing, Paused, Ready, Done, Cancelled), with the
+ * detail beside it. The words never contradict each other: "Needs you" is
+ * always the attention colour, "Ready" is always plain, a run whose labels
+ * wait for a paused or stopped office printer is "Paused", never "Printing". Office deliveries are shown as "Sent", never as "Printed": the
  * office reports labels sent to the printer, which is not proof they printed.
  * A run is never called "Ready" while labels are on their way.
  * `localProblem` is a printer here that stopped with an error.
@@ -48,14 +51,13 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
     if (first && first.reason && first.from !== undefined && first.to !== undefined) return out('needs-you', 'attention', officeProblemWords({ from: first.from, to: first.to, kind: first.kind, reason: first.reason }).short);
     return out('needs-you', 'attention', first?.kind === 'print-again' ? 'Labels to print again' : 'Office print needs a check');
   }
-  if (office?.heldBy && run.status !== 'draft') return { label: 'Waiting on another run', tone: 'paused', bucket: 'printing', detail: `“${office.heldBy.runName || 'Another run'}” needs a check first` };
-  if (office && office.onTheWay > 0) return office.held ? out('printing', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'Sending to the office printer');
+  if (office?.heldBy && run.status !== 'draft') return out('paused', 'paused', `“${office.heldBy.runName || 'Another run'}” needs a check first`);
+  if (office && office.onTheWay > 0) return office.held ? out('paused', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'Sending to the office printer');
   if (run.status === 'printing') return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
-  if (office && total > 0 && office.sent >= total) return out('needs-you', 'paused', 'Sent to the office printer: check they came out');
-  if (office && office.sent > 0) return out('ready', 'paused', printed > 0 ? 'Partly printed' : 'Partly sent');
-  if (printed > 0 || run.status === 'paused') return out('ready', 'paused', printed > 0 ? 'Partly printed' : 'Paused');
-  if (run.status === 'draft') return out('ready', 'idle', 'Draft');
+  if (office && total > 0 && office.sent >= total) return out('needs-you', 'attention', 'Sent to the office printer: check they came out');
+  if (office && office.sent > 0) return out('ready', 'idle', printed > 0 ? 'Partly printed' : 'Partly sent');
+  if (printed > 0) return out('ready', 'idle', 'Partly printed');
   return out('ready', 'idle');
 }
 

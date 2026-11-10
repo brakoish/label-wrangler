@@ -53,7 +53,7 @@ const offline=async()=>{throw new TypeError('Failed to fetch');};
 const keys=()=>[...values.keys()];
 (async()=>{
  const {rewindEvent}=require('../../src/lib/runRewind.ts');
- // --- 1. A tab on this build, server rolled back to main: going back still works. ---
+ // --- 1. A tab on this build, server rolled back to main: a go-back is never sent unguarded. ---
  {
   values.clear();
   const queue=loadNew();const {useRunStore}=require('../../src/lib/runStore.ts');
@@ -61,24 +61,29 @@ const keys=()=>[...values.keys()];
   useRunStore.setState({runs:[{id:'r',printedCount:120,status:'paused'}]});
   let aside=null;
   await useRunStore.getState().setRunStatus('r','paused',39,{resetProgress:true,expectedPrintedCount:120,onSetAside:r=>{aside=r;}});
-  assert.equal(aside,null,'not set aside');
-  assert.equal(db.r,39,'the go-back landed as main’s exact write');
-  assert.deepEqual(calls.map(c=>c[2].resetProgress??null),[true,null,null],'guarded try, then main’s own write, then the event');
-  assert.deepEqual(calls[1][2],{status:'paused',printedCount:39,progressOnly:false},'exactly what main itself sends for a status change');
-  assert.equal(calls[2][2].eventType,'rewind');
-  assert.equal(queue.pendingPatchCount(),0,'nothing left behind');
-  assert.equal(queue.deadLetteredOps().length,0,'the refused rewind event is dropped quietly, never set aside with alarming words');
+  assert.match(aside||'',/wasn’t applied/,'the page is told the go-back didn’t happen');
+  assert.match(aside||'',/Reload the page/,'and what to do: reload, then go back again');
+  assert.equal(db.r,120,'progress is untouched: no exact write without the compare-and-set');
+  assert.deepEqual(calls.map(c=>c[2].resetProgress??null),[true],'only the guarded try; no unguarded retry, no rewind event');
+  assert.equal(queue.pendingPatchCount(),0,'nothing left behind to stall the outbox');
+  assert.equal(queue.deadLetteredOps().length,0,'the page said it, so no second app-wide notice');
   assert.equal(keys().length,0);
+  // Told later (no page listening): kept as a plain "wasn't applied" notice.
+  calls.length=0;
+  await queue.updateRunWithQueue('r',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:120},undefined,rewindEvent(10,120));
+  assert.equal(db.r,120);assert.equal(calls.length,1);
+  { const dead=queue.deadLetteredOps(); assert.equal(dead.length,1); assert.equal(dead[0].kind,'rewind-dropped'); assert.match(dead[0].message,/Reload the page/); }
+  queue.discardDeadLetters();
   // Ordinary progress and events still go through main unchanged.
   calls.length=0;
-  await queue.updateRunWithQueue('r',{printedCount:45});
-  await queue.savePrintEvent('r',{eventType:'sent',output:'roll-zpl',rangeFrom:40,rangeTo:45,labelCount:6,printedCountAfter:45,printerName:null,message:null});
-  assert.equal(db.r,45);assert.equal(calls.length,2);assert.equal(queue.pendingPatchCount(),0);
-  // Another 400 (a real one) is still set aside after the single retry.
+  await queue.updateRunWithQueue('r',{printedCount:125});
+  await queue.savePrintEvent('r',{eventType:'sent',output:'roll-zpl',rangeFrom:121,rangeTo:125,labelCount:5,printedCountAfter:125,printerName:null,message:null});
+  assert.equal(db.r,125);assert.equal(calls.length,2);assert.equal(queue.pendingPatchCount(),0);
+  // Another 400 (a real one) is still set aside, with the usual words.
   calls.length=0;
-  global.fetch=async(url,init)=>{calls.push(JSON.parse(init.body));return Response.json({error:calls.length===1?'Invalid field resetProgress':'Progress exceeds run length'},{status:400});};
-  await useRunStore.getState().setRunStatus('r','paused',9999,{resetProgress:true,expectedPrintedCount:45,onSetAside:r=>{aside=r;}});
-  assert.equal(calls.length,2,'retried once only');assert.match(aside,/rejected/);
+  global.fetch=async(url,init)=>{calls.push(JSON.parse(init.body));return Response.json({error:'Progress exceeds run length'},{status:400});};
+  await useRunStore.getState().setRunStatus('r','paused',9999,{resetProgress:true,expectedPrintedCount:125,onSetAside:r=>{aside=r;}});
+  assert.equal(calls.length,1,'sent once');assert.match(aside,/rejected/);
   queue.discardDeadLetters();values.clear();
  }
  // --- 2. Ops this build saved offline, then main's code loads: main never stalls. ---
@@ -186,5 +191,5 @@ const keys=()=>[...values.keys()];
   assert.equal(calls.length,1);assert.equal(db.h,70);assert.equal(queue.pendingPatchCount(),0);
   values.clear();
  }
- console.log('PASS rollback: on main’s server a go-back retries once as main’s exact write and its rewind event is dropped quietly; main’s outbox code never reads (or stalls on) a go-back, and still sends every ordinary update; previous-build go-backs are moved aside; one order per run; the rewind event is durable and carries the server’s time');
+ console.log('PASS rollback: on main’s server a go-back is never resent unguarded: it is set aside with “reload, then go back again”, and its rewind event is never sent; main’s outbox code never reads (or stalls on) a go-back, and still sends every ordinary update; previous-build go-backs are moved aside; one order per run; the rewind event is durable and carries the server’s time');
 })().catch(e=>{console.error(e);process.exitCode=1;});

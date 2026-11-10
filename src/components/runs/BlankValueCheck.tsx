@@ -3,6 +3,7 @@
 import { useId } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { blankRemedy, describeBlankIssue, describeBlankSummary, type RunDataCheck } from '@/lib/runDataCheck';
+import { fieldDisplayName } from '@/lib/fieldDisplayName';
 
 const MAX_LINES = 5;
 
@@ -30,7 +31,8 @@ export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhe
       </p>
     );
   }
-  const lines = check.issues.slice(0, MAX_LINES).map((issue) => describeBlankIssue(issue, check.checkedLabels));
+  // The same readable names as the data table ("Product name", not "product_name").
+  const lines = check.issues.slice(0, MAX_LINES).map((issue) => describeBlankIssue({ ...issue, field: fieldDisplayName(issue.field) }, check.checkedLabels));
   const hiddenCount = check.issues.length - lines.length;
   return (
     <div role="alert" className={`rounded-lg border border-amber-500/30 bg-amber-500/10 ${compact ? 'p-2.5' : 'p-3'} space-y-2 text-sm text-amber-200`}>

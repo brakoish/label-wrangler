@@ -107,6 +107,10 @@ export function rewindDroppedMessage(goBackTo: number, serverPrinted: number | n
   const now = serverPrinted === null ? '' : ` (now ${serverPrinted.toLocaleString('en-US')} printed)`;
   return `“Go back to label ${goBackTo + 1}” wasn’t applied, because this run’s progress changed on another device since${now}. Check the run, then go back again if you still need to.`;
 }
+/** Words for a go-back that reached a server rolled back to the previous build. */
+export function rewindNeedsReloadMessage(goBackTo: number): string {
+  return `“Go back to label ${(goBackTo + 1).toLocaleString('en-US')}” wasn’t applied, because Label Wrangler was changed back to an earlier version. Reload the page, then go back again if you still need to.`;
+}
 /** The operation as it was stored (without the storage key this module adds). */
 function storedOp(op: Stored): Operation {
   const { key: _key, ...rest } = op;
@@ -239,17 +243,23 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
         try {
           response = await send(op.event ? {...op.event,idempotencyKey:op.id} : { ...patch, progressOnly: !patch.status && patch.printedCount !== undefined });
           if (!response.ok) refused = await serverError(response);
-          // Rolled back to main, which has no guarded rewind and refuses its
-          // fields: send it once more as main's own write (an exact count is
-          // a rewind there), so going back still works.
-          if (!op.event && response.status === 400 && patch.resetProgress && MAIN_REFUSES_REWIND.test(refused.message)) {
-            const { resetProgress: _reset, expectedPrintedCount: _expected, ...exact } = patch;
-            response = await send({ ...exact, progressOnly: false });
-            refused = response.ok ? { message: '', code: '' } : await serverError(response);
-          }
         } catch {
           blocked.add(runId);
           pendingError = 'Progress sync pending. You seem to be offline; it sends when the connection is back.';
+          continue;
+        }
+        // Rolled back to main, which has no guarded rewind and refuses its
+        // fields. Sending it again as main's exact write would drop the
+        // compare-and-set and could erase progress another device made since,
+        // so it is set aside with plain words: reload, then go back again.
+        if (!op.event && response.status === 400 && patch.resetProgress && MAIN_REFUSES_REWIND.test(refused.message)) {
+          const message = rewindNeedsReloadMessage(patch.printedCount ?? 0);
+          deadLetter(op.key, { id: op.id, runId, kind: 'rewind-dropped', status: 400, message, serverMessage: refused.message.slice(0, 500), op: storedOp(op) });
+          syncedRuns.delete(runId);
+          setAsideOps.set(op.id, message);
+          rewindDropOps.add(op.id);
+          if (setAsideOps.size > 128) setAsideOps.delete(setAsideOps.keys().next().value!);
+          announce(pendingError);
           continue;
         }
         // Main refuses the informational 'rewind' event: drop it quietly.

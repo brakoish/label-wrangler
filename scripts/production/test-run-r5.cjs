@@ -1,7 +1,7 @@
 // Round 5 run page rules: labels a "Print in order" fix held back are offered
 // on their own afterwards, scanned labels can be left out, one tick per
 // barcode problem (never carried over from the wizard for a barcode that
-// spoils the next label), five status words, plain printer words.
+// spoils the next label), six status words that never contradict, plain printer words.
 const assert=require('node:assert/strict');
 require('../thermal/register.cjs');
 const fs=require('node:fs');const path=require('node:path');
@@ -69,7 +69,7 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
 {
   const run=(status,printedCount,totalLabels=100)=>({status,printedCount,totalLabels});
   const words=new Set(Object.values(D.RUN_STATUS_WORDS));
-  assert.deepEqual([...words],['Needs you','Printing','Ready','Done','Cancelled']);
+  assert.deepEqual([...words],['Needs you','Printing','Paused','Ready','Done','Cancelled']);
   const cases=[
     [run('queued',0),null],[run('draft',0),null],[run('paused',40),null],[run('printing',10),null],[run('completed',100),null],[run('cancelled',3),null],
     [run('queued',0),{sent:0,onTheWay:20,failed:0}],[run('queued',0),{sent:0,onTheWay:20,failed:0,held:true}],[run('queued',0),{sent:100,onTheWay:0,failed:0}],[run('queued',0),{sent:20,onTheWay:0,failed:1}],
@@ -77,6 +77,12 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
   for(const [r,o] of cases){const s=D.runDisplayStatus(r,o);assert.ok(words.has(s.label),s.label);assert.equal(s.label,D.RUN_STATUS_WORDS[s.bucket]);}
   assert.equal(D.runDisplayStatus(run('paused',40),null).bucket,'ready');
   assert.equal(D.runDisplayStatus(run('paused',40),null).detail,'Partly printed');
+  // Words never contradict: no "Ready · Draft", no "Printing" while the printer waits, "Needs you" always red.
+  assert.deepEqual(D.runDisplayStatus(run('draft',0),null),{label:'Ready',tone:'idle',bucket:'ready',detail:''});
+  assert.equal(D.runDisplayStatus(run('paused',0),null).detail,'','a paused run with nothing printed is plainly Ready');
+  for(const [r,o] of cases){const s=D.runDisplayStatus(r,o);if(s.bucket==='needs-you')assert.equal(s.tone,'attention',s.detail);if(s.bucket==='ready')assert.equal(s.tone,'idle',s.detail);}
+  const waiting=D.runDisplayStatus(run('printing',0),{sent:0,onTheWay:20,failed:0,held:true});
+  assert.equal(waiting.label,'Paused');assert.equal(waiting.detail,'Waiting for the office printer');
   const stopped=D.runDisplayStatus(run('paused',40),null,true);
   assert.equal(stopped.label,'Needs you');assert.equal(stopped.detail,'Stopped: printer problem','after a printer error the header says what happened, not "Paused"');
   assert.equal(D.moreNeedAttention({failed:2,failedLabels:100},{from:51,to:100}),' 50 more labels also need attention.');
@@ -124,7 +130,7 @@ assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount: print
 assert.doesNotMatch(page,/remaining in printer batch/);
 const nav=read('src/lib/printNavigation.ts');
 assert.match(nav,/if \(officeSeries\) \{/);
-console.log('PASS run r5: held labels offered on their own, parts trimmed by progress, scanned labels left out, one tick per barcode problem, five status words, plain printer words');
+console.log('PASS run r5: held labels offered on their own, parts trimmed by progress, scanned labels left out, one tick per barcode problem, six status words that never contradict, plain printer words');
 
 // --- Round 6: one set of words for office problems, refusals with a next step, held by another run ---
 {
@@ -148,9 +154,9 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(paused.text, /^Paused/);
   const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
   const held = D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
-  assert.equal(held.label, 'Waiting on another run');
+  assert.equal(held.label, 'Paused', 'held by another run: said once, in the detail');
   assert.equal(held.detail, '“Run A” needs a check first');
-  assert.notEqual(D.runDisplayStatus({ ...run, status: 'draft' }, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } }).label, 'Waiting on another run', 'drafts are not "waiting"');
+  assert.notEqual(D.runDisplayStatus({ ...run, status: 'draft' }, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } }).label, 'Paused', 'drafts are not "waiting"');
   assert.equal(D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print', from: 51, to: 100, reason: 'media out' } }).detail, 'Out of labels', 'the header names a known cause');
   // The fix dialog asks what came out, never for a tick the person can't verify; Pause is not red.
   assert.doesNotMatch(panel, /I checked: nothing for/);
