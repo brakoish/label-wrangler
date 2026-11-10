@@ -16,13 +16,15 @@ export function rowMissingDetails(row: Record<string, string> | undefined | null
 
 /**
  * The labels (1-based, in run order) whose mapped Nabis details are missing,
- * and which details. Only what the design really prints counts: a missing
- * retail ID doesn't matter to a design that doesn't print one.
+ * and which details. Lab potency counts only when the design prints it;
+ * missing retail IDs always count (the package becomes one label instead of
+ * one per unit).
  */
 export function runMissingDetails(rows: ReadonlyArray<Record<string, string>>, mappings: Record<string, FieldMapping>): { labels: number[]; missing: NabisMissing[]; signature: string } {
   const columns = Object.values(mappings).filter((m) => m.mode === 'column' && m.csvColumn).map((m) => m.csvColumn as string);
   const prints: Record<NabisMissing, boolean> = {
-    retailIds: columns.includes('retailId'),
+    // Retail IDs always count: without them a package is one label, not one per unit.
+    retailIds: true,
     labPotency: columns.some((column) => LAB_COLUMN.test(column)),
   };
   const labels: number[] = [];

@@ -1943,7 +1943,7 @@ function NewRunContent() {
                       <div role="alert" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 text-zinc-100">
                           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
-                          <span>Nabis didn’t send the {nabisGapWhat} in time, so {labelsWords(nabisGap.labels, labelCount)} would print without {nabisGap.missing.length > 1 || nabisGap.missing[0] === 'retailIds' ? 'them' : 'it'}.</span>
+                          <span>Nabis didn’t send the {nabisGapWhat} in time, so {labelsWords(nabisGap.labels, labelCount)} would print without {nabisGap.missing.length > 1 || nabisGap.missing[0] === 'retailIds' ? 'them' : 'it'}{nabisGap.missing.includes('retailIds') ? ', and a package may get one label instead of one per unit' : ''}.</span>
                         </p>
                         <div className="flex flex-wrap items-center gap-x-4 pl-5.5">
                           <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={isSearchingManifest || manifestSearch.trim().length < 2} onClick={() => void handleManifestSearch()}>
