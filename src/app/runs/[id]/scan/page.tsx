@@ -286,7 +286,7 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
               {!transport && <span className="text-red-400">{transportError || 'No printer available'}</span>}
             </div>
             {targetField && (
-              <span className="text-sm text-zinc-400">
+              <span className="text-sm text-zinc-400 max-sm:basis-full max-sm:pl-8">
                 Each scan fills <span className="font-medium text-zinc-100">{targetField}</span>
               </span>
             )}
