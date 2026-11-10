@@ -41,6 +41,11 @@ function ok(name){passed++;console.log('PASS '+name);}
  assert.deepEqual(partialBlank.slice(0,-1).map(decode),partialPlain.slice(0,-1).map(decode));
  assert.equal(partialBlank.map(decode).join('').match(/\^XA/g).length,19);
  assert.ok(decode(partialBlank.at(-1)).endsWith('^PQ1\n^XZ'));
+ const bitmapTemplate={...template,thermalRenderMode:'bitmap-v1',elements:[{...text,fontFamily:'Liberation Sans',autoFit:true,minFontSize:4}]};
+ const bitmapPlain=await buildBatches(run,bitmapTemplate,format,1,2,203,448);
+ const bitmapBlank=await buildBatches(run,bitmapTemplate,format,1,2,203,448,true);
+ assert.equal(decode(bitmapBlank[0]),decode(bitmapPlain[0])+separator);
+ assert.equal(bitmapBlank[0].count,2);
  ok('optional final-only blank; default unchanged; copies/ranges/multi-across and product counts preserved');
  assert.deepEqual(batches.map(b=>b.count),[25,25,13]);
  for(const b of batches){const decoded=Buffer.from(b.payload,'base64');assert.equal(b.sha256,createHash('sha256').update(decoded).digest('hex'));assert.ok(decoded.toString().includes('^PON\n^LH0,0\n^LT0\n^LS0'));assert.ok(decoded.length<=2097152);}
