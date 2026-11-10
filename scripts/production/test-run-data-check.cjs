@@ -73,7 +73,13 @@ assert.equal(friendlyError(new Error('Office printing request failed. No automat
 assert.equal(stripInternalIds('Queued labels 1–20. Request 7f1c2a9e.'), 'Queued labels 1–20.');
 assert.equal(friendlyRenderError('Lane 1, 087b8c70-1234-4abc-8def-0123456789ab: Image is missing', [{ id: '087b8c70-1234-4abc-8def-0123456789ab', type: 'image' }]), 'The picture box has no picture yet — choose a file or delete the box.');
 assert.equal(friendlyRenderError('Labels 1–8: Lane 2, sku: Missing QR/barcode value', [barcode('sku')], 2), 'Labels 1–8: The SKU barcode (label position 2) has no value — type a sample under "Sample for the preview", or fill it from your data.');
-assert.equal(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU', { barcodeFormat: 'UPC' })], 1, { SKU: 'ABC123' }), 'The SKU barcode can only hold numbers. A UPC barcode needs 12 digits.');
+assert.equal(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU', { barcodeFormat: 'UPC' })], 1, { SKU: 'ABC123' }), 'The SKU barcode isn’t a valid UPC: UPC needs 11 or 12 digits; this value has letters.');
+// A fixed barcode is described from its own text, not an old sample.
+assert.equal(friendlyRenderError('Lane 1, b: Artwork failed', [{ ...barcode('SKU', { barcodeFormat: 'UPC' }), id: 'b', isStatic: true, content: 'ABC-12 é', defaultValue: '123456789' }]), 'The barcode isn’t a valid UPC: UPC needs 11 or 12 digits; this value has letters, a space and other characters.');
+assert.equal(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU', { barcodeFormat: 'UPC' })], 1, { SKU: '123456789' }), 'The SKU barcode isn’t a valid UPC: UPC needs 11 or 12 digits; this value has 9 digits.');
+// Raw renderer text reaching a general error box (the designer's test print) is put in plain words.
+assert.doesNotMatch(friendlyError(new Error('Lane 1, SKU: Artwork failed')), /Lane|Artwork/);
+assert.match(friendlyError(new Error('Lane 1, SKU: Artwork failed')), /^The SKU item can’t be drawn/);
 assert.equal(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU', { barcodeFormat: 'CODE128' })], 1, { SKU: 'Café' }), "The SKU barcode has characters a barcode can't hold (é).");
 assert.doesNotMatch(friendlyRenderError('Lane 1, SKU: Artwork failed', [barcode('SKU')], 1, { SKU: '123' }), /Artwork|Lane/);
 assert.doesNotMatch(friendlyRenderError('Lane 1, 087b8c70-1234-4abc-8def-0123456789ab: Weird failure', []), /087b8c70/);
