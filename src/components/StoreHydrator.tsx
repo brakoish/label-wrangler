@@ -88,6 +88,8 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     const named = listNames.length <= 1 ? listNames[0] ?? '' : `${listNames.slice(0, -1).join(', ')} and ${listNames[listNames.length - 1]}`;
     const anySignedOut = failed.some(({store}) => signedOut(store.error ?? ''));
     const loadingMore = collections.filter(({store}) => !store.error && store.hasMore);
+    const rewinds = sync.dead.filter((item) => item.kind === 'rewind-dropped');
+    const setAside = sync.dead.filter((item) => item.kind !== 'rewind-dropped');
     return <div className="text-sm text-amber-200 [&>*]:bg-amber-500/10" aria-live="polite">
         {failed.length > 0 && !pageOwnsError && <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
           <span>{anySignedOut ? `You’re signed out, so your ${named} couldn’t load.` : `Couldn’t load your ${named}. ${friendlyError(failed[0].store.error)}`}</span>
@@ -97,10 +99,15 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
         </div>}
         {loadingMore.map(({name,store,load}) => <button type="button" key={name} className="block w-full px-4 py-1 text-left underline underline-offset-2" disabled={store.loading} onClick={()=>void load(true)}>{store.loading ? `Loading the rest of your ${name.toLowerCase()}…` : `Load more ${name.toLowerCase()}`}</button>)}
         {(sync.count > 0 || sync.error) && <div role="alert" className="px-4 py-2">{sync.error ? friendlyError(sync.error) : `${sync.count === 1 ? '1 print update hasn\u2019t' : `${sync.count} print updates haven\u2019t`} reached the server yet. They\u2019ll send when you\u2019re back online — don\u2019t clear this browser\u2019s data.`} <button type="button" className="font-medium underline underline-offset-2" onClick={()=>void flushOfflineQueue()}>Send now</button></div>}
-        {sync.dead.length > 0 && <div role="alert" className="px-4 py-2">
-          {sync.dead.length === 1 ? '1 print update' : `${sync.dead.length} print updates`} couldn’t be saved to the server and {sync.dead.length === 1 ? 'was' : 'were'} set aside, so printing is not blocked. {sync.dead[sync.dead.length - 1].message}
+        {/* A late "go back" that was dropped: a plain notice, nothing to recover. */}
+        {rewinds.length > 0 && <div role="status" className="px-4 py-2">
+          {rewinds[rewinds.length - 1].message}
+          {' '}<button type="button" className="font-medium underline underline-offset-2" onClick={()=>discardDeadLetters(rewinds.map(item=>item.id))}>OK</button>
+        </div>}
+        {setAside.length > 0 && <div role="alert" className="px-4 py-2">
+          {setAside.length === 1 ? '1 print update' : `${setAside.length} print updates`} couldn’t be saved to the server and {setAside.length === 1 ? 'was' : 'were'} set aside, so printing is not blocked. {setAside[setAside.length - 1].message}
           {' '}<button type="button" className="underline" onClick={exportSetAside}>Export</button>
-          {' '}<button type="button" className="underline ml-2" onClick={()=>{ void confirmDialog({ title: 'Discard the set-aside print updates?', body: 'They are removed from this device. Export them first if you need a record.', confirmLabel: 'Discard', danger: true }).then(ok => { if (ok) discardDeadLetters(sync.dead.map(item=>item.id)); }); }}>Discard</button>
+          {' '}<button type="button" className="underline ml-2" onClick={()=>{ void confirmDialog({ title: 'Discard the set-aside print updates?', body: 'They are removed from this device. Export them first if you need a record.', confirmLabel: 'Discard', danger: true }).then(ok => { if (ok) discardDeadLetters(setAside.map(item=>item.id)); }); }}>Discard</button>
         </div>}
       </div>;
   }, [pathname, library, needsRuns, formats, templates, runs, globals, sync]);

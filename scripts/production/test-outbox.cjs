@@ -14,7 +14,7 @@ const queue=require('../../src/lib/offlineQueue.ts');
  global.fetch=async(url,init)=>{sent.push([url,JSON.parse(init.body)]);return Response.json({error:'Run not found'},{status:404});};
  await queue.updateRunWithQueue('gone',{printedCount:10});
  assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.pendingPatchCount('gone'),0);
- let dead=queue.deadLetteredOps();assert.equal(dead.length,1);assert.equal(dead[0].status,404);assert.equal(dead[0].runId,'gone');assert.match(dead[0].message,/no longer exists/);assert.match(dead[0].message,/Run not found/);
+ let dead=queue.deadLetteredOps();assert.equal(dead.length,1);assert.equal(dead[0].status,404);assert.equal(dead[0].runId,'gone');assert.match(dead[0].message,/no longer exists/);assert.doesNotMatch(dead[0].message,/Run not found|Server said/);assert.equal(dead[0].serverMessage,'Run not found');
  // Every permanent status dead-letters; each of them is attempted exactly once.
  for(const status of [400,403,409,410,413,415,422]){
   let calls=0;global.fetch=async()=>{calls++;return Response.json({error:'nope'},{status});};
@@ -41,7 +41,7 @@ const queue=require('../../src/lib/offlineQueue.ts');
  assert.deepEqual(order,[['/api/runs/stuck',5],['/api/runs/other',7]],'later update for a blocked run was sent out of order, or another run was blocked');
  assert.equal(queue.pendingPatchCount('stuck'),2);assert.equal(queue.pendingPatchCount('other'),0);assert.match(queue.progressSyncError(),/503/);
  global.fetch=async()=>{throw new TypeError('Failed to fetch');};
- await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('stuck'),2);assert.match(queue.progressSyncError(),/Failed to fetch/);
+ await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('stuck'),2);assert.match(queue.progressSyncError(),/offline/);assert.doesNotMatch(queue.progressSyncError(),/Failed to fetch/,'raw browser error shown');
  global.fetch=async()=>new Response('{}',{status:401});
  await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('stuck'),2);assert.match(queue.progressSyncError(),/Sign in/);
  order.length=0;global.fetch=async(url,init)=>{order.push(JSON.parse(init.body).printedCount);return Response.json({id:'stuck'});};
@@ -84,6 +84,57 @@ const queue=require('../../src/lib/offlineQueue.ts');
  assert.equal(await useRunStore.getState().setRunStatus('kept','printing',7,{onSetAside:r=>{aside=r;}}),null);
  assert.match(aside,/conflicts/);assert.equal(useRunStore.getState().runs[0].status,'paused');
  values.clear();
+ // A rewind ("go back to label N") that only reaches the server late is not
+ // applied over progress another device made in the meantime.
+ {
+  let calls=[];
+  global.fetch=async()=>{throw new TypeError('Failed to fetch');};
+  assert.equal(await queue.updateRunWithQueue('rw',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:40}),null);
+  assert.equal(queue.pendingPatchCount('rw'),1,'offline rewind kept');
+  // Another device printed to 60 meanwhile: the late rewind is dropped with plain words.
+  global.fetch=async(url,init)=>{calls.push([url,init?.method||'GET',init?.body?JSON.parse(init.body):null]);return url==='/api/runs/rw'&&(!init||!init.method)?Response.json({id:'rw',printedCount:60}):Response.json({id:'rw',printedCount:9});};
+  await queue.flushOfflineQueue();
+  assert.equal(queue.pendingPatchCount('rw'),0);
+  assert.deepEqual(calls.map(c=>c[1]),['GET'],'the stale rewind must not be sent');
+  const dropped=queue.deadLetteredOps().find(d=>d.runId==='rw');
+  assert.equal(dropped.kind,'rewind-dropped');assert.match(dropped.message,/go back to label 10/);assert.match(dropped.message,/another device/);assert.match(dropped.message,/60 printed/);
+  queue.discardDeadLetters();values.clear();
+  // Nobody moved progress: the late rewind goes through, without the client-only field.
+  global.fetch=async()=>{throw new TypeError('Failed to fetch');};
+  await queue.updateRunWithQueue('rw2',{status:'paused',printedCount:9,resetProgress:true,expectedPrintedCount:40});
+  calls=[];
+  global.fetch=async(url,init)=>{calls.push([init?.method||'GET',init?.body?JSON.parse(init.body):null]);return init?.method?Response.json({id:'rw2',printedCount:9}):Response.json({id:'rw2',printedCount:40});};
+  await queue.flushOfflineQueue();
+  assert.deepEqual(calls.map(c=>c[0]),['GET','PUT']);
+  assert.equal(calls[1][1].resetProgress,true);assert.equal('expectedPrintedCount' in calls[1][1],false,'client-only field sent to the server');
+  assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.deadLetteredOps().length,0);
+  // A rewind sent straight away (not late) is not held up by an extra read.
+  calls=[];
+  global.fetch=async(url,init)=>{calls.push(init?.method||'GET');return Response.json({id:'rw3',printedCount:2});};
+  await queue.updateRunWithQueue('rw3',{status:'paused',printedCount:2,resetProgress:true,expectedPrintedCount:40});
+  assert.deepEqual(calls,['PUT']);
+  // The store records what it saw, so its rewinds carry the guard.
+  const {useRunStore:store}=require('../../src/lib/runStore.ts');
+  store.setState({runs:[{id:'rw4',printedCount:33,status:'paused'}]});
+  let body=null;global.fetch=async(url,init)=>{body=JSON.parse(init.body);return Response.json({id:'rw4',printedCount:5});};
+  await store.getState().setRunStatus('rw4','paused',5,{resetProgress:true});
+  assert.equal(body.resetProgress,true);assert.equal('expectedPrintedCount' in body,false);
+  assert.equal(queue.pendingPatchCount(),0);
+  values.clear();
+ }
+ // An update queued while another flush is finishing is still sent.
+ {
+  let release;const gate=new Promise(r=>{release=r;});const sentBodies=[];
+  global.fetch=async(url,init)=>{sentBodies.push(JSON.parse(init.body).printedCount);if(sentBodies.length===1)await gate;return Response.json({id:'race',printedCount:sentBodies[sentBodies.length-1]});};
+  queue.enqueueRunPatch({runId:'race',printedCount:1});
+  const first=queue.flushOfflineQueue();
+  await new Promise(r=>setTimeout(r,0));
+  const second=queue.updateRunWithQueue('race',{printedCount:2});
+  release();await first;await second;
+  assert.deepEqual(sentBodies,[1,2]);assert.equal(queue.pendingPatchCount(),0);
+  values.clear();
+ }
+ console.log('PASS outbox: a late rewind is dropped with plain words when another device moved progress, applied otherwise; raw server text kept out of messages; no update left behind by a finishing flush');
  console.log('PASS outbox: origin refusal blocks (kept, not set aside); set-aside update returns null with its reason and drops the cached run');
  console.log('PASS outbox: permanent 4xx set aside (400/403/404/409/410/413/415/422), export/discard, per-run ordering, 5xx/401/network retained, corrupt entry isolated');
 })().catch(e=>{console.error(e);process.exitCode=1;});
