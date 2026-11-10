@@ -904,6 +904,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportZPL = async () => {
     if (!run || !template || !format) return;
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before saving labels as a file.'); return; }
     setExporting('zpl');
     try {
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
@@ -935,6 +936,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportPDF = async () => {
     if (!run || !template || !format) return;
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before saving labels as a file.'); return; }
     setExporting('pdf');
     setExportProgress(0);
     try {
@@ -1562,6 +1564,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   if (count > 100) return <p className="text-xs text-amber-400">{count} labels — may take ~{Math.round(count * 0.1)}s. Page stays usable.</p>;
                   return null;
                 })()}
+                {!blanksOk && !isSheetFormat && <p className="text-xs text-amber-300">Saving labels as a file is off until every label has a value (see the list above).</p>}
                 {exporting === 'pdf' && (
                   <div className="space-y-1">
                     <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
@@ -1574,7 +1577,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   {!isSheetFormat && (
                     <button
                       onClick={() => void handleExportZPL()}
-                      disabled={!!exporting}
+                      disabled={!!exporting || !blanksOk}
                       className="btn btn-secondary btn-sm flex-1"
                     >
                       {exporting === 'zpl' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCode2 className="w-4 h-4" />}
@@ -1592,7 +1595,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   ) : (
                     <button
                       onClick={() => void handleExportPDF()}
-                      disabled={!!exporting}
+                      disabled={!!exporting || !blanksOk}
                       className="btn btn-secondary btn-sm flex-1"
                     >
                       {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
