@@ -116,11 +116,14 @@ const format = { type: 'thermal', width: 2, height: 1, dpi: 203 };
 const crowded = [text('name', { width: 380, height: 40, defaultValue: 'Lemon Cherry Gelato' }), barcode('tag', { y: 20, width: 200, defaultValue: '1A4FF0300000022000012345' })];
 const problems = layoutProblems(crowded, format);
 assert.ok(problems.some((p) => p.kinds.includes('off-label')), 'the long barcode runs off a 2" label');
-assert.ok(problems.some((p) => p.kinds.includes('overlap') && /may not scan/.test(p.message)), 'the barcode covers the name');
+assert.ok(problems.some((p) => p.kinds.includes('overlap') && /prints over the Name text/.test(p.message)), 'the barcode covers the name');
 // One line per item, naming everything wrong with it.
 assert.equal(problems.length, 1);
-assert.equal(problems[0].message, 'The Tag barcode is too wide: it runs off the label and prints over the Name text — it may not scan.');
-assert.equal(layoutProblems([text('a', { width: 200 }), barcode('b', { y: 100, height: 60, defaultValue: '123' })], format).length, 0);
+assert.equal(problems[0].message, 'The Tag barcode prints 2.95" wide for 24 characters, but only 2" fits from where it starts, so the printer cuts it off and it won’t scan, and prints over the Name text.');
+assert.equal(problems[0].blocking, true);
+assert.doesNotMatch(`${problems[0].message} ${problems[0].fix}`, /shorten/i);
+assert.equal(layoutProblems([text('a', { width: 200 }), barcode('b', { x: 20, y: 100, height: 60, defaultValue: '123' })], format).length, 0);
+assert.equal(layoutProblems([barcode('b', { x: 0, y: 100, height: 60, defaultValue: '123' })], format)[0].kind, 'barcode-tight', 'bars right at the edge are a warning, not a block');
 // New items go into clear space.
 const spot = freeSpot([{ x: 10, y: 10, width: 380, height: 40 }], { width: 100, height: 50 }, { width: 406, height: 203 }, 10);
 assert.ok(spot.fits && spot.y >= 50, 'below the existing text');

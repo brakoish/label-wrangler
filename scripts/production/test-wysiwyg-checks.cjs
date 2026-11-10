@@ -52,11 +52,12 @@ assert.equal(pc.checkRunPrinterCharacters({ ...template, thermalRenderMode: 'bit
 const bc = checkRunBarcodes(template, { sourceData: rows, fieldMappings: mappings }, fmt);
 const long = bc.issues.filter((i) => i.kind === 'too-long');
 assert.equal(long.length, 1);
-assert.match(describeBarcodeIssue(long[0], true), /^SKU on label 12 \(row 13\) is too long for its barcode/);
+assert.match(describeBarcodeIssue(long[0], true), /^The SKU barcode on label 12 \(row 13\) prints 4\.68" wide for 40 characters, but only 1\.95" fits/);
+assert.doesNotMatch(describeBarcodeIssue(long[0], true), /shorten/i);
 assert.ok(printedBarcodeWidth({ ...sku }, rows[11].SKU, fmt) > 406 - 10, 'the long SKU really runs off a 2" label');
 const artRows = rows.map((r, i) => (i === 11 ? { ...r, SKU: 'LEMON-CHERRY-GELATO-PREROLL-1G-BATCH-1102' } : r));
 const art = checkRunBarcodes({ ...template, thermalRenderMode: 'bitmap-v1' }, { sourceData: artRows, fieldMappings: mappings }, fmt);
-assert.match(describeBarcodeIssue(art.issues.find((i) => i.kind === 'too-long'), true), /make the barcode box wider/);
+assert.match(describeBarcodeIssue(art.issues.find((i) => i.kind === 'too-long'), true), /use a wider label or a QR code/);
 
 // Font 0 widths measured from the preview renderer.
 assert.ok(Math.abs(font0Width('Gelato Pre-roll', 25) - 161) <= 2, 'measured 161 dots in the renderer');
