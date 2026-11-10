@@ -31,7 +31,9 @@ interface RunStore {
   // Runs
   createRun: (data: Partial<Run> & { name: string; templateId: string; fieldMappings?: Run['fieldMappings']; imageSelections?: import('./runImages').RunImageSelections }) => Promise<Run>;
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
-  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean }) => Promise<Run | null>;
+  /** `onSetAside` is called with a plain reason when the server permanently
+   * refused this update (it was set aside, not saved). */
+  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; onSetAside?: (reason: string) => void }) => Promise<Run | null>;
   /** Resolves to a plain-language message when the server refuses (the item is kept). */
   deleteRun: (id: string) => Promise<string | null>;
   /** Toggle the pinned state of a run. Server stamps pinnedAt. */
@@ -134,7 +136,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
     if (typeof printedCount === 'number') body.printedCount = printedCount;
     if (options?.resetProgress && typeof printedCount === 'number') body.resetProgress = true;
     if (status === 'completed') body.completedAt = new Date().toISOString();
-    const run=await updateRunWithQueue(id,body as Partial<Run>);
+    const run=await updateRunWithQueue(id,body as Partial<Run>,options?.onSetAside);
     if(run) set(state=>({runs:state.runs.map(r=>r.id===id?{...r,...run}:r)}));
     return run;
   },

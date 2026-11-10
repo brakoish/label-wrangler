@@ -1,14 +1,16 @@
 /** Durable, append-only progress outbox. Each acknowledgement removes only its
  * own operation; a reconnect can never erase a newer pending update. */
 import type { Run, RunStatus, RunPrintEvent } from './types';
+import { ORIGIN_NOT_ALLOWED } from './errorCodes';
 
 const PREFIX = 'lw:run-op:';
 const DEAD = 'lw:run-op-dead:';
 const LEGACY = 'lw:pending-run-ops';
 /** Responses that will never succeed on retry. These operations are set aside
- * (dead-lettered) so they stop blocking newer progress. 413/415 never change
- * on retry either. Network failures,
- * 401 (sign in again), 408, 429 and 5xx keep retrying in order. */
+ * (dead-lettered) so they stop blocking newer progress. Network failures,
+ * 401 (sign in again), 408, 429 and 5xx keep retrying in order. A 403 that the
+ * server marks as an origin refusal (code ORIGIN_NOT_ALLOWED) is not terminal
+ * either: it blocks that run until the app is opened at its usual address. */
 export const TERMINAL_STATUSES: ReadonlySet<number> = new Set([400, 403, 404, 409, 410, 413, 415, 422]);
 export interface DeadLetter {
   id: string;
@@ -37,6 +39,9 @@ let flushing: Promise<{ flushed: number; remaining: number }> | null = null;
 let lastError = '';
 let lastTime = 0;
 const syncedRuns = new Map<string, Run>();
+/** Plain reasons for operations set aside during a flush, by operation id, so
+ * the caller that queued one can tell its own update was refused. */
+const setAsideOps = new Map<string, string>();
 export const QUEUE_EVENT = 'lw:progress-sync';
 function announce(error = '') {
   lastError = error;
@@ -129,9 +134,13 @@ export function pendingPatchCount(runId?: string): number {
   }
   catch { return 1; }
 }
-async function serverError(response: Response): Promise<string> {
-  try { const data = await response.json(); return typeof data?.error === 'string' ? data.error : ''; } catch { return ''; }
+async function serverError(response: Response): Promise<{ message: string; code: string }> {
+  try {
+    const data = await response.json();
+    return { message: typeof data?.error === 'string' ? data.error : '', code: typeof data?.code === 'string' ? data.code : '' };
+  } catch { return { message: '', code: '' }; }
 }
+export const ORIGIN_REFUSED_MESSAGE = 'Print progress can\u2019t be saved from this web address. Open Label Wrangler at its usual address; your progress is kept on this device until then.';
 export async function flushOfflineQueue(): Promise<{ flushed: number; remaining: number }> {
   if (typeof window === 'undefined') return { flushed: 0, remaining: 0 };
   if (flushing) return flushing;
@@ -162,8 +171,23 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
           continue;
         }
         if (!response.ok) {
+          const refused = await serverError(response);
+          if (response.status === 403 && refused.code === ORIGIN_NOT_ALLOWED) {
+            // Not a permission problem: the app was opened at an address the
+            // server doesn't accept. Keep the update and block this run.
+            blocked.add(runId);
+            pendingError = ORIGIN_REFUSED_MESSAGE;
+            continue;
+          }
           if (TERMINAL_STATUSES.has(response.status)) {
-            deadLetter(PREFIX + op.id, { id: op.id, runId, kind: op.event ? 'event' : 'progress', status: response.status, message: plainReason(response.status, await serverError(response)), op });
+            const message = plainReason(response.status, refused.message);
+            deadLetter(PREFIX + op.id, { id: op.id, runId, kind: op.event ? 'event' : 'progress', status: response.status, message, op });
+            // The last good response may be older than the refused update.
+            if (!op.event) {
+              syncedRuns.delete(runId);
+              setAsideOps.set(op.id, message);
+              if (setAsideOps.size > 128) setAsideOps.delete(setAsideOps.keys().next().value!);
+            }
             announce(pendingError);
             continue;
           }
@@ -188,9 +212,21 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
     ? Promise.resolve(navigator.locks.request('lw-progress-outbox', drain)).then(result => result) : drain());
   try { return await flushing; } finally { flushing = null; }
 }
-export async function updateRunWithQueue(runId: string, patch: RunPatch): Promise<Run | null> {
-  enqueueRunPatch({ runId, ...patch });
+/**
+ * Queue a run update and try to send it. Resolves to the server's run, or null
+ * when it is still pending or was set aside. When the server permanently
+ * refused this update, `onSetAside` gets the plain reason (and the stale
+ * cached run is not returned).
+ */
+export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAside?: (reason: string) => void): Promise<Run | null> {
+  const id = enqueueRunPatch({ runId, ...patch });
   await flushOfflineQueue();
+  const refused = setAsideOps.get(id);
+  if (refused !== undefined) {
+    setAsideOps.delete(id);
+    onSetAside?.(refused);
+    return null;
+  }
   // Callers should display pendingPatchCount rather than implying that local
   // printer acceptance means the server has persisted progress.
   return entries().some(op=>op.patch.runId===runId) ? null : syncedRuns.get(runId) ?? null;

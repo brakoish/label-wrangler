@@ -1,4 +1,4 @@
-import { body, json, failure, uuid, OfficeError } from '@/lib/office/http';
+import { body, json, browserFailure, uuid, OfficeError } from '@/lib/office/http';
 import { requireUser, requirePrinter } from '@/lib/office/auth';
 import { officeSql } from '@/lib/office/db';
 export async function POST(req: Request){
@@ -10,5 +10,5 @@ export async function POST(req: Request){
     await requirePrinter(user,jobs[0].station_id,jobs[0].printer_id);
     await sql`SELECT office_resolve(${user.id}::uuid,${data.jobId}::uuid,${data.reason})`;
     return json({ok:true});
-  }catch(error){return failure(error);}
+  }catch(error){return browserFailure(error);}
 }

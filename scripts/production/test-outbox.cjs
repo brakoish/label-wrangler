@@ -52,5 +52,38 @@ const queue=require('../../src/lib/offlineQueue.ts');
  global.fetch=async()=>Response.json({id:'after'});
  await queue.flushOfflineQueue();
  assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.deadLetteredOps().length,1);assert.equal(queue.deadLetteredOps()[0].kind,'unreadable');
+ // An origin refusal (403 with the server's code) is not a permission problem:
+ // the update is kept and blocks that run instead of being set aside.
+ values.clear();
+ global.fetch=async()=>Response.json({error:'Request origin not allowed',code:'origin_not_allowed'},{status:403});
+ let aside=null;
+ assert.equal(await queue.updateRunWithQueue('origin',{status:'printing',printedCount:0},r=>{aside=r;}),null);
+ assert.equal(aside,null,'origin refusal must not be set aside');
+ assert.equal(queue.pendingPatchCount('origin'),1);assert.equal(queue.deadLetteredOps().length,0);
+ assert.match(queue.progressSyncError(),/usual address/);
+ global.fetch=async()=>Response.json({id:'origin',printedCount:0});
+ await queue.flushOfflineQueue();assert.equal(queue.pendingPatchCount('origin'),0);
+ // A plain 403 (no permission) is still set aside.
+ global.fetch=async()=>Response.json({error:'Your account does not have permission'},{status:403});
+ await queue.updateRunWithQueue('perm',{printedCount:1});assert.equal(queue.pendingPatchCount('perm'),0);assert.equal(queue.deadLetteredOps().length,1);
+ queue.discardDeadLetters();
+ // When this update is set aside, the caller gets null and the reason, never
+ // the older cached run from an earlier success.
+ global.fetch=async()=>Response.json({id:'stale',printedCount:50});
+ assert.equal((await queue.updateRunWithQueue('stale',{printedCount:50})).printedCount,50);
+ global.fetch=async()=>Response.json({error:'Run not found'},{status:404});
+ aside=null;
+ assert.equal(await queue.updateRunWithQueue('stale',{status:'printing',printedCount:50},r=>{aside=r;}),null,'stale cached run returned after a set-aside');
+ assert.match(aside,/no longer exists/);
+ values.clear();
+ // The store passes the reason through and leaves its copy of the run alone.
+ const {useRunStore}=require('../../src/lib/runStore.ts');
+ useRunStore.setState({runs:[{id:'kept',printedCount:7,status:'paused'}]});
+ global.fetch=async()=>Response.json({error:'This update conflicts'},{status:409});
+ aside=null;
+ assert.equal(await useRunStore.getState().setRunStatus('kept','printing',7,{onSetAside:r=>{aside=r;}}),null);
+ assert.match(aside,/conflicts/);assert.equal(useRunStore.getState().runs[0].status,'paused');
+ values.clear();
+ console.log('PASS outbox: origin refusal blocks (kept, not set aside); set-aside update returns null with its reason and drops the cached run');
  console.log('PASS outbox: permanent 4xx set aside (400/403/404/409/410/413/415/422), export/discard, per-run ordering, 5xx/401/network retained, corrupt entry isolated');
 })().catch(e=>{console.error(e);process.exitCode=1;});

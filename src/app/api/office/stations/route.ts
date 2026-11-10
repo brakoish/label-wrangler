@@ -1,4 +1,4 @@
-import { json, failure } from '@/lib/office/http';
+import { json, browserFailure } from '@/lib/office/http';
 import { requireUser } from '@/lib/office/auth';
 import { officeSql } from '@/lib/office/db';
 export async function GET(req: Request){
@@ -30,5 +30,5 @@ export async function GET(req: Request){
       } catch { holds.set(stationId, null); }
     }
     return json({printers:printers.map(p=>({...p,dispatch_hold_reason:holds.get(String(p.station_id)) ?? null})),canPrint:user.can_print,isAdmin:user.is_admin});
-  }catch(error){return failure(error);}
+  }catch(error){return browserFailure(error);}
 }

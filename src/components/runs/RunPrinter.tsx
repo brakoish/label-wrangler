@@ -455,7 +455,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // Use the offline-friendly wrapper so a transient network flap during a
     // long print doesn't cost us the latest printedCount. Failed calls
     // queue in localStorage and flush on reconnect.
-    try { await updateRunWithQueue(run.id, { printedCount: next }); }
+    // A permanently refused update (run deleted, no permission) means the
+    // labels being printed are not recorded anywhere, so stop.
+    const stopUnrecorded = (reason: string) => { queueRef.current?.pause(); setStatus('paused'); setErrorMsg(`Printing paused because the server refused to save progress. ${reason}`); };
+    try { await updateRunWithQueue(run.id, { printedCount: next }, stopUnrecorded); }
     catch (error) { queueRef.current?.pause(); setStatus('paused'); setErrorMsg((error as Error).message); }
   };
 
@@ -519,8 +522,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setStatus('running');
     const controller = new AbortController();
     preparation.current = controller;
-    try { await setRunStatus(run.id, 'printing', printedCount); }
+    const refusedStart = { reason: '' };
+    try { await setRunStatus(run.id, 'printing', printedCount, { onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
+    if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); return; }
     if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
     if (!mounted.current || controller.signal.aborted) return;
 

@@ -2,6 +2,7 @@ const {spawnSync}=require('node:child_process');
 for(const file of [
  'scripts/production/test-reliability.cjs',
  'scripts/production/test-outbox.cjs',
+ 'scripts/production/test-origin-refusal.cjs',
  'scripts/production/test-run-progress.cjs',
  'scripts/production/test-permissions.cjs',
  'scripts/production/test-delete-conflicts.cjs',

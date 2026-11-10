@@ -1,3 +1,4 @@
+import { ORIGIN_NOT_ALLOWED } from '../errorCodes';
 export class OfficeError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
@@ -29,8 +30,21 @@ export async function body(req: Request, maxBytes = 32_768): Promise<Record<stri
 export function uuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 }
+/** Origin refusal. Same message and status as before; it also carries a
+ * machine-readable code that browser-facing routes add to their response. */
+export class OriginNotAllowedError extends OfficeError {
+  readonly code = ORIGIN_NOT_ALLOWED;
+  constructor() { super('Request origin not allowed', 403); }
+}
 export function sameOrigin(req: Request) {
   const origin = req.headers.get('origin');
   const expected = process.env.OFFICE_APP_ORIGIN || 'https://label-wrangler.vercel.app';
-  if (origin !== expected) throw new OfficeError('Request origin not allowed', 403);
+  if (origin !== expected) throw new OriginNotAllowedError();
+}
+/** failure() for browser-facing routes: an origin refusal also gets its
+ * `code`, so the browser can keep (not drop) updates refused for that reason.
+ * The Pi station routes keep using failure() unchanged. */
+export function browserFailure(error: unknown) {
+  if (error instanceof OriginNotAllowedError) return json({ error: error.message, code: error.code }, error.status);
+  return failure(error);
 }

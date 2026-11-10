@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { requireUser, type OfficeUser } from './auth';
-import { failure, OfficeError } from './http';
+import { browserFailure, OfficeError } from './http';
 
 /**
  * Permission a library route needs. Without an explicit value, GET/HEAD need
@@ -24,6 +24,6 @@ export function withOfficeAuth<A extends unknown[]>(handler: (req: NextRequest, 
       const response = await handler(req, ...args);
       response.headers.set('Cache-Control','no-store');
       return response;
-    } catch (error) { return failure(error); }
+    } catch (error) { return browserFailure(error); }
   };
 }

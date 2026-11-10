@@ -1,10 +1,10 @@
-import { body, json, failure, OfficeError } from '@/lib/office/http';
+import { body, json, browserFailure, OfficeError } from '@/lib/office/http';
 import { requireUser } from '@/lib/office/auth';
 import { officeSql } from '@/lib/office/db';
 import { createJobs } from '@/lib/office/jobs';
 export const maxDuration=300;
 export async function POST(req: Request){
-  try{return json(await createJobs(await requireUser(req,'print'),await body(req)));}catch(error){return failure(error);}
+  try{return json(await createJobs(await requireUser(req,'print'),await body(req)));}catch(error){return browserFailure(error);}
 }
 export async function GET(req: Request){
   try{
@@ -18,5 +18,5 @@ export async function GET(req: Request){
       FROM office_requests r JOIN office_users u ON u.id=r.requester JOIN office_printer_access a ON a.station_id=r.station_id AND a.printer_id=r.printer_id AND a.user_id=${user.id}
       LEFT JOIN office_jobs j ON j.request_id=r.id WHERE r.run_id=${runId} GROUP BY r.id,u.username ORDER BY r.created_at DESC LIMIT 100`;
     return json({requests});
-  }catch(error){return failure(error);}
+  }catch(error){return browserFailure(error);}
 }
