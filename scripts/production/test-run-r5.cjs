@@ -195,5 +195,6 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   const list = read('src/app/runs/page.tsx');
   assert.match(list, /localStorage\.getItem\('lw:last-transport'\)/, 'the list reads the same printer choice as the run page');
   assert.match(list, /officeDefault && leftToSend/);
+  assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
   console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');
 }

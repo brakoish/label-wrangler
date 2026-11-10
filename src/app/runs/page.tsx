@@ -231,7 +231,8 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
       {leftOut.length > 0 && <ul className="space-y-1 text-sm text-zinc-400">
         {leftOut.map((run) => {
           const first = run.office?.firstFailed;
-          return <li key={run.id}>“{run.name}” isn’t included{first ? `: ${officeProblemWords(first).action.replace(/\.$/, '')} first` : ': part of it needs a check first'}.</li>;
+          const why = first ? `${officeProblemWords(first).action.replace(/\.$/, '')} first` : (run.office?.failed ?? 0) > 0 ? 'part of it needs a check first' : 'some of its labels are still on their way to the office printer';
+          return <li key={run.id}>“{run.name}” isn’t included: {why}.</li>;
         })}
       </ul>}
       {problem && <p role="alert" className="text-sm text-red-400">{problem}</p>}
@@ -418,7 +419,8 @@ export default function RunsPage() {
   // Runs whose sent office labels nobody counted yet (for the bulk action).
   const markableRuns = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.markable?.ranges.length ?? 0) > 0 && (r.office?.onTheWay ?? 0) === 0), [active]);
   // Runs with sent labels that aren't offered because a part needs someone first.
-  const bulkLeftOut = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.failed ?? 0) > 0 && (r.office?.sent ?? 0) > 0 && !(r.office?.markable?.ranges.length)), [active]);
+  // Also runs with labels still on their way: they're offered once the office is done with them.
+  const bulkLeftOut = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.sent ?? 0) > 0 && !markableRuns.includes(r) && ((r.office?.failed ?? 0) > 0 || (r.office?.onTheWay ?? 0) > 0)), [active, markableRuns]);
 
   const renderRunCollection = (collection: Run[], emptyMsg: string) => {
     if (collection.length === 0) {
