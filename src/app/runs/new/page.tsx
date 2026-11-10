@@ -1536,7 +1536,7 @@ function NewRunContent() {
     const words = charTwoLists
       ? `Leave ${n === 1 ? 'this label' : `these ${n.toLocaleString()} labels`} out`
       : `Leave ${n === 1 ? 'that label' : `those ${n.toLocaleString()} labels`} out and print the other ${(allDataRows.length - charSkipped.length - n).toLocaleString()}`;
-    return <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => leaveCharsOut(indexes)}>{words}</button>;
+    return <button type="button" className="btn btn-secondary btn-sm max-w-full whitespace-normal text-left max-sm:min-h-11 max-sm:py-2" onClick={() => leaveCharsOut(indexes)}>{words}</button>;
   };
 
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
@@ -2203,7 +2203,7 @@ function NewRunContent() {
                     {charTwoLists && charKeepsSome(charAllLeft) && (
                       <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-300">
                         <span>{charAllLeft.length.toLocaleString()} labels have characters that can’t print.</span>
-                        <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => leaveCharsOut(charAllLeft)}>Leave all {charAllLeft.length.toLocaleString()} out and print the other {(allDataRows.length - charSkipped.length - charAllLeft.length).toLocaleString()}</button>
+                        <button type="button" className="btn btn-secondary btn-sm max-w-full whitespace-normal text-left max-sm:min-h-11 max-sm:py-2" onClick={() => leaveCharsOut(charAllLeft)}>Leave all {charAllLeft.length.toLocaleString()} out and print the other {(allDataRows.length - charSkipped.length - charAllLeft.length).toLocaleString()}</button>
                       </div>
                     )}
                     <BarcodeWarning
