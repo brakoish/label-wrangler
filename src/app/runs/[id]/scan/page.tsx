@@ -9,6 +9,7 @@ import { PageTitle } from '@/components/PageTitle';
 import { useRunStore } from '@/lib/runStore';
 import { BlankSummary } from '@/components/checks/RunChecks';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { confirmDialog } from '@/components/ui/feedback';
 import { blankCheckAllowsPrinting, checkRunData } from '@/lib/runDataCheck';
 import { friendlyFieldName } from '@/lib/fieldLabels';
 import { defaultScanField, scanCanLookUpRow, scanCheckData, scanLabelValues } from '@/lib/runFieldSetup';
@@ -220,10 +221,20 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       if (label.unfilled.length) {
         throw new Error(`${label.unfilled.map(friendlyFieldName).join(', ')} ${label.unfilled.length === 1 ? 'is' : 'are'} empty for this label. Nothing was printed.`);
       }
+      // A barcode value the printer can still print is never a hard stop: ask first.
+      const valueProblems: string[] = [];
       for (const el of template.elements) {
         if (el.type !== 'barcode' || el.isStatic || !el.fieldName) continue;
         const problem = barcodeValueProblem(el.barcodeFormat, `${el.prefix || ''}${label.values[el.fieldName] || ''}${el.suffix || ''}`);
-        if (problem) throw new Error(`The ${friendlyFieldName(el.fieldName)} ${problem}. Nothing was printed.`);
+        if (problem) valueProblems.push(`The ${friendlyFieldName(el.fieldName)} ${problem}.`);
+      }
+      if (valueProblems.length && !printAgain) {
+        const ok = await confirmDialog({
+          title: 'This barcode may not scan',
+          body: `${valueProblems.join(' ')} Print it anyway?`,
+          confirmLabel: 'Print anyway',
+        });
+        if (!ok) throw new Error('Nothing was printed.');
       }
       // Name the label ("Label 6 · Purple Punch 3.5g") and count repeats.
       const nameField = template.elements
