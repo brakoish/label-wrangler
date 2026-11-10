@@ -40,3 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env.local
+
+# exported Metrc/package data must never be committed
+last_45.csv
+*.metrc.csv
