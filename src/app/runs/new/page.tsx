@@ -42,7 +42,7 @@ import { cleanHiddenCharacters, labelsWithBadCharacters } from '@/lib/runCharact
 import { blankPreviewItems, type PreviewBlankBox } from '@/lib/runPreviewBlanks';
 import { QR_SCAN_INCHES, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
-import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
+import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
 import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
@@ -1481,7 +1481,8 @@ function NewRunContent() {
   ];
   const currentStep = workflowSteps.findIndex((s) => !s.done);
   const tightGroups = describeBarcodeGroups(barcodeCheck.warnings, barcodeCheck.checkedLabels, fieldIsFromSheet, 3, barcodeCheck.fitCounts);
-  const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
+  // One line per part and character, not one per label.
+  const characterSummary = summarizePrinterCharacterIssues(characterCheck.issues, fieldIsFromSheet);
   // Type mode before anything is typed: one calm next step, not a list of
   // empty fields (they are only marked once someone leaves one empty).
   const manualUntyped = inputMode === 'manual' && dynamicFields.length > 0 && dynamicFields.every((f) => !(staticValues[f] ?? '').trim());
@@ -1603,7 +1604,7 @@ function NewRunContent() {
                         <Pencil className="hidden size-4 sm:block" aria-hidden="true" /> Edit design
                       </Link>
                     )}
-                    <button
+                    {!(templates.length === 0 && templatesHydrated && !templatesLoadError) && <button
                       type="button"
                       onClick={() => setShowNewTemplateDialog(true)}
                       disabled={formats.length === 0}
@@ -1611,7 +1612,7 @@ function NewRunContent() {
                       className="btn btn-ghost btn-sm"
                     >
                       <Plus className="size-4" aria-hidden="true" /> New design
-                    </button>
+                    </button>}
                   </div>
                 </div>
                 {templates.length === 0 && templatesLoadError ? (
@@ -1620,10 +1621,13 @@ function NewRunContent() {
                 ) : templates.length === 0 && !templatesHydrated ? (
                   <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
                 ) : templates.length === 0 ? (
-                  <p className="text-sm text-zinc-400 py-2">
-                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="link -my-3 inline-block py-3 disabled:opacity-40">Make one</button>
-                    {formats.length === 0 && <> (add a <Link href="/formats" className="link -my-3 inline-block py-3">label size</Link> first)</>}
-                  </p>
+                  // The only way on is a real button, never a dim link.
+                  <div className="space-y-3 py-1">
+                    <p className="text-sm text-zinc-400">{formats.length === 0 ? 'No label designs yet. A design needs the size of your labels first.' : 'No label designs yet.'}</p>
+                    {formats.length === 0
+                      ? <Link href="/formats" className="btn btn-primary"><Plus className="size-4" aria-hidden="true" />Add a label size</Link>
+                      : <button type="button" onClick={() => setShowNewTemplateDialog(true)} className="btn btn-primary"><Plus className="size-4" aria-hidden="true" />Make a design</button>}
+                  </div>
                 ) : (
                   <CustomSelect
                     aria-labelledby={`${formId}-template`}
@@ -2133,8 +2137,10 @@ function NewRunContent() {
                     )}
                   </div>
                   {previewUndrawn && format.type === 'thermal' && (
-                    <p className="text-center text-sm text-zinc-400">
-                      {previewUndrawn.boxes.length ? 'The striped box is a barcode that can’t be drawn: ' : 'A barcode on this label can’t be drawn: '}its value has characters a barcode can’t hold.
+                    // What the striped box means, for the eye only: the problem itself is
+                    // read out once, from the list under the picture.
+                    <p aria-hidden="true" className="text-center text-sm text-zinc-400">
+                      {previewUndrawn.boxes.length ? 'The striped box is the barcode that can’t be drawn (see below).' : 'A barcode on this label can’t be drawn (see below).'}
                     </p>
                   )}
                   {manualUntyped ? (
@@ -2253,8 +2259,8 @@ function NewRunContent() {
                     <ProblemList
                       tone="error"
                       heading={`${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`}
-                      items={characterItems}
-                      more={characterCheck.issues.length - characterItems.length}
+                      items={characterSummary.items}
+                      more={characterSummary.more}
                       actions={<>
                         {charTextButton && leaveOutButton(charTextLeft)}
                         {characterCheck.issues.some((issue) => !issue.label) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}

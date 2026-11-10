@@ -180,3 +180,41 @@ export function describePrinterCharacterIssue(issue: PrinterCharacterIssue, from
   const where = fromSpreadsheet ? `Label ${issue.label.toLocaleString()} (row ${spreadsheetRow(issue.label).toLocaleString()})` : `Label ${issue.label.toLocaleString()}`;
   return `${where}, ${friendlyFieldName(issue.field)}: ${sentence}`;
 }
+
+/** "1–6", "3, 5, 9–12", "3, 5, 9 and 4 more": label numbers as short ranges. */
+function numberRanges(numbers: number[], shown = 3): string {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const runs: Array<[number, number]> = [];
+  for (const n of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && n === last[1] + 1) last[1] = n; else runs.push([n, n]);
+  }
+  const words = runs.map(([a, b]) => (a === b ? a.toLocaleString() : `${a.toLocaleString()}–${b.toLocaleString()}`));
+  const rest = runs.slice(shown).reduce((sum, [a, b]) => sum + (b - a + 1), 0);
+  return rest > 0 ? `${words.slice(0, shown).join(', ')} and ${rest.toLocaleString()} more` : words.join(', ');
+}
+
+/**
+ * The same problems said once per part and character, not once per label:
+ * "Labels 1–6 (rows 2–7), Item: the printer can't print × — use x." A
+ * problem on one label, or a fixed text, reads as describePrinterCharacterIssue.
+ * `more` counts the lines left out after `shown`.
+ */
+export function summarizePrinterCharacterIssues(issues: ReadonlyArray<PrinterCharacterIssue>, fromSpreadsheet: (field: string) => boolean, shown = 5): { items: string[]; more: number } {
+  const groups = new Map<string, PrinterCharacterIssue[]>();
+  issues.forEach((issue, index) => {
+    const key = issue.label ? `${issue.field}\n${issue.chars.join('')}` : `fixed\n${index}`;
+    groups.set(key, [...(groups.get(key) ?? []), issue]);
+  });
+  const lines = [...groups.values()].map((group) => {
+    const first = group[0];
+    const sheet = fromSpreadsheet(first.field);
+    if (group.length === 1) return describePrinterCharacterIssue(first, sheet);
+    const labels = group.map((issue) => issue.label);
+    const advice = describeUnprintable(first.chars);
+    const sentence = advice.charAt(0).toLowerCase() + advice.slice(1);
+    const rows = sheet ? ` (rows ${numberRanges(labels.map(spreadsheetRow))})` : '';
+    return `Labels ${numberRanges(labels)}${rows}, ${friendlyFieldName(first.field)}: ${sentence}`;
+  });
+  return { items: lines.slice(0, shown), more: Math.max(0, lines.length - shown) };
+}
