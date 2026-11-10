@@ -170,14 +170,16 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
           </Link>
 
           <nav ref={navRef} aria-label="Main" className="relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
-            {/* One highlight that slides between links (shared layout), drawn under them. */}
+            {/* One highlight that slides between links (shared layout), drawn under them.
+                The nav scrolls sideways on the narrowest phones, which clips anything
+                outside it, so the links draw their focus ring inside their own edge. */}
             {indicator && <span ref={indicatorRef} aria-hidden="true" className="nav-indicator pointer-events-none absolute left-0 top-1/2 h-control-sm rounded-lg bg-zinc-800" style={{ width: indicator.width, transform: `translate(${indicator.left}px, -50%)` }} />}
             {navItems.map(item => (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
-                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg px-2 max-[339px]:px-1.5 min-[400px]:px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
+                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg focus-visible:outline-offset-[-2px] px-2 max-[339px]:px-1.5 min-[400px]:px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
                   item.active
                     ? `${indicator ? '' : 'bg-zinc-800 '}text-zinc-100`
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
