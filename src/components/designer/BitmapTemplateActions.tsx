@@ -72,23 +72,25 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
       setDraft(null); onCreated(created.id);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
-  return <div className="text-sm">
+  // In an empty state the buttons join the state's own row of actions.
+  const inline = !source && !quiet;
+  return <div className={inline ? 'contents' : 'text-sm'}>
     {source ? (canCopy || onShowCode) && <details ref={more} className="group relative"><summary className="btn btn-ghost btn-sm list-none [&::-webkit-details-marker]:hidden">More</summary><div className="popover-enter absolute right-0 top-full z-30 mt-1 w-72 space-y-3 rounded-xl bg-zinc-900 p-3 shadow-xl shadow-black/40 [--origin:top_right]">
       {canCopy && <div><p className="pb-2 text-zinc-400">A copy that prints as one picture, with thinner barcode bars and any font. This design stays as it is.</p><button type="button" className="btn btn-secondary btn-sm w-full max-sm:min-h-11" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); startCopy(); }}>Make a picture copy</button></div>}
       {onShowCode && <div><p className="pb-2 text-zinc-400">For admins setting up a printer.</p><button type="button" className="btn btn-ghost btn-sm w-full max-sm:min-h-11" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); onShowCode(); }}>Show printer commands</button></div>}
-    </div></details> : <div className={`flex flex-wrap gap-2 ${quiet ? '' : 'justify-center'}`}>
-      <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-primary'} onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Load the sample design</button>
+    </div></details> : <div className={inline ? 'contents' : 'flex flex-wrap gap-2'}>
+      <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Load the sample design</button>
       {admin && <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={() => file.current?.click()}>Import a design file</button>}
       {admin && <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />}
     </div>}
-    {error && !draft && <p role="alert" className="text-red-400 py-2">{friendlyError(error)}</p>}
+    {error && !draft && <p role="alert" className={`text-red-400 py-2 ${inline ? 'basis-full text-sm' : ''}`}>{friendlyError(error)}</p>}
     <Dialog open={!!draft} onClose={() => { if (!busy) { setDraft(null); setError(''); } }} dismissible={!busy} title={source ? 'Make a picture copy' : 'Add this design'} className="max-w-4xl">{draft && <div className="space-y-4">
       {draft.report.map((s, i) => <p key={i} className="text-zinc-400">{s}</p>)}
       <div className="grid sm:grid-cols-2 gap-4">
         {source && <div className="space-y-2"><p className="section-title">How it prints now</p>{oldProof && <img src={oldProof} alt="How it prints now" className="w-full bg-white" />}</div>}
         <div className="space-y-2"> <p className="section-title">Picture copy</p>{proof ? <img src={proof} alt="Picture copy" className="w-full bg-white" style={{ imageRendering: 'pixelated' }} /> : <p className="text-zinc-400">{error ? 'Fix the problem below, then try again.' : 'Drawing the preview…'}</p>}</div>
       </div>
-      {adjustments > 0 && <p className="text-amber-400">Made {adjustments} text {adjustments === 1 ? 'item' : 'items'} smaller to fit. Longer values may need more room.</p>}
+      {adjustments > 0 && <p className="text-amber-300">Made {adjustments} text {adjustments === 1 ? 'item' : 'items'} smaller to fit. Longer values may need more room.</p>}
       {error && <p role="alert" className="text-red-400">{friendlyError(error)}</p>}
       <p className="text-zinc-400">{source ? 'You can fix any problems in the copy afterwards. This design stays as it is.' : 'The copy needs a working preview first.'}</p>
       <button disabled={busy || !proof || !prepared} onClick={() => void create()} className="btn btn-primary">{busy ? (source ? 'Making the copy…' : 'Adding…') : source ? 'Make the copy' : 'Add the design'}</button>

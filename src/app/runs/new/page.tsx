@@ -40,7 +40,7 @@ import { labelsWords, missingDetailFields, missingDetailsWords, rowMissingDetail
 import { leaveFieldsOff } from '@/lib/runLeaveOff';
 import { cleanHiddenCharacters, labelsWithBadCharacters } from '@/lib/runCharacterRows';
 import { blankPreviewItems, type PreviewBlankBox } from '@/lib/runPreviewBlanks';
-import type { BarcodeAutoFix } from '@/lib/barcodeAutoFix';
+import { QR_SCAN_INCHES, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
@@ -212,27 +212,26 @@ const SOURCES: ReadonlyArray<{ value: RunInputMode; label: string; Icon: typeof 
 
 /**
  * Where the values come from: one choice of four, as a radio group. Arrow
- * keys move and choose (Tab enters and leaves the group); on a narrow phone
+ * keys move, Space or Enter chooses (Tab enters and leaves); on a narrow phone
  * the four sit in two rows so no label is squeezed.
  */
 function SourceSwitch({ value, onChange }: { value: RunInputMode; onChange: (value: RunInputMode) => void }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const active = Math.max(0, SOURCES.findIndex((s) => s.value === value));
-  const choose = (index: number) => {
-    const next = (index + SOURCES.length) % SOURCES.length;
-    onChange(SOURCES[next].value);
-    refs.current[next]?.focus();
-  };
+  // Arrows only move focus; Space or Enter picks, so one stray key press
+  // never swaps a loaded spreadsheet for an empty paste box.
+  const focusAt = (index: number) => refs.current[(index + SOURCES.length) % SOURCES.length]?.focus();
   return (
     <div
       role="radiogroup"
       aria-label="Where the values come from"
       className="segmented source-switch w-full md:w-auto"
       onKeyDown={(event) => {
-        const moves: Record<string, number> = { ArrowRight: active + 1, ArrowDown: active + 1, ArrowLeft: active - 1, ArrowUp: active - 1, Home: 0, End: SOURCES.length - 1 };
+        const at = Math.max(0, refs.current.findIndex((node) => node === document.activeElement));
+        const moves: Record<string, number> = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: SOURCES.length - 1 };
         if (!(event.key in moves)) return;
         event.preventDefault();
-        choose(moves[event.key]);
+        focusAt(moves[event.key]);
       }}
     >
       <SegmentedIndicator index={active} count={SOURCES.length} />
@@ -777,16 +776,22 @@ function NewRunContent() {
   // The rows the run is made from: every row, or every row but the blank ones.
   // Labels whose spreadsheet values can't print (é in a barcode, an emoji in
   // the printer's font): they can be left out too, like blank rows.
-  const charBadIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, (field) => allCheckData.fieldMappings[field]?.mode === 'column')), [inputMode, checkTemplate, format, allCheckData]);
+  const charFromSheet = useCallback((field: string) => allCheckData.fieldMappings[field]?.mode === 'column', [allCheckData]);
+  const charBadIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet)), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
+  // The two kinds apart, so each list's button leaves out only its own labels.
+  const charBadBarcodeIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet, 'barcode')), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
+  const charBadTextIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet, 'text')), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
   const charBadKey = charBadIndexes.join(',');
   const charSkippable = charBadIndexes.length > 0 && charBadIndexes.length < allDataRows.length;
-  const [charSkipKey, setCharSkipKey] = useState('');
-  const skipChars = charSkippable && charSkipKey === charBadKey;
+  const [charSkip, setCharSkip] = useState<{ key: string; indexes: number[] }>({ key: '', indexes: [] });
+  const charSkipped = useMemo(() => (charSkippable && charSkip.key === charBadKey ? charSkip.indexes : []), [charSkippable, charSkip, charBadKey]);
+  const skipChars = charSkipped.length > 0;
+  const leaveCharsOut = (indexes: ReadonlyArray<number>) => setCharSkip({ key: charBadKey, indexes: Array.from(new Set([...charSkipped, ...indexes])).sort((a, b) => a - b) });
   const keptRows = useMemo(() => {
-    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...(skipChars ? charBadIndexes : [])]);
+    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...charSkipped]);
     if (!skip.size) return null;
     return allDataRows.map((_, index) => index).filter((index) => !skip.has(index));
-  }, [skipRows, skippable, skipChars, charBadIndexes, allDataRows]);
+  }, [skipRows, skippable, charSkipped, allDataRows]);
   const dataRows = useMemo(() => (keptRows ? keptRows.map((index) => allDataRows[index]) : allDataRows), [keptRows, allDataRows]);
   // Row numbers in every message stay the ones in the file.
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
@@ -884,26 +889,6 @@ function NewRunContent() {
     const shown = format?.type === 'sheet' ? (sheetPreviewValues ?? [previewValues]) : Array.isArray(previewLanes) ? previewLanes : [previewLanes];
     return blankPreviewItems(base, shown, dynamicFields);
   }, [previewTemplate, visibleTemplate, inputMode, labelCount, format, sheetPreviewValues, previewValues, previewLanes, dynamicFields]);
-  const previewInput = useMemo(() => ({ template: previewBlanks.template, format, values: previewLanes, blanked: previewBlanks.emptyFields.length > 0 }), [previewBlanks.template, previewBlanks.emptyFields.length, format, previewLanes]);
-  const [previewResult, setPreviewResult] = useState<{ input: typeof previewInput; state: RunPreviewState } | null>(null);
-  const previewState: RunPreviewState = previewResult?.input === previewInput
-    ? previewResult.state
-    : { status: 'loading' };
-  useEffect(() => {
-    if (!previewInput.template || !previewInput.format || previewInput.format.type !== 'thermal') return;
-    const { template, format, values, blanked } = previewInput;
-    return prepareRunPreview(
-      () => generateZPLWithImages(template, format, values),
-      // Nothing typed yet: every part is left out of the picture, so draw the
-      // plain label with its striped empty parts, not the renderer's refusal.
-      (zpl) => renderZplToDataUrl(zpl, format).catch((error) => {
-        if (blanked && isNothingToDrawError(error)) return blankLabelDataUrl(format);
-        throw error;
-      }),
-      (state) => setPreviewResult({ input: previewInput, state }),
-    );
-  }, [previewInput]);
-  const previewReady = format?.type !== 'thermal' || previewState.status === 'ready';
 
   const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
 
@@ -975,6 +960,56 @@ function NewRunContent() {
   // Every barcode value must be one its barcode type can hold; checked for
   // every label, so label 10 can't stop a run part-way.
   const barcodeCheck = useMemo(() => (checkTemplate && hasData ? checkRunBarcodes(checkTemplate, runDataForCheck, format) : { issues: [], badLabels: 0, warnings: [], checkedLabels: 0, fitCounts: {} }), [checkTemplate, hasData, runDataForCheck, format]);
+  // A barcode value the renderer can't draw (é in a Code 128) would leave no
+  // picture at all: draw the rest of the label, with a striped box where
+  // that barcode goes, so the rest can still be checked. Picture only.
+  const undrawn = useMemo(() => {
+    const base = previewBlanks.template;
+    if (!base || format?.type !== 'thermal') return null;
+    const hits = barcodeCheck.issues.filter((issue) => issue.kind === 'characters' && !issue.fit?.printable && !!issue.elementId && issue.label > feedStart && issue.label <= feedStart + across);
+    if (!hits.length) return null;
+    const ids = new Set(hits.map((issue) => issue.elementId as string));
+    const boxes: PreviewBlankBox[] = [];
+    for (const issue of hits) {
+      const el = base.elements.find((e) => e.id === issue.elementId);
+      if (!el || ((Math.round(el.rotation || 0) % 360) + 360) % 360 !== 0) continue;
+      boxes.push({ lane: issue.label - 1 - feedStart, x: el.x, y: el.y, width: el.width, height: Math.max(1, el.height) });
+    }
+    return { template: { ...base, elements: base.elements.filter((el) => !ids.has(el.id)) }, boxes };
+  }, [previewBlanks.template, format, barcodeCheck.issues, feedStart, across]);
+  const previewInput = useMemo(() => ({ template: previewBlanks.template, format, values: previewLanes, blanked: previewBlanks.emptyFields.length > 0, undrawn }), [previewBlanks.template, previewBlanks.emptyFields.length, format, previewLanes, undrawn]);
+  const [previewResult, setPreviewResult] = useState<{ input: typeof previewInput; state: RunPreviewState; undrawn: boolean } | null>(null);
+  const previewState: RunPreviewState = previewResult?.input === previewInput
+    ? previewResult.state
+    : { status: 'loading' };
+  const previewUndrawn = previewResult?.input === previewInput && previewResult.undrawn && previewState.status === 'ready' ? undrawn : null;
+  useEffect(() => {
+    if (!previewInput.template || !previewInput.format || previewInput.format.type !== 'thermal') return;
+    const { template, format, values, blanked, undrawn } = previewInput;
+    let fellBack = false;
+    const fallback = async (error: unknown): Promise<string> => {
+      if (!undrawn || fellBack) throw error;
+      fellBack = true;
+      const zpl = await generateZPLWithImages(undrawn.template, format, values).catch(() => { throw error; });
+      return renderZplToDataUrl(zpl, format).catch((again) => {
+        if (isNothingToDrawError(again)) return blankLabelDataUrl(format);
+        throw error;
+      });
+    };
+    let early: string | null = null;
+    return prepareRunPreview(
+      // Exact-picture designs refuse such a value while making the picture.
+      () => generateZPLWithImages(template, format, values).catch(async (error) => { early = await fallback(error); return 'drawn'; }),
+      // Nothing typed yet: every part is left out of the picture, so draw the
+      // plain label with its striped empty parts, not the renderer's refusal.
+      (zpl) => (early !== null ? Promise.resolve(early) : renderZplToDataUrl(zpl, format).catch((error) => {
+        if (blanked && isNothingToDrawError(error)) return blankLabelDataUrl(format);
+        return fallback(error);
+      })),
+      (state) => setPreviewResult({ input: previewInput, state, undrawn: fellBack }),
+    );
+  }, [previewInput]);
+  const previewReady = format?.type !== 'thermal' || previewState.status === 'ready';
   // A barcode the printer would cut off is shown first, in red, with its
   // fix; going ahead takes an explicit tick (the verdict emulates the
   // printer, and these designs may be printing today). Only what the exact
@@ -1000,7 +1035,7 @@ function NewRunContent() {
   // the changed design prints that barcode whole on every label and lands on
   // nothing. It changes the design's barcode only, is saved, and has Undo.
   const barcodeFixes = useMemo(
-    () => (barcodeCheck.issues.some((issue) => issue.kind === 'too-long') && template && !template.summaryOnly
+    () => (barcodeCheck.issues.some((issue) => issue.kind === 'too-long' || (issue.kind === 'characters' && barcodeIssueStops(issue, format))) && template && !template.summaryOnly
       ? runBarcodeFixes(checkTemplate, runDataForCheck, format, barcodeCheck.issues, Math.min(labelCount || 1, 2000))
       : null),
     [barcodeCheck.issues, template, checkTemplate, runDataForCheck, format, labelCount],
@@ -1014,9 +1049,15 @@ function NewRunContent() {
     if (!changed || !was) return;
     // This changes the shared design, not just this run: say so plainly, once.
     const what = runFixWords(was, changed);
+    // A QR code: say whether the number under the bars stays, and when the
+    // QR code comes out small enough that phones may struggle to read it.
+    const qrNotes = fix.kind === 'qr' ? [
+      fix.keptText ? 'The number under the barcode prints next to the QR code.' : fix.droppedText ? 'There’s no room for the number under the barcode, so it won’t print. If the label needs it, choose Not now and fix the design or pick a bigger label.' : '',
+      fix.qrInches !== undefined && fix.qrInches < QR_SCAN_INCHES ? `The QR code prints ${fix.qrInches}" wide; many phones need ${QR_SCAN_INCHES}" to read it. Test-scan one, or pick a bigger label.` : '',
+    ].filter(Boolean).join(' ') : '';
     const ok = await confirmDialog({
       title: `Change the design “${template.name}”?`,
-      body: `${runFixWords(was, changed, true)} in the design itself, so every run made from it from now on gets this change too. Runs you already made keep their design. You can undo it right after.`,
+      body: `${runFixWords(was, changed, true)} in the design itself, so every run made from it from now on gets this change too. ${qrNotes ? `${qrNotes} ` : ''}You can undo it right after.`,
       confirmLabel: 'Change the design',
       cancelLabel: 'Not now',
     });
@@ -1024,8 +1065,10 @@ function NewRunContent() {
     const before = template.elements;
     setRunFixBusy(true);
     try {
-      await updateTemplate(template.id, { elements: before.map((el) => (el.id === elementId ? changed : el)) });
-      setRunFixNote({ templateId: template.id, text: `${what} in the design “${template.name}”. Runs made from it from now on use this too.`, before, tone: 'ok' });
+      // The barcode swapped in place, plus anything the fix adds (a QR code's number).
+      const added = fix.elements.filter((el) => !before.some((b) => b.id === el.id));
+      await updateTemplate(template.id, { elements: [...before.map((el) => (el.id === elementId ? changed : el)), ...added] });
+      setRunFixNote({ templateId: template.id, text: `${what} in the design “${template.name}”${fix.keptText ? ', with its number next to it' : ''}. Runs made from it from now on use this too.${fix.qrInches !== undefined && fix.qrInches < QR_SCAN_INCHES ? ` The QR code prints ${fix.qrInches}" wide, small for some phones: test-scan one.` : ''}`, before, tone: 'ok' });
     } catch {
       setRunFixNote({ templateId: template.id, text: 'The design couldn’t be saved, so nothing changed. Check your connection and try again.', before, tone: 'error' });
     } finally {
@@ -1142,7 +1185,9 @@ function NewRunContent() {
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (charSkippable ? 'A barcode value can’t print. Leave those labels out, or fix those rows in your spreadsheet.' : 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.')
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
+      ? `A barcode can’t print. ${charSkippable ? 'Leave that label out, fix that row' : 'Fix that row'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`
+      : `Some barcodes can’t print. ${charSkippable ? 'Leave those labels out, fix those rows' : 'Fix those rows'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`)
       : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
         : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. Fix them, leave those labels out, or tick “Print anyway” above.`,
@@ -1476,12 +1521,32 @@ function NewRunContent() {
     </div>
   ) : null;
 
-  // "Leave those 3 labels out and print the other 17", as blank rows get.
-  const leaveOutButton = charSkippable ? (
-    <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => setCharSkipKey(charBadKey)}>
-      Leave {charBadIndexes.length === 1 ? 'that label' : `those ${charBadIndexes.length.toLocaleString()} labels`} out and print the other {(allDataRows.length - charBadIndexes.length).toLocaleString()}
-    </button>
-  ) : null;
+  // Labels whose values can't print (a barcode that can't hold é, an emoji
+  // in the printer's font) can be left out, like blank rows. Each list's
+  // button leaves out only its own labels; with two lists, one line on top
+  // leaves out all of them.
+  const charLeft = (indexes: ReadonlyArray<number>) => indexes.filter((index) => !charSkipped.includes(index));
+  const charKeepsSome = (indexes: ReadonlyArray<number>) => indexes.length > 0 && allDataRows.length - charSkipped.length - indexes.length >= 1;
+  const charBarcodeLeft = charLeft(charBadBarcodeIndexes);
+  const charTextLeft = charLeft(charBadTextIndexes);
+  const charAllLeft = charLeft(charBadIndexes);
+  const charBarcodeShown = charBarcodeLeft.length > 0 && barcodeCheck.issues.some((issue) => issue.kind === 'characters');
+  const charTextShown = charTextLeft.length > 0 && characterCheck.issues.some((issue) => issue.label > 0);
+  const charBarcodeCovers = charBarcodeLeft.length === charAllLeft.length;
+  const charTextCovers = charTextLeft.length === charAllLeft.length;
+  // Two lists with different labels: a short button under each, and one for all on top.
+  const charTwoLists = charBarcodeShown && charTextShown && !charBarcodeCovers && !charTextCovers;
+  // Two lists about the same labels: the button once, under the list that covers them all.
+  const charBarcodeButton = charBarcodeShown && (!charTextShown || charTwoLists || charBarcodeCovers);
+  const charTextButton = charTextShown && (!charBarcodeShown || charTwoLists || (charTextCovers && !charBarcodeCovers));
+  const leaveOutButton = (indexes: ReadonlyArray<number>) => {
+    if (!charSkippable || !charKeepsSome(indexes)) return null;
+    const n = indexes.length;
+    const words = charTwoLists
+      ? `Leave ${n === 1 ? 'this label' : `these ${n.toLocaleString()} labels`} out`
+      : `Leave ${n === 1 ? 'that label' : `those ${n.toLocaleString()} labels`} out and print the other ${(allDataRows.length - charSkipped.length - n).toLocaleString()}`;
+    return <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => leaveCharsOut(indexes)}>{words}</button>;
+  };
 
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
   // action is needed here.
@@ -2074,9 +2139,14 @@ function NewRunContent() {
                         selectedLabelOffset={selectedSheetLabelOffset}
                       />
                     ) : (
-                      <LocalZplPreview state={previewState} message={previewMessage} hint={shownBadBarcode ? '' : undefined} format={format} blanks={previewBlanks.boxes} />
+                      <LocalZplPreview state={previewState} message={previewMessage} hint={shownBadBarcode ? '' : undefined} format={format} blanks={previewUndrawn ? [...previewBlanks.boxes, ...previewUndrawn.boxes] : previewBlanks.boxes} />
                     )}
                   </div>
+                  {previewUndrawn && format.type === 'thermal' && (
+                    <p className="text-center text-sm text-zinc-400">
+                      {previewUndrawn.boxes.length ? 'The striped box is a barcode that can’t be drawn: ' : 'A barcode on this label can’t be drawn: '}its value has characters a barcode can’t hold.
+                    </p>
+                  )}
                   {manualUntyped ? (
                     <p className="text-center text-sm text-zinc-400">Type the values above to see them on the label.</p>
                   ) : previewBlanks.emptyFields.length > 0 && (
@@ -2130,14 +2200,20 @@ function NewRunContent() {
                     )}
                     {skipChars && (
                       <p className="text-sm text-zinc-400">
-                        {labelsWords(charBadIndexes.map((index) => index + 1), allDataRows.length).replace(/^l/, 'L')} {charBadIndexes.length === 1 ? 'is' : 'are'} left out because of characters that can’t print, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}.{' '}
-                        <button type="button" className="link" onClick={() => setCharSkipKey('')}>Undo</button>
+                        {labelsWords(charSkipped.map((index) => index + 1), allDataRows.length).replace(/^l/, 'L')} {charSkipped.length === 1 ? 'is' : 'are'} left out because of characters that can’t print, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}.{' '}
+                        <button type="button" className="link" onClick={() => setCharSkip({ key: '', indexes: [] })}>Undo</button>
                       </p>
+                    )}
+                    {charTwoLists && charKeepsSome(charAllLeft) && (
+                      <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-zinc-300">
+                        <span>{charAllLeft.length.toLocaleString()} labels have characters that can’t print.</span>
+                        <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => leaveCharsOut(charAllLeft)}>Leave all {charAllLeft.length.toLocaleString()} out and print the other {(allDataRows.length - charSkipped.length - charAllLeft.length).toLocaleString()}</button>
+                      </div>
                     )}
                     <BarcodeWarning
                       items={barcodeItems}
                       stops={barcodeWords.stops}
-                      stopWords={barcodeWords.fixIn === 'data' && charSkippable ? 'Nothing can print until those rows are fixed or left out.' : stopFixWords(barcodeWords.fixIn)}
+                      stopWords={barcodeWords.fixIn === 'data' ? (barcodeCheck.badLabels === 1 ? 'The printer can’t draw that barcode, so that label can’t print.' : 'The printer can’t draw those barcodes, so those labels can’t print.') : stopFixWords(barcodeWords.fixIn)}
                       isTicked={barcodeItemTicked}
                       onTick={tickBarcodeItem}
                       fix={<>
@@ -2150,7 +2226,7 @@ function NewRunContent() {
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
-                        {barcodeWords.fixIn !== 'design' && charSkippable && !skipChars && barcodeCheck.issues.some((issue) => issue.kind === 'characters') && leaveOutButton}
+                        {barcodeWords.fixIn !== 'design' && charBarcodeButton && leaveOutButton(charBarcodeLeft)}
 
                       </>}
                     />
@@ -2190,7 +2266,7 @@ function NewRunContent() {
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
                       actions={<>
-                        {charSkippable && !skipChars && characterCheck.issues.some((issue) => issue.label > 0) && leaveOutButton}
+                        {charTextButton && leaveOutButton(charTextLeft)}
                         {characterCheck.issues.some((issue) => !issue.label) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}
                         {lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) && <span className="text-zinc-400">Or fix them in your spreadsheet, then use “Choose another file” at the top.</span>}
                       </>}
@@ -2210,7 +2286,7 @@ function NewRunContent() {
                 </section>
               )}
 
-              <details className="group px-1 text-sm">
+              <details className="group text-sm">
                 <summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 font-medium text-zinc-300 hover:text-zinc-100 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 shrink-0 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />Save these settings for next time</summary>
                 <div className="flex items-center gap-2 pt-3">
                   <input

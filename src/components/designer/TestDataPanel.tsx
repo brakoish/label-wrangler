@@ -181,7 +181,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
               </button>
             </div>
 
-            {manifestError && <p className="text-xs text-amber-400">{manifestError}</p>}
+            {manifestError && <p className="text-xs text-amber-300">{manifestError}</p>}
             {selectedManifest && (
               <div className="rounded-lg bg-amber-500/10 px-2 py-1.5">
                 <p className="truncate text-xs font-medium text-amber-300" title={selectedManifest.row.itemName}>

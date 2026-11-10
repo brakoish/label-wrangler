@@ -541,7 +541,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
       }}>Fit QR inside label</button>}
       </div>
       {editing && <div className="fixed z-40 bg-zinc-950 border border-amber-400 rounded p-2" style={{ left: Math.max(0, Math.min(editing.left, window.innerWidth - editing.width - 20)), top: Math.max(0, Math.min(editing.top, window.innerHeight - editing.height - 70)), width: editing.width + 16 }}>
-        <p className="text-xs text-amber-400 mb-1">{editing.bound ? `Sample for ${friendlyFieldName(editing.field)} (the spreadsheet fills it when printing)` : 'Edit text'}. Ctrl or ⌘ + Enter saves, Esc cancels.</p>
+        <p className="text-xs text-amber-300 mb-1">{editing.bound ? `Sample for ${friendlyFieldName(editing.field)} (the spreadsheet fills it when printing)` : 'Edit text'}. Ctrl or ⌘ + Enter saves, Esc cancels.</p>
         <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
       </div>}
       <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center px-2 pb-4 pt-2 sm:px-6 sm:pb-6">

@@ -35,8 +35,13 @@ assert.equal(swapped.fieldName, 'package_tag');
 assert.equal(swapped.defaultValue, tag);
 assert.ok(swapped.x >= 0 && swapped.y >= 0 && swapped.x + swapped.width <= 406 && swapped.y + swapped.height <= 203, 'inside the label');
 assert.ok(!layoutProblems(qr.elements, fmt, values).some((p) => p.ids.includes('bc') && (p.blocking || p.kinds.includes('overlap'))), 'lands on nothing');
-// The other items are untouched, and the input is not changed.
-assert.deepEqual(qr.elements.filter((e) => e.id !== 'bc'), flower.filter((e) => e.id !== 'bc'));
+// The other items are untouched, and the input is not changed. The number
+// that printed under the bars stays readable, as text next to the QR code.
+assert.deepEqual(qr.elements.filter((e) => e.id !== 'bc' && e.id !== 'bc-number'), flower.filter((e) => e.id !== 'bc'));
+assert.equal(qr.keptText, true);
+const number = qr.elements.find((e) => e.id === 'bc-number');
+assert.equal(number.type, 'text');
+assert.equal(number.fieldName, 'package_tag');
 assert.equal(flower[2].type, 'barcode');
 
 // A short code that hangs off the right edge is moved back so its bars fit.
@@ -143,7 +148,7 @@ assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
   assert.ok(fixes && !fixes.fix && fixes.qr, 'the QR swap is offered');
   const after = { ...t, elements: fixes.qr.elements };
   assert.equal(checkRunBarcodes(after, run, fmt).issues.length, 0, 'nothing left on any label');
-  assert.deepEqual(fixes.qr.elements.filter((e) => e.id !== 'bc'), flower.filter((e) => e.id !== 'bc'), 'only that barcode changes');
+  assert.deepEqual(fixes.qr.elements.filter((e) => e.id !== 'bc' && e.id !== 'bc-number'), flower.filter((e) => e.id !== 'bc'), 'only that barcode changes (and its number stays as text)');
   // A short code hanging off the edge on one row is moved, and checked on all.
   const short = { elements: [{ ...flower[2], id: 'b3', x: 250, width: 150 }], thermalRenderMode: 'native-v1' };
   const shortRun = { sourceData: [{ Tag: 'LCG1' }, { Tag: 'LCG1102' }], fieldMappings: { package_tag: { mode: 'column', csvColumn: 'Tag' } }, staticValues: {} };
@@ -156,4 +161,66 @@ assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
   assert.equal(runBarcodeFixes(short, shortRun, fmt, [{ field: 'package_tag', label: 1, value: 'é', problem: 'x', kind: 'characters', elementId: 'b3' }]), null);
 }
 
-console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Open in designer');
+const pending = [];
+// "Use a QR code instead" on a small Metrc label (1" × 0.5"): the tag number
+// stays on the label as text, the whole box on the label and landing on
+// nothing, and the fix says the QR code prints under the size phones like.
+{
+  const { QR_SCAN_INCHES } = require('../../src/lib/barcodeAutoFix.ts');
+  const small = { id: 's', name: '1x0.5', type: 'thermal', width: 1, height: 0.5, dpi: 203, labelsAcross: 1 };
+  const metrc = [{ ...base, id: 'tag', type: 'barcode', x: 6, y: 20, width: 180, height: 40, zIndex: 1, isStatic: false, fieldName: 'tag', defaultValue: tag, content: tag, barcodeFormat: 'CODE128', showText: true }];
+  for (const bitmap of [false, true]) {
+    const fix = barcodeToQr(metrc, 'tag', small, { tag }, bitmap);
+    assert.ok(fix && fix.keptText && !fix.droppedText, `${bitmap ? 'exact' : 'printer font'}: the tag number stays`);
+    assert.ok(fix.qrInches < QR_SCAN_INCHES, 'the QR code prints under the size phones like, and the fix says how big');
+    const text = fix.elements.find((e) => e.type === 'text');
+    assert.ok(text.x >= 0 && text.y >= 0 && text.x + text.width <= 203 && text.y + text.height <= 101, 'the number’s whole box is on the label');
+    assert.ok(text.fontSize >= 4);
+    if (!bitmap) assert.equal(layoutProblems(fix.elements, small, { tag }).length, 0, 'lands on nothing');
+  }
+  // A barcode that printed no number gets none.
+  const bare = barcodeToQr([{ ...metrc[0], showText: false }], 'tag', small, { tag }, false);
+  assert.ok(bare && !bare.keptText && !bare.droppedText && bare.elements.length === 1);
+  // The exact renderer draws the QR code and the number (no "overflows its box").
+  const { renderThermalBitmap } = require('../../src/lib/thermal/render.server.ts');
+  const exactFix = barcodeToQr(metrc, 'tag', small, { tag }, true);
+  pending.push(renderThermalBitmap({ id: 'm', name: 'm', formatId: 's', thermalRenderMode: 'bitmap-v1', elements: exactFix.elements }, small, { tag }));
+  const wideFix = barcodeToQr(metrc, 'tag', fmt, { tag }, true);
+  pending.push(renderThermalBitmap({ id: 'm2', name: 'm2', formatId: 'f', thermalRenderMode: 'bitmap-v1', elements: wideFix.elements }, fmt, { tag }));
+}
+
+// An exact-picture design whose barcode can't hold a spreadsheet value (é in
+// a Code 128) can't print that label: the way out offered here is a QR code,
+// which holds any text (besides leaving the label out or fixing the row).
+{
+  const { runBarcodeFixes } = require('../../src/lib/runBarcodeFix.ts');
+  const { checkRunBarcodes } = require('../../src/lib/barcodeCheck.ts');
+  const { barcodeIssueStops } = require('../../src/lib/runLayoutCheck.ts');
+  const sku = [{ ...base, id: 'sku', type: 'barcode', x: 14, y: 60, width: 300, height: 70, zIndex: 1, isStatic: false, fieldName: 'sku', defaultValue: '1002003004', content: '1002003004', barcodeFormat: 'CODE128', showText: true }];
+  const exact = { elements: sku, thermalRenderMode: 'bitmap-v1' };
+  const run = { sourceData: [{ SKU: '1002003004' }, { SKU: '1002003004é2' }], fieldMappings: { sku: { mode: 'column', csvColumn: 'SKU' } }, staticValues: {} };
+  const check = checkRunBarcodes(exact, run, fmt);
+  assert.ok(check.issues.some((issue) => issue.kind === 'characters' && barcodeIssueStops(issue, fmt)), 'the exact renderer refuses é');
+  const fixes = runBarcodeFixes(exact, run, fmt, check.issues);
+  assert.ok(fixes && !fixes.fix && fixes.qr, 'a QR code is offered');
+  assert.equal(checkRunBarcodes({ ...exact, elements: fixes.qr.elements }, run, fmt).issues.length, 0, 'nothing left after it');
+  // A printer-font design prints it anyway (the tick); no swap is pushed there.
+  assert.equal(runBarcodeFixes({ ...exact, thermalRenderMode: 'native-v1' }, run, fmt, checkRunBarcodes({ ...exact, thermalRenderMode: 'native-v1' }, run, fmt).issues), null);
+}
+
+// A barcode close to the edge that also prints over something: the edge is
+// said once (in "Barcodes close to the edge"), the overlap here.
+{
+  const { runLayoutIssues } = require('../../src/lib/runLayoutCheck.ts');
+  const near = [
+    { ...base, id: 'b', type: 'barcode', x: 2, y: 40, width: 300, height: 60, zIndex: 1, isStatic: true, content: '100200300403', barcodeFormat: 'CODE128', showText: true },
+    { ...base, id: 'q', type: 'qr', x: 200, y: 30, width: 90, height: 90, zIndex: 2, isStatic: true, content: 'https://example.com/x', errorCorrection: 'M' },
+  ];
+  assert.equal(barcodeFit(near[0], '100200300403', fmt, false).level, 'tight');
+  const issues = runLayoutIssues({ sourceData: [{}], fieldMappings: {}, staticValues: {} }, { elements: near, thermalRenderMode: 'native-v1' }, fmt, 1);
+  assert.equal(issues.length, 1);
+  assert.doesNotMatch(issues[0], /edge/);
+  assert.match(issues[0], /prints over the QR code/);
+}
+
+Promise.all(pending).then(() => console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Open in designer'), (error) => { console.error(error); process.exit(1); });

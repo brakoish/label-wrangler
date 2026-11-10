@@ -386,7 +386,9 @@ export default function NabisPage() {
           />
           <section className="min-h-0 space-y-4">
             <div>
-              <h2 className="mb-3 text-base font-semibold text-zinc-100">Find a package</h2>
+              <div className="mb-4 flex min-h-control items-center">
+                <h2 className="text-base font-semibold text-zinc-100">Find a package</h2>
+              </div>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
                 <input
@@ -457,7 +459,7 @@ export default function NabisPage() {
 
           <section className="min-h-0 space-y-5 [&>*]:min-w-0">
             <div>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="mb-4 flex min-h-control flex-wrap items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-zinc-100">Check the label</h2>
                 <div className="flex items-center gap-3">
                   {!canPrint && <span id="nabis-print-reason" className="text-sm text-zinc-400">{label.itemName.trim() || label.uid.trim() ? `Add the ${!label.itemName.trim() ? 'item description' : 'package tag'} to print` : 'Pick a package or type the details to print'}</span>}
@@ -478,7 +480,7 @@ export default function NabisPage() {
                 <LabelPreview label={label} />
               </div>
 
-              <h3 className="mb-3 text-base font-semibold text-zinc-100">{selected ? 'Change the details' : 'Or type the details'}</h3>
+              <h2 className="mb-3 text-base font-semibold text-zinc-100">{selected ? 'Change the details' : 'Or type the details'}</h2>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
                 {(
                   [

@@ -383,9 +383,7 @@ function RollPreview({ format }: { format: LabelFormat }) {
           y={y}
           width={labelW}
           height={labelH}
-          fill="rgba(245, 158, 11, 0.08)"
-          stroke="#d97706"
-          strokeWidth={linerW * 0.004}
+          fill="#52525b"
           rx={linerW * 0.005}
         />
       );
@@ -408,9 +406,7 @@ function RollPreview({ format }: { format: LabelFormat }) {
           y={0}
           width={linerW}
           height={viewH}
-          fill="#1a1a1f"
-          stroke="#3f3f46"
-          strokeWidth={linerW * 0.005}
+          fill="#27272a"
         />
         {/* Labels */}
         {labels}
@@ -455,9 +451,7 @@ function SheetPreview({ format }: { format: LabelFormat }) {
           y={y}
           width={labelW}
           height={labelH}
-          fill="rgba(245, 158, 11, 0.08)"
-          stroke="#d97706"
-          strokeWidth={0.012}
+          fill="#52525b"
           rx={0.02}
         />
       );
@@ -478,9 +472,7 @@ function SheetPreview({ format }: { format: LabelFormat }) {
           y={pad}
           width={sheetW}
           height={sheetH}
-          fill="#1a1a1f"
-          stroke="#3f3f46"
-          strokeWidth={0.02}
+          fill="#27272a"
           rx={0.04}
         />
         {labels}

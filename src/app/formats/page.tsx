@@ -10,7 +10,7 @@ import { FormatDetail } from '@/components/FormatDetail';
 import { AddFormatModal } from '@/components/AddFormatModal';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
-import { EmptyState, ErrorState } from '@/components/EmptyState';
+import { EmptyState, ErrorState, StateActions } from '@/components/EmptyState';
 import { useRubberBand } from '@/components/motion/rubberBand';
 import { PlusIcon } from '../icons';
 import { alertDialog, confirmDialog } from '@/components/ui/feedback';
@@ -81,15 +81,16 @@ export default function Home() {
           className={`pb-6 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}
           title="Label sizes"
           subtitle="The labels and rolls you print on."
-          // With none yet, the one "New label size" button is the empty state's.
-          action={!(hydrated && !loadError && formats.length === 0) ? <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+          // With none yet, the one "New label size" button is the empty state's;
+          // while the list failed to load, there is only Try again.
+          action={!((hydrated || loadError) && formats.length === 0) ? <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
             <PlusIcon className="w-4 h-4" />
             New label size
           </button> : undefined}
         />
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row xl:gap-8 overflow-auto xl:overflow-hidden">
         {/* List */}
-        <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full ${hydrated && formats.length === 0 ? '' : 'xl:w-[360px]'} xl:shrink-0 flex-col min-h-0`}>
+        <div className={`${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : 'flex'} xl:flex w-full ${(hydrated || loadError) && formats.length === 0 ? '' : 'xl:w-[360px]'} xl:shrink-0 flex-col min-h-0`}>
           {hasFormats && (
             <div className="pb-3 space-y-3">
               <SearchField label="Search label sizes" value={searchQuery} onChange={setSearchQuery} />
@@ -114,7 +115,7 @@ export default function Home() {
               <ErrorState
                 title="We couldn’t load your label sizes"
                 body={friendlyError(loadError, 'Something went wrong.')}
-                actions={<button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>}
+                actions={<StateActions retrying={loading} onRetry={() => void useFormatStore.getState().fetchFormats()} />}
               />
             ) : filteredFormats.length === 0 ? (
               hasFormats

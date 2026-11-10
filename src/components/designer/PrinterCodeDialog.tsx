@@ -30,10 +30,10 @@ export function PrinterCodeDialog({ open, onClose, template, format, values }: {
     return () => { active = false; };
   }, [open, template, format, values]);
   return (
-    <Dialog open={open} onClose={onClose} title="Printer commands" description="For admins setting up a printer. This is what the printer is sent for one label with the sample values." className="max-w-2xl">
-      {error ? <p role="alert" className="text-sm text-red-400">{error}</p> : (
-        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-zinc-950 p-3 font-mono text-xs text-zinc-300">{code || 'Making the commands…'}</pre>
-      )}
+    <Dialog open={open} onClose={onClose} title="Printer commands" description="What the printer gets for one label with the sample values." className="max-w-2xl">
+      {error ? <p role="alert" className="text-sm text-red-400">{error}</p>
+        : !code ? <p role="status" className="text-sm text-zinc-400">Making the commands…</p>
+        : <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-zinc-950 p-3 font-sans text-xs tabular-nums text-zinc-300">{code}</pre>}
       <div className="dialog-actions pt-4">
         <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
       </div>

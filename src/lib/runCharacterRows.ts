@@ -74,10 +74,12 @@ export function labelsWithBadCharacters(
   format: (Pick<LabelFormat, 'type'> & Partial<LabelFormat>) | null | undefined,
   run: RunData,
   fromSheet: (field: string) => boolean,
+  /** Only barcode values, only printer-font text, or both (the default). */
+  only: 'barcode' | 'text' | 'all' = 'all',
 ): number[] {
   const bitmap = template.thermalRenderMode === 'bitmap-v1';
   const printerFont = usesPrinterFont(format, template);
-  const items = template.elements.filter((el) => !el.isStatic && !!el.fieldName && fromSheet(el.fieldName) && (el.type === 'barcode' || (printerFont && el.type === 'text')));
+  const items = template.elements.filter((el) => !el.isStatic && !!el.fieldName && fromSheet(el.fieldName) && ((el.type === 'barcode' && only !== 'text') || (printerFont && el.type === 'text' && only !== 'barcode')));
   if (!items.length) return [];
   const out: number[] = [];
   for (let index = 0; index < run.sourceData.length; index++) {

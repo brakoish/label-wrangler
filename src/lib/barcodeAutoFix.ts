@@ -1,8 +1,10 @@
-import type { BarcodeElement, LabelFormat, QRElement, TemplateElement } from './types';
+import type { BarcodeElement, LabelFormat, QRElement, TemplateElement, TextElement } from './types';
 import { barcodeFit, nativeBarcodeFootprint } from './barcodeFit';
 import { layoutProblems, printedBounds, type Box } from './designerLayout';
 import { bitmapFootprint, bitmapLayoutProblems, bitmapQrModules, boxesOverlap, resolvedValue } from './bitmapLayout';
 import { zplQrGeometry } from './zplGenerator';
+import { wrapThermalText } from './thermalTextLayout';
+import { font0Width, font0Wrap } from './zebraFont0';
 
 /**
  * "Fix it for me" for a barcode that won't print whole or lands on another
@@ -22,7 +24,16 @@ export interface BarcodeAutoFix {
   done: string;
   /** The design's items with the fix applied. */
   elements: TemplateElement[];
+  /** "Use a QR code instead": the number that printed under the bars now prints next to the QR code. */
+  keptText?: boolean;
+  /** "Use a QR code instead": the number under the bars had no room and won't print. */
+  droppedText?: boolean;
+  /** "Use a QR code instead": how wide the QR code prints, in inches. */
+  qrInches?: number;
 }
+
+/** Below this a QR code is hard for many phones to read. */
+export const QR_SCAN_INCHES = 0.5;
 
 type Values = Record<string, string>;
 export interface AutoFixOptions {
@@ -236,16 +247,78 @@ export function barcodeAutoFix(elements: ReadonlyArray<TemplateElement>, id: str
 }
 
 /**
+ * The number a barcode printed under its bars, as a text item next to the QR
+ * code that replaces it (Metrc tags must stay readable): the same part, as
+ * big as fits (4 to 8 pt) under, over or beside the QR code, landing on
+ * nothing. Null when there is no room.
+ */
+function readableNumber(el: BarcodeElement, elements: TemplateElement[], format: LabelFormat, values: Values, bitmap: boolean, opts: AutoFixOptions): TemplateElement[] | null {
+  const value = resolvedValue(el, values);
+  const qr = elements.find((e) => e.id === el.id);
+  const qrInk = qr && inkOf(qr, format, values, bitmap, opts, true);
+  if (!value || !qrInk) return null;
+  const dpi = format.dpi || 203;
+  const labelW = Math.round(format.width * dpi);
+  const margin = Math.round(dpi * 0.03);
+  const taken = new Set(elements.map((e) => e.id));
+  let id = `${el.id}-number`;
+  for (let n = 2; taken.has(id); n++) id = `${el.id}-number-${n}`;
+  const family = bitmap ? 'Liberation Sans' : ((elements.find((e) => e.type === 'text') as TextElement | undefined)?.fontFamily || 'Arial');
+  const right = qrInk.x + qrInk.width + margin;
+  const shapes = [
+    { x: margin, y: qrInk.y + qrInk.height + margin, width: labelW - 2 * margin, lines: 1 },
+    { x: right, y: qrInk.y, width: labelW - right - margin, lines: 3 },
+    { x: margin, y: qrInk.y, width: qrInk.x - 2 * margin, lines: 3 },
+  ];
+  const labelH = Math.round(format.height * dpi);
+  for (const shape of shapes) {
+    let tries = 0;
+    for (let pt = 8; pt >= 4 && tries < 3; pt -= 0.5) {
+      const fontH = Math.round(pt * dpi / 72);
+      // Lines as the printer wraps them (whole words only): printer font 0
+      // measured glyph by glyph; a real font (exact picture) estimated wide.
+      const fontW = Math.max(1, Math.round(fontH * 0.5));
+      const width = (line: string) => (bitmap ? Array.from(line).length * fontH * 0.62 : font0Width(line, fontW));
+      const lines = bitmap ? wrapThermalText(value, Math.max(1, Math.floor(shape.width / (fontH * 0.62)))) : font0Wrap(value, shape.width, fontW);
+      if (lines.length > shape.lines || lines.some((line) => width(line) > shape.width)) continue;
+      // A real font's line runs taller than printer font 0's.
+      const height = lines.length * Math.round(fontH * (bitmap ? 1.3 : 1.15));
+      tries++;
+      const text = {
+        id, type: 'text', x: shape.x, y: shape.y, width: shape.width, height, rotation: 0, zIndex: el.zIndex,
+        isStatic: el.isStatic, content: el.content, fontSize: pt, fontFamily: family, fontWeight: 'normal', textAlign: 'left', color: '#000000', lineHeight: bitmap ? 1 : 1.15,
+        ...(bitmap ? { autoFit: true, minFontSize: 4 } : {}),
+        ...(el.fieldName !== undefined ? { fieldName: el.fieldName } : {}),
+        ...(el.defaultValue !== undefined ? { defaultValue: el.defaultValue } : {}),
+        ...(el.prefix !== undefined ? { prefix: el.prefix } : {}),
+        ...(el.suffix !== undefined ? { suffix: el.suffix } : {}),
+      } as TextElement;
+      const placed = tryPlaces([...elements, text], id, text, format, values, bitmap, opts);
+      const box = placed?.find((e) => e.id === id);
+      // The whole box on the label, not only its ink.
+      if (!placed || !box || box.x < margin || box.y < margin || box.x + box.width > labelW - margin || box.y + box.height > labelH - margin) continue;
+      if (clean(placed, el.id, format, values, bitmap, opts)) return placed;
+    }
+  }
+  return null;
+}
+
+/**
  * "Use a QR code instead": the same value as a QR code, as big as fits near
  * where the barcode was without landing on anything or running off the
  * label, with modules big enough to scan (at least 0.24 mm). Sized for the
- * value the caller passes (the longest one). Null when there is no such spot.
+ * value the caller passes (the longest one). When the barcode printed its
+ * number under the bars, that number stays on the label as text next to the
+ * QR code (a smaller QR code is chosen to make room); only when there is no
+ * room at all is it left off, and the fix says so (droppedText). Null when
+ * there is no such spot. `forValue`: the caller found a value the barcode
+ * type can't hold (é in a Code 128), which a QR code can.
  */
-export function barcodeToQr(elements: ReadonlyArray<TemplateElement>, id: string, format: LabelFormat | null | undefined, values: Values, bitmap: boolean, opts: AutoFixOptions = {}): BarcodeAutoFix | null {
+export function barcodeToQr(elements: ReadonlyArray<TemplateElement>, id: string, format: LabelFormat | null | undefined, values: Values, bitmap: boolean, opts: AutoFixOptions = {}, forValue = false): BarcodeAutoFix | null {
   if (!format || format.type !== 'thermal') return null;
   const el = elements.find((e) => e.id === id);
   if (!el || el.type !== 'barcode' || el.locked) return null;
-  if (!problemOf(elements, el, format, values, bitmap, opts)) return null;
+  if (!forValue && !problemOf(elements, el, format, values, bitmap, opts)) return null;
   const value = resolvedValue(el, values) || 'QR';
   const dpi = format.dpi || 203;
   const labelW = Math.round(format.width * dpi);
@@ -260,6 +333,9 @@ export function barcodeToQr(elements: ReadonlyArray<TemplateElement>, id: string
   const inkModules = bitmap ? modules : modules + NATIVE_QR_EXTRA_MODULES;
   const biggest = Math.min(10, Math.floor((room - (bitmap ? 0 : NATIVE_QR_DROP)) / inkModules));
   const anchor = (bitmap ? bitmapFootprint(el, values) : nativeBarcodeFootprint(el, value)) ?? { x: Math.round(el.x), y: Math.round(el.y), width: 0, height: 0 };
+  const inches = (mag: number) => Math.round((qrModules * mag / dpi) * 100) / 100;
+  const words = { kind: 'qr' as const, label: 'Use a QR code instead' };
+  let withoutNumber: BarcodeAutoFix | null = null;
   for (let mag = biggest; mag >= minMag; mag--) {
     const side = modules * mag;
     const qr = {
@@ -272,9 +348,14 @@ export function barcodeToQr(elements: ReadonlyArray<TemplateElement>, id: string
       ...(el.suffix !== undefined ? { suffix: el.suffix } : {}),
     } as QRElement;
     const next = tryPlaces(elements, id, qr as TemplateElement, format, values, bitmap, opts);
-    if (next) return { kind: 'qr', label: 'Use a QR code instead', done: 'The barcode is now a QR code with the same value.', elements: next };
+    if (!next) continue;
+    const small = inches(mag) < QR_SCAN_INCHES ? ` It prints ${inches(mag)}" wide, small for some phones: test-scan one.` : '';
+    if (!el.showText) return { ...words, done: `The barcode is now a QR code with the same value.${small}`, elements: next, qrInches: inches(mag) };
+    const numbered = readableNumber(el, next, format, values, bitmap, opts);
+    if (numbered) return { ...words, done: `The barcode is now a QR code with the same value, and its number prints next to it.${small}`, elements: numbered, keptText: true, qrInches: inches(mag) };
+    withoutNumber ??= { ...words, done: `The barcode is now a QR code with the same value. Its number no longer prints: there’s no room for it.${small}`, elements: next, droppedText: true, qrInches: inches(mag) };
   }
-  return null;
+  return withoutNumber;
 }
 
 /**
