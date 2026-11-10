@@ -183,7 +183,7 @@ const SOURCES: ReadonlyArray<{ value: RunInputMode; label: string; Icon: typeof 
   { value: 'manual', label: 'Type', Icon: Pencil },
   { value: 'paste', label: 'Paste', Icon: Clipboard },
   { value: 'csv', label: 'Spreadsheet', Icon: FileSpreadsheet },
-  { value: 'manifest', label: 'Manifest', Icon: Search },
+  { value: 'manifest', label: 'Nabis', Icon: Search },
 ];
 
 /**
@@ -567,7 +567,7 @@ function NewRunContent() {
     try {
       const res = await fetch(`/api/nabis/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Manifest search failed');
+      if (!res.ok) throw new Error(data.error || 'Couldn’t search Nabis');
       const rows = Array.isArray(data.packages) ? data.packages as ManifestRow[] : [];
       setManifestRows(rows);
       setSelectedManifestPackageKey(rows[0] ? manifestPackageKey(rows[0]) : null);
@@ -576,7 +576,7 @@ function NewRunContent() {
       if (data.error) setManifestError(data.error);
       else if (data.detailsIncomplete) setManifestError(SEARCH_DETAILS_INCOMPLETE);
     } catch (error) {
-      setManifestError(error instanceof Error ? error.message : 'Manifest search failed');
+      setManifestError(error instanceof Error ? error.message : 'Couldn’t search Nabis');
       setManifestRows([]);
       setSelectedManifestPackageKey(null);
     } finally {
@@ -866,9 +866,9 @@ function NewRunContent() {
       setFlipNote({
         tone: 'ok',
         text: column
-          ? `The ${kind} now changes per label, from your “${inputMode === 'manifest' ? friendlyFieldName(column) : column}” ${inputMode === 'manifest' ? 'Manifest field' : 'column'}. This is saved to the design.`
+          ? `The ${kind} now changes per label, from your “${inputMode === 'manifest' ? friendlyFieldName(column) : column}” ${inputMode === 'manifest' ? 'Nabis detail' : 'column'}. This is saved to the design.`
           : rowsBacked
-            ? `The ${kind} now changes per label. Choose its ${inputMode === 'manifest' ? 'Manifest field' : 'column'} under “${friendlyFieldName(fieldName)}” below. This is saved to the design.`
+            ? `The ${kind} now changes per label. Choose its ${inputMode === 'manifest' ? 'Nabis detail' : 'column'} under “${friendlyFieldName(fieldName)}” below. This is saved to the design.`
             : `The ${kind} now changes per label. Fill in “${friendlyFieldName(fieldName)}” below. This is saved to the design.`,
       });
     } catch {
@@ -947,7 +947,7 @@ function NewRunContent() {
           : inputMode === 'manual' && !dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0)
             ? 'Fill in every field to start.'
             : inputMode !== 'manual' && labelCount === 0
-              ? inputMode === 'csv' ? 'Upload a spreadsheet to start.' : inputMode === 'paste' ? 'Paste at least one value to start.' : 'Search and pick a Manifest package to start.'
+              ? inputMode === 'csv' ? 'Upload a spreadsheet to start.' : inputMode === 'paste' ? 'Paste at least one value to start.' : 'Search and pick a Nabis package to start.'
               : (inputMode === 'csv' || inputMode === 'manifest') && variableFields.length === 0
                 ? 'Pick a spreadsheet column for at least one field.'
                 : inputMode === 'paste' && !pasteField
@@ -1238,7 +1238,7 @@ function NewRunContent() {
   const previewMessage = previewState.status === 'error' && checkTemplate
     ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
     : '';
-  const sheetWord = inputMode === 'manifest' ? 'Manifest' : 'spreadsheet';
+  const sheetWord = inputMode === 'manifest' ? 'Nabis data' : 'spreadsheet';
   // A workbook with several sheets: pick the labels' sheet here (no reordering in Excel).
   const sheetNames = fileInfo?.sheetNames ?? [];
   const sheetPicker = sheetNames.length > 1 && lastFile.current ? (
@@ -1387,7 +1387,7 @@ function NewRunContent() {
                   const risk = exampleRisks.find((r) => r.elementId === f.id);
                   const kind = f.type === 'qr' ? 'QR code' : 'barcode';
                   const columnName = risk?.column ? (inputMode === 'manifest' ? friendlyFieldName(risk.column) : risk.column) : null;
-                  const columnWord = inputMode === 'manifest' ? 'field' : 'column';
+                  const columnWord = inputMode === 'manifest' ? 'detail' : 'column';
                   return (
                     <li key={f.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                       <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
@@ -1588,7 +1588,7 @@ function NewRunContent() {
                           if (e.key === 'Enter') void handleManifestSearch();
                         }}
                         placeholder="Package tag, item or batch"
-                        aria-label="Search Manifest packages"
+                        aria-label="Search Nabis packages"
                         className="field min-w-0 flex-1"
                       />
                       <button
@@ -1645,7 +1645,7 @@ function NewRunContent() {
                       </div>
                     )}
                     {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
-                      <p className="text-sm text-zinc-400">No Manifest packages found.</p>
+                      <p className="text-sm text-zinc-400">No Nabis packages found.</p>
                     )}
                   </div>
                 )}
@@ -1653,7 +1653,7 @@ function NewRunContent() {
                 {/* Matching fields to columns, for row-backed sources. */}
                 {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
                   <div className="space-y-3 pt-2">
-                    <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Manifest field' : 'column'}</h3>
+                    <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Nabis detail' : 'column'}</h3>
                     {inputMode === 'csv' && unmatchedShown.length > 0 && (
                       <div role="status" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 font-medium text-amber-300">
@@ -1692,7 +1692,7 @@ function NewRunContent() {
                                   onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn || lastColumns[field] || findBestHeaderForField(field, rowHeaders, sourceData, codeTypes[field]) || '' } }))}
                                   data-active={mapping.mode === 'column'}
                                 >
-                                  {inputMode === 'manifest' ? 'From Manifest' : 'From spreadsheet'}
+                                  {inputMode === 'manifest' ? 'From Nabis' : 'From spreadsheet'}
                                 </button>
                               </div>
                               {mapping.mode === 'column' ? (

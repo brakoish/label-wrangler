@@ -88,7 +88,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
     try {
       const response = await fetch(`/api/nabis/search?q=${encodeURIComponent(query)}`);
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Manifest search failed');
+      if (!response.ok) throw new Error(data.error || 'Couldn’t search Nabis');
 
       const rows = Array.isArray(data.packages) ? data.packages as ManifestRow[] : [];
       const summaries = summarizeManifestPackages(rows);
@@ -107,7 +107,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
     } catch (error) {
       setManifestRows([]);
       setSelectedManifestKey(null);
-      setManifestError(error instanceof Error ? error.message : 'Manifest search failed');
+      setManifestError(error instanceof Error ? error.message : 'Couldn’t search Nabis');
     } finally {
       setIsSearchingManifest(false);
     }
@@ -136,7 +136,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
           ))}
 
           <div className="space-y-2 pt-2">
-            <p className="text-sm text-zinc-400">Or fill them from a Manifest package</p>
+            <p className="text-sm text-zinc-400">Or fill them from a Nabis package</p>
             <div className="flex gap-1">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
@@ -150,7 +150,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') void searchManifest();
                   }}
-                  aria-label="Fill from a Manifest package"
+                  aria-label="Fill from a Nabis package"
                   placeholder="Name or tag"
                   className={`field field-sm w-full pl-7 ${manifestSearch ? 'pr-7' : ''}`}
                 />
@@ -165,7 +165,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       setHasSearchedManifest(false);
                     }}
                     className="absolute right-0.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                    aria-label="Clear Manifest search"
+                    aria-label="Clear Nabis search"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -227,7 +227,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             )}
 
             {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
-              <p className="text-xs text-zinc-500">No Manifest packages found.</p>
+              <p className="text-xs text-zinc-500">No Nabis packages found.</p>
             )}
           </div>
 
