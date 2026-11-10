@@ -43,8 +43,8 @@ const TONE_DOT: Record<RunDisplayTone, string> = {
   cancelled: 'bg-zinc-500',
 };
 
-function RunStatusText({ run }: { run: ListRun }) {
-  const display = runDisplayStatus(run, run.office);
+function RunStatusText({ run, office }: { run: ListRun; office: ListOffice | null }) {
+  const display = runDisplayStatus(run, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
       <span aria-hidden="true" className={`size-2 rounded-full ${TONE_DOT[display.tone]}`} />
@@ -99,7 +99,7 @@ interface BarPrinter { station_id: string; id: string; name: string; online: boo
  * with a link there, and Pause/Resume. Reads every 15 s, faster while it is
  * stopped or paused, never while the page is hidden.
  */
-function OfficePrinterBar() {
+function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
   const [printers, setPrinters] = useState<BarPrinter[] | null>(null);
   const [hidden, setHidden] = useState(false);
   const read = useCallback(async () => {
@@ -114,6 +114,8 @@ function OfficePrinterBar() {
   const printer = printers?.find((p) => p.dispatch_enabled && p.paired_at) ?? null;
   const status = officeStatusLine(printer ?? undefined);
   const watch = status.stopped || status.paused || status.tone !== 'ok';
+  const held = !!printer && (status.stopped || status.paused);
+  useEffect(() => { onHeld?.(held); }, [held, onHeld]);
   useEffect(() => {
     let active = true;
     const update = () => { if (active && document.visibilityState !== 'hidden') void read(); };
@@ -258,6 +260,8 @@ export default function RunsPage() {
     else toast('Run deleted');
   };
   const [bulkOpen, setBulkOpen] = useState(false);
+  // The shared printer is paused or stopped: queued labels read as waiting, not on their way.
+  const [printerHeld, setPrinterHeld] = useState(false);
   const requestDeletePreset = async (preset: RunPreset) => {
     const ok = await confirmDialog({ title: `Delete the preset “${preset.name}”?`, body: 'A preset that runs were made from is kept for your records and can’t be deleted. A preset no run used is removed for good.', confirmLabel: 'Delete preset', danger: true });
     if (!ok) return;
@@ -380,6 +384,7 @@ export default function RunsPage() {
                 formatName={r.designSnapshot?.format?.name ?? formatName(r.templateId)}
                 onDelete={() => void requestDeleteRun(r)}
                 onTogglePin={() => void togglePin(r.id)}
+                printerHeld={printerHeld}
               />
             </li>
           ))}
@@ -435,7 +440,7 @@ export default function RunsPage() {
           )}
 
           {/* The office printer can be paused even with no run open. */}
-          <OfficePrinterBar />
+          <OfficePrinterBar onHeld={setPrinterHeld} />
 
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (
@@ -724,14 +729,16 @@ function RunRow({
   formatName,
   onDelete,
   onTogglePin,
+  printerHeld = false,
 }: {
   run: ListRun;
+  printerHeld?: boolean;
   templateName: string;
   formatName: string;
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
-  const office = run.office ?? null;
+  const office = run.office ? { ...run.office, held: printerHeld } : null;
   const sentLine = officeSentLine(office, run.totalLabels);
   const failed = office?.firstFailed ?? null;
   const printed = Math.min(run.printedCount || 0, run.totalLabels);
@@ -752,7 +759,7 @@ function RunRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <h3 className="truncate text-sm font-semibold text-zinc-100">{run.name}</h3>
-            <RunStatusText run={run} />
+            <RunStatusText run={run} office={office} />
           </div>
           <p className="mt-0.5 truncate text-xs text-zinc-400">
             {templateName}{formatName ? ` · ${formatName}` : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>

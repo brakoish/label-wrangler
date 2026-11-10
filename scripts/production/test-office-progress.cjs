@@ -241,6 +241,8 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
   assert.equal(runDisplayStatus(run('cancelled', 10), { sent: 0, onTheWay: 5, failed: 0 }).label, 'Cancelled');
   assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 0 }, 100), 'Sent to office printer: 20 of 100 · 30 on the way');
   assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 1 }, 100), 'Sent to office printer: 20 of 100 · 30 waiting', 'held labels are not on their way');
+  assert.equal(officeSentLine({ sent: 0, onTheWay: 20, failed: 0, held: true }, 20), 'Sent to office printer: 0 of 20 · 20 waiting', 'paused printer: waiting');
+  assert.equal(runDisplayStatus({ status: 'printing', printedCount: 0, totalLabels: 20 }, { sent: 0, onTheWay: 20, failed: 0, held: true }).label, 'Waiting for office printer');
   assert.equal(officeSentLine({ sent: 0, onTheWay: 0, failed: 0 }, 100), null);
   assert.equal(officeSentLine(null, 100), null);
 }

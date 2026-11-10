@@ -9,6 +9,8 @@ export interface RunOfficeSummary {
   failedLabels?: number;
   /** The first such part: did-not-print and needs-check stop the shared printer; print-again doesn't. */
   firstFailed?: { kind?: 'did-not-print' | 'needs-check' | 'print-again' } | null;
+  /** The shared printer is paused or stopped for a check, so queued labels wait. */
+  held?: boolean;
 }
 
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'paused' | 'cancelled' | 'idle';
@@ -27,7 +29,7 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (office && office.failed > 0) return office.firstFailed?.kind === 'print-again'
     ? { label: 'Labels to print again', tone: 'attention' }
     : { label: 'Office print needs a check', tone: 'attention' };
-  if (office && office.onTheWay > 0) return { label: 'Sending to office printer', tone: 'active' };
+  if (office && office.onTheWay > 0) return office.held ? { label: 'Waiting for office printer', tone: 'paused' } : { label: 'Sending to office printer', tone: 'active' };
   if (run.status === 'printing') return { label: 'Printing', tone: 'active' };
   if (run.status === 'completed') return { label: 'Done', tone: 'done' };
   if (office && total > 0 && office.sent >= total) return { label: 'Sent to office printer', tone: 'paused' };
@@ -41,7 +43,7 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
 export function officeSentLine(office: RunOfficeSummary | null | undefined, total: number): string | null {
   if (!office || (office.sent === 0 && office.onTheWay === 0 && office.failed === 0)) return null;
   const parts = [`Sent to office printer: ${office.sent.toLocaleString()} of ${total.toLocaleString()}`];
-  // A part that needs a check stops the office printer, so the rest waits.
-  if (office.onTheWay > 0) parts.push(`${office.onTheWay.toLocaleString()} ${office.failed > 0 ? 'waiting' : 'on the way'}`);
+  // A part that needs a check, or a paused printer, stops the office printer, so the rest waits.
+  if (office.onTheWay > 0) parts.push(`${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way'}`);
   return parts.join(' · ');
 }

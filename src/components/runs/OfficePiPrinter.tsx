@@ -86,7 +86,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [stationsLoaded,setStationsLoaded]=useState(false);const [canPrint,setCanPrint]=useState(false);
   const [from,setFrom]=useState('1');const [to,setTo]=useState(String(total));
   const [error,setError]=useState('');
-  const [notice,setNotice]=useState<{text:string;requestId?:string;at:number}|null>(null);
+  const [notice,setNotice]=useState<{text:string;requestId?:string;at:number;queued?:boolean}|null>(null);
   const [busy,setBusy]=useState(false);
   const [pending,setPending]=useState<Pending|null>(null);
   // A send the server definitely refused. Kept on this device so a refresh
@@ -291,7 +291,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       try{
         const result=await api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)});
         try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);
-        if(!target)setNotice({text:queuedNotice(Range(payload.from,payload.to),payload.from===payload.to,status),requestId:typeof result?.requestId==='string'?result.requestId:undefined,at:Date.now()});
+        if(!target)setNotice({text:queuedNotice(Range(payload.from,payload.to),payload.from===payload.to,status),requestId:typeof result?.requestId==='string'?result.requestId:undefined,at:Date.now(),queued:true});
         setReprintOf('');setChooseAgain(false);setSendOther(false);rangeEdited.current=false;setSentThisVisit(true);
         outcome='sent';
       }catch(err){
@@ -350,7 +350,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       }
       if(current.next>=current.parts.length){
         const first=current.parts[0],last=current.parts[current.parts.length-1];
-        setNotice({text:queuedNotice(Range(first.from,last.to),first.from===last.to,status),at:Date.now()});
+        setNotice({text:queuedNotice(Range(first.from,last.to),first.from===last.to,status),at:Date.now(),queued:true});
       }
     }finally{seriesRunning.current=false;setSeries(null);setBusy(false);currentProofKey.current=proofKey;rangeEdited.current=false;}
   };
@@ -500,7 +500,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // 3. What the person chose.
     if(current.choice==='printed'){
       const ok=await onRecordPrinted?.([{from:part.from,to:part.to}],note) ?? false;
-      setNotice({text:ok?`${Range(part.from,part.to)} counted as printed.`:`Saved at the office, but the run’s progress didn’t change. Use “Yes, mark printed” to count ${one?'it':'them'}.`,at:Date.now()});
+      setNotice({text:ok?`${Range(part.from,part.to)} counted as printed.${printedCount+1<part.from?` Progress catches up once ${range(printedCount+1,part.from-1)} ${printedCount+2===part.from?'is':'are'} counted too.`:''}`:`Saved at the office, but the run’s progress didn’t change. Use “Yes, mark printed” to count ${one?'it':'them'}.`,at:Date.now()});
       return;
     }
     chooseReprint(part,held.length
@@ -614,7 +614,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {bitmap && showForm && !pending && !preparationProgress && proofCurrent && proof && <p className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="size-4 rounded-full animate-success" aria-hidden="true" />{plural(proof.count)} checked. Nothing is sent until you tap Send.</p>}
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     {requestsError && requestsError.status!==401 && requestsError.status!==403 && <p role="status" className="text-sm text-zinc-400">The office queue couldn’t be read just now. It tries again on its own.</p>}
-    {notice && <p role="status" className="text-sm text-emerald-400 animate-enter">{notice.text}</p>}
+    {/* The amber waiting line already says why queued labels aren't printing. */}
+    {notice && !(notice.queued && movingLine) && <p role="status" className="text-sm text-emerald-400 animate-enter">{notice.text}</p>}
     {requests.length>0 && <div>
       <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue <span className="tabular-nums">· {plural(summary.sent)} sent{summary.failedLabels?` · ${plural(summary.failedLabels)} need${summary.failedLabels===1?'s':''} attention`:''}</span></FoldToggle>
       <Fold open={queueOpen} id={`${uid}-queue`}>
