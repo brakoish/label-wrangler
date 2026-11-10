@@ -1,128 +1,60 @@
-import JsBarcode from 'jsbarcode';
-import type { BarcodeElement, BarcodeFormat, FieldMapping, LabelFormat, LabelTemplate, TemplateElement } from './types';
+import type { BarcodeElement, FieldMapping, LabelFormat, LabelTemplate, TemplateElement } from './types';
 import { friendlyFieldName, spreadsheetRow } from './fieldLabels';
-import { printedBarcodeWidth } from './designerLayout';
+import { barcodeFit, barcodeFitFix, barcodeFitProblem, type BarcodeFit } from './barcodeFit';
 
 /**
- * Whole-run check that every barcode value is one the barcode type can hold.
- * The printer (and the bitmap renderer) fail on such values part-way through
- * a run, so the wizard checks every label before it starts.
+ * Whole-run check that every barcode will print, label by label, with the
+ * same verdict the designer and the run page use (barcodeFit). The printer
+ * (and the exact renderer) fail on such values part-way through a run, so
+ * the wizard checks every label before it starts.
  *
  * Value resolution mirrors runBuilder.valuesForLabel (and runDataCheck): the
  * typed value, then the row's column value, then prefix/suffix around it.
  */
 
-const CODE39 = /^[0-9A-Z \-.$/+%]*$/;
-
-function checkDigitOk(digits: string): boolean {
-  // GS1 mod-10 over everything but the last digit.
-  const body = digits.slice(0, -1);
-  let sum = 0;
-  for (let i = 0; i < body.length; i++) {
-    const n = Number(body[body.length - 1 - i]);
-    sum += i % 2 === 0 ? n * 3 : n;
-  }
-  return (10 - (sum % 10)) % 10 === Number(digits[digits.length - 1]);
-}
-
-function unsupportedCharacters(value: string, allowed: (ch: string) => boolean): string[] {
-  const bad: string[] = [];
-  for (const ch of value) if (!allowed(ch) && !bad.includes(ch)) bad.push(ch);
-  return bad;
-}
-
-function listCharacters(chars: string[]): string {
-  const shown = chars.slice(0, 4).map((ch) => {
-    if (ch === ' ') return 'space';
-    if (ch === '\t') return 'a tab';
-    if (/\s/u.test(ch)) return 'a special space (retype it as a plain space)';
-    if (/[\p{Cc}\p{Cf}]/u.test(ch)) return 'a hidden character';
-    return ch;
-  });
-  return shown.join(', ') + (chars.length > 4 ? ' and others' : '');
-}
-
-/**
- * Why a barcode can't print `value`, in plain words, or null when it can.
- * `noun` names the field ("the SKU").
- */
-export function barcodeValueProblem(format: BarcodeFormat | undefined, value: string): string | null {
-  if (!value) return null;
-  switch (format ?? 'CODE128') {
-    case 'CODE128': {
-      const bad = unsupportedCharacters(value, (ch) => {
-        const code = ch.codePointAt(0) ?? 0;
-        return code >= 32 && code <= 126;
-      });
-      return bad.length ? `has characters a barcode can't hold (${listCharacters(bad)})` : null;
-    }
-    case 'CODE39': {
-      if (CODE39.test(value)) return null;
-      const bad = unsupportedCharacters(value, (ch) => CODE39.test(ch));
-      return `has characters this barcode type can't hold (${listCharacters(bad)}). It takes capital letters, numbers, spaces and - . $ / + %`;
-    }
-    case 'UPC':
-      return digitsProblem(value, [11, 12], 'A UPC barcode needs 12 digits');
-    case 'EAN13':
-      return digitsProblem(value, [12, 13], 'An EAN-13 barcode needs 13 digits');
-    case 'EAN8':
-      return digitsProblem(value, [7, 8], 'An EAN-8 barcode needs 8 digits');
-    case 'ITF14':
-      return /^\d+$/.test(value) ? null : 'can only hold numbers in this barcode type';
-    default:
-      return null;
-  }
-}
-
-function digitsProblem(value: string, lengths: [number, number], rule: string): string | null {
-  if (!/^\d+$/.test(value)) return `can only hold numbers. ${rule}`;
-  if (!lengths.includes(value.length)) return `has ${value.length} digits. ${rule}`;
-  if (value.length === lengths[1] && !checkDigitOk(value)) return 'has a wrong last digit (check digit). Check the number';
-  return null;
-}
+export { barcodeValueProblem } from './barcodeValue';
 
 export interface BarcodeIssue {
   field: string;
-  /** 1-based label number. */
+  /** 1-based label number (0 for a fixed barcode, the same on every label). */
   label: number;
   value: string;
   problem: string;
-  /** 'too-long': the value is valid but doesn't fit where the barcode prints. */
-  kind?: 'characters' | 'too-long';
+  /**
+   * 'characters': the barcode type can't hold the value (fix the value).
+   * 'too-long': the value is fine but the barcode can't print where it is
+   * (fix the layout). 'tight': it prints, with little clear space (warning).
+   */
+  kind?: 'characters' | 'too-long' | 'tight';
   /** For 'too-long' on a native label: it runs off the label edge. */
   offLabel?: boolean;
+  /** The shared verdict behind this issue. */
+  fit?: BarcodeFit;
 }
 
+type FitFormat = Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'> & Partial<Pick<LabelFormat, 'labelsAcross' | 'horizontalGapThermal'>>;
+
 /**
- * Whether a valid value fits its barcode, using the numbers the printer
- * uses. Native Zebra labels draw Code 128 at 2 dots a module whatever the
- * box (zplGenerator ^BY2), so a value is too long when the bars run off the
- * label. Exact (bitmap) labels scale whole-dot modules into the box with a
- * 10-module quiet zone each side (thermal/render.server.ts), so a value is
- * too long when even 1-dot modules don't fit the box.
+ * Whether a valid value fits its barcode (kept for callers of the old API;
+ * barcodeFit has the full verdict). A 'tight' barcode fits.
  */
-export function barcodeFits(el: Pick<BarcodeElement, 'barcodeFormat' | 'x' | 'width' | 'rotation'>, value: string, format: Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'>, bitmap: boolean): { fits: boolean; offLabel: boolean } {
-  if (!value || format.type !== 'thermal') return { fits: true, offLabel: false };
-  if (bitmap) {
-    const target = {} as { encodings?: Array<{ data: string }> };
-    try { JsBarcode(target, value, { format: el.barcodeFormat, displayValue: false, margin: 0, width: 1 }); } catch { return { fits: true, offLabel: false }; }
-    const bits = target.encodings?.map((v) => v.data).join('') || '';
-    if (!bits) return { fits: true, offLabel: false };
-    return { fits: Math.floor(Math.round(el.width) / (bits.length + 20)) >= 1, offLabel: false };
-  }
-  const rotated = (((Math.round(el.rotation || 0) % 360) + 360) % 360) % 180 !== 0;
-  const dpi = format.dpi || 203;
-  const room = rotated ? Math.round(format.height * dpi) : Math.round(format.width * dpi) - Math.round(el.x);
-  // Only sideways bars can be measured against the label edge simply.
-  if (rotated) return { fits: true, offLabel: false };
-  const fits = printedBarcodeWidth(el.barcodeFormat, value) <= room + 2;
-  return { fits, offLabel: !fits };
+export function barcodeFits(el: Pick<BarcodeElement, 'barcodeFormat' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'showText'>, value: string, format: FitFormat, bitmap: boolean): { fits: boolean; offLabel: boolean } {
+  const fit = barcodeFit(el, value, format, bitmap);
+  if (fit.level !== 'blocked' || fit.reason === 'characters') return { fits: true, offLabel: false };
+  return { fits: false, offLabel: fit.reason === 'off-label' || fit.reason === 'into-next-label' || fit.reason === 'box-off-label' };
 }
 
 export interface BarcodeCheck {
+  /** Barcodes that can't print: the run waits for a fix. */
   issues: BarcodeIssue[];
-  /** Labels with at least one bad value (counted in full). */
+  /** Labels with at least one barcode that can't print (counted in full). */
   badLabels: number;
+  /** Barcodes that print but are tight (warning only). */
+  warnings: BarcodeIssue[];
+  /** Labels checked. */
+  checkedLabels: number;
+  /** Labels per barcode field and fit problem ("field|reason"), counted in full. */
+  fitCounts: Record<string, number>;
 }
 
 interface RunData {
@@ -155,48 +87,48 @@ function printedValue(el: TemplateElement, values: Record<string, string>): stri
 
 const MAX_ISSUES = 50;
 
-export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format?: Pick<LabelFormat, 'type' | 'width' | 'height' | 'dpi'> | null): BarcodeCheck {
+function issueFor(el: BarcodeElement, label: number, value: string, format: FitFormat | null | undefined, bitmap: boolean): BarcodeIssue | null {
+  const fit = barcodeFit(el, value, format, bitmap);
+  if (fit.level === 'ok') return null;
+  const field = el.isStatic ? '' : el.fieldName || '';
+  if (fit.reason === 'characters') return { field, label, value, problem: fit.problem || 'can’t be drawn with this value', kind: 'characters', fit };
+  return { field, label, value, problem: barcodeFitProblem(fit, value), kind: fit.level === 'tight' ? 'tight' : 'too-long', offLabel: fit.reason === 'off-label' || fit.reason === 'into-next-label', fit };
+}
+
+export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format?: FitFormat | null): BarcodeCheck {
   const bitmap = template.thermalRenderMode === 'bitmap-v1';
-  const fitProblem = (el: TemplateElement, value: string): BarcodeIssue | null => {
-    if (!format || el.type !== 'barcode') return null;
-    const fit = barcodeFits(el, value, format, bitmap);
-    return fit.fits ? null : { field: el.fieldName || '', label: 0, value, problem: 'is too long for its barcode', kind: 'too-long', offLabel: fit.offLabel };
-  };
-  const barcodes = template.elements.filter((el) => el.type === 'barcode');
+  const barcodes = template.elements.filter((el): el is BarcodeElement => el.type === 'barcode');
   const issues: BarcodeIssue[] = [];
+  const warnings: BarcodeIssue[] = [];
+  const fitCounts: Record<string, number> = {};
   let badLabels = 0;
-  if (!barcodes.length) return { issues, badLabels };
   const total = Math.max(1, run.sourceData.length);
+  if (!barcodes.length) return { issues, badLabels, warnings, checkedLabels: total, fitCounts };
+  const keep = (list: BarcodeIssue[], found: BarcodeIssue) => {
+    if (list.length < MAX_ISSUES && !list.some((i) => i.label === found.label && i.field === found.field)) list.push(found);
+  };
   // A fixed barcode is the same on every label: check it once.
   for (const el of barcodes.filter((b) => b.isStatic)) {
-    const value = printedValue(el, {});
-    const problem = el.type === 'barcode' ? barcodeValueProblem(el.barcodeFormat, value) : null;
-    if (problem) {
-      issues.push({ field: '', label: 0, value, problem, kind: 'characters' });
-      badLabels = total;
-      continue;
-    }
-    const tooLong = fitProblem(el, value);
-    if (tooLong) { issues.push({ ...tooLong, field: '' }); badLabels = total; }
+    const found = issueFor(el, 0, printedValue(el, {}), format, bitmap);
+    if (!found) continue;
+    if (found.kind === 'tight') warnings.push(found);
+    else { issues.push(found); badLabels = total; }
   }
   const dynamic = barcodes.filter((b) => !b.isStatic);
   for (let index = 0; index < total && dynamic.length; index++) {
     const values = valuesFor(run, index);
     let bad = false;
     for (const el of dynamic) {
-      if (el.type !== 'barcode') continue;
-      const value = printedValue(el, values);
-      const problem = barcodeValueProblem(el.barcodeFormat, value);
-      const found: BarcodeIssue | null = problem
-        ? { field: el.fieldName || '', label: index + 1, value, problem, kind: 'characters' }
-        : (() => { const long = fitProblem(el, value); return long ? { ...long, label: index + 1 } : null; })();
+      const found = issueFor(el, index + 1, printedValue(el, values), format, bitmap);
       if (!found) continue;
+      if (found.fit && found.kind !== 'characters') fitCounts[`${found.field}|${found.fit.reason}`] = (fitCounts[`${found.field}|${found.fit.reason}`] ?? 0) + 1;
+      if (found.kind === 'tight') { keep(warnings, found); continue; }
       bad = true;
-      if (issues.length < MAX_ISSUES && !issues.some((i) => i.label === index + 1 && i.field === el.fieldName)) issues.push(found);
+      keep(issues, found);
     }
-    if (bad) badLabels++;
+    if (bad && badLabels < total) badLabels++;
   }
-  return { issues, badLabels };
+  return { issues, badLabels, warnings, checkedLabels: total, fitCounts };
 }
 
 function shorten(value: string, max = 24): string {
@@ -205,19 +137,61 @@ function shorten(value: string, max = 24): string {
 
 /**
  * "Label 10: the SKU 'ABC-…ÄÖ' has characters a barcode can't hold (Ä, Ö).
- * Fix row 11 of your spreadsheet." `fromSpreadsheet` adds the row hint.
+ * Fix row 11 of your spreadsheet." `fromSpreadsheet` adds the row hint. Only
+ * a value the barcode type can't hold is sent back to the data; a barcode
+ * that doesn't fit is a layout fix, never "shorten it" (package tags are
+ * state tracking IDs).
  */
 export function describeBarcodeIssue(issue: BarcodeIssue, fromSpreadsheet: boolean): string {
-  if (issue.kind === 'too-long') {
-    const chars = `${Array.from(issue.value).length} characters`;
-    const room = issue.offLabel ? 'give the barcode more room on the label' : 'make the barcode box wider';
-    if (!issue.label) return `The fixed barcode "${shorten(issue.value)}" is too long for its barcode box (${chars}) — shorten it or ${room} in the design.`;
-    const row = spreadsheetRow(issue.label).toLocaleString();
-    const where = fromSpreadsheet ? `label ${issue.label.toLocaleString()} (row ${row})` : `label ${issue.label.toLocaleString()}`;
-    return `${friendlyFieldName(issue.field)} on ${where} is too long for its barcode (${chars}${issue.offLabel ? ', it would run off the label' : ''}) — shorten it${fromSpreadsheet ? ` in row ${row}` : ''} or ${room} in the design.`;
+  if (issue.kind === 'too-long' || issue.kind === 'tight') {
+    const fix = issue.fit ? barcodeFitFix(issue.fit) : '';
+    const name = issue.label ? `${friendlyFieldName(issue.field)} barcode` : 'fixed barcode';
+    const where = issue.label ? ` on label ${issue.label.toLocaleString()}${fromSpreadsheet ? ` (row ${spreadsheetRow(issue.label).toLocaleString()})` : ''}` : '';
+    return `The ${name}${where} ${issue.problem}.${fix ? ` ${fix}.` : ''}`;
   }
   if (!issue.label) return `The fixed barcode "${shorten(issue.value)}" ${issue.problem}. Change it in the design.`;
   const name = friendlyFieldName(issue.field);
   const fix = fromSpreadsheet ? ` Fix row ${spreadsheetRow(issue.label)} of your spreadsheet.` : '';
   return `Label ${issue.label.toLocaleString()}: the ${name} "${shorten(issue.value)}" ${issue.problem}.${fix}`;
+}
+
+/** "label 3 (row 4)", "labels 3, 7 and 9", "all 40 labels". */
+function whichLabels(labels: number[], count: number, total: number, fromSpreadsheet: boolean): string {
+  if (count >= total) return total === 1 ? 'the label' : `all ${total.toLocaleString()} labels`;
+  const shown = labels.slice(0, 3);
+  const rows = fromSpreadsheet ? ` (row${shown.length === 1 ? '' : 's'} ${shown.map((l) => spreadsheetRow(l).toLocaleString()).join(', ')}${count > shown.length ? '…' : ''})` : '';
+  const list = count > shown.length ? `${shown.join(', ')} and ${(count - shown.length).toLocaleString()} more` : shown.length === 1 ? String(shown[0]) : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+  return `label${count === 1 ? '' : 's'} ${list}${rows}`;
+}
+
+/**
+ * One sentence per barcode and problem, for the run check: "The Package tag
+ * barcode on all 40 labels prints 2.95" wide for 24 characters, but only
+ * 1.93" fits from where it starts, so the printer cuts it off and it won’t
+ * scan. Make an exact-print copy of the design…". Values the barcode type
+ * can't hold stay one line per label (each needs its own fix in the data).
+ */
+export function describeBarcodeGroups(issues: ReadonlyArray<BarcodeIssue>, totalLabels: number, fromSpreadsheet: (field: string) => boolean, limit = 5, fitCounts: Record<string, number> = {}): { items: string[]; more: number } {
+  const groups = new Map<string, BarcodeIssue[]>();
+  const lines: string[] = [];
+  for (const issue of issues) {
+    if (issue.kind === 'characters' || !issue.fit) {
+      lines.push(describeBarcodeIssue(issue, fromSpreadsheet(issue.field)));
+      continue;
+    }
+    const key = `${issue.field}|${issue.label ? 'row' : 'fixed'}|${issue.fit.reason}`;
+    groups.set(key, [...(groups.get(key) ?? []), issue]);
+  }
+  const grouped: string[] = [];
+  for (const list of groups.values()) {
+    // Describe the widest value; the others are narrower.
+    const widest = list.reduce((a, b) => ((b.fit?.barsDots ?? 0) > (a.fit?.barsDots ?? 0) ? b : a));
+    if (!widest.label) { grouped.push(describeBarcodeIssue(widest, false)); continue; }
+    const labels = list.map((i) => i.label);
+    const count = Math.max(list.length, fitCounts[`${widest.field}|${widest.fit?.reason}`] ?? 0);
+    const fix = widest.fit ? barcodeFitFix(widest.fit) : '';
+    grouped.push(`The ${friendlyFieldName(widest.field)} barcode on ${whichLabels(labels, Math.min(count, totalLabels), totalLabels, fromSpreadsheet(widest.field))} ${widest.problem}.${fix ? ` ${fix}.` : ''}`);
+  }
+  const all = [...grouped, ...lines];
+  return { items: all.slice(0, limit), more: Math.max(0, all.length - limit) };
 }

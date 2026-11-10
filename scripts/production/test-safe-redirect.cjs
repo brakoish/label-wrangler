@@ -10,4 +10,8 @@ for(const [next,expected] of [
 ]) assert.equal(safeNextPath(next,origin),expected,JSON.stringify(next));
 // Relative paths resolve on this site.
 assert.equal(safeNextPath('runs',origin),'/runs');
+// The designer's ?returnTo (already decoded by URLSearchParams) uses a stand-in origin.
+const stand='https://label-wrangler.invalid';
+for(const raw of ['/\\evil.com',new URLSearchParams('returnTo=/%5Cevil.com').get('returnTo'),'//evil.com','/\t/evil.com','https://evil.com']) assert.equal(safeNextPath(raw,stand,''),'',JSON.stringify(raw));
+assert.equal(safeNextPath('/runs/new',stand,''),'/runs/new');
 console.log('PASS safe redirect: sign-in next stays same-origin (tab/newline/backslash/protocol tricks fall back to /runs)');

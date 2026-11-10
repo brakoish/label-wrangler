@@ -123,3 +123,26 @@ export function setSpreadsheetHeaderRow(row: number): void {
 export function spreadsheetRow(labelNumber: number): number {
   return labelNumber + headerRow;
 }
+
+/**
+ * Plain words for where a run's values came from, for the run page (in place
+ * of "CSV import" and `CSV column "coa_url"`). `column` is the raw heading,
+ * for a tooltip only; `source` is the run's dataSource.
+ */
+export function runSourceWords(source: string | null | undefined): { label: string; rowWord: string } {
+  if (source === 'csv') return { label: 'From a spreadsheet', rowWord: 'spreadsheet' };
+  if (source === 'manifest') return { label: 'From Manifest', rowWord: 'Manifest' };
+  if (source === 'manual') return { label: 'Typed in', rowWord: 'typed' };
+  return { label: 'Pasted in', rowWord: 'pasted' };
+}
+
+/** "From the spreadsheet's COA link column", with the "(plain number)" copy named as its column. */
+export function columnSourceWords(source: string | null | undefined, column: string): { text: string; title: string } {
+  const plain = / \((plain number|number only)\)$/.exec(column);
+  const base = plain ? column.slice(0, plain.index) : column;
+  if (column === '__paste__') return { text: 'Pasted values', title: '' };
+  const name = friendlyFieldName(base);
+  const where = runSourceWords(source).rowWord;
+  const text = source === 'manifest' ? `From Manifest: ${name}` : `From the ${where} column ${name}${plain ? ' (number only)' : ''}`;
+  return { text, title: base };
+}

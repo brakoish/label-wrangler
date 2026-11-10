@@ -3,6 +3,7 @@ import { zplQrGeometry } from './zplGenerator';
 import { layoutThermalText, wrapThermalText } from './thermalTextLayout';
 import { elementTypeName, friendlyFieldName } from './fieldLabels';
 import { font0Width, font0Wrap } from './zebraFont0';
+import { barcodeFit, barcodeFitFix, barcodeFitProblem, nativeBarcodeDots, nativeBarcodeFootprint, NATIVE_MODULE_DOTS, type BarcodeFit } from './barcodeFit';
 
 /**
  * Where each item really prints on a native thermal label, and the layout
@@ -15,9 +16,7 @@ import { font0Width, font0Wrap } from './zebraFont0';
 export interface Box { x: number; y: number; width: number; height: number }
 
 /** zplGenerator emits ^BY2 after every barcode, so bars are always 2 dots per module. */
-export const ZPL_MODULE_DOTS = 2;
-/** Height of the human-readable line Zebra prints under a ^BY2 barcode. */
-const INTERPRETATION_DOTS = 20;
+export const ZPL_MODULE_DOTS = NATIVE_MODULE_DOTS;
 
 /**
  * Printed width in dots of a barcode as the printer draws it (modules x 2).
@@ -25,18 +24,7 @@ const INTERPRETATION_DOTS = 20;
  * character costs 11 modules: start 11 + data + check 11 + stop 13.
  */
 export function printedBarcodeWidth(format: BarcodeElement['barcodeFormat'] | undefined, value: string): number {
-  const n = Array.from(value).length;
-  let modules: number;
-  switch (format ?? 'CODE128') {
-    case 'CODE39': modules = (n + 2) * 16 - 1; break; // ratio 3:1 => 16 modules a character, gap included
-    case 'UPC': modules = 95; break;
-    case 'EAN13': modules = 95; break;
-    case 'EAN8': modules = 67; break;
-    case 'ITF14': modules = n * 14 + 20; break; // Industrial 2 of 5 at 3:1, approximate
-    case 'CODE128':
-    default: modules = 11 * n + 35;
-  }
-  return modules * ZPL_MODULE_DOTS;
+  return nativeBarcodeDots(format, value);
 }
 
 function resolvedValue(el: TemplateElement, values?: Record<string, string>): string {
@@ -75,9 +63,8 @@ export function printedBounds(el: TemplateElement, format: LabelFormat, values?:
     case 'barcode': {
       const value = resolvedValue(el, values);
       if (!value) return null;
-      const width = printedBarcodeWidth(el.barcodeFormat, value);
-      const height = Math.max(el.height, Math.round(el.height * 0.75) + (el.showText ? INTERPRETATION_DOTS : 0));
-      return rotateAroundCenter(el, { x: el.x, y: el.y, width, height });
+      // Where the printer puts the bars for each rotation (shared with the barcode fit verdict).
+      return nativeBarcodeFootprint(el as BarcodeElement, value);
     }
     case 'qr': {
       const value = resolvedValue(el, values) || 'QR';
@@ -133,7 +120,7 @@ function intersection(a: Box, b: Box): number {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
-export type LayoutProblemKind = 'overlap' | 'off-label' | 'wider-than-box' | 'characters';
+export type LayoutProblemKind = 'overlap' | 'off-label' | 'wider-than-box' | 'characters' | 'barcode-tight';
 
 export interface LayoutProblem {
   /** The main problem; `kinds` lists all of them for this item. */
@@ -142,6 +129,12 @@ export interface LayoutProblem {
   /** Element ids involved (the item first). */
   ids: string[];
   message: string;
+  /** The layout change that fixes it, when there is a clear one. */
+  fix?: string;
+  /** For a barcode: the shared fit verdict (barcodeFit). 'blocked' can't print. */
+  barcodeFit?: BarcodeFit;
+  /** The printer can't produce this item as designed: printing must wait for a fix. */
+  blocking?: boolean;
 }
 
 /** "the Package tag barcode", "the THC text", "the text “Net Wt 3.5g”", "the QR code". */
@@ -185,6 +178,14 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
     .map((el) => ({ el, box: measured?.[el.id] ?? printedBounds(el, format, values) }))
     .filter((item): item is { el: TemplateElement; box: Box } => !!item.box);
 
+  // Barcodes get the shared verdict (barcodeFit): it knows how long the bars
+  // really print and whether that is cut off or lands on the next label. A
+  // measured footprint is clipped at the label edge, so it can't say that.
+  const fits = new Map<string, BarcodeFit>();
+  for (const { el } of placed) {
+    if (el.type === 'barcode') fits.set(el.id, barcodeFit(el, resolvedValue(el, values), format, false));
+  }
+
   // A Code 128 is as wide as its value needs, whatever its box says. That
   // only matters when the extra width lands on something or off the label,
   // so it is named inside those problems rather than on its own.
@@ -201,6 +202,11 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
 
   const tolerance = 2;
   for (const { el, box } of placed) {
+    const fit = fits.get(el.id);
+    if (fit) {
+      if (fit.level !== 'ok' && fit.reason !== 'characters') entry(el);
+      continue;
+    }
     if (box.x < -tolerance || box.y < -tolerance || box.x + box.width > labelW + tolerance || box.y + box.height > labelH + tolerance) entry(el).offLabel = true;
   }
 
@@ -223,9 +229,27 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
 
   const problems: LayoutProblem[] = [];
   for (const { el, offLabel, over } of byItem.values()) {
+    const fit = fits.get(el.id);
+    const overText = over.length ? `${el.type === 'text' && over.every((o) => o.type === 'text') ? 'covers' : 'prints over'} ${listNames(over.map(itemName))}` : '';
+    if (fit && fit.level !== 'ok' && fit.reason !== 'characters') {
+      const value = resolvedValue(el, values);
+      const blocking = fit.level === 'blocked';
+      const kinds: LayoutProblemKind[] = [blocking ? 'off-label' as const : 'barcode-tight' as const, ...(over.length ? ['overlap' as const] : []), ...(wider.has(el.id) ? ['wider-than-box' as const] : [])];
+      problems.push({
+        kind: kinds[0],
+        kinds,
+        ids: [el.id, ...over.map((o) => o.id)],
+        message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${overText ? `, and ${overText}` : ''}.`,
+        fix: barcodeFitFix(fit) || undefined,
+        barcodeFit: fit,
+        blocking,
+      });
+      continue;
+    }
     const parts: string[] = [];
-    if (offLabel) parts.push(wider.has(el.id) ? 'runs off the label' : 'runs off the edge of the label and will be cut off');
-    if (over.length) parts.push(`${el.type === 'text' && over.every((o) => o.type === 'text') ? 'covers' : 'prints over'} ${listNames(over.map(itemName))}`);
+    if (offLabel) parts.push('runs off the edge of the label and will be cut off');
+    if (overText) parts.push(overText);
+    if (!parts.length) continue;
     const tooWide = wider.has(el.id);
     const mayNotScan = over.length > 0 && (scannable(el) || over.some(scannable));
     const kinds: LayoutProblemKind[] = [...(offLabel ? ['off-label' as const] : []), ...(over.length ? ['overlap' as const] : []), ...(tooWide ? ['wider-than-box' as const] : [])];
@@ -233,7 +257,8 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
       kind: kinds[0],
       kinds,
       ids: [el.id, ...over.map((o) => o.id)],
-      message: `${capitalise(itemName(el))} ${tooWide ? 'is too wide: it ' : ''}${parts.join(' and ')}${mayNotScan || (tooWide && offLabel) ? ' — it may not scan' : ''}.`,
+      message: `${capitalise(itemName(el))} ${tooWide ? 'prints wider than its box and ' : ''}${parts.join(' and ')}${mayNotScan ? ' — it may not scan' : ''}.`,
+      ...(fit ? { barcodeFit: fit } : {}),
     });
   }
   return problems;

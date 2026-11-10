@@ -121,7 +121,27 @@ function formatDate(section: string, serial: number, date1904: boolean): string 
   return parts.join('');
 }
 
-function formatNumberSection(section: string, value: number): string {
+/**
+ * `n` (not negative) to `decimals` places the way Excel rounds: on the
+ * decimal value it shows (15 significant digits), half away from zero. Plain
+ * toFixed works on the binary float, so 1.005 became 1.00 and 2.675 became
+ * 2.67 where Excel shows 1.01 and 2.68.
+ */
+export function roundLikeExcel(n: number, decimals: number): string {
+  const d = Math.max(0, Math.min(20, Math.floor(decimals)));
+  const shown = Math.abs(n).toPrecision(15);
+  if (/e/i.test(shown)) return Math.abs(n).toFixed(d);
+  const scaled = Math.round(Number(`${shown}e${d}`));
+  if (!Number.isFinite(scaled) || scaled >= 1e21) return Math.abs(n).toFixed(d);
+  return Number(`${scaled}e-${d}`).toFixed(d);
+}
+
+interface NumberOptions {
+  /** Digits only: no thousands separators, currency or other text from the format. */
+  plain?: boolean;
+}
+
+function formatNumberSection(section: string, value: number, options: NumberOptions = {}): string {
   const code = cleaned(section);
   if (/^general$/i.test(code.trim())) return plainNumber(value);
   if (code.trim() === '@') return plainNumber(value);
@@ -141,8 +161,8 @@ function formatNumberSection(section: string, value: number): string {
   const decimals = decPart.replace(/[^0#?]/g, '').length;
   const minDecimals = decPart.replace(/[^0]/g, '').length;
   const minInt = intPart.replace(/[^0]/g, '').length;
-  const grouping = /[0#?],[0#?]/.test(intPart);
-  let fixed = Math.abs(n).toFixed(decimals);
+  const grouping = !options.plain && /[0#?],[0#?]/.test(intPart);
+  let fixed = roundLikeExcel(n, decimals);
   if (decimals > minDecimals) fixed = fixed.replace(new RegExp(`(\\.\\d{${minDecimals}}\\d*?)0+$`), '$1').replace(/\.$/, '');
   const [wholeDigits, frac] = fixed.split('.');
   let whole = wholeDigits;
@@ -150,6 +170,10 @@ function formatNumberSection(section: string, value: number): string {
   whole = whole.padStart(minInt, '0');
   if (grouping) whole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const digits = frac !== undefined ? `${whole}.${frac}` : whole;
+  // A section with no digit placeholder is shown as its text alone
+  // (the "-" of 0.00;-0.00;"-" for zero).
+  const hasDigits = /[0#?]/.test(unquoted(code));
+  if (options.plain) return hasDigits ? digits || '0' : plainNumber(n);
 
   // Put the digits where the number placeholders are, keeping literals around them.
   const tokens = code.match(/"[^"]*"|\\.|_.|\*.|[0#?,.]+|./g) ?? [];
@@ -163,15 +187,17 @@ function formatNumberSection(section: string, value: number): string {
     else if (token === ',' || token === '.') continue;
     else out.push(token);
   }
-  if (!placed) out.push(digits);
+  if (!placed && hasDigits) out.push(digits);
   return out.join('').trim();
 }
 
 /**
  * The text Excel shows for `raw` (the stored number) with format `code`.
- * `date1904` is the workbook's date system.
+ * `date1904` is the workbook's date system. With `plain`, only the digits
+ * (and sign) Excel shows: "$1,234.50" → "1234.50", for barcodes and for
+ * templates that add their own "$". Dates stay as dates.
  */
-export function formatExcelNumber(raw: string, code: string | undefined, date1904 = false): string {
+export function formatExcelNumber(raw: string, code: string | undefined, date1904 = false, options: NumberOptions = {}): string {
   const value = Number(raw);
   if (!Number.isFinite(value)) return raw;
   if (!code || /^general$/i.test(code.trim())) return plainNumber(value);
@@ -182,6 +208,11 @@ export function formatExcelNumber(raw: string, code: string | undefined, date190
     if (value < 0 && parts.length > 1) { section = parts[1]; n = -value; }
     else if (value === 0 && parts.length > 2) section = parts[2];
     if (isDateFormat(section)) return value < 0 ? plainNumber(value) : formatDate(section, value, date1904);
+    if (options.plain) {
+      // Digits as Excel shows them, with the sign the value really has.
+      const digits = formatNumberSection(section, Math.abs(n), options);
+      return digits && value < 0 && /[1-9]/.test(digits) ? `-${digits}` : digits;
+    }
     const text = formatNumberSection(section, n);
     return value < 0 && parts.length === 1 && n < 0 ? `-${text}` : text;
   } catch {

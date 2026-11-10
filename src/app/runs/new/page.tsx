@@ -30,7 +30,8 @@ import type { FieldMapping, RunDataSource } from '@/lib/types';
 import { contentModeUpdates } from '@/lib/elementBinding';
 import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
-import { checkRunBarcodes, describeBarcodeIssue } from '@/lib/barcodeCheck';
+import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
+import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { layoutProblems } from '@/lib/designerLayout';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
@@ -126,10 +127,13 @@ function normalizedFieldName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function findBestHeaderForField(field: string, headers: string[], rows: Record<string, string>[]) {
+function findBestHeaderForField(field: string, headers: string[], rows: Record<string, string>[], codeType?: CodeType) {
   const normalizedField = normalizedFieldName(field);
   const exact = headers.find((h) => normalizedFieldName(h) === normalizedField);
   if (exact) return exact;
+  // A barcode or QR code named "Barcode 1": the column that looks like its
+  // codes (SKU, UPC, a package tag; a link for a QR code).
+  if (codeType && /^(barcode|qr ?code|qr)\s*\d*$/i.test(field.trim())) return bestCodeColumn(codeType, headers, rows);
 
   if (/^qr\d*$/.test(normalizedField) && headers.includes('retailId')) return 'retailId';
 
@@ -137,8 +141,12 @@ function findBestHeaderForField(field: string, headers: string[], rows: Record<s
     if (headers.includes(alias)) return alias;
   }
 
+  if (codeType) {
+    const column = bestCodeColumn(codeType, headers, rows);
+    if (column) return column;
+  }
   const urlCol = detectUrlColumn({ headers, rows });
-  const isQrField = /qr|url|code|tag/i.test(field);
+  const isQrField = codeType === 'qr' || /qr|url|link/i.test(field);
   if (isQrField && urlCol) return urlCol;
 
   return null;
@@ -150,6 +158,57 @@ function manifestPackageKey(row: ManifestRow) {
 
 function shortRunDate(date = new Date()) {
   return `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`;
+}
+
+const SOURCES: ReadonlyArray<{ value: RunInputMode; label: string; Icon: typeof Pencil }> = [
+  { value: 'manual', label: 'Type', Icon: Pencil },
+  { value: 'paste', label: 'Paste', Icon: Clipboard },
+  { value: 'csv', label: 'Spreadsheet', Icon: FileSpreadsheet },
+  { value: 'manifest', label: 'Manifest', Icon: Search },
+];
+
+/**
+ * Where the values come from: one choice of four, as a radio group. Arrow
+ * keys move and choose (Tab enters and leaves the group); on a narrow phone
+ * the four sit in two rows so no label is squeezed.
+ */
+function SourceSwitch({ value, onChange }: { value: RunInputMode; onChange: (value: RunInputMode) => void }) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const active = Math.max(0, SOURCES.findIndex((s) => s.value === value));
+  const choose = (index: number) => {
+    const next = (index + SOURCES.length) % SOURCES.length;
+    onChange(SOURCES[next].value);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Where the values come from"
+      className="segmented source-switch w-full md:w-auto"
+      onKeyDown={(event) => {
+        const moves: Record<string, number> = { ArrowRight: active + 1, ArrowDown: active + 1, ArrowLeft: active - 1, ArrowUp: active - 1, Home: 0, End: SOURCES.length - 1 };
+        if (!(event.key in moves)) return;
+        event.preventDefault();
+        choose(moves[event.key]);
+      }}
+    >
+      <SegmentedIndicator index={active} count={SOURCES.length} />
+      {SOURCES.map(({ value: option, label, Icon }, index) => (
+        <button
+          key={option}
+          ref={(node) => { refs.current[index] = node; }}
+          type="button"
+          role="radio"
+          aria-checked={option === value}
+          data-active={option === value}
+          tabIndex={option === value ? 0 : -1}
+          onClick={() => onChange(option)}
+        >
+          <Icon className="hidden size-4 sm:block" aria-hidden="true" /> {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function NewRunContent() {
@@ -189,6 +248,11 @@ function NewRunContent() {
   const [pasteField, setPasteField] = useState<string | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
+  // The digits behind numbers Excel formats ("$1,234.50" -> "1234.50"),
+  // only where they differ; barcodes and QR codes print these.
+  const [csvPlainRows, setCsvPlainRows] = useState<Record<string, string>[] | null>(null);
+  // Fields the person switched to the plain number (the design adds its own "$").
+  const [plainNumberFields, setPlainNumberFields] = useState<string[]>([]);
   const [manifestSearch, setManifestSearch] = useState('');
   const [manifestRows, setManifestRows] = useState<ManifestRow[]>([]);
   // Saved rows may omit package metadata. Keep their exact order and mappings
@@ -297,6 +361,7 @@ function NewRunContent() {
         } else {
           setCsvHeaders(headers);
           setCsvRows(rows);
+          setCsvPlainRows(null);
         }
       }
     } else if (sd.length > 0 && typeof sd[0] === 'string') {
@@ -312,6 +377,7 @@ function NewRunContent() {
   const previewTemplate = useMemo(() => template ? applyRunImages(template, Object.fromEntries(Object.entries(imageSelections).filter(([id]) => template.elements.some(e => e.id === id && e.type === 'image' && e.runSelectable)))) : null, [template, imageSelections]);
   const format = template ? getFormatById(template.formatId) : null;
   const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+  const codeTypes = useMemo(() => codeFieldTypes(template), [template]);
   const hiddenRunFieldSet = useMemo(() => new Set(hiddenRunFields), [hiddenRunFields]);
   const dynamicFields = useMemo(
     () => allDynamicFields.filter((field) => !hiddenRunFieldSet.has(field)),
@@ -407,7 +473,7 @@ function NewRunContent() {
     setFieldMappings((prev) => {
       const next = { ...prev };
       for (const field of dynamicFields) {
-        const match = findBestHeaderForField(field, headers, rows);
+        const match = findBestHeaderForField(field, headers, rows, codeTypes[field]);
         if (match) {
           next[field] = { mode: 'column', csvColumn: match };
         } else if (unmatchedFromSheet && !(staticValuesRef.current[field] ?? '').trim()) {
@@ -422,7 +488,7 @@ function NewRunContent() {
     // Static values are never copied from the data (row 1 used to be
     // pre-filled, which printed one SKU barcode on every label). A "Same on
     // every label" value comes from the person typing it.
-  }, [dynamicFields, template]);
+  }, [codeTypes, dynamicFields, template]);
 
   const [fileError, setFileError] = useState<string | null>(null);
   const [csvFileName, setCsvFileName] = useState('');
@@ -459,6 +525,8 @@ function NewRunContent() {
     setSpreadsheetHeaderRow(parsed.headerRow ?? 1);
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
+    setCsvPlainRows(parsed.plainRows ?? null);
+    setPlainNumberFields([]);
     setLeaveBlank(false);
     applyAutoColumnMapping(parsed.headers, parsed.rows, true);
   };
@@ -566,12 +634,25 @@ function NewRunContent() {
     setSpreadsheetHeaderRow(parsed.headerRow ?? 1);
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
+    setCsvPlainRows(null);
     setLeaveBlank(false);
     applyAutoColumnMapping(parsed.headers, parsed.rows, true);
     setInputMode('csv');
   };
 
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
+
+  // What each field really reads from a spreadsheet: barcodes and QR codes
+  // (and fields switched to the plain number) read the digits behind a
+  // formatted cell, not "$1,234.50", through a "(plain number)" copy of the
+  // column. Text mapped to the same column keeps what Excel shows.
+  const plainData = useMemo(() => {
+    if (inputMode !== 'csv') return { rows: sourceData, mappings: fieldMappings };
+    const plainFields = new Set([...Object.keys(codeTypes), ...plainNumberFields]);
+    return applyPlainNumbers({ rows: sourceData, plainRows: csvPlainRows, mappings: fieldMappings, plainFields, currencyFields: new Set(plainNumberFields) });
+  }, [inputMode, sourceData, fieldMappings, codeTypes, plainNumberFields, csvPlainRows]);
+  const dataRows = plainData.rows;
+  const dataMappings = plainData.mappings;
 
   const manifestPackageSummaries = useMemo(() => {
     const packages = new Map<string, { row: ManifestRow; labelRows: number }>();
@@ -608,10 +689,10 @@ function NewRunContent() {
 
   const previewValuesForIndex = useCallback((index: number) => {
     const values: Record<string, string> = { ...visibleStaticValues };
-    const row = sourceData[index];
+    const row = dataRows[index];
 
     if (row && typeof row === 'object' && !Array.isArray(row)) {
-      for (const [field, mapping] of Object.entries(fieldMappings)) {
+      for (const [field, mapping] of Object.entries(dataMappings)) {
         if (!visibleFieldSet.has(field)) continue;
         if (mapping.mode === 'column' && mapping.csvColumn) {
           values[field] = (row as Record<string, string>)[mapping.csvColumn] ?? '';
@@ -619,7 +700,7 @@ function NewRunContent() {
       }
     }
     return values;
-  }, [visibleStaticValues, sourceData, fieldMappings, visibleFieldSet]);
+  }, [visibleStaticValues, dataRows, dataMappings, visibleFieldSet]);
 
   // Preview values for the current row.
   const previewValues = useMemo(() => previewValuesForIndex(previewIndex), [previewValuesForIndex, previewIndex]);
@@ -666,8 +747,8 @@ function NewRunContent() {
   // sees what the printer will see (hidden fields included: they would print
   // the design's sample text).
   const runDataForCheck = useMemo(() => {
-    let mappings: Record<string, FieldMapping> = fieldMappings;
-    let rows: Record<string, string>[] = sourceData;
+    let mappings: Record<string, FieldMapping> = dataMappings;
+    let rows: Record<string, string>[] = dataRows;
     if (inputMode === 'manual') {
       mappings = Object.fromEntries(dynamicFields.map((f) => [f, { mode: 'static' } as FieldMapping]));
       rows = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
@@ -677,7 +758,7 @@ function NewRunContent() {
     mappings = Object.fromEntries(Object.entries(mappings).filter(([field]) => visibleFieldSet.has(field)));
     // Only "Same on every label" fields keep a typed value (what Start saves).
     return { sourceData: rows, fieldMappings: mappings, staticValues: staticValuesForRun(dynamicFields, mappings, visibleStaticValues), mappedField: inputMode === 'paste' ? pasteField : null };
-  }, [fieldMappings, sourceData, inputMode, dynamicFields, manualQty, pasteField, visibleFieldSet, visibleStaticValues]);
+  }, [fieldMappings, dataMappings, dataRows, inputMode, dynamicFields, manualQty, pasteField, visibleFieldSet, visibleStaticValues]);
   const checkTemplate = previewTemplate ?? template;
   const blankCheck = useMemo(() => checkRunData(checkTemplate ?? { elements: [] }, runDataForCheck), [checkTemplate, runDataForCheck]);
   useEffect(() => { setLeaveBlank(false); }, [blankCheck.signature]);
@@ -691,9 +772,9 @@ function NewRunContent() {
   const sameRisks = useMemo(() => {
     if (!template || (inputMode !== 'csv' && inputMode !== 'manifest') || sourceData.length < 2) return [];
     const headers = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
-    const candidateColumns = Object.fromEntries(dynamicFields.map((f) => [f, (lastColumns[f] && headers.includes(lastColumns[f]) ? lastColumns[f] : null) ?? findBestHeaderForField(f, headers, sourceData)]));
+    const candidateColumns = Object.fromEntries(dynamicFields.map((f) => [f, (lastColumns[f] && headers.includes(lastColumns[f]) ? lastColumns[f] : null) ?? findBestHeaderForField(f, headers, sourceData, codeTypes[f])]));
     return sameValueRisks({ fields: dynamicFields, mappings: fieldMappings, staticValues: visibleStaticValues, candidateColumns, rows: sourceData, scannableFields: scannableFieldNames(template) });
-  }, [template, inputMode, sourceData, csvHeaders, dynamicFields, lastColumns, fieldMappings, visibleStaticValues]);
+  }, [template, inputMode, sourceData, csvHeaders, dynamicFields, lastColumns, fieldMappings, visibleStaticValues, codeTypes]);
   const sameRiskKey = sameValueRiskKey(sameRisks);
   const [sameConfirmedKey, setSameConfirmedKey] = useState('');
   const sameOk = !sameRisks.length || sameConfirmedKey === sameRiskKey;
@@ -701,9 +782,52 @@ function NewRunContent() {
   // in its own row; don't also call it unmatched at the top.
   const unmatchedShown = unmatchedCsvFields.filter((f) => !sameRisks.some((r) => r.field === f));
 
+  // A barcode or QR code fixed to the design's example value (or next to a
+  // column of real codes) would print the same code on every label: Start
+  // waits until it changes per label or the person says that's right.
+  const rowsBacked = inputMode === 'csv' || inputMode === 'manifest';
+  const exampleRisks = useMemo(() => exampleCodeRisks(template, rowsBacked ? (inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders) : [], rowsBacked ? sourceData : []), [template, rowsBacked, inputMode, csvHeaders, sourceData]);
+  const exampleKey = exampleRisks.map((r) => `${r.elementId}:${r.value}:${r.column ?? ''}`).join('|');
+  const [exampleConfirmedKey, setExampleConfirmedKey] = useState('');
+  const examplesOk = !exampleRisks.length || exampleConfirmedKey === exampleKey;
+  const [flipNote, setFlipNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [flipping, setFlipping] = useState<string | null>(null);
+  const flipToPerLabel = async (elementId: string, suggestedName: string) => {
+    if (!template) return;
+    const current = template.elements.find((el) => el.id === elementId);
+    if (!current || (current.type !== 'barcode' && current.type !== 'qr')) return;
+    const kind = current.type === 'qr' ? 'QR code' : 'barcode';
+    const headers = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
+    const column = rowsBacked ? bestCodeColumn(current.type, headers, sourceData) : null;
+    const taken = template.elements.map((el) => el.fieldName ?? '').filter(Boolean);
+    const fieldName = fieldNameForColumn(column && inputMode === 'manifest' ? friendlyFieldName(column) : column, suggestedName, taken);
+    setFlipping(elementId);
+    setFlipNote(null);
+    updateElementLocal(template.id, elementId, contentModeUpdates({ ...current, fieldName: '' }, false, () => fieldName));
+    setFieldMappings((m) => ({ ...m, [fieldName]: rowsBacked ? { mode: 'column', csvColumn: column ?? '' } : { mode: 'static' } }));
+    try {
+      await saveTemplate(template.id);
+      setFlipNote({
+        tone: 'ok',
+        text: column
+          ? `The ${kind} now changes per label, from your “${inputMode === 'manifest' ? friendlyFieldName(column) : column}” ${inputMode === 'manifest' ? 'Manifest field' : 'column'}. This is saved to the design.`
+          : rowsBacked
+            ? `The ${kind} now changes per label. Choose its ${inputMode === 'manifest' ? 'Manifest field' : 'column'} under “${friendlyFieldName(fieldName)}” below. This is saved to the design.`
+            : `The ${kind} now changes per label. Fill in “${friendlyFieldName(fieldName)}” below. This is saved to the design.`,
+      });
+    } catch {
+      setFlipNote({ tone: 'error', text: `The ${kind} changes per label on this page, but the design couldn’t be saved. Check your connection, then open the design and save it.` });
+    } finally {
+      setFlipping(null);
+    }
+  };
+
+  // The design adds "$" in front of a column that already starts with "$".
+  const currencyRisks = useMemo(() => (inputMode === 'csv' ? doubledCurrencyRisks(template, fieldMappings, sourceData, csvPlainRows).filter((r) => visibleFieldSet.has(r.field) && !plainNumberFields.includes(r.field)) : []), [inputMode, template, fieldMappings, sourceData, csvPlainRows, visibleFieldSet, plainNumberFields]);
+
   // Every barcode value must be one its barcode type can hold; checked for
   // every label, so label 10 can't stop a run part-way.
-  const barcodeCheck = useMemo(() => (checkTemplate && hasData ? checkRunBarcodes(checkTemplate, runDataForCheck, format) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
+  const barcodeCheck = useMemo(() => (checkTemplate && hasData ? checkRunBarcodes(checkTemplate, runDataForCheck, format) : { issues: [], badLabels: 0, warnings: [], checkedLabels: 0, fitCounts: {} }), [checkTemplate, hasData, runDataForCheck, format]);
   const barcodesOk = barcodeCheck.issues.length === 0;
 
   // Text the thermal printer can't print ("·", accents) would come out as
@@ -721,10 +845,9 @@ function NewRunContent() {
       const row = runDataForCheck.sourceData[index];
       if (row) for (const [field, mapping] of Object.entries(runDataForCheck.fieldMappings)) if (mapping.mode === 'column' && mapping.csvColumn) values[field] = row[mapping.csvColumn] ?? '';
       for (const problem of layoutProblems(checkTemplate.elements, format, values)) {
-        // A barcode too long for the label is named by label and row in the
-        // barcode check above; don't say it twice.
-        const main = checkTemplate.elements.find((el) => el.id === problem.ids[0]);
-        if (main?.type === 'barcode' && !main.rotation && !problem.kinds.includes('overlap')) continue;
+        // A barcode that doesn't fit is named in the barcode check above
+        // (same verdict); only say it here when it also covers something.
+        if (problem.barcodeFit && !problem.kinds.includes('overlap')) continue;
         const key = `${problem.kinds.join('+')}:${problem.ids.join(',')}`;
         const entry = found.get(key) ?? { message: problem.message, labels: [], count: 0 };
         entry.count++;
@@ -750,6 +873,7 @@ function NewRunContent() {
     barcodesOk &&
     charactersOk &&
     layoutOk &&
+    examplesOk &&
     (inputMode === 'manual'
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
       : labelCount > 0 && (inputMode === 'csv' || inputMode === 'manifest' ? variableFields.length > 0 : !!pasteField));
@@ -775,8 +899,12 @@ function NewRunContent() {
                     ? `${blankHeading(blankCheck)}. See the list above.`
                     : !sameOk
                       ? 'Confirm the value that prints on every label, or choose From spreadsheet.'
+                      : !examplesOk
+                        ? `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`
                       : !barcodesOk
-                        ? `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode value' : 's have barcode values'} that can’t print. See the list above.`
+                        ? barcodeCheck.issues.every((issue) => issue.kind === 'characters')
+                          ? `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode value' : 's have barcode values'} its barcode type can’t hold. See the list above.`
+                          : `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that won’t' : 's have barcodes that won’t'} print whole. See the list above.`
                         : !charactersOk
                           ? `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`
                         : !layoutOk
@@ -851,6 +979,7 @@ function NewRunContent() {
     setPasteField(draft.pasteField ?? null);
     setCsvHeaders(draft.csvHeaders || []);
     setCsvRows(draft.csvRows || []);
+    setCsvPlainRows(draft.csvPlainRows ?? null);
     setCsvFileName(draft.csvFileName || '');
     setManualQty(Math.max(1, draft.manualQty || 1));
     setDraftOffer(null);
@@ -868,10 +997,10 @@ function NewRunContent() {
     if (!formDirty || !draftDecided.current) return;
     const timer = setTimeout(() => saveRunDraft({
       name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField,
-      csvHeaders, csvRows: csvRows.length <= 5000 ? csvRows : [], csvFileName, manualQty, savedAt: Date.now(),
+      csvHeaders, csvRows: csvRows.length <= 5000 ? csvRows : [], csvPlainRows: csvRows.length <= 5000 ? csvPlainRows : null, csvFileName, manualQty, savedAt: Date.now(),
     }), 400);
     return () => clearTimeout(timer);
-  }, [formDirty, draftOffer, name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField, csvHeaders, csvRows, csvFileName, manualQty]);
+  }, [formDirty, draftOffer, name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField, csvHeaders, csvRows, csvPlainRows, csvFileName, manualQty]);
 
   // A new run is named after its design and today's date until the person
   // types a name of their own.
@@ -909,9 +1038,9 @@ function NewRunContent() {
     if (!canCreate || !previewReady || !template || isCreatingRun) return null;
     setIsCreatingRun(true);
     setCreateRunError(null);
-    let finalMappings = fieldMappings;
+    let finalMappings = dataMappings;
     let legacyField: string | null = null;
-    let finalSourceData: Record<string, string>[] = sourceData;
+    let finalSourceData: Record<string, string>[] = dataRows;
     try {
       if (inputMode === 'manual') {
         // Manual mode only needs placeholder rows for count/progress; values
@@ -1002,7 +1131,7 @@ function NewRunContent() {
   const fieldsComplete = !!template && allDynamicFields.length > 0 && dynamicFields.length > 0;
   // Data is only "done" once there is a design with fields and real values
   // for them (an empty field list used to read as done).
-  const dataComplete = fieldsComplete && blanksOk && sameOk && (inputMode === 'manual'
+  const dataComplete = fieldsComplete && blanksOk && sameOk && examplesOk && (inputMode === 'manual'
     ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
     : inputMode === 'paste'
       ? pasteText.trim().length > 0 && !!pasteField
@@ -1014,10 +1143,11 @@ function NewRunContent() {
   ];
   const currentStep = workflowSteps.findIndex((s) => !s.done);
   const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
-  const barcodeItems = barcodeCheck.issues.slice(0, 5).map((issue) => describeBarcodeIssue(issue, fieldIsFromSheet(issue.field)));
+  const barcodeGroups = describeBarcodeGroups(barcodeCheck.issues, barcodeCheck.checkedLabels, fieldIsFromSheet, 5, barcodeCheck.fitCounts);
+  const tightGroups = describeBarcodeGroups(barcodeCheck.warnings, barcodeCheck.checkedLabels, fieldIsFromSheet, 3, barcodeCheck.fitCounts);
   const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
   const previewMessage = previewState.status === 'error' && checkTemplate
-    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues)
+    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
     : '';
   const sheetWord = inputMode === 'manifest' ? 'Manifest' : 'spreadsheet';
 
@@ -1027,7 +1157,7 @@ function NewRunContent() {
     <AppShell beforeLeave={confirmLeave}>
       <PageTitle title={name.trim() ? `New run · ${name.trim()}` : 'New run'} />
       <div className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto w-full px-4 py-6 sm:px-8 space-y-5 pb-48 sm:pb-28">
+        <div className="page-container py-6 space-y-5 pb-48 sm:pb-28">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <h1 className="text-2xl font-semibold text-zinc-100">New print run</h1>
             <ol className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Progress">
@@ -1068,8 +1198,8 @@ function NewRunContent() {
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span id={`${formId}-template`} className="field-label">Label design</span>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2">
+                  <span id={`${formId}-template`} className="field-label whitespace-nowrap">Label design</span>
                   <div className="-mr-2 flex items-center">
                     {/* Edit the currently-selected design without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
@@ -1094,9 +1224,8 @@ function NewRunContent() {
                   </div>
                 </div>
                 {templates.length === 0 && templatesLoadError ? (
-                  <p role="alert" className="py-2 text-sm text-red-400">
-                    Couldn’t load your label designs. <button type="button" onClick={() => void useTemplateStore.getState().fetchTemplates()} className="text-amber-400 hover:underline">Try again</button>
-                  </p>
+                  // The page banner says what failed and has the one Try again.
+                  <p className="py-2 text-sm text-zinc-400">Your designs will show here once they load.</p>
                 ) : templates.length === 0 && !templatesHydrated ? (
                   <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
                 ) : templates.length === 0 ? (
@@ -1144,28 +1273,39 @@ function NewRunContent() {
           )}
 
           {template && flippable.length > 0 && (
-            <section className="card p-4 sm:p-5 space-y-3">
-              <h2 className="text-base font-semibold text-zinc-100">Make it change per label</h2>
-              <p className="text-sm text-zinc-300">
-                These print the same on every label. Switch one to change per label to fill it from your spreadsheet.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {flippable.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={async () => {
-                      // Flip this element to dynamic with the suggested name, then persist.
-                      // Keep the current text as the preview sample.
-                      const current = template.elements.find((el) => el.id === f.id);
-                      updateElementLocal(template.id, f.id, current ? { ...contentModeUpdates({ ...current, fieldName: '' }, false, () => f.suggestedName) } : { isStatic: false, fieldName: f.suggestedName });
-                      await saveTemplate(template.id);
-                    }}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    Make the {f.type === 'qr' ? 'QR code' : f.type} change per label
-                  </button>
-                ))}
-              </div>
+            <section className="card p-4 sm:p-5 space-y-3" aria-labelledby={`${formId}-codes`}>
+              <h2 id={`${formId}-codes`} className="text-base font-semibold text-zinc-100">{exampleRisks.length ? 'Check the codes on this label' : 'Codes that print the same on every label'}</h2>
+              <ul className="divide-y divide-zinc-800">
+                {flippable.map((f) => {
+                  const el = template.elements.find((e) => e.id === f.id);
+                  const value = el && 'content' in el ? (el.content ?? '').trim() : '';
+                  const risk = exampleRisks.find((r) => r.elementId === f.id);
+                  const kind = f.type === 'qr' ? 'QR code' : 'barcode';
+                  const columnName = risk?.column ? (inputMode === 'manifest' ? friendlyFieldName(risk.column) : risk.column) : null;
+                  const columnWord = inputMode === 'manifest' ? 'field' : 'column';
+                  return (
+                    <li key={f.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                      <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
+                        The {kind} prints {risk?.isExample ? 'the design’s example ' : ''}“{value || 'nothing'}” on every label.{columnName ? ` Your ${sheetWord} has a “${columnName}” ${columnWord}.` : ''}
+                      </p>
+                      <button
+                        type="button"
+                        disabled={flipping === f.id}
+                        onClick={() => void flipToPerLabel(f.id, f.suggestedName)}
+                        className="btn btn-secondary btn-sm max-w-full shrink-0 self-start sm:self-auto"
+                      >
+                        <span className="truncate">{flipping === f.id ? 'Saving the design…' : columnName ? `Use the ${columnName} ${columnWord}` : 'Change it per label'}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {exampleRisks.length > 0 && (
+                <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-100">
+                  <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={exampleConfirmedKey === exampleKey} onChange={(e) => setExampleConfirmedKey(e.target.checked ? exampleKey : '')} />
+                  <span>Yes, print {exampleRisks.length === 1 ? `this ${exampleRisks[0].type === 'qr' ? 'QR code' : 'barcode'}` : 'these'} the same on every label</span>
+                </label>
+              )}
             </section>
           )}
           {template && allDynamicFields.length === 0 && flippable.length === 0 && (
@@ -1180,22 +1320,14 @@ function NewRunContent() {
               <section className="card p-4 sm:p-5 space-y-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <h2 className="text-base font-semibold text-zinc-100">Where the values come from</h2>
-                  <div className="segmented w-full md:w-auto" role="group" aria-label="Where the values come from">
-                    <SegmentedIndicator index={['manual', 'paste', 'csv', 'manifest'].indexOf(inputMode)} count={4} />
-                    <button onClick={() => setInputMode('manual')} aria-pressed={inputMode === 'manual'}>
-                      <Pencil className="hidden size-4 sm:block" aria-hidden="true" /> Type
-                    </button>
-                    <button onClick={() => setInputMode('paste')} aria-pressed={inputMode === 'paste'}>
-                      <Clipboard className="hidden size-4 sm:block" aria-hidden="true" /> Paste
-                    </button>
-                    <button onClick={() => setInputMode('csv')} aria-pressed={inputMode === 'csv'}>
-                      <FileSpreadsheet className="hidden size-4 sm:block" aria-hidden="true" /> Spreadsheet
-                    </button>
-                    <button onClick={() => setInputMode('manifest')} aria-pressed={inputMode === 'manifest'}>
-                      <Search className="hidden size-4 sm:block" aria-hidden="true" /> Manifest
-                    </button>
-                  </div>
+                  <SourceSwitch value={inputMode} onChange={setInputMode} />
                 </div>
+                {flipNote && (
+                  <p role={flipNote.tone === 'error' ? 'alert' : 'status'} className={`flex items-start gap-1.5 text-sm ${flipNote.tone === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
+                    {flipNote.tone === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />}
+                    {flipNote.text}
+                  </p>
+                )}
 
                 {inputMode === 'manual' ? (
                   <div className="space-y-3">
@@ -1267,19 +1399,22 @@ function NewRunContent() {
                   </div>
                 ) : inputMode === 'csv' ? (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button onClick={() => fileInputRef.current?.click()} className="btn btn-primary">
-                        <Upload className="size-4" aria-hidden="true" /> {csvHeaders.length > 0 ? 'Choose another file' : 'Upload spreadsheet'}
-                      </button>
-                      <button
-                        onClick={downloadCsvTemplate}
-                        disabled={dynamicFields.length === 0}
-                        title="Download a spreadsheet with the right column headings"
-                        className="btn btn-secondary"
-                      >
-                        <Download className="size-4" aria-hidden="true" /> Blank spreadsheet
-                      </button>
-                    </div>
+                    {csvHeaders.length === 0 && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="btn btn-primary">
+                          <Upload className="size-4" aria-hidden="true" /> Upload spreadsheet
+                        </button>
+                        <button
+                          type="button"
+                          onClick={downloadCsvTemplate}
+                          disabled={dynamicFields.length === 0}
+                          title="Download a spreadsheet with the right column headings"
+                          className="btn btn-secondary"
+                        >
+                          <Download className="size-4" aria-hidden="true" /> Blank spreadsheet
+                        </button>
+                      </div>
+                    )}
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1295,14 +1430,21 @@ function NewRunContent() {
                       <p role="alert" className="flex items-start gap-1.5 text-sm text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{fileError}</p>
                     ) : csvHeaders.length > 0 ? (
                       <div className="space-y-1 text-sm text-zinc-400">
-                        <p>
-                          {csvFileName ? <span className="text-zinc-100">{csvFileName}</span> : 'Your file'}{fileInfo?.sheetName && (fileInfo.sheetCount ?? 1) > 1 ? <>, sheet ‘{fileInfo.sheetName}’</> : null}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
+                        <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="min-w-0 break-words">
+                            {csvFileName ? <span className="text-zinc-100">{csvFileName}</span> : 'Your file'}{fileInfo?.sheetName && (fileInfo.sheetCount ?? 1) > 1 ? <>, sheet ‘{fileInfo.sheetName}’</> : null}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
+                          </span>
+                          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                            <Upload className="size-4" aria-hidden="true" /> Choose another file
+                          </button>
                         </p>
                         {fileInfo && (fileInfo.sheetCount ?? 1) > 1 && <p>Only the first sheet is read. Move the labels’ sheet first in Excel to use another one.</p>}
-                        {fileInfo && lastFile.current && (
+                        {/* Where the column names are: only asked when they weren't
+                            in row 1 or some parts found no column. */}
+                        {fileInfo && lastFile.current && (fileInfo.titleSkipped || fileInfo.headerRow !== 1 || unmatchedShown.length > 0) && (
                           <label className="flex flex-wrap items-center gap-2">
-                            {fileInfo.titleSkipped ? <span>Headings found in row {fileInfo.headerRow} (the rows above looked like a title).</span> : null}
-                            <span>Headings are in row</span>
+                            {fileInfo.titleSkipped ? <span>The rows above row {fileInfo.headerRow} looked like a title, so they were skipped.</span> : null}
+                            <span>The column names are in row</span>
                             <input
                               type="number"
                               min={1}
@@ -1402,7 +1544,7 @@ function NewRunContent() {
                   <div className="space-y-3 pt-2">
                     <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Manifest field' : 'column'}</h3>
                     {inputMode === 'csv' && unmatchedShown.length > 0 && (
-                      <div role="alert" className="space-y-1 text-sm">
+                      <div role="status" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 font-medium text-amber-300">
                           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                           No column for {unmatchedShown.map((f) => friendlyFieldName(f)).join(unmatchedShown.length === 2 ? ' and ' : ', ')}
@@ -1410,16 +1552,15 @@ function NewRunContent() {
                         <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, or choose &ldquo;Same on every label&rdquo; and type one value.</p>
                       </div>
                     )}
-                    <div className="space-y-1.5">
+                    <div className="divide-y divide-zinc-800">
                       {dynamicFields.map((field) => {
                         const mapping = fieldMappings[field] ?? { mode: 'static' };
-                        const needsChoice = mapping.mode === 'column' ? !mapping.csvColumn : !(staticValues[field] ?? '').trim();
                         const risk = sameRisks.find((r) => r.field === field);
                         return (
-                          <div key={field} className={`rounded-lg bg-zinc-950 p-3 shadow-[inset_2px_0_0_var(--accent)] ${needsChoice || risk ? '[--accent:var(--color-amber-500)]' : '[--accent:transparent]'}`}>
+                          <div key={field} className={`py-3 first:pt-0 ${risk ? 'pl-3 shadow-[inset_2px_0_0_var(--color-amber-500)]' : ''}`}>
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                               <div id={`${formId}-map-${field}`} className="w-40 shrink-0 text-sm font-medium text-zinc-100 break-words">{friendlyFieldName(field)}</div>
-                              <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="segmented w-full sm:w-auto sm:shrink-0">
+                              <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="segmented map-mode w-full sm:w-auto sm:shrink-0">
                                 <SegmentedIndicator index={mapping.mode === 'column' ? 1 : 0} count={2} />
                                 <button
                                   type="button"
@@ -1437,7 +1578,7 @@ function NewRunContent() {
                                   type="button"
                                   role="radio"
                                   aria-checked={mapping.mode === 'column'}
-                                  onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn || lastColumns[field] || findBestHeaderForField(field, rowHeaders, sourceData) || '' } }))}
+                                  onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn || lastColumns[field] || findBestHeaderForField(field, rowHeaders, sourceData, codeTypes[field]) || '' } }))}
                                   data-active={mapping.mode === 'column'}
                                 >
                                   {inputMode === 'manifest' ? 'From Manifest' : 'From spreadsheet'}
@@ -1470,8 +1611,8 @@ function NewRunContent() {
                                   Every label gets the same {friendlyFieldName(field)}{risk.value ? ` (${risk.value})` : ''}, but your {sheetWord} has {risk.everyRowDiffers ? `a different one on each row` : `${risk.distinct.toLocaleString()} different values`} in “{risk.column}”.{risk.scannable ? ' Each product usually needs its own barcode.' : ''}
                                 </p>
                                 {risk.field === sameRisks[sameRisks.length - 1].field && (
-                                  <label className="flex min-h-control-sm items-start gap-2 text-zinc-100">
-                                    <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
+                                  <label className="flex min-h-11 items-center gap-3 text-zinc-100">
+                                    <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
                                     <span>Yes, print the same {sameRisks.map((r) => friendlyFieldName(r.field)).join(' and ')} on every label</span>
                                   </label>
                                 )}
@@ -1562,7 +1703,7 @@ function NewRunContent() {
                       <span className="text-sm text-zinc-400">Showing the design&apos;s sample text</span>
                     )}
                   </div>
-                  <div className="rounded-lg bg-zinc-950 p-3 sm:p-4 flex justify-center">
+                  <div className="flex justify-center">
                     {format.type === 'sheet' ? (
                       // Sheets don't go through the printer language: show
                       // the sheet grid the way it will print.
@@ -1579,13 +1720,37 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="space-y-4">
-                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={barcodesOk && charactersOk} />}
+                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={barcodesOk && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length} />}
                     <ProblemList
                       tone="error"
-                      heading={`${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that' : 's have barcodes that'} can’t print`}
-                      items={barcodeItems}
-                      more={barcodeCheck.issues.length > barcodeItems.length ? barcodeCheck.badLabels - barcodeItems.length : 0}
+                      heading={`${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that' : 's have barcodes that'} won’t print whole`}
+                      items={barcodeGroups.items}
+                      more={barcodeGroups.more}
                     />
+                    <ProblemList
+                      heading="Barcodes close to the edge"
+                      items={tightGroups.items}
+                      more={tightGroups.more}
+                    />
+                    {currencyRisks.length > 0 && (
+                      <div role="status" className="space-y-2 text-sm">
+                        <p className="flex items-start gap-1.5 font-medium text-amber-300"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />The price sign would print twice</p>
+                        <ul className="space-y-2 pl-5.5">
+                          {currencyRisks.map((risk) => (
+                            <li key={risk.field} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                              <span className="text-zinc-300">{friendlyFieldName(risk.field)} prints “{risk.printed}”: the design adds “{risk.symbol}” and your “{risk.column}” column already has one.</span>
+                              <button type="button" className="btn btn-secondary btn-sm shrink-0 self-start sm:self-auto" onClick={() => setPlainNumberFields((list) => [...list, risk.field])}>Print “{risk.plain}”</button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {plainNumberFields.filter((f) => visibleFieldSet.has(f)).map((field) => (
+                      <p key={field} className="text-sm text-zinc-400">
+                        {friendlyFieldName(field)} prints the number without its “$” from your spreadsheet.{' '}
+                        <button type="button" className="text-amber-400 hover:underline" onClick={() => setPlainNumberFields((list) => list.filter((f) => f !== field))}>Undo</button>
+                      </p>
+                    ))}
                     <ProblemList
                       tone="error"
                       heading={`${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`}
@@ -1604,7 +1769,7 @@ function NewRunContent() {
                 </section>
               )}
 
-              <details className="group card p-4 sm:p-5 text-sm">
+              <details className="group px-1 text-sm">
                 <summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 font-medium text-zinc-300 hover:text-zinc-100 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 shrink-0 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />Save these settings for next time</summary>
                 <div className="flex items-center gap-2 pt-3">
                   <input
@@ -1678,26 +1843,33 @@ function NewRunContent() {
   );
 }
 
-// Inline ZPL preview via zpl-renderer-js WASM. Accepts the extra thermal
-// fields needed to size the canvas for multi-across rolls plus an optional
-// outlines overlay matching the designer + run detail page treatment.
-function LocalZplPreview({ state, message, format, showOutlines = true }: { state: RunPreviewState; message?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; showOutlines?: boolean }) {
+// Inline ZPL preview via zpl-renderer-js WASM: exactly what the printer
+// makes, so label edges are off unless asked for (rolls with 2+ across).
+function LocalZplPreview({ state, message, format }: { state: RunPreviewState; message?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number } }) {
+  const [showEdges, setShowEdges] = useState(false);
   if (state.status === 'error') return <p role="alert" className="text-sm text-red-400">{message || state.message} Fix the value or the design, then check again.</p>;
   if (state.status === 'loading') return <p role="status" className="text-sm text-zinc-400">Drawing the label…</p>;
   if (state.status === 'empty') return <p className="text-sm text-zinc-400">Nothing would print. Check the design and data.</p>;
-  // LabelOutlineOverlay needs the full LabelFormat shape; coerce the loose
-  // format prop (which only guarantees thermal fields) for the overlay. Safe
-  // because the overlay only reads those thermal fields.
+  const across = (format.labelsAcross ?? 1) > 1;
+  // LabelOutlineOverlay needs the full LabelFormat shape; it only reads the
+  // thermal fields this prop guarantees.
   return (
-    <div className="relative inline-block mx-auto">
-      <img
-        src={state.url}
-        alt="Label preview"
-        className="rounded-md bg-white"
-        style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '400px', display: 'block' }}
-      />
-      {showOutlines && (format.labelsAcross ?? 1) > 1 && (
-        <LabelOutlineOverlay format={format as unknown as import('@/lib/types').LabelFormat} />
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative inline-block">
+        <img
+          src={state.url}
+          alt="Label preview"
+          className="rounded-md bg-white"
+          style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '400px', display: 'block' }}
+        />
+        {showEdges && across && (
+          <LabelOutlineOverlay format={format as unknown as import('@/lib/types').LabelFormat} />
+        )}
+      </div>
+      {across && (
+        <button type="button" aria-pressed={showEdges} onClick={() => setShowEdges((v) => !v)} className="btn btn-ghost btn-sm">
+          {showEdges ? 'Hide label edges' : 'Show label edges'}
+        </button>
       )}
     </div>
   );

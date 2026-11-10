@@ -17,6 +17,8 @@ export interface RunDraft {
   pasteField: string | null;
   csvHeaders: string[];
   csvRows: Record<string, string>[];
+  /** Plain digits of formatted Excel numbers, aligned with csvRows (optional). */
+  csvPlainRows?: Record<string, string>[] | null;
   csvFileName: string;
   manualQty: number;
   savedAt: number;

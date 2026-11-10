@@ -1,6 +1,7 @@
 import type { RunPrintEvent, RunPrintOutput, RunStatus, TemplateElement } from './types';
 import { friendlyFieldName } from './fieldLabels';
-import { barcodeValueProblem } from './barcodeCheck';
+import { barcodeValueProblem } from './barcodeValue';
+import { barcodeFit, barcodeFitFix, barcodeFitProblem } from './barcodeFit';
 
 /**
  * Plain-language wrappers for messages that come from frozen or low-level code
@@ -46,6 +47,8 @@ export function friendlyError(error: unknown, fallback = 'Something went wrong. 
   if (/^Office printing request failed/i.test(message) || /^Internal Server Error$/i.test(message)) return 'Label Wrangler is having trouble right now. Try again in a minute.';
   if (/database (unavailable|error)|simulated 5\d\d|service unavailable|bad gateway|gateway time-?out|^Failed to (fetch|load) \w/i.test(message)) return SERVER_TROUBLE_MESSAGE;
   if (/^Failed to (update|create|delete|archive|save) \w/i.test(message)) return SAVE_TROUBLE_MESSAGE;
+  // The label renderer names a lane and an item ("Lane 1, SKU: Artwork failed").
+  if (/Lane \d+, [^:]+: /.test(message)) return friendlyRenderError(message);
   return stripInternalIds(message) || fallback;
 }
 
@@ -82,13 +85,17 @@ function elementNoun(element: TemplateElement): string {
   return 'A box';
 }
 
+/** The value the renderer drew: fixed text for "Same on every label", else the field's value, with prefix and suffix. */
 function barcodeValue(element: TemplateElement | undefined, values?: Record<string, string>): string {
   if (!element) return '';
-  const fromValues = !element.isStatic && element.fieldName ? values?.[element.fieldName] : undefined;
-  return fromValues || element.defaultValue || ('content' in element ? element.content || '' : '');
+  const content = 'content' in element ? element.content || '' : '';
+  if (element.isStatic) return content;
+  const fromValues = element.fieldName ? values?.[element.fieldName] : undefined;
+  return `${element.prefix || ''}${fromValues || element.defaultValue || content}${element.suffix || ''}`;
 }
 
-const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record<string, string>) => string]> = [
+type RenderFormat = Parameters<typeof barcodeFit>[2];
+const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record<string, string>, format?: RenderFormat) => string]> = [
   // The artwork renderer throws a bare "Artwork failed" (or the barcode
   // library's own words) when a value doesn't suit the barcode type.
   [/^(Artwork failed|Invalid barcode content.*|.*is not a valid input for.*)$/i, (el, values) => {
@@ -97,28 +104,38 @@ const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record
       if (problem) return `${problem}.`.replace(/\.\.$/, '.');
       return 'can’t be drawn with this value. Check the value suits the barcode type.';
     }
-    if (el?.type === 'qr') return 'can’t be drawn with this value. Make the value shorter.';
+    if (el?.type === 'qr') return 'can’t be drawn with this value. Make the QR code box bigger.';
+    if (!el) return 'can’t be drawn with its value. Check the value suits the item, for example numbers only for a UPC barcode.';
     return 'couldn’t be drawn. Check its value, or delete it and add it again.';
   }],
   [/^Image is missing$/i, () => 'has no picture yet — choose a file or delete the box.'],
   [/^Missing QR\/barcode value$/i, (el) => el && !el.isStatic ? 'has no value — type a sample under "Sample for the preview", or fill it from your data.' : 'has no value — type one in the properties panel.'],
   [/^Text overflows its box/i, () => 'doesn\'t fit its box — make the box bigger, use a smaller size, or turn on Auto-fit.'],
   [/^Artwork is entirely outside the label$/i, () => 'is outside the label — drag it back onto the label.'],
-  [/^Barcode box is too small/i, () => 'is too small to scan — make its box bigger.'],
+  [/^Barcode box is too small/i, (el, values, format) => {
+    // The exact renderer's own limit, from the shared verdict: how wide the box must be.
+    if (el?.type === 'barcode' && format) {
+      const value = barcodeValue(el, values);
+      const fit = barcodeFit(el, value, format, true);
+      if (fit.level === 'blocked' && fit.reason !== 'characters') return `${barcodeFitProblem(fit, value)}. ${barcodeFitFix(fit)}.`;
+    }
+    return 'is too small to scan — make its box wider.';
+  }],
+  [/clipped outside the label/i, () => 'runs off the label edge, so it won’t scan — move it fully onto the label.'],
 ];
 
 /**
  * Turn "Lane 1, 087b8c70-…: Image is missing" (render server wording) into
  * "The picture box has no picture yet — choose a file or delete the box."
  */
-export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1, values?: Record<string, string>): string {
+export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1, values?: Record<string, string>, format?: RenderFormat): string {
   return message.replace(/Lane (\d+), ([^:]+): ([^\n]+)/g, (_match, lane: string, ref: string, detail: string) => {
     const element = elements.find((el) => el.id === ref.trim()) ?? elements.find((el) => el.fieldName === ref.trim());
-    const subject = element ? elementNoun(element) : UUID.test(ref) ? 'One item' : `"${ref.trim()}"`;
+    const subject = element ? elementNoun(element) : UUID.test(ref) ? 'One item' : `The ${friendlyFieldName(ref.trim())} item`;
     UUID.lastIndex = 0;
     const phrase = RENDER_PHRASES.find(([re]) => re.test(detail.trim()));
     const where = labelsAcross > 1 ? ` (label position ${lane})` : '';
-    return phrase ? `${subject}${where} ${phrase[1](element, values)}` : `${subject}${where}: ${detail}`;
+    return phrase ? `${subject}${where} ${phrase[1](element, values, format)}` : `${subject}${where}: ${detail}`;
   }).replace(UUID, '').trim();
 }
 
@@ -136,4 +153,14 @@ export function printEventLabel(event: Pick<RunPrintEvent, 'eventType' | 'output
   if (/^Exported ZPL/i.test(event.message || '')) return `Saved ${range} as a printer file`;
   if (reprint) return `Reprinted ${range} on the ${where}`;
   return `Sent ${range} to the ${where}`;
+}
+
+/**
+ * A failed artwork render in plain words, naming the item from the design
+ * (friendlyError alone can't see the design, so it says "The SKU item").
+ */
+export function friendlyRenderFailure(error: unknown, fallback: string, elements: TemplateElement[], labelsAcross = 1, values?: Record<string, string>, format?: RenderFormat): string {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (/Lane \d+, [^:]+: /.test(raw)) return friendlyRenderError(raw, elements, labelsAcross, values, format);
+  return friendlyError(error, fallback);
 }

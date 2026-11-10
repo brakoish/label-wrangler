@@ -27,6 +27,7 @@ import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { safeNextPath } from '@/lib/safeRedirect';
 import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
 import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
@@ -53,10 +54,9 @@ function DesignerContent() {
   // template" from a run detail page). When present we swap the breadcrumb
   // for a 'Done' back button that sends the user home to where they started.
   // Only allow same-origin paths to avoid open-redirect mischief.
-  const rawReturnTo = searchParams.get('returnTo');
-  const returnTo = rawReturnTo && rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//')
-    ? rawReturnTo
-    : null;
+  // Resolved the way the browser would ("/\\evil.com" becomes another site),
+  // against a stand-in origin: only a path on this site is kept.
+  const returnTo = safeNextPath(searchParams.get('returnTo'), 'https://label-wrangler.invalid', '') || null;
 
   const {
     templates,
@@ -403,7 +403,7 @@ function DesignerContent() {
             onNewTemplate={() => setShowNewTemplateDialog(true)}
           />
           {/* Importing outside designs is an admin tool, not an everyday one. */}
-          {isAdmin && <div className="mx-auto w-full max-w-[1600px] pb-8">
+          {isAdmin && <div className="page-container pb-8">
           <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
           </div>}
         </div>
@@ -822,7 +822,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div className="max-sm:hidden"><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
             </div>
           </div>
 
@@ -879,7 +879,7 @@ function DesignerContent() {
           onUpdateSelected={handleUpdateSelectedElements}
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
           allElements={currentTemplate.elements}
-          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => p.message) : []}
+          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => (p.fix ? `${p.message} ${p.fix.replace(/\.$/, "")}.` : p.message)) : []}
           onArrange={(action: AlignAction) => {
             beginGesture();
             const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id) && !e.locked), action);
