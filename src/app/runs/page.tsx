@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet, CheckCircle2, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet, CheckCircle2, Loader2, X } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { Menu } from '@/components/ui/Menu';
 import { PageTitle } from '@/components/PageTitle';
@@ -15,7 +15,8 @@ import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
 import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError } from '@/lib/userMessages';
 import { moreNeedAttention, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
-import { officeStatusLine, plainJobReason, type OfficeReviewHold } from '@/lib/officeSendOutcome';
+import { officeStatusLine, type OfficeReviewHold } from '@/lib/officeSendOutcome';
+import { officeProblemWords } from '@/lib/officeProblem';
 import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
@@ -46,7 +47,7 @@ const TONE_DOT: Record<RunDisplayTone, string> = {
   cancelled: 'bg-zinc-500',
 };
 
-function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean }) | null }) {
+function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null }) | null }) {
   const display = runDisplayStatus(run, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
@@ -102,7 +103,7 @@ interface BarPrinter { station_id: string; id: string; name: string; online: boo
  * with a link there, and Pause/Resume. Reads every 15 s, faster while it is
  * stopped or paused, never while the page is hidden.
  */
-function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
+function OfficePrinterBar({ onHeld, runs = [] }: { onHeld?: (held: boolean, holdRun?: { runId: string; runName: string } | null) => void; runs?: ListRun[] }) {
   const [printers, setPrinters] = useState<BarPrinter[] | null>(null);
   const [hidden, setHidden] = useState(false);
   const read = useCallback(async () => {
@@ -118,7 +119,9 @@ function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
   const status = officeStatusLine(printer ?? undefined);
   const watch = status.stopped || status.paused || status.tone !== 'ok';
   const held = officePrinterHeld(printers);
-  useEffect(() => { onHeld?.(held); }, [held, onHeld]);
+  const holdId = status.stopped && status.hold ? status.hold.run_id : '';
+  const holdName = status.stopped && status.hold ? status.hold.run_name : '';
+  useEffect(() => { onHeld?.(held, holdId ? { runId: holdId, runName: holdName } : null); }, [held, holdId, holdName, onHeld]);
   useEffect(() => {
     let active = true;
     const update = () => { if (active && document.visibilityState !== 'hidden') void read(); };
@@ -129,15 +132,26 @@ function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
     return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [read, watch]);
   if (hidden || !printer) return null;
-  const dot = status.tone === 'ok' ? 'bg-emerald-400' : status.tone === 'bad' ? 'bg-red-400' : 'bg-amber-300';
+  const dot = status.paused ? 'border-2 border-amber-300 bg-transparent' : status.tone === 'ok' ? 'bg-emerald-400' : status.tone === 'bad' ? 'bg-red-400' : 'bg-amber-300';
   const text = status.tone === 'ok' ? 'text-zinc-300' : status.tone === 'bad' ? 'text-red-400' : 'text-amber-300';
+  // The same sentence as that run's row, from the same part: the row's first failed part.
+  const holdRun = status.hold ? runs.find((r) => r.id === status.hold!.run_id) : undefined;
+  const first = holdRun?.office?.firstFailed ?? null;
+  const words = status.stopped && status.hold
+    ? (first ? officeProblemWords(first) : officeProblemWords({ from: status.hold.from, to: status.hold.to, kind: status.hold.did_not_print ? 'did-not-print' : 'needs-check' }))
+    : null;
+  const runName = status.hold?.run_name || holdRun?.name || 'another run';
+  const line = words ? `Stopped by “${runName}”: ${words.sentence}${status.otherHolds > 1 ? ` ${status.otherHolds} runs need a check.` : ''}` : status.text;
   return (
     <section aria-label="Office printer" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-      <div role="status" className="min-w-0 space-y-0.5 text-sm">
-        <p className={`flex items-start gap-2 ${text}`}><span aria-hidden="true" className={`mt-1.5 size-2 shrink-0 rounded-full ${dot}`} /><span><span className="font-medium text-zinc-100">{printer.name}</span> · {status.text}</span></p>
-        {status.hold && <p className="pl-4"><Link href={`/runs/${encodeURIComponent(status.hold.run_id)}`} className="font-medium text-zinc-100 underline underline-offset-2">Open that run</Link><span className="text-zinc-400"> to check {status.hold.from === status.hold.to ? 'it' : 'them'}.</span></p>}
+      <div role="status" className="min-w-0 text-sm">
+        <p className={`flex items-start gap-2 ${text}`}><span aria-hidden="true" className={`status-dot mt-1.5 size-2 shrink-0 rounded-full ${dot}`} /><span key={line} className="status-swap"><span className="font-medium text-zinc-100">{printer.name}:</span> {line}</span></p>
       </div>
-      <OfficePrinterControls onUnavailable={() => setHidden(true)} onChange={() => void read()} />
+      <div className="flex flex-wrap items-center gap-2">
+        {/* The bar's action is the row's action: open that run and fix it there. */}
+        {status.stopped && status.hold && <Link href={`/runs/${encodeURIComponent(status.hold.run_id)}`} className="btn btn-secondary btn-sm">Open “{runName}”</Link>}
+        <OfficePrinterControls onUnavailable={() => setHidden(true)} onChange={() => void read()} />
+      </div>
     </section>
   );
 }
@@ -147,7 +161,7 @@ function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
  * every selected run and its ranges, one confirm. Each run's progress moves
  * through its unbroken sent stretches, and each range is kept as confirmed.
  */
-function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolean; onClose: () => void }) {
+function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]; leftOut?: ListRun[]; open: boolean; onClose: () => void }) {
   const { setRunStatus, createPrintEvent } = useRunStore();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -208,6 +222,12 @@ function BulkMarkDialog({ runs, open, onClose }: { runs: ListRun[]; open: boolea
           );
         })}
       </ul>
+      {leftOut.length > 0 && <ul className="space-y-1 text-sm text-zinc-400">
+        {leftOut.map((run) => {
+          const first = run.office?.firstFailed;
+          return <li key={run.id}>“{run.name}” isn’t included{first ? `: ${officeProblemWords(first).action.replace(/\.$/, '')} first` : ': part of it needs a check first'}.</li>;
+        })}
+      </ul>}
       {problem && <p role="alert" className="text-sm text-red-400">{problem}</p>}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
@@ -274,6 +294,11 @@ export default function RunsPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   // The shared printer is paused or stopped: queued labels read as waiting, not on their way.
   const [printerHeld, setPrinterHeld] = useState(false);
+  const [holdRun, setHoldRun] = useState<{ runId: string; runName: string } | null>(null);
+  const onPrinterHeld = useCallback((held: boolean, by?: { runId: string; runName: string } | null) => {
+    setPrinterHeld(held);
+    setHoldRun((prev) => (prev?.runId === by?.runId && prev?.runName === by?.runName ? prev : by ?? null));
+  }, []);
   const requestDeletePreset = async (preset: RunPreset) => {
     const ok = await confirmDialog({ title: `Delete the preset “${preset.name}”?`, body: 'A preset that runs were made from is kept for your records and can’t be deleted. A preset no run used is removed for good.', confirmLabel: 'Delete preset', danger: true });
     if (!ok) return;
@@ -374,6 +399,8 @@ export default function RunsPage() {
 
   // Runs whose sent office labels nobody counted yet (for the bulk action).
   const markableRuns = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.markable?.ranges.length ?? 0) > 0 && (r.office?.onTheWay ?? 0) === 0), [active]);
+  // Runs with sent labels that aren't offered because a part needs someone first.
+  const bulkLeftOut = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.failed ?? 0) > 0 && (r.office?.sent ?? 0) > 0 && !(r.office?.markable?.ranges.length)), [active]);
 
   const renderRunCollection = (collection: Run[], emptyMsg: string) => {
     if (collection.length === 0) {
@@ -397,6 +424,7 @@ export default function RunsPage() {
                 onDelete={() => void requestDeleteRun(r)}
                 onTogglePin={() => void togglePin(r.id)}
                 printerHeld={printerHeld}
+                holdRun={holdRun}
               />
             </li>
           ))}
@@ -408,7 +436,7 @@ export default function RunsPage() {
   return (
     <AppShell>
       <PageTitle title="Runs" />
-      <BulkMarkDialog runs={markableRuns} open={bulkOpen} onClose={() => setBulkOpen(false)} />
+      <BulkMarkDialog runs={markableRuns} leftOut={bulkLeftOut} open={bulkOpen} onClose={() => setBulkOpen(false)} />
       <div className="flex-1 overflow-auto">
         <div className="page-container space-y-6 sm:space-y-8">
           <section>
@@ -428,7 +456,7 @@ export default function RunsPage() {
                 <QuickAction
                   href="/runs/new?source=manifest"
                   icon={<Search className="h-4 w-4" aria-hidden="true" />}
-                  label="From Manifest"
+                  label="Search packages"
                   secondary
                 />
                 <QuickAction
@@ -452,7 +480,7 @@ export default function RunsPage() {
           )}
 
           {/* The office printer can be paused even with no run open. */}
-          <OfficePrinterBar onHeld={setPrinterHeld} />
+          <OfficePrinterBar onHeld={onPrinterHeld} runs={active as ListRun[]} />
 
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (
@@ -742,15 +770,21 @@ function RunRow({
   onDelete,
   onTogglePin,
   printerHeld = false,
+  holdRun = null,
 }: {
   run: ListRun;
   printerHeld?: boolean;
+  /** Another run whose part stops the shared printer. */
+  holdRun?: { runId: string; runName: string } | null;
   templateName: string;
   formatName: string;
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
-  const office = run.office ? { ...run.office, held: printerHeld } : null;
+  // Labels of this run waiting behind another run's part: "Waiting on another run".
+  const heldBy = holdRun && holdRun.runId !== run.id && (run.office?.onTheWay ?? 0) > 0 ? holdRun : null;
+  const office = run.office ? { ...run.office, held: printerHeld, heldBy } : null;
+  const { setRunStatus, createPrintEvent } = useRunStore();
   const display = runDisplayStatus(run, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
   const waitingLine = office && office.onTheWay > 0 ? `${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way to the office printer'}` : '';
@@ -764,12 +798,27 @@ function RunRow({
   const [partsLeft, setPartsLeft] = useState<OfficeSpan[]>([]);
   useEffect(() => { try { setPartsLeft(remainingParts(readPartsPlan(localStorage.getItem(`lw:office-parts:${run.id}`)))); } catch { setPartsLeft([]); } }, [run.id, office?.sent, office?.onTheWay]);
 
+  // Cancelling keeps the history and never touches what the office already has.
+  const cancelRun = async () => {
+    const waiting = run.office?.onTheWay ?? 0;
+    const ok = await confirmDialog({
+      title: `Cancel “${run.name}”?`,
+      body: `Labels already printed stay printed and the print history is kept.${waiting ? ` ${waiting === 1 ? '1 label is' : `${waiting.toLocaleString()} labels are`} still waiting at the office and ${waiting === 1 ? 'prints' : 'print'} anyway, unless you open the run and tap “Cancel what hasn’t been picked up” in its office queue.` : ''}`,
+      confirmLabel: 'Cancel run', cancelLabel: 'Keep run', danger: true,
+    });
+    if (!ok) return;
+    try {
+      await setRunStatus(run.id, 'cancelled', printed);
+      if (printed < run.totalLabels) await createPrintEvent(run.id, { eventType: 'cancelled', output: run.office ? 'office-pi' : 'roll-zpl', rangeFrom: printed + 1, rangeTo: run.totalLabels, labelCount: run.totalLabels - printed, printedCountAfter: printed, printerName: null, message: 'Run cancelled' });
+      toast('Run cancelled');
+    } catch (error) { void alertDialog('The run wasn’t cancelled', friendlyError(error, 'Try again in a moment.')); }
+  };
   return (
-    <div className="run-row flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
+    <div className="run-row relative flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
       <Link href={`/runs/${run.id}`} className="flex min-w-0 flex-1 flex-col gap-2 rounded-lg sm:flex-row sm:items-center sm:gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
-            <h3 className="truncate text-sm font-semibold text-zinc-100">{run.name}</h3>
+            <h3 className="line-clamp-2 break-words text-sm font-semibold text-zinc-100 max-sm:pr-10">{run.name}</h3>
             <RunStatusText run={run} office={office} />
           </div>
           <p className="mt-0.5 truncate text-xs text-zinc-400">
@@ -777,7 +826,7 @@ function RunRow({
           </p>
           {failed && run.status !== 'cancelled' && (
             <p className={`mt-0.5 text-xs ${failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? 'text-red-400' : 'text-amber-300'}`}>
-              {failed.from === failed.to ? `Label ${failed.from.toLocaleString()}` : `Labels ${failed.from.toLocaleString()}–${failed.to.toLocaleString()}`} {failed.kind === 'print-again' ? (failed.from === failed.to ? 'needs printing again' : 'need printing again') : failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? `didn’t print: ${plainJobReason(failed.reason)}` : (failed.from === failed.to ? 'needs a check at the office printer' : 'need a check at the office printer')}.{office ? moreNeedAttention(office, failed) : ''}
+              {officeProblemWords(failed).sentence}{office ? moreNeedAttention(office, failed) : ''}
             </p>
           )}
           {!failed && partsLeft.length > 0 && unfinished && (
@@ -798,15 +847,17 @@ function RunRow({
           </div>
           {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>
-        {unfinished && <span className="btn btn-secondary btn-sm max-sm:self-start sm:w-24">Open</span>}
+        {/* The whole card opens the run; the button is only drawn on wider screens. */}
+        {unfinished && <span className="btn btn-secondary btn-sm max-sm:hidden sm:w-24">Open</span>}
       </Link>
       <Menu
         label={`More for ${run.name}`}
         showLabel={false}
-        className="max-sm:self-start"
+        className="max-sm:absolute max-sm:right-2 max-sm:top-2"
         items={[
           ...(onTogglePin ? [{ label: pinned ? 'Unpin' : 'Pin to top', icon: pinned ? <PinOff className="h-4 w-4 text-zinc-400" aria-hidden="true" /> : <Pin className="h-4 w-4 text-zinc-400" aria-hidden="true" />, onSelect: onTogglePin }] : []),
           { label: 'Re-run with the same data', icon: <Copy className="h-4 w-4 text-zinc-400" aria-hidden="true" />, href: `/runs/new?duplicateFrom=${run.id}` },
+          ...(unfinished && run.status !== 'printing' ? [{ label: 'Cancel run…', icon: <X className="h-4 w-4" aria-hidden="true" />, danger: true, onSelect: () => void cancelRun() }] : []),
           // A run with print history can't be deleted (it's kept for your records).
           ...(run.hasPrintHistory ? [] : [{ label: 'Delete run', icon: <Trash2 className="h-4 w-4" aria-hidden="true" />, danger: true, onSelect: onDelete }]),
         ]}
