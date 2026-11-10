@@ -13,7 +13,7 @@ async function handleGET(request: NextRequest) {
     // the elements array (one detoast per row instead of two); exact counts
     // would need stored count columns, which is a schema change.
     const rows = await db.select({id:templates.id,name:templates.name,description:templates.description,formatId:templates.formatId,thermalRenderMode:templates.thermalRenderMode,archivedAt:templates.archivedAt,createdAt:templates.createdAt,updatedAt:templates.updatedAt,
-      counts:sql<{n:number;d:number} | null>`(select json_build_object('n', count(*)::int, 'd', (count(*) filter (where e->>'isStatic' = 'false'))::int) from jsonb_array_elements(${templates.elements}) e)`})
+      counts:sql<{n:number;d:number} | null>`(select json_build_object('n', count(*)::int, 'd', (count(*) filter (where e->>'isStatic' = 'false'))::int) from jsonb_array_elements(case when jsonb_typeof(${templates.elements}) = 'array' then ${templates.elements} else '[]'::jsonb end) e)`})
       .from(templates).orderBy(desc(templates.createdAt)).limit(50).offset(offset);
     const allTemplates = rows.map(({ counts: raw, ...row }) => {
       const counts = typeof raw === 'string' ? JSON.parse(raw) as { n: number; d: number } : raw;
