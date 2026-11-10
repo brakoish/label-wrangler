@@ -21,6 +21,7 @@ import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { BlankSummary, ProblemList, blankHeading } from '@/components/checks/RunChecks';
 import { blankCheckAllowsPrinting, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
+import { LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
 import { friendlyError, friendlyRenderError, isNetworkError, SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
@@ -828,7 +829,16 @@ function NewRunContent() {
   // Every barcode value must be one its barcode type can hold; checked for
   // every label, so label 10 can't stop a run part-way.
   const barcodeCheck = useMemo(() => (checkTemplate && hasData ? checkRunBarcodes(checkTemplate, runDataForCheck, format) : { issues: [], badLabels: 0, warnings: [], checkedLabels: 0, fitCounts: {} }), [checkTemplate, hasData, runDataForCheck, format]);
-  const barcodesOk = barcodeCheck.issues.length === 0;
+  // A barcode the printer would cut off is shown first, in red, with its
+  // fix; going ahead takes an explicit tick (the verdict emulates the
+  // printer, and these designs may be printing today). Only what the exact
+  // renderer refuses stops the run: nothing could print.
+  const barcodeWords = barcodeVerdict(barcodeCheck.issues, barcodeCheck.badLabels, format);
+  const barcodeKey = useMemo(() => barcodeCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [barcodeCheck.issues]);
+  const [barcodeGoAheadKey, setBarcodeGoAheadKey] = useState('');
+  const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeGoAheadKey === barcodeKey;
+  const barcodesClear = barcodeCheck.issues.length === 0;
+  const barcodesOk = barcodesClear || barcodeGoAhead;
 
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
@@ -902,9 +912,7 @@ function NewRunContent() {
                       : !examplesOk
                         ? `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`
                       : !barcodesOk
-                        ? barcodeCheck.issues.every((issue) => issue.kind === 'characters')
-                          ? `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode value' : 's have barcode values'} its barcode type can’t hold. See the list above.`
-                          : `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that won’t' : 's have barcodes that won’t'} print whole. See the list above.`
+                        ? barcodeWords.waitReason
                         : !charactersOk
                           ? `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`
                         : !layoutOk
@@ -1074,6 +1082,15 @@ function NewRunContent() {
       if (presetId) void updatePreset(presetId, { touch: true });
       clearRunDraft();
       if (blankCheck.issues.length && leaveBlank) rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, run.id, blankCheck.signature);
+      // The go-ahead given here carries to the run page, for the same problems.
+      if (barcodeGoAhead || (layoutIssues.length && layoutOk)) {
+        const snapshot = run.designSnapshot;
+        const saved = runPrintCheck({ ...run, sourceData: run.sourceData?.length ? run.sourceData : finalSourceData, fieldMappings: run.fieldMappings ?? finalMappings }, snapshot?.template ?? template, snapshot?.format ?? format);
+        rememberPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, run.id, {
+          ...(barcodeGoAhead && saved.blocking.length && !saved.verdict.stops ? { barcode: saved.blockingKey } : {}),
+          ...(layoutIssues.length && layoutOk && saved.layout.length ? { layout: saved.layoutKey } : {}),
+        });
+      }
       return run;
     } catch (error) {
       console.error('Error creating run:', error);
@@ -1720,12 +1737,15 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="space-y-4">
-                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={barcodesOk && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length} />}
+                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length} />}
                     <ProblemList
                       tone="error"
-                      heading={`${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that' : 's have barcodes that'} won’t print whole`}
+                      heading={barcodeWords.heading}
                       items={barcodeGroups.items}
                       more={barcodeGroups.more}
+                      confirmLabel={barcodeWords.stops ? undefined : barcodeWords.goAheadLabel}
+                      confirmed={barcodeGoAhead}
+                      onConfirmedChange={(value) => setBarcodeGoAheadKey(value ? barcodeKey : '')}
                     />
                     <ProblemList
                       heading="Barcodes close to the edge"
@@ -1761,7 +1781,7 @@ function NewRunContent() {
                       heading="Some items overlap or run off the label"
                       items={layoutIssues.slice(0, 5)}
                       more={layoutIssues.length - Math.min(5, layoutIssues.length)}
-                      confirmLabel="I checked the preview. Print it like this."
+                      confirmLabel={LAYOUT_GO_AHEAD}
                       confirmed={layoutConfirmedKey === layoutKey}
                       onConfirmedChange={(value) => setLayoutConfirmedKey(value ? layoutKey : '')}
                     />
