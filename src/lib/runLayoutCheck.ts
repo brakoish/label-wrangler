@@ -2,16 +2,45 @@ import type { LabelFormat, LabelTemplate, Run } from './types';
 import { layoutProblems, type LayoutProblem } from './designerLayout';
 import { previewLabelValues } from './runBuilder';
 import { checkRunBarcodes, describeBarcodeGroups, type BarcodeIssue } from './barcodeCheck';
+import { friendlyFieldName } from './fieldLabels';
 
-/** One message per problem, with the labels it is on when not every label. */
-function collect(run: Run, template: LabelTemplate, format: LabelFormat, total: number, keep: (problem: LayoutProblem) => boolean): string[] {
+/** The run data the checks read (a Run, or the new-run wizard's data before the run exists). */
+export interface RunCheckData {
+  sourceData: ReadonlyArray<string | Record<string, string>>;
+  fieldMappings?: Run['fieldMappings'] | null;
+  staticValues?: Run['staticValues'] | null;
+  mappedField?: string | null;
+}
+
+/**
+ * A layout problem that is NOT already named by the barcode check: a barcode
+ * that doesn't print whole is one problem, with one go-ahead, and its
+ * overlaps are named in that same line ("It also prints over the COA link QR
+ * code"). Everything else that covers something or runs off the label is
+ * listed here.
+ */
+export function isSeparateLayoutProblem(problem: LayoutProblem): boolean {
+  const fit = problem.barcodeFit;
+  if (fit && fit.level === 'blocked' && fit.reason !== 'characters') return false;
+  if (fit && fit.level === 'tight' && !problem.kinds.includes('overlap')) return false;
+  return true;
+}
+
+/**
+ * Items that cover each other or run off the label, on any of the first
+ * `total` labels: one message per problem, with the labels it is on when not
+ * every label. Shared by the new-run wizard and the run page.
+ */
+export function runLayoutIssues(data: RunCheckData, template: Pick<LabelTemplate, 'elements' | 'thermalRenderMode'>, format: LabelFormat | null | undefined, total: number): string[] {
+  if (!format || format.type !== 'thermal' || template.thermalRenderMode === 'bitmap-v1') return [];
   const found = new Map<string, { message: string; labels: number[]; count: number }>();
+  const run = { ...data, fieldMappings: data.fieldMappings ?? {}, staticValues: data.staticValues ?? {} } as unknown as Run;
   for (let index = 0; index < total; index++) {
-    const values = previewLabelValues(run, Math.min(index, Math.max(0, run.sourceData.length - 1)));
+    const values = previewLabelValues(run, Math.min(index, Math.max(0, data.sourceData.length - 1)));
     for (const problem of layoutProblems(template.elements, format, values)) {
-      if (!keep(problem)) continue;
-      const key = `${problem.kind}:${problem.ids.join(',')}`;
-      const message = problem.fix ? `${problem.message} ${problem.fix}.` : problem.message;
+      if (!isSeparateLayoutProblem(problem)) continue;
+      const key = `${problem.kinds.join('+')}:${problem.ids.join(',')}`;
+      const message = problem.fix ? `${problem.message} ${problem.fix.replace(/\.$/, '')}.` : problem.message;
       const entry = found.get(key) ?? { message, labels: [], count: 0 };
       entry.count++;
       if (entry.labels.length < 3) entry.labels.push(index + 1);
@@ -23,14 +52,14 @@ function collect(run: Run, template: LabelTemplate, format: LabelFormat, total: 
     : entry.message));
 }
 
-/** The go-ahead for a barcode the printer would cut off (designer emulation, not a renderer failure). */
+/** The old go-ahead words, kept for callers that still import them. */
 export const BARCODE_GO_AHEAD = 'Print anyway — the barcode may be cut off';
 /** The go-ahead when the only problem is a value the barcode type can't hold. */
 export const BARCODE_VALUE_GO_AHEAD = 'Print anyway — the barcode may not scan';
 /** The go-ahead for items that cover each other or run off the label (the wizard's words). */
 export const LAYOUT_GO_AHEAD = 'I checked the preview. Print it like this.';
 
-type VerdictIssue = Pick<BarcodeIssue, 'kind' | 'fit'>;
+type VerdictIssue = Pick<BarcodeIssue, 'kind' | 'fit'> & Partial<Pick<BarcodeIssue, 'field' | 'label' | 'overprints' | 'overprintsCode'>>;
 type VerdictFormat = Pick<LabelFormat, 'type'> | null | undefined;
 
 /**
@@ -42,34 +71,90 @@ export function barcodeIssueStops(issue: VerdictIssue, format: VerdictFormat): b
   return format?.type === 'thermal' && !!issue.fit?.bitmap && issue.fit.level === 'blocked';
 }
 
+/**
+ * How bad the worst barcode problem is, in the order a person should weigh it:
+ * - 'stop': the exact renderer refuses it; nothing can print.
+ * - 'neither-scans': the bars print over the next label's barcode (two
+ *   across), so both labels of every pair are ruined.
+ * - 'damage': the bars are cut off (and may print over other items).
+ * - 'value': a value the barcode type can't hold (native printers still print something).
+ */
+export type BarcodeSeverity = 'none' | 'stop' | 'neither-scans' | 'damage' | 'value';
+
 export interface BarcodeVerdict {
   /** Nothing can print until the design changes (the exact renderer refuses it). */
   stops: boolean;
+  severity: BarcodeSeverity;
   /** Red heading over the list of problems. */
   heading: string;
-  /** The words on the explicit go-ahead (when it doesn't stop). */
+  /** The words on the explicit go-ahead (when it doesn't stop): what will really happen. */
   goAheadLabel: string;
   /** One plain line for why printing waits, next to the disabled button. */
   waitReason: string;
+  /**
+   * False when a go-ahead given in the new-run wizard must not carry over to
+   * the run page: the run page asks again ('neither-scans').
+   */
+  carriesOver: boolean;
+  /** What to change: the spreadsheet rows, the design, or both. */
+  fixIn: 'design' | 'data' | 'both' | 'none';
 }
 
-/** Shared words for the barcode problems, so the wizard and the run page say the same thing. */
-export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: number, format: VerdictFormat): BarcodeVerdict {
-  const stops = issues.some((issue) => barcodeIssueStops(issue, format));
+function codeNames(issues: ReadonlyArray<VerdictIssue>): string {
+  const names = Array.from(new Set(issues.map((issue) => (issue.label && issue.field ? friendlyFieldName(issue.field) : 'fixed'))));
+  if (!names.length) return 'the barcode';
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `the ${list} barcode${names.length === 1 ? '' : 's'}`;
+}
+
+/**
+ * Shared words for the barcode problems, so the wizard and the run page say
+ * the same thing. The go-ahead names the damage the preview shows, never a
+ * softer "may be cut off". `fromSheet` says whether a field's values come
+ * from the spreadsheet (so a bad value is fixed there, not in the design).
+ */
+export function barcodeVerdict(issues: ReadonlyArray<VerdictIssue>, badLabels: number, format: VerdictFormat, fromSheet?: (field: string) => boolean): BarcodeVerdict {
+  const stopping = issues.filter((issue) => barcodeIssueStops(issue, format));
+  const stops = stopping.length > 0;
   const valuesOnly = issues.length > 0 && issues.every((issue) => issue.kind === 'characters');
+  const fits = issues.filter((issue) => issue.kind !== 'characters' && issue.fit);
+  const pairs = fits.filter((issue) => issue.fit?.reason === 'into-next-label' && issue.fit.overNextBarcode);
+  const severity: BarcodeSeverity = !issues.length ? 'none' : stops ? 'stop' : pairs.length ? 'neither-scans' : fits.length ? 'damage' : 'value';
   const n = Math.max(1, badLabels);
   const labels = `${n.toLocaleString()} label${n === 1 ? '' : 's'}`;
   const has = n === 1 ? 'has' : 'have';
+  // A value fixed in the spreadsheet vs a design change.
+  const isData = (issue: VerdictIssue) => issue.kind === 'characters' && !!issue.label && !!issue.field && !!fromSheet?.(issue.field);
+  const toFix = stops ? stopping : issues;
+  const fixIn: BarcodeVerdict['fixIn'] = !toFix.length ? 'none' : toFix.every(isData) ? 'data' : toFix.some(isData) ? 'both' : 'design';
   const heading = stops
-    ? `${labels} ${has} a barcode that can’t be drawn`
+    ? stopping.every((issue) => issue.kind === 'characters')
+      ? `${labels} ${has} a barcode value it can’t print`
+      : `${labels} ${has} a barcode that can’t be drawn`
     : valuesOnly
       ? `${labels} ${has} a barcode value its barcode type can’t hold`
-      : `${labels} ${has} a barcode that won’t print whole`;
-  const goAheadLabel = valuesOnly ? BARCODE_VALUE_GO_AHEAD : BARCODE_GO_AHEAD;
+      : severity === 'neither-scans'
+        ? `${labels} ${has} a barcode that prints over the next label’s`
+        : `${labels} ${has} a barcode that won’t print whole`;
+  let goAheadLabel = BARCODE_VALUE_GO_AHEAD;
+  if (severity === 'neither-scans') {
+    goAheadLabel = `Print anyway — ${codeNames(pairs)} print${codeNames(pairs).endsWith('s') ? '' : 's'} over the next label’s, so neither label will scan`;
+  } else if (severity === 'damage') {
+    const covered = fits.find((issue) => issue.overprints?.length);
+    const name = codeNames(fits);
+    goAheadLabel = covered?.overprintsCode
+      ? `Print anyway — ${name} and ${covered.overprints!.length === 1 ? covered.overprints![0] : 'the code it covers'} won’t scan`
+      : covered
+        ? `Print anyway — ${name} won’t scan and print${name.endsWith('s') ? '' : 's'} over ${covered.overprints![0]}`
+        : `Print anyway — ${name} will be cut off and won’t scan`;
+  }
+  const fixWords = fixIn === 'data'
+    ? 'Fix the spreadsheet rows listed above, then choose the file again.'
+    : fixIn === 'both' ? 'Fix the items listed above.' : 'Fix the design (see the list above).';
   const waitReason = stops
-    ? `${heading}, so nothing can print. Fix the design (see the list above).`
-    : `${heading}. Fix it (see the list above), or tick “${goAheadLabel}”.`;
-  return { stops, heading, goAheadLabel, waitReason };
+    ? `${heading}, so nothing can print. ${fixWords}`
+    : `${heading}. Fix it, or tick the box under the list above.`;
+  return { stops, severity, heading, goAheadLabel, waitReason, carriesOver: severity !== 'neither-scans', fixIn };
 }
 
 export interface RunPrintCheck {
@@ -91,6 +176,8 @@ export interface RunPrintCheck {
   /** Change when the problems change: a go-ahead covers these exact problems. */
   blockingKey: string;
   layoutKey: string;
+  /** The barcodes on the design behind `blocking` (to open the designer with one selected). */
+  barcodeElementIds: string[];
 }
 
 /**
@@ -99,7 +186,7 @@ export interface RunPrintCheck {
  * Metrc tag gets the same answer everywhere. Read-only.
  */
 export function runPrintCheck(run: Run | null | undefined, template: LabelTemplate | null | undefined, format: LabelFormat | null | undefined, limit = 2000): RunPrintCheck {
-  const none: RunPrintCheck = { blocking: [], warnings: [], tight: [], layout: [], verdict: barcodeVerdict([], 0, format), blockingKey: '', layoutKey: '' };
+  const none: RunPrintCheck = { blocking: [], warnings: [], tight: [], layout: [], verdict: barcodeVerdict([], 0, format), blockingKey: '', layoutKey: '', barcodeElementIds: [] };
   if (!run || !template || !format) return none;
   const total = Math.min(Math.max(1, run.totalLabels || run.sourceData.length || 1), limit);
   const sheet = run.dataSource === 'csv';
@@ -108,18 +195,17 @@ export function runPrintCheck(run: Run | null | undefined, template: LabelTempla
   const fromSheet = (field: string) => sheet && run.fieldMappings?.[field]?.mode === 'column';
   const blocking = describeBarcodeGroups(barcodes.issues, barcodes.checkedLabels, fromSheet, 50, barcodes.fitCounts).items;
   const tight = describeBarcodeGroups(barcodes.warnings, barcodes.checkedLabels, fromSheet, 50, barcodes.fitCounts).items;
-  // Barcode fit problems are named above, once; other layout problems (overlaps) here.
-  const layout = format.type === 'thermal' && template.thermalRenderMode !== 'bitmap-v1'
-    ? collect(run, template, format, total, (problem) => !problem.barcodeFit || (problem.barcodeFit.level === 'ok' && problem.kinds.includes('overlap')))
-    : [];
+  // A barcode problem is named above, once, with what it prints over; other layout problems here.
+  const layout = runLayoutIssues(run, template, format, total);
   return {
     blocking,
     warnings: [...tight, ...layout],
     tight,
     layout,
-    verdict: barcodeVerdict(barcodes.issues, barcodes.badLabels, format),
+    verdict: barcodeVerdict(barcodes.issues, barcodes.badLabels, format, fromSheet),
     blockingKey: blocking.join('\n'),
     layoutKey: layout.join('\n'),
+    barcodeElementIds: Array.from(new Set(barcodes.issues.map((issue) => issue.elementId).filter((id): id is string => !!id))),
   };
 }
 

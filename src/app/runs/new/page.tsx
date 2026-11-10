@@ -19,9 +19,9 @@ import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
-import { BlankSummary, ProblemList, blankHeading } from '@/components/checks/RunChecks';
-import { blankCheckAllowsPrinting, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
-import { LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runPrintCheck } from '@/lib/runLayoutCheck';
+import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
+import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
+import { LAYOUT_GO_AHEAD, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
 import { friendlyError, friendlyRenderError, isNetworkError, SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
@@ -29,16 +29,20 @@ import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
 import { contentModeUpdates } from '@/lib/elementBinding';
-import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow } from '@/lib/fieldLabels';
+import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow, setSpreadsheetRowMap } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
-import { layoutProblems } from '@/lib/designerLayout';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 const PASTE_COLUMN = '__paste__';
+
+/** Open the design with the problem barcode selected, and come back here after. */
+function designerFixHref(templateId: string, elementId?: string): string {
+  return `/designer?id=${encodeURIComponent(templateId)}${elementId ? `&select=${encodeURIComponent(elementId)}` : ''}&returnTo=${encodeURIComponent('/runs/new')}`;
+}
 
 /**
  * Pasted lines, one label each. A first line that names the field it fills
@@ -268,7 +272,6 @@ function NewRunContent() {
   const [manualQty, setManualQty] = useState(1);
   const [manualQtyDraft, setManualQtyDraft] = useState('1');
   const [isCreatingRun, setIsCreatingRun] = useState(false);
-  const [leaveBlank, setLeaveBlank] = useState(false);
   const [leavingAfterCreate, setLeavingAfterCreate] = useState(false);
   const formId = useId();
   const [createRunError, setCreateRunError] = useState<string | null>(null);
@@ -528,7 +531,6 @@ function NewRunContent() {
     setCsvRows(parsed.rows);
     setCsvPlainRows(parsed.plainRows ?? null);
     setPlainNumberFields([]);
-    setLeaveBlank(false);
     applyAutoColumnMapping(parsed.headers, parsed.rows, true);
   };
 
@@ -636,12 +638,9 @@ function NewRunContent() {
     setCsvHeaders(parsed.headers);
     setCsvRows(parsed.rows);
     setCsvPlainRows(null);
-    setLeaveBlank(false);
     applyAutoColumnMapping(parsed.headers, parsed.rows, true);
     setInputMode('csv');
   };
-
-  const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : sourceData.length;
 
   // What each field really reads from a spreadsheet: barcodes and QR codes
   // (and fields switched to the plain number) read the digits behind a
@@ -652,8 +651,48 @@ function NewRunContent() {
     const plainFields = new Set([...Object.keys(codeTypes), ...plainNumberFields]);
     return applyPlainNumbers({ rows: sourceData, plainRows: csvPlainRows, mappings: fieldMappings, plainFields, currencyFields: new Set(plainNumberFields) });
   }, [inputMode, sourceData, fieldMappings, codeTypes, plainNumberFields, csvPlainRows]);
-  const dataRows = plainData.rows;
+  const allDataRows = plainData.rows;
   const dataMappings = plainData.mappings;
+
+  // The run's data as the checks see it (hidden fields included: they would
+  // print the design's sample text), for any set of rows.
+  const checkDataFor = useCallback((rowsIn: Record<string, string>[]) => {
+    let mappings: Record<string, FieldMapping> = dataMappings;
+    let rows: Record<string, string>[] = rowsIn;
+    if (inputMode === 'manual') {
+      mappings = Object.fromEntries(dynamicFields.map((f) => [f, { mode: 'static' } as FieldMapping]));
+      rows = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
+    } else if (inputMode === 'paste' && pasteField) {
+      mappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
+    }
+    mappings = Object.fromEntries(Object.entries(mappings).filter(([field]) => visibleFieldSet.has(field)));
+    // Only "Same on every label" fields keep a typed value (what Start saves).
+    return { sourceData: rows, fieldMappings: mappings, staticValues: staticValuesForRun(dynamicFields, mappings, visibleStaticValues), mappedField: inputMode === 'paste' ? pasteField : null };
+  }, [fieldMappings, dataMappings, inputMode, dynamicFields, manualQty, pasteField, visibleFieldSet, visibleStaticValues]);
+
+  // Blank cells, over every row: one blank in 2,000 rows must not hold back
+  // the other 1,999, so the person can leave those labels out, or (where the
+  // design really prints blank) print them blank.
+  const checkTemplate = previewTemplate ?? template;
+  const allCheckData = useMemo(() => checkDataFor(allDataRows), [checkDataFor, allDataRows]);
+  const blankCheck = useMemo(() => checkRunData(checkTemplate ?? { elements: [] }, allCheckData), [checkTemplate, allCheckData]);
+  const skippable = useMemo(() => (inputMode === 'manual' ? null : blankLabelIndexes(checkTemplate ?? { elements: [] }, allCheckData, blankCheck)), [inputMode, checkTemplate, allCheckData, blankCheck]);
+  const [blankChoice, setBlankChoiceState] = useState<{ choice: BlankChoice; signature: string }>({ choice: '', signature: '' });
+  const blankChoiceNow: BlankChoice = blankChoice.signature === blankCheck.signature ? blankChoice.choice : '';
+  const setBlankChoice = (choice: BlankChoice) => setBlankChoiceState({ choice, signature: blankCheck.signature });
+  const skipRows = blankChoiceNow === 'skip' && !!skippable;
+  const leaveBlank = blankChoiceNow === 'blank' && blankCheck.canLeaveBlank;
+  // The rows the run is made from: every row, or every row but the blank ones.
+  const keptRows = useMemo(() => {
+    if (!skipRows || !skippable) return null;
+    const skip = new Set(skippable);
+    return allDataRows.map((_, index) => index).filter((index) => !skip.has(index));
+  }, [skipRows, skippable, allDataRows]);
+  const dataRows = useMemo(() => (keptRows ? keptRows.map((index) => allDataRows[index]) : allDataRows), [keptRows, allDataRows]);
+  // Row numbers in every message stay the ones in the file.
+  useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
+  useEffect(() => () => setSpreadsheetRowMap(null), []);
+  const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : dataRows.length;
 
   const manifestPackageSummaries = useMemo(() => {
     const packages = new Map<string, { row: ManifestRow; labelRows: number }>();
@@ -726,7 +765,16 @@ function NewRunContent() {
   // Preview ZPL for the current row. Image elements need async preparation so
   // the local Zebra render matches the browser canvas and actual print path.
   // Input identity also invalidates the old proof before effect cleanup runs.
-  const previewInput = useMemo(() => ({ template: previewTemplate ?? template, format, values: previewValues }), [template, previewTemplate, format, previewValues]);
+  // Rolls with two or more across print a pair (labels 1+2, 3+4…) on each
+  // feed: show the pair the printer really prints, not one label twice.
+  const across = format?.type === 'thermal' ? Math.max(1, format.labelsAcross || 1) : 1;
+  const feedStart = Math.floor(previewIndex / across) * across;
+  const previewLanes = useMemo<Record<string, string> | Array<Record<string, string> | null>>(() => {
+    if (across === 1 || labelCount === 0) return previewValues;
+    return Array.from({ length: across }, (_, lane) => (feedStart + lane < labelCount ? previewValuesForIndex(feedStart + lane) : null));
+  }, [across, labelCount, previewValues, feedStart, previewValuesForIndex]);
+  useEffect(() => { if (labelCount > 0 && previewIndex > labelCount - 1) setPreviewIndex(Math.max(0, labelCount - 1)); }, [labelCount, previewIndex]);
+  const previewInput = useMemo(() => ({ template: previewTemplate ?? template, format, values: previewLanes }), [template, previewTemplate, format, previewLanes]);
   const [previewResult, setPreviewResult] = useState<{ input: typeof previewInput; state: RunPreviewState } | null>(null);
   const previewState: RunPreviewState = previewResult?.input === previewInput
     ? previewResult.state
@@ -744,27 +792,10 @@ function NewRunContent() {
 
   const rowHeaders = inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders;
 
-  // The exact data the run will be created with, so the whole-run blank check
-  // sees what the printer will see (hidden fields included: they would print
-  // the design's sample text).
-  const runDataForCheck = useMemo(() => {
-    let mappings: Record<string, FieldMapping> = dataMappings;
-    let rows: Record<string, string>[] = dataRows;
-    if (inputMode === 'manual') {
-      mappings = Object.fromEntries(dynamicFields.map((f) => [f, { mode: 'static' } as FieldMapping]));
-      rows = Array.from({ length: Math.max(1, manualQty) }, () => ({}));
-    } else if (inputMode === 'paste' && pasteField) {
-      mappings = { ...fieldMappings, [pasteField]: { mode: 'column', csvColumn: PASTE_COLUMN } };
-    }
-    mappings = Object.fromEntries(Object.entries(mappings).filter(([field]) => visibleFieldSet.has(field)));
-    // Only "Same on every label" fields keep a typed value (what Start saves).
-    return { sourceData: rows, fieldMappings: mappings, staticValues: staticValuesForRun(dynamicFields, mappings, visibleStaticValues), mappedField: inputMode === 'paste' ? pasteField : null };
-  }, [fieldMappings, dataMappings, dataRows, inputMode, dynamicFields, manualQty, pasteField, visibleFieldSet, visibleStaticValues]);
-  const checkTemplate = previewTemplate ?? template;
-  const blankCheck = useMemo(() => checkRunData(checkTemplate ?? { elements: [] }, runDataForCheck), [checkTemplate, runDataForCheck]);
-  useEffect(() => { setLeaveBlank(false); }, [blankCheck.signature]);
+  // The exact data the run will be created with.
+  const runDataForCheck = useMemo(() => checkDataFor(dataRows), [checkDataFor, dataRows]);
   const hasData = inputMode === 'manual' || labelCount > 0;
-  const blanksOk = !hasData || blankCheckAllowsPrinting(blankCheck, leaveBlank);
+  const blanksOk = !hasData || skipRows || blankCheckAllowsPrinting(blankCheck, leaveBlank);
 
   // A field set to "Same on every label" while the spreadsheet has a column
   // for it that changes per row: one SKU barcode on every label is almost
@@ -833,7 +864,8 @@ function NewRunContent() {
   // fix; going ahead takes an explicit tick (the verdict emulates the
   // printer, and these designs may be printing today). Only what the exact
   // renderer refuses stops the run: nothing could print.
-  const barcodeWords = barcodeVerdict(barcodeCheck.issues, barcodeCheck.badLabels, format);
+  const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
+  const barcodeWords = barcodeVerdict(barcodeCheck.issues, barcodeCheck.badLabels, format, fieldIsFromSheet);
   const barcodeKey = useMemo(() => barcodeCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [barcodeCheck.issues]);
   const [barcodeGoAheadKey, setBarcodeGoAheadKey] = useState('');
   const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeGoAheadKey === barcodeKey;
@@ -845,30 +877,9 @@ function NewRunContent() {
   const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
   const charactersOk = characterCheck.issues.length === 0;
 
-  // Items that cover each other or run off the label, on any label.
-  const layoutIssues = useMemo(() => {
-    if (!checkTemplate || !format || format.type !== 'thermal' || checkTemplate.thermalRenderMode === 'bitmap-v1') return [];
-    const found = new Map<string, { message: string; labels: number[]; count: number }>();
-    const total = Math.min(labelCount || 1, 2000);
-    for (let index = 0; index < total; index++) {
-      const values = { ...runDataForCheck.staticValues } as Record<string, string>;
-      const row = runDataForCheck.sourceData[index];
-      if (row) for (const [field, mapping] of Object.entries(runDataForCheck.fieldMappings)) if (mapping.mode === 'column' && mapping.csvColumn) values[field] = row[mapping.csvColumn] ?? '';
-      for (const problem of layoutProblems(checkTemplate.elements, format, values)) {
-        // A barcode that doesn't fit is named in the barcode check above
-        // (same verdict); only say it here when it also covers something.
-        if (problem.barcodeFit && !problem.kinds.includes('overlap')) continue;
-        const key = `${problem.kinds.join('+')}:${problem.ids.join(',')}`;
-        const entry = found.get(key) ?? { message: problem.message, labels: [], count: 0 };
-        entry.count++;
-        if (entry.labels.length < 3) entry.labels.push(index + 1);
-        found.set(key, entry);
-      }
-    }
-    return Array.from(found.values()).map((entry) => (labelCount > 1 && entry.count < total
-      ? `${entry.message.replace(/\.$/, '')} (label${entry.count === 1 ? '' : 's'} ${entry.labels.join(', ')}${entry.count > entry.labels.length ? ` and ${entry.count - entry.labels.length} more` : ''}).`
-      : entry.message));
-  }, [checkTemplate, format, labelCount, runDataForCheck]);
+  // Items that cover each other or run off the label, on any label (a
+  // barcode that doesn't print whole is named once, in the barcode list).
+  const layoutIssues = useMemo(() => (checkTemplate ? runLayoutIssues(runDataForCheck, checkTemplate, format, Math.min(labelCount || 1, 2000)) : []), [checkTemplate, format, labelCount, runDataForCheck]);
   const layoutKey = layoutIssues.join('|');
   const [layoutConfirmedKey, setLayoutConfirmedKey] = useState('');
   const layoutOk = !layoutIssues.length || layoutConfirmedKey === layoutKey;
@@ -888,8 +899,10 @@ function NewRunContent() {
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
       : labelCount > 0 && (inputMode === 'csv' || inputMode === 'manifest' ? variableFields.length > 0 : !!pasteField));
 
-  // One plain reason, shown next to the Start button, for why it is disabled.
-  const blockReason = !name.trim()
+  // Why Start is disabled, in plain words: the first missing setup step, or
+  // every check still waiting (all at once, so nothing is revealed one tick
+  // at a time).
+  const setupReason = !name.trim()
     ? 'Give this run a name to start.'
     : !template
       ? 'Choose a label design to start.'
@@ -905,25 +918,24 @@ function NewRunContent() {
                 ? 'Pick a spreadsheet column for at least one field.'
                 : inputMode === 'paste' && !pasteField
                   ? 'Choose which field the pasted values fill.'
-                  : !blanksOk
-                    ? `${blankHeading(blankCheck)}. See the list above.`
-                    : !sameOk
-                      ? 'Confirm the value that prints on every label, or choose From spreadsheet.'
-                      : !examplesOk
-                        ? `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`
-                      : !barcodesOk
-                        ? barcodeWords.waitReason
-                        : !charactersOk
-                          ? `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`
-                        : !layoutOk
-                          ? 'Items overlap or run off the label. Check the list above.'
-                          : format.type === 'thermal' && previewState.status === 'error'
-                            ? 'Fix the preview error above to start.'
-                            : format.type === 'thermal' && previewState.status === 'loading'
-                              ? 'Checking the label preview…'
-                              : format.type === 'thermal' && previewState.status === 'empty'
-                                ? 'Nothing would print. Check the design and data.'
-                                : null;
+                  : null;
+  const checkReasons = setupReason || !format ? [] : [
+    !blanksOk && `${blankHeading(blankCheck)}: choose what to do above.`,
+    !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
+    !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
+    !barcodesOk && barcodeWords.waitReason,
+    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
+    !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
+  ].filter((reason): reason is string => !!reason);
+  const previewReason = setupReason || !format || checkReasons.length ? null
+    : format.type === 'thermal' && previewState.status === 'error'
+      ? 'Fix the preview error above to start.'
+      : format.type === 'thermal' && previewState.status === 'loading'
+        ? 'Checking the label preview…'
+        : format.type === 'thermal' && previewState.status === 'empty'
+          ? 'Nothing would print. Check the design and data.'
+          : null;
+  const blockReasons = setupReason ? [setupReason] : previewReason ? [previewReason] : checkReasons;
 
   // Leaving a half-filled run: ask first, and keep a draft in this tab so a
   // refresh or Back can pick it up again.
@@ -942,6 +954,10 @@ function NewRunContent() {
   // The browser's Back button: a guard entry in history catches it, asks with
   // the same dialog, and goes back for real only after "Leave".
   const guardRef = useRef(false);
+  // After Start run: the run page to open once the guard entry is gone.
+  const afterGuardRef = useRef<string | null>(null);
+  const routerRef = useRef(router);
+  useEffect(() => { routerRef.current = router; }, [router]);
   const confirmLeaveRef = useRef(confirmLeave);
   useEffect(() => { confirmLeaveRef.current = confirmLeave; }, [confirmLeave]);
   useEffect(() => {
@@ -951,6 +967,12 @@ function NewRunContent() {
   }, [formDirty]);
   useEffect(() => {
     const onPopState = () => {
+      if (afterGuardRef.current) {
+        const target = afterGuardRef.current;
+        afterGuardRef.current = null;
+        routerRef.current.replace(target);
+        return;
+      }
       if (!guardRef.current) return;
       guardRef.current = false;
       void confirmLeaveRef.current().then((leave) => {
@@ -1083,11 +1105,12 @@ function NewRunContent() {
       clearRunDraft();
       if (blankCheck.issues.length && leaveBlank) rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, run.id, blankCheck.signature);
       // The go-ahead given here carries to the run page, for the same problems.
-      if (barcodeGoAhead || (layoutIssues.length && layoutOk)) {
+      if ((barcodeGoAhead && barcodeWords.carriesOver) || (layoutIssues.length && layoutOk)) {
         const snapshot = run.designSnapshot;
         const saved = runPrintCheck({ ...run, sourceData: run.sourceData?.length ? run.sourceData : finalSourceData, fieldMappings: run.fieldMappings ?? finalMappings }, snapshot?.template ?? template, snapshot?.format ?? format);
         rememberPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, run.id, {
-          ...(barcodeGoAhead && saved.blocking.length && !saved.verdict.stops ? { barcode: saved.blockingKey } : {}),
+          // "Neither label will scan" is asked again on the run page, never carried over ticked.
+          ...(barcodeGoAhead && saved.blocking.length && !saved.verdict.stops && saved.verdict.carriesOver ? { barcode: saved.blockingKey } : {}),
           ...(layoutIssues.length && layoutOk && saved.layout.length ? { layout: saved.layoutKey } : {}),
         });
       }
@@ -1106,9 +1129,24 @@ function NewRunContent() {
   const handleSaveAndPrint = async () => {
     const run = await handleCreateRun(true);
     if (run) {
-      // The run has its own address now, so a refresh or Back keeps it.
+      // The run has its own address now, so a refresh keeps it. The wizard's
+      // own history entry is replaced by the run, and the extra entry that
+      // guards Back is taken off first, so Back from the run goes to where
+      // the person was before New run, not to an empty wizard.
       setLeavingAfterCreate(true);
-      router.replace(`/runs/${run.id}`);
+      const target = `/runs/${run.id}`;
+      if (guardRef.current) {
+        guardRef.current = false;
+        afterGuardRef.current = target;
+        window.history.back();
+        window.setTimeout(() => {
+          if (afterGuardRef.current !== target) return;
+          afterGuardRef.current = null;
+          router.replace(target);
+        }, 600);
+      } else {
+        router.replace(target);
+      }
     }
   };
 
@@ -1159,7 +1197,6 @@ function NewRunContent() {
     { label: 'Review', done: canCreate },
   ];
   const currentStep = workflowSteps.findIndex((s) => !s.done);
-  const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
   const barcodeGroups = describeBarcodeGroups(barcodeCheck.issues, barcodeCheck.checkedLabels, fieldIsFromSheet, 5, barcodeCheck.fitCounts);
   const tightGroups = describeBarcodeGroups(barcodeCheck.warnings, barcodeCheck.checkedLabels, fieldIsFromSheet, 3, barcodeCheck.fitCounts);
   const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
@@ -1699,18 +1736,20 @@ function NewRunContent() {
                     {labelCount > 0 ? (
                       <div className="flex items-center gap-2 text-sm">
                         <button
-                          onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
-                          disabled={previewIndex === 0}
+                          onClick={() => setPreviewIndex(Math.max(0, feedStart - across))}
+                          disabled={feedStart === 0}
                           className="btn btn-secondary btn-sm"
                         >
                           Previous
                         </button>
-                        <span className="text-zinc-400 tabular-nums">
-                          Label {previewIndex + 1} of {labelCount.toLocaleString()}
+                        <span className="text-zinc-400 tabular-nums" aria-live="polite">
+                          {across > 1 && labelCount > 1
+                            ? <>Labels {feedStart + 1}–{Math.min(feedStart + across, labelCount)} of {labelCount.toLocaleString()}</>
+                            : <>Label {previewIndex + 1} of {labelCount.toLocaleString()}</>}
                         </span>
                         <button
-                          onClick={() => setPreviewIndex((i) => Math.min(labelCount - 1, i + 1))}
-                          disabled={previewIndex >= labelCount - 1}
+                          onClick={() => setPreviewIndex(Math.min(labelCount - 1, feedStart + across))}
+                          disabled={feedStart + across > labelCount - 1}
                           className="btn btn-secondary btn-sm"
                         >
                           Next
@@ -1737,7 +1776,22 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="space-y-4">
-                    {hasData && template && <BlankSummary check={blankCheck} mode={inputMode} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length} />}
+                    {hasData && template && (
+                      <BlankSummary
+                        check={blankCheck}
+                        mode={inputMode}
+                        leaveBlank={leaveBlank}
+                        onLeaveBlankChange={(value) => setBlankChoice(value ? 'blank' : '')}
+                        skipCount={skippable?.length ?? 0}
+                        choice={blankChoiceNow}
+                        onChoiceChange={setBlankChoice}
+                        onChooseFile={lastFile.current ? () => fileInputRef.current?.click() : undefined}
+                        showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
+                      />
+                    )}
+                    {skipRows && skippable && (
+                      <p className="text-sm text-zinc-400">{skippable.length.toLocaleString()} label{skippable.length === 1 ? ' is' : 's are'} left out, so this run has {labelCount.toLocaleString()}.</p>
+                    )}
                     <ProblemList
                       tone="error"
                       heading={barcodeWords.heading}
@@ -1746,6 +1800,18 @@ function NewRunContent() {
                       confirmLabel={barcodeWords.stops ? undefined : barcodeWords.goAheadLabel}
                       confirmed={barcodeGoAhead}
                       onConfirmedChange={(value) => setBarcodeGoAheadKey(value ? barcodeKey : '')}
+                      actions={<>
+                        {barcodeWords.fixIn !== 'data' && template && (
+                          <Link href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                            <Pencil className="size-4" aria-hidden="true" /> Fix in the designer
+                          </Link>
+                        )}
+                        {barcodeWords.fixIn !== 'design' && lastFile.current && (
+                          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                            <Upload className="size-4" aria-hidden="true" /> Choose another file
+                          </button>
+                        )}
+                      </>}
                     />
                     <ProblemList
                       heading="Barcodes close to the edge"
@@ -1776,6 +1842,11 @@ function NewRunContent() {
                       heading={`${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`}
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
+                      actions={lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) ? (
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                          <Upload className="size-4" aria-hidden="true" /> Choose another file
+                        </button>
+                      ) : undefined}
                     />
                     <ProblemList
                       heading="Some items overlap or run off the label"
@@ -1824,10 +1895,13 @@ function NewRunContent() {
                       <p role="alert" className="flex items-start gap-1.5 text-sm text-red-400 sm:max-w-md">
                         <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> {createRunError}
                       </p>
-                    ) : blockReason && !isCreatingRun ? (
-                      <p role="status" className="flex items-start gap-1.5 text-sm text-amber-300 sm:max-w-md">
-                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> {blockReason}
-                      </p>
+                    ) : blockReasons.length && !isCreatingRun ? (
+                      <div role="status" className="flex items-start gap-1.5 text-sm text-amber-300 sm:max-w-md">
+                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        {blockReasons.length === 1 ? <p>{blockReasons[0]}</p> : (
+                          <div><p>{blockReasons.length} things before you can start:</p><ul className="list-disc pl-4">{blockReasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}</ul></div>
+                        )}
+                      </div>
                     ) : null}
                     <button
                       onClick={handleSaveAndPrint}
@@ -1867,29 +1941,36 @@ function NewRunContent() {
 // makes, so label edges are off unless asked for (rolls with 2+ across).
 function LocalZplPreview({ state, message, format }: { state: RunPreviewState; message?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number } }) {
   const [showEdges, setShowEdges] = useState(false);
+  // Big labels (4" × 6") shrink to fit the page; "Zoom in" shows them at
+  // print size so small text can be checked, scrolling inside the frame.
+  const [zoomed, setZoomed] = useState(false);
   if (state.status === 'error') return <p role="alert" className="text-sm text-red-400">{message || state.message} Fix the value or the design, then check again.</p>;
   if (state.status === 'loading') return <p role="status" className="text-sm text-zinc-400">Drawing the label…</p>;
   if (state.status === 'empty') return <p className="text-sm text-zinc-400">Nothing would print. Check the design and data.</p>;
   const across = (format.labelsAcross ?? 1) > 1;
+  const canZoom = format.height > 1.5 || format.width * (format.labelsAcross ?? 1) > 3;
   // LabelOutlineOverlay needs the full LabelFormat shape; it only reads the
   // thermal fields this prop guarantees.
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative inline-block">
-        <img
-          src={state.url}
-          alt="Label preview"
-          className="rounded-md bg-white"
-          style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '400px', display: 'block' }}
-        />
-        {showEdges && across && (
-          <LabelOutlineOverlay format={format as unknown as import('@/lib/types').LabelFormat} />
-        )}
+    <div className="flex w-full flex-col items-center gap-2">
+      <div className={zoomed ? 'max-h-[70vh] w-full overflow-auto rounded-md' : 'contents'}>
+        <div className={`relative ${zoomed ? 'mx-auto w-fit' : 'inline-block'}`}>
+          <img
+            src={state.url}
+            alt="Label preview"
+            className="rounded-md bg-white"
+            style={{ imageRendering: 'pixelated', display: 'block', ...(zoomed ? { width: `${Math.round((format.linerWidth || format.width * (format.labelsAcross ?? 1)) * 96)}px`, maxWidth: 'none' } : { maxWidth: '100%', maxHeight: '420px' }) }}
+          />
+          {showEdges && across && (
+            <LabelOutlineOverlay format={format as unknown as import('@/lib/types').LabelFormat} />
+          )}
+        </div>
       </div>
-      {across && (
-        <button type="button" aria-pressed={showEdges} onClick={() => setShowEdges((v) => !v)} className="btn btn-ghost btn-sm">
-          {showEdges ? 'Hide label edges' : 'Show label edges'}
-        </button>
+      {(across || canZoom) && (
+        <div className="flex flex-wrap justify-center gap-1">
+          {canZoom && <button type="button" aria-pressed={zoomed} onClick={() => setZoomed((v) => !v)} className="btn btn-ghost btn-sm">{zoomed ? 'Fit to page' : 'Zoom in'}</button>}
+          {across && <button type="button" aria-pressed={showEdges} onClick={() => setShowEdges((v) => !v)} className="btn btn-ghost btn-sm">{showEdges ? 'Hide label edges' : 'Show label edges'}</button>}
+        </div>
       )}
     </div>
   );

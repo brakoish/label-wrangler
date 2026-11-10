@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 require('../thermal/register.cjs');
 const assert = require('node:assert/strict');
-const { blankCheckAllowsPrinting, checkRunData, describeBlankIssue, describeRowList, blankRemedy, describeBlankSummary, rememberBlankChoice, hasBlankChoice } = require('../../src/lib/runDataCheck.ts');
+const { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, describeBlankIssue, describeRowList, blankRemedy, describeBlankSummary, rememberBlankChoice, hasBlankChoice } = require('../../src/lib/runDataCheck.ts');
 const { printEventLabel, friendlyError, friendlyRenderError, runStatusLabel, printOutputLabel, stripInternalIds, OFFLINE_MESSAGE } = require('../../src/lib/userMessages.ts');
 
 const text = (fieldName, extra = {}) => ({ id: 'txt-' + fieldName, type: 'text', isStatic: false, fieldName, ...extra });
@@ -18,6 +18,22 @@ assert.deepEqual(check.issues[0].rows, [7, 212, 1500, 1600, 1700, 1800]);
 assert.equal(check.issues[0].outcome, 'sample', 'blank barcode with a designer sample prints the sample');
 assert.equal(check.canLeaveBlank, false, 'no "leave blank" override when the generator would print the sample');
 assert.equal(blankCheckAllowsPrinting(check, true), false, 'a stale or forged leave-blank choice cannot unlock a sample-printing run');
+// One blank in 2,000 rows doesn't hold back the rest: those labels can be left out.
+{
+  const data = { sourceData: rows, fieldMappings: { product_name: { mode: 'column', csvColumn: 'name' }, sku: { mode: 'column', csvColumn: 'sku' } } };
+  const skip = blankLabelIndexes(template, data, check);
+  assert.deepEqual(skip, [6, 211, 1499, 1599, 1699, 1799], 'every blank label, 0-based, uncapped');
+  const kept = rows.filter((_, i) => !skip.includes(i));
+  assert.equal(checkRunData(template, { ...data, sourceData: kept }).issues.length, 0, 'the other 1,994 labels have no blanks');
+  const { setSpreadsheetRowMap, spreadsheetRow } = require('../../src/lib/fieldLabels.ts');
+  setSpreadsheetRowMap(rows.map((_, i) => i).filter((i) => !skip.includes(i)));
+  assert.equal(spreadsheetRow(7), 9, 'label 7 of the kept rows is still named by its row in the file');
+  setSpreadsheetRowMap(null);
+  assert.equal(spreadsheetRow(7), 8);
+  const noColumn = checkRunData(template, { sourceData: rows, fieldMappings: { product_name: { mode: 'column', csvColumn: 'name' } } });
+  assert.equal(blankLabelIndexes(template, { sourceData: rows, fieldMappings: { product_name: { mode: 'column', csvColumn: 'name' } } }, noColumn), null, 'a field with no column is not fixed by leaving labels out');
+  console.log('PASS blank rows can be left out, and row numbers stay the file\'s');
+}
 assert.equal(describeBlankIssue(check.issues[0], 2000), 'sku is empty on rows 7, 212, 1500 (and 3 more). Those labels would print the design\'s sample "123456789012" instead.');
 assert.match(blankRemedy(check), /Same on every label/);
 assert.equal(describeBlankSummary(check), '6 labels are missing a value');

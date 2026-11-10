@@ -119,7 +119,7 @@ assert.ok(problems.some((p) => p.kinds.includes('off-label')), 'the long barcode
 assert.ok(problems.some((p) => p.kinds.includes('overlap') && /prints over the Name text/.test(p.message)), 'the barcode covers the name');
 // One line per item, naming everything wrong with it.
 assert.equal(problems.length, 1);
-assert.equal(problems[0].message, 'The Tag barcode prints 2.95" wide for 24 characters, but only 2" fits from where it starts, so the printer cuts it off and it won’t scan, and prints over the Name text.');
+assert.equal(problems[0].message, 'The Tag barcode prints 2.95" wide for 24 characters but only 2" fits, so the printer cuts it off and it won’t scan, and prints over the Name text.');
 assert.equal(problems[0].blocking, true);
 assert.doesNotMatch(`${problems[0].message} ${problems[0].fix}`, /shorten/i);
 assert.equal(layoutProblems([text('a', { width: 200 }), barcode('b', { x: 20, y: 100, height: 60, defaultValue: '123' })], format).length, 0);
