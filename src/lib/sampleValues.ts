@@ -20,6 +20,9 @@ const BARCODE_PLACEHOLDER: Record<BarcodeElement['barcodeFormat'], string> = {
   ITF14: '00012345600012',
 };
 
+/** Values a new design's barcode or QR code starts with: printing one on every label is a mistake. */
+export const EXAMPLE_CODE_VALUES: ReadonlyArray<string> = [...new Set([...Object.values(BARCODE_PLACEHOLDER), 'https://example.com', 'https://example.com/'])];
+
 function withoutAffixes(text: string, prefix = '', suffix = ''): string {
   let value = text;
   if (prefix && value.startsWith(prefix)) value = value.slice(prefix.length);

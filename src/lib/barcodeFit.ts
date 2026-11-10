@@ -184,24 +184,28 @@ function nativeFit(el: FitElement, value: string, format: FitFormat, labelW: num
   const labelDots = sideways ? labelH : labelW;
   const otherDots = sideways ? labelW : labelH;
   const base: BarcodeFit = { ...OK(false, dpi), barsDots: bars, startDots: start, labelDots };
-  const fixes: BarcodeFix[] = [];
-  if (bars <= labelDots) fixes.push('move');
-  if (bars <= otherDots && bars > labelDots) fixes.push('turn');
-  // An exact copy draws 1-dot modules (digit pairs packed); offer it only when that fits.
-  const exactBits = bitmapBits(el.barcodeFormat, value);
-  if (exactBits && exactBits.length + 2 * BITMAP_QUIET_MODULES <= labelDots) fixes.push('exact-copy');
-  else if (!fixes.length) fixes.push('wider-label');
+  // Worked out only when it doesn't fit (the wizard checks every label).
+  const blockedFixes = (): BarcodeFix[] => {
+    const fixes: BarcodeFix[] = [];
+    if (bars <= labelDots) fixes.push('move');
+    if (bars <= otherDots && bars > labelDots) fixes.push('turn');
+    // An exact copy draws 1-dot modules (digit pairs packed); offer it only when that fits.
+    const exactBits = bitmapBits(el.barcodeFormat, value);
+    if (exactBits && exactBits.length + 2 * BITMAP_QUIET_MODULES <= labelDots) fixes.push('exact-copy');
+    else if (!fixes.length) fixes.push('wider-label');
+    return fixes;
+  };
   const end = start + bars;
   const tolerance = 2;
-  if (start < -tolerance) return { ...base, level: 'blocked', reason: 'off-label', fixes };
+  if (start < -tolerance) return { ...base, level: 'blocked', reason: 'off-label', fixes: blockedFixes() };
   if (end > labelDots + tolerance) {
     const across = Math.max(1, format.labelsAcross || 1);
     if (!sideways && across > 1) {
       const gap = Math.round((format.horizontalGapThermal || 0) * dpi);
       // The next label's copy of this barcode starts at labelW + gap + start.
-      return { ...base, level: 'blocked', reason: 'into-next-label', overNextBarcode: end > labelW + gap + start, fixes };
+      return { ...base, level: 'blocked', reason: 'into-next-label', overNextBarcode: end > labelW + gap + start, fixes: blockedFixes() };
     }
-    return { ...base, level: 'blocked', reason: 'off-label', fixes };
+    return { ...base, level: 'blocked', reason: 'off-label', fixes: blockedFixes() };
   }
   if (start < TIGHT_MARGIN_DOTS || labelDots - end < TIGHT_MARGIN_DOTS) return { ...base, level: 'tight', reason: 'quiet-zone', fixes: ['move'] };
   return base;

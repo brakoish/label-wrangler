@@ -608,3 +608,31 @@ textarea:focus-visible {
   [data-layer-id]:active { transform: none; }
 }
 /* end area A r3 */
+
+/* area A r4 */
+/* One page edge for list and form pages: the same width and side gutter
+   (the designer stays full-bleed). */
+.page-container {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+@media (min-width: 40rem) {
+  .page-container { padding-inline: 2rem; }
+}
+/* "Where the values come from" on a narrow phone: two rows of two, so
+   "Spreadsheet" and "Manifest" never run together. */
+@media (max-width: 26.24rem) {
+  .source-switch {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+  }
+  .source-switch > .segmented-indicator { display: none; }
+  .source-switch > [data-active="true"] {
+    background: var(--color-zinc-800);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+/* end area A r4 */
