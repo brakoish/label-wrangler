@@ -80,5 +80,10 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
   assert.match(controls,/const again=await confirmDialog\(\{title:`Send the earlier \$\{word\} from your account\?`/);
   assert.match(controls,/if\(again\)saved=adoptLegacy\(userId\);/);
  }
+ // Lighter reads: the run's office list slows down when nothing moves; the stations reads run side by side.
+ const hook=fs.readFileSync(path.join(__dirname,'../../src/components/runs/useOfficeRequests.ts'),'utf8');
+ assert.match(hook,/setInterval\(update, moving \? 5000 : fast \? 15000 : 30000\)/);
+ const stations=fs.readFileSync(path.join(__dirname,'../../src/app/api/office/stations/route.ts'),'utf8');
+ assert.match(stations,/await Promise\.all\(\[readHolds, readReviews\]\);/);
  console.log('PASS office B11: key lookup before “not sure”, no false “connection dropped”, other tabs told, one header status while sending');
 })().catch((error)=>{console.error(error);process.exit(1);});

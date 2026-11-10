@@ -63,7 +63,9 @@ export function useOfficeRequests(runId: string, fast: boolean, total: number, d
       void refresh().catch(() => { /* shown by the panel */ });
     };
     update();
-    const timer = setInterval(update, fast || moving ? 5000 : 30000);
+    // Every 5 s while labels are on their way, 15 s while the office printer
+    // is chosen but nothing moves (the list can be long), 30 s otherwise.
+    const timer = setInterval(update, moving ? 5000 : fast ? 15000 : 30000);
     const onVisible = () => { if (document.visibilityState === 'visible') update(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
