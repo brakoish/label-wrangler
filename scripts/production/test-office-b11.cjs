@@ -55,9 +55,10 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
  // The panel: the in-flight mark is written right after the saved request, before the one POST, and cleared after.
  const panel=fs.readFileSync(path.join(__dirname,'../../src/components/runs/OfficePiPrinter.tsx'),'utf8');
  const save=panel.indexOf('try{localStorage.setItem(storageKey,JSON.stringify(payload));}');
- const mark=panel.indexOf('mark();const beat=setInterval(mark,4000);',save);
- const post=panel.indexOf("api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)})",save);
- assert.ok(save>0 && mark>save && post>mark,'saved request, then the in-flight mark, then the POST');
+ const mark=panel.indexOf('markSending();\n        return true;',save);
+ const beat=panel.indexOf('markSending();const beat=setInterval(markSending,4000);',save);
+ const post=panel.indexOf("api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload),",save);
+ assert.ok(save>0 && mark>save && beat>mark && post>beat,'saved request, then the in-flight mark (both under the lock), then the POST');
  assert.match(panel,/lw:office-sending:/,'the in-flight mark has its own key');
  assert.match(panel,/finally\{clearInterval\(beat\);unmark\(\);\}/,'and is cleared whatever the answer');
  assert.doesNotMatch(panel,/lw:office-pending:[^`]*`[^;]*tab:/,'nothing new in the saved request');

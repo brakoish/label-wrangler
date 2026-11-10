@@ -80,7 +80,7 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   const blank=submit.indexOf('const blank=target?partBlank:direct?direct.endBlank===true:endBlank;');
   const literal=submit.indexOf('payload={runId,stationId:printer.station_id,printerId:printer.id,from:want.from,to:want.to,idempotencyKey:crypto.randomUUID(),...(blank?{endBlank:true}:{}),');
   const save=submit.indexOf('localStorage.setItem(storageKey,JSON.stringify(payload))');
-  const post=submit.indexOf("api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)})");
+  const post=submit.indexOf("api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload),");
   assert.ok(blank>0 && literal>blank && save>literal && post>save,'endBlank is in the payload saved (with its key) before the single POST');
   assert.ok(submit.indexOf('try{payload=JSON.parse(saved);}')>0 && submit.indexOf('try{payload=JSON.parse(saved);}')<save,'a resend posts the saved record');
   assert.doesNotMatch(submit,/payload\.endBlank\s*=(?!=)|delete payload|payload=\{\.\.\.payload/,'and never changes it');

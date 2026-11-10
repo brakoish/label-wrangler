@@ -108,8 +108,22 @@ function browserTabId(){
   try{let id=sessionStorage.getItem('lw:tab-id');if(!id){id=crypto.randomUUID();sessionStorage.setItem('lw:tab-id',id);}return id;}
   catch{return 'tab-'+Math.random().toString(36).slice(2);}
 }
-/** How long a page that finds a saved send (and didn't make the POST) looks it up before saying "not sure". */
+/** How long a page that finds a saved send (and didn't make the POST) looks it up before saying "not sure" (when the lookup can't answer). */
 const CHECK_MS=10_000;
+/** The send's POST gives up a little after the route's maxDuration (300 s). */
+const OFFICE_POST_TIMEOUT_MS=310_000;
+/**
+ * Runs `fn` under a Web Lock shared by every tab of this run, so checking for
+ * a saved send and saving a new one happen as one step. Without Web Locks (or
+ * if the browser refuses the lock) it runs `fn` as before, never twice.
+ */
+async function withOfficeSendLock<T>(runId:string,fn:()=>T):Promise<T>{
+  let ran=false;
+  try{
+    if(typeof navigator!=='undefined' && navigator.locks?.request)return await navigator.locks.request(`lw-office-send:${runId}`,()=>{ran=true;return fn();}) as T;
+  }catch(error){if(ran)throw error;}
+  return fn();
+}
 /** Is the send saved under this key at the office? The request id, null when not, undefined when it couldn't be read. */
 async function lookUpSend(runId:string,key:string):Promise<string|null|undefined>{
   try{
@@ -430,6 +444,15 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     try{const raw=localStorage.getItem(storageKey);const key=raw?JSON.parse(raw)?.idempotencyKey:'';return typeof key==='string'?key:'';}catch{return '';}
   },[storageKey]);
   const pendingFrom=pending?.from,pendingTo=pending?.to;
+  // The key lookup couldn't answer (an older server that ignores `key`, or no
+  // connection): then this page can't say the office doesn't have the send.
+  const [lookupMissing,setLookupMissing]=useState(false);
+  // A send in the office queue with exactly the saved send's labels: what the
+  // page can tell when the key lookup can't answer.
+  const pendingReprintOf=pending?.reprintOf ?? '';
+  const queueHasPending=pendingFrom!==undefined && requests.some(r=>r.range_from===pendingFrom && r.range_to===pendingTo && (r.reprint_of ?? '')===pendingReprintOf);
+  const queueHasPendingRef=useRef(queueHasPending);
+  useEffect(()=>{queueHasPendingRef.current=queueHasPending;},[queueHasPending]);
   useEffect(()=>{
     if(pendingFrom===undefined || pendingTo===undefined || posting)return;
     const key=savedKey();
@@ -449,7 +472,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       const otherTab=live && mark!.tab!==tabId.current;
       const found=await lookUpSend(runId,key);
       if(!active)return;
-      if(found && !otherTab){
+      // Found at the office: settled, even while another tab still waits for
+      // its answer (the POST landed; that tab gets the same request back).
+      if(found){
         // At the office: the same as a good answer. Cleared only while it is
         // still the same saved send.
         if(savedKey()===key){try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}}
@@ -458,7 +483,18 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         void refresh().catch(()=>{});
         return;
       }
-      if(phase!=='unsure' || otherTab)phase=otherTab?'other':live || Date.now()-started<CHECK_MS?'checking':'unsure';
+      setLookupMissing(found===undefined);
+      if(phase!=='unsure' || otherTab){
+        // Another tab's send: shown as such until it answers, its mark lapses,
+        // or (when the lookup can't answer) the queue lists those labels.
+        if(otherTab && !(found===undefined && queueHasPendingRef.current))phase='other';
+        // This tab's own mark from before a reload: that try may still arrive.
+        else if(live && !otherTab)phase='checking';
+        // The office answered that it doesn't have it, and nothing is on its way.
+        else if(found===null)phase='unsure';
+        // The lookup couldn't answer: look again for a little while first.
+        else phase=Date.now()-started<CHECK_MS && !queueHasPendingRef.current?'checking':'unsure';
+      }
       setPendingPhase(phase);
       timer=setTimeout(()=>void tick(),phase==='unsure'?15_000:3000);
     };
@@ -564,56 +600,68 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     try{
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payload:any;
-      let saved:string|null=null;try{saved=localStorage.getItem(storageKey);}catch{saved=null;}
+      let saved:string|null=null;
+      // "A send is on its way from this tab", beside the saved request (see SendingMark).
+      const markSending=()=>{try{localStorage.setItem(sendingKey,JSON.stringify({key:String(payload.idempotencyKey),from:payload.from,to:payload.to,tab:tabId.current,until:Date.now()+SENDING_MARK_MS}));}catch{/* other tabs look it up instead */}};
       const proof=proofRef.current;
       const want=target ?? direct?.span ?? {from:fromNumber,to:toNumber};
-      if(saved){
-        try{payload=JSON.parse(saved);}catch{setError('The saved request on this device couldn’t be read. Check the office queue below before starting over.');return;}
-        // A saved request is only ever resent as itself, never in place of
-        // other labels: a one-tap send (a reprint from the fix dialog or a
-        // queue row, a resend after a refusal) waits until it is sorted out,
-        // and a part or the form resends it only for exactly its range.
-        if(direct || payload.from!==want.from || payload.to!==want.to){
-          const kept={from:Number(payload.from),to:Number(payload.to),reprintOf:typeof payload.reprintOf==='string'?payload.reprintOf:undefined,endBlank:payload.endBlank===true};
-          setPending(p=>p ?? kept);
-          setError(finishFirstWords(kept));return;
+      // Read, decide and save under one lock shared by this run's tabs, so two
+      // tabs starting a send at the same moment never overwrite each other's
+      // saved request: the second one finds the first one's and waits for it.
+      const claimed=await withOfficeSendLock(runId,()=>{
+        try{saved=localStorage.getItem(storageKey);}catch{saved=null;}
+        if(saved){
+          try{payload=JSON.parse(saved);}catch{setError('The saved request on this device couldn’t be read. Check the office queue below before starting over.');return false;}
+          // A saved request is only ever resent as itself, never in place of
+          // other labels: a one-tap send (a reprint from the fix dialog or a
+          // queue row, a resend after a refusal) waits until it is sorted out,
+          // and a part or the form resends it only for exactly its range.
+          if(direct || payload.from!==want.from || payload.to!==want.to){
+            const kept={from:Number(payload.from),to:Number(payload.to),reprintOf:typeof payload.reprintOf==='string'?payload.reprintOf:undefined,endBlank:payload.endBlank===true};
+            setPending(p=>p ?? kept);
+            setError(finishFirstWords(kept));return false;
+          }
+        }else{
+          // A new request always needs a check of exactly this range first, and
+          // is never one the server would refuse.
+          if(bitmap && proof?.key!==currentProofKey.current)return false;
+          if(bitmap && proof?.key!==keyOf(want.from,want.to))return false;
+          // A one-tap send is planned from the latest office queue, like the form.
+          const auto=direct?officeSendPlan(jobsRef.current,want.from,want.to):null;
+          const plan:OfficeSendPlan=!direct || !auto?onScreen.plan
+            :auto.kind==='new' && direct.reprintOf?{kind:'reprint',reprintOf:direct.reprintOf,overlap:{from:want.from,to:want.to}}
+            :auto.kind==='reprint' && direct.reprintOf && jobsRef.current.some(j=>j.requestId===direct.reprintOf)?{...auto,reprintOf:direct.reprintOf}
+            :auto;
+          const tooBig=direct?want.to-want.from+1>cap:onScreen.tooBig;
+          if(!target){if(!printAllowed || plan.kind==='wait' || tooBig)return false;}
+          if(!printAllowed || !requestsEverLoaded)return false;
+          const reprint=target?'':plan.kind==='reprint'?plan.reprintOf:'';
+          // Saved with the request (and its key) before the POST, so a resend
+          // after a dropped answer or a refresh sends exactly the same thing.
+          const blank=target?partBlank:direct?direct.endBlank===true:endBlank;
+          payload={runId,stationId:printer.station_id,printerId:printer.id,from:want.from,to:want.to,idempotencyKey:crypto.randomUUID(),...(blank?{endBlank:true}:{}),...(reprint?{reprintOf:reprint}: {}),...(bitmap?{expectedBitmapDigest:proof?.digest}:{})};
+          try{localStorage.setItem(storageKey,JSON.stringify(payload));}
+          catch{setError('This device can’t save the request, so it wasn’t sent. Check that the browser allows saving site data.');return false;}
+          setPending({from:payload.from,to:payload.to,reprintOf:payload.reprintOf,endBlank:payload.endBlank===true});
         }
-      }else{
-        // A new request always needs a check of exactly this range first, and
-        // is never one the server would refuse.
-        if(bitmap && proof?.key!==currentProofKey.current)return;
-        if(bitmap && proof?.key!==keyOf(want.from,want.to))return;
-        // A one-tap send is planned from the latest office queue, like the form.
-        const auto=direct?officeSendPlan(jobsRef.current,want.from,want.to):null;
-        const plan:OfficeSendPlan=!direct || !auto?onScreen.plan
-          :auto.kind==='new' && direct.reprintOf?{kind:'reprint',reprintOf:direct.reprintOf,overlap:{from:want.from,to:want.to}}
-          :auto.kind==='reprint' && direct.reprintOf && jobsRef.current.some(j=>j.requestId===direct.reprintOf)?{...auto,reprintOf:direct.reprintOf}
-          :auto;
-        const tooBig=direct?want.to-want.from+1>cap:onScreen.tooBig;
-        if(!target){if(!printAllowed || plan.kind==='wait' || tooBig)return;}
-        if(!printAllowed || !requestsEverLoaded)return;
-        const reprint=target?'':plan.kind==='reprint'?plan.reprintOf:'';
-        // Saved with the request (and its key) before the POST, so a resend
-        // after a dropped answer or a refresh sends exactly the same thing.
-        const blank=target?partBlank:direct?direct.endBlank===true:endBlank;
-        payload={runId,stationId:printer.station_id,printerId:printer.id,from:want.from,to:want.to,idempotencyKey:crypto.randomUUID(),...(blank?{endBlank:true}:{}),...(reprint?{reprintOf:reprint}: {}),...(bitmap?{expectedBitmapDigest:proof?.digest}:{})};
-        try{localStorage.setItem(storageKey,JSON.stringify(payload));}
-        catch{setError('This device can’t save the request, so it wasn’t sent. Check that the browser allows saving site data.');return;}
-        setPending({from:payload.from,to:payload.to,reprintOf:payload.reprintOf,endBlank:payload.endBlank===true});
-      }
+        markSending();
+        return true;
+      });
+      if(!claimed)return;
       clearRefusal();
       // While this tab waits for the answer the panel says "Sending…", not
       // "not sure": the saved request only matters if the answer is lost.
       // Other tabs (and this tab after a reload) learn the same from a mark
       // kept beside the saved request, renewed while the answer is awaited.
       const sendKey=String(payload.idempotencyKey);
-      const mark=()=>{try{localStorage.setItem(sendingKey,JSON.stringify({key:sendKey,from:payload.from,to:payload.to,tab:tabId.current,until:Date.now()+SENDING_MARK_MS}));}catch{/* other tabs look it up instead */}};
       const unmark=()=>{try{if(readSendingMark(localStorage.getItem(sendingKey))?.key===sendKey)localStorage.removeItem(sendingKey);}catch{/* nothing saved */}};
-      mark();const beat=setInterval(mark,4000);
+      markSending();const beat=setInterval(markSending,4000);
       setPosting(true);
       try{
         let result;
-        try{result=await api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload)});}
+        // A stalled connection ends a little after the server's own limit
+        // (300 s), as "no answer": the saved request and key stay for Send again.
+        try{result=await api('/api/office/jobs',{method:'POST',body:JSON.stringify(payload),...(typeof AbortSignal!=='undefined' && typeof AbortSignal.timeout==='function'?{signal:AbortSignal.timeout(OFFICE_POST_TIMEOUT_MS)}:{})});}
         finally{clearInterval(beat);unmark();}
         try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);setPosting(false);
         // Every send starts with the blank off: the choice was for this send only.
@@ -855,7 +903,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // Held labels of a "Print in order" fix still on their way: the next send waits for them.
   const heldWait=heldMoving.length>0 && !heldUnsent.length && !pending && !chooseAgain && !reprintOf && !sendOther;
   // Another tab is sending this very request: nothing to press here until it answers.
-  const disabled=pending?(busy || (!posting && pendingPhase==='other')):(busy || heldWait || !printAllowed || !formReady || !rangeValid || plan.kind==='wait' || (tooBig && parts.length<2));
+  const disabled=pending?(busy || (!posting && pendingPhase!=='unsure')):(busy || heldWait || !printAllowed || !formReady || !rangeValid || plan.kind==='wait' || (tooBig && parts.length<2));
   // One primary button on screen: the first problem's fix, else the main action.
   // The "which labels?" box is the main action while it is open.
   const againOpen=!!again && !series && !pending && canPrint && !!printer;
@@ -882,6 +930,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const primaryLabel=busy
     ?(preparationProgress?'Checking labels…':'Sending to office printer…')
     :pending && pendingPhase==='other'?'Sending from another tab…'
+    :pending && !posting && pendingPhase==='checking'?'Checking…'
     :pending?'Send again'
     :heldWait?`Waiting for ${nums(heldMoving[0].from,heldMoving[heldMoving.length-1].to)}…`
     :plan.kind==='wait'?'Waiting for office printer…'
@@ -1100,7 +1149,14 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     let meta:string|null=null;try{meta=localStorage.getItem(metaKey);}catch{meta=null;}
     return meta?'earlier':'none';
   })();
-  const pendingWords=pending?unconfirmedSendWords(pending.status,pending.code,pendingSeen,pending.from===pending.to):'';
+  const pendingOne=!!pending && pending.from===pending.to;
+  // The lookup can't answer (for example after a change back to an earlier
+  // version of Label Wrangler): never say the queue doesn't show them.
+  const pendingWords=!pending?''
+    :pendingSeen==='none' && lookupMissing?(queueHasPending
+      ?`${Range(pending.from,pending.to)} look${pendingOne?'s':''} like ${pendingOne?'it':'they'} reached the office (see the queue below). If ${pendingOne?'it’s':'they’re'} listed, press “Start over”.`
+      :'Check the office queue below before sending again. “Send again” can’t print twice.')
+    :unconfirmedSendWords(pending.status,pending.code,pendingSeen,pendingOne);
   const waitingWords=waiting.length?spanWords(waiting):'';
   const ownBlocking=failedParts.find(p=>p.kind!=='print-again');
   const movingLine=moving && !ownBlocking && !series

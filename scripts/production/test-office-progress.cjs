@@ -271,8 +271,14 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
   const post = src.indexOf("api('/api/office/jobs',{method:'POST'");
   assert.ok(save > 0 && post > save, 'idempotency key saved before the POST');
   assert.equal(src.split("api('/api/office/jobs',{method:'POST'").length - 1, 1, 'one POST site: one tap, one job request');
-  assert.match(src, /if\(bitmap && proof\?\.key!==currentProofKey\.current\)return;/, 'the label check (proof) still gates a new send');
-  assert.match(src, /plan\.kind==='wait' \|\| tooBig\)return;/, 'never sends what the server would refuse');
+  assert.match(src, /if\(bitmap && proof\?\.key!==currentProofKey\.current\)return false;/, 'the label check (proof) still gates a new send');
+  assert.match(src, /plan\.kind==='wait' \|\| tooBig\)return false;/, 'never sends what the server would refuse');
+  // Checked and saved under one Web Lock per run (two tabs never overwrite each other's saved request).
+  const lock = src.indexOf('withOfficeSendLock(runId,');
+  assert.ok(lock > 0 && lock < save && save < post, 'the saved request is checked and written inside the lock, before the POST');
+  assert.match(src, /navigator\.locks\?\.request\)return await navigator\.locks\.request\(`lw-office-send:\$\{runId\}`/, 'one lock per run');
+  assert.match(src, /signal:AbortSignal\.timeout\(OFFICE_POST_TIMEOUT_MS\)/, 'the POST gives up after a while');
+  assert.match(src, /const OFFICE_POST_TIMEOUT_MS=310_000;/, 'a little after the route’s 300 s');
   assert.doesNotMatch(src, /officeProgressUpdate|onOfficeProgress/, 'no automatic progress writes');
 }
 console.log('PASS office: no automatic progress (explicit Mark printed only), failed parts named with reasons, overlap -> reprint or wait, safe send size, uncertain keeps the request, refusals expire, plain words, unchanged request contract');
@@ -308,7 +314,8 @@ console.log('PASS field display names');
   // A failed storage write is said, not silent, and nothing is sent.
   assert.match(panel, /try\{localStorage\.setItem\(storageKey,JSON\.stringify\(payload\)\);\}\s*catch\{setError\('This device can’t save the request, so it wasn’t sent/, 'a failed save stops the send and says so');
   // "Send again" reuses the saved key whatever the printer says (the server answers a saved key first).
-  assert.match(panel, /const disabled=pending\?\(busy \|\| \(!posting && pendingPhase==='other'\)\):/, '"Send again" is only disabled while busy, or while another tab is sending that same request');
+  assert.match(panel, /const disabled=pending\?\(busy \|\| \(!posting && pendingPhase!=='unsure'\)\):/, '"Send again" is only offered once the page is unsure: not while busy, checking, or while another tab is sending that same request');
+  assert.match(panel, /:pending && !posting && pendingPhase==='checking'\?'Checking…'/, 'while checking, the button says so');
   // The reason for "not sure" is kept beside the saved request, so a refresh says the same.
   assert.match(panel, /localStorage\.setItem\(metaKey,JSON\.stringify\(meta\)\)/);
   assert.match(panel, /readPendingMeta\(meta\)/);
@@ -316,11 +323,11 @@ console.log('PASS field display names');
   assert.match(panel, /noAccess\?'Ask your admin for print access\.'/);
   assert.match(panel, /:shownRefusal && !noAccess\?'refusal'/, 'no primary button after a no-access refusal');
   // Nothing new is sent before one read of the office queue succeeded.
-  assert.match(panel, /if\(!printAllowed \|\| !requestsEverLoaded\)return;/);
+  assert.match(panel, /if\(!printAllowed \|\| !requestsEverLoaded\)return false;/);
   // A multi-part send is one explicit tap, and each part goes through the one POST site with its own saved key.
   assert.match(panel, /`Send all \$\{sendCount\.toLocaleString\(\)\} in \$\{parts\.length\} parts`/);
   assert.match(panel, /const outcome=await submit\(part,undefined,blankHere\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
-  assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
+  assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return false;/, 'each part needs its own label check');
   // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
   assert.match(panel, /if\(direct \|\| payload\.from!==want\.from \|\| payload\.to!==want\.to\)\{/, 'a part, the form or a one-tap send never sends another range\'s saved request');
   assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{(if\(partCarriesEndBlank\(current,part\)\)blankSkipped=\{span:part,why:'office'\};)?current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
