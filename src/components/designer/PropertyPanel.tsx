@@ -9,6 +9,7 @@ import {
 import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { MANIFEST_FIELD_OPTIONS } from '@/lib/manifestFields';
+import { prepareDesignerImage } from '@/lib/imageUpload';
 import { BITMAP_FONTS } from '@/lib/thermal/import';
 import type { AlignAction } from '@/lib/thermal/editorGeometry';
 import { snapZplQrSize } from '@/lib/zplGenerator';
@@ -495,22 +496,30 @@ function RectProps({ element, onUpdate }: { element: RectangleElement; onUpdate:
 }
 
 function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u: Partial<TemplateElement>) => void }) {
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => onUpdate({ src: ev.target?.result as string });
-    reader.readAsDataURL(file);
+    setUploadError(null); setUploading(true);
+    try { onUpdate({ src: await prepareDesignerImage(file) }); }
+    catch (error) { setUploadError((error as Error).message); }
+    finally { setUploading(false); }
   };
   return (
     <>
       <SectionLabel icon={<Image className="w-3 h-3" />} label="Image" />
       <input
         type="file"
-        accept="image/*"
-        onChange={handleUpload}
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        disabled={uploading}
+        onChange={e => void handleUpload(e)}
         className="text-[10px] text-zinc-400 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-medium file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700 file:cursor-pointer w-full"
       />
+      {uploading && <p className="text-[10px] text-zinc-500">Preparing image…</p>}
+      {uploadError && <p role="alert" className="text-[10px] text-red-400">{uploadError}</p>}
+      <p className="text-[10px] text-zinc-500">Large images are scaled down to 1200 px on the longest side.</p>
       <label className="flex items-center gap-2 text-xs text-zinc-300">
         <input type="checkbox" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
         Choose image during run setup
