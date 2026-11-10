@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertCircle, Pencil } from 'lucide-react';
-import { barcodeHasDetails, barcodePlainSentence, barcodeTickLabel, FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
+import { barcodeHasDetails, barcodePlainSentence, barcodeTickLabel, barcodeWhyText, FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
 
 /**
  * "Why?" under a plain sentence: the measurements and the fix, folded away
@@ -61,7 +61,7 @@ export function BarcodeWarning({ items, stops, stopWords, isTicked, onTick, fix,
     <div role="alert" className="space-y-2 text-sm">
       <ul className="space-y-2">
         {shown.map((item, i) => {
-          const details = barcodeHasDetails(item) ? `${item}${why && i === shown.length - 1 && !rest.length ? ` ${why}` : ''}` : (why && i === shown.length - 1 && !rest.length ? why : '');
+          const details = barcodeHasDetails(item) ? `${barcodeWhyText(item)}${why && i === shown.length - 1 && !rest.length ? ` ${why}` : ''}` : (why && i === shown.length - 1 && !rest.length ? why : '');
           return (
             <li key={item} className="space-y-1">
               <div className="flex items-start gap-1.5 text-zinc-100">

@@ -39,3 +39,14 @@ assert.match(designSaveProblem('This design was changed in another tab.', []), /
 assert.equal(plainPrinterText('1g · Hybrid'), '1g - Hybrid');
 assert.equal(plainReplacement('·'), '-');
 console.log('PASS designer: a failed save says why in plain words; "Replace with -" swaps the middle dot');
+
+const BT = require('../../src/lib/runBarcodeTicks.ts');
+// Round 9: "Why?" under an odd-character problem says only what is new.
+{
+  const item = 'Label 3: the SKU "café-é" has characters a barcode can\'t hold (é). Fix row 4 of your spreadsheet.';
+  assert.equal(BT.barcodePlainSentence(item), 'Label 3: the SKU "café-é" has characters a barcode can\'t hold (é).');
+  const why = BT.barcodeWhyText(item);
+  assert.ok(!why.includes('café-é'), 'the sentence is not repeated behind Why?');
+  assert.match(why, /^This barcode holds plain letters, numbers and everyday symbols only\. Fix row 4 of your spreadsheet\.$/);
+  console.log('PASS run r9: Why? under a barcode problem adds only what the sentence did not say');
+}

@@ -20,7 +20,11 @@ export default function LoginPage(){
       .catch(()=>{}); // Leave the normal login form available on failure.
     return ()=>controller.abort();
   },[]);
-  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><PageTitle title="Sign in" /><form noValidate className="w-full max-w-sm space-y-4 p-2 sm:p-6" onSubmit={async(e)=>{
+  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><PageTitle title="Sign in" />{/* method="post": if the page's script hasn't loaded (a slow phone, a
+    stale tab), the browser's own submit sends the fields in the request body
+    to this page, which just shows the form again. Never a GET, which would
+    put the username and password in the address bar, history and logs. */}
+  <form noValidate method="post" className="w-full max-w-sm space-y-4 p-2 sm:p-6" onSubmit={async(e)=>{
     e.preventDefault();
     const form=new FormData(e.currentTarget);
     // Say what is missing in the page's own words, next to the field.

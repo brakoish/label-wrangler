@@ -52,3 +52,25 @@ export async function renderZplToDataUrl(
   const base64 = await api.zplToBase64Async(zpl, widthMm, heightMm, dpmm);
   return `data:image/png;base64,${base64}`;
 }
+
+/**
+ * The renderer refuses a label with nothing on it ("No labels parsed"). That
+ * happens in the new-run picture before any value is typed, when every part
+ * is left out of the picture because it has no value yet.
+ */
+export function isNothingToDrawError(error: unknown): boolean {
+  return error instanceof Error && /no labels parsed/i.test(error.message);
+}
+
+/** A plain white label the size the renderer would draw, for the striped empty picture. */
+export function blankLabelDataUrl(format: Pick<LabelFormat, 'width' | 'height' | 'dpi' | 'labelsAcross' | 'horizontalGapThermal' | 'sideMarginThermal' | 'linerWidth'>) {
+  const { widthMm, heightMm, dpmm } = thermalRenderDimensions(format);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(widthMm * dpmm));
+  canvas.height = Math.max(1, Math.round(heightMm * dpmm));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Unable to display the label');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}

@@ -188,7 +188,8 @@ function ElementItem({
       {/* Label */}
       <div className="flex-1 min-w-0">
         <button aria-pressed={isSelected} aria-label={`Select ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
-        {(label !== typeLabel || !element.isStatic) && <p className="text-xs text-zinc-400">{label !== typeLabel ? typeLabel : ''}{!element.isStatic ? `${label !== typeLabel ? ', c' : 'C'}hanges per label` : ''}</p>}
+        {/* One short line: the icon already says what kind of item it is. */}
+        {!element.isStatic && <p className="truncate text-xs text-zinc-400">Changes per label</p>}
       </div>
       {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} ${label}`} title={element.locked ? 'Unlock' : 'Lock in place'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 

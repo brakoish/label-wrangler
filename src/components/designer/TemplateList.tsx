@@ -14,6 +14,7 @@ import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { designSampleValues } from '@/lib/sampleValues';
 import { Dialog } from '@/components/ui/Dialog';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
+import { CountLabel, PageHeader, SearchField } from '@/components/ui/PageHeader';
 import { confirmDialog } from '@/components/ui/feedback';
 import { useTemplateStore } from '@/lib/templateStore';
 import { Menu } from '@/components/ui/Menu';
@@ -79,19 +80,21 @@ export function TemplateList({
   return (
     <div className="page-container">
       {!(listError && templates.length === 0) && notice}
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>
-        <button type="button" onClick={onNewTemplate} className="btn btn-primary">
+      <PageHeader
+        className="mb-6"
+        title="Designs"
+        subtitle={templates.length > 0 ? 'Open a design to change it, or make a new one.' : 'A design is the layout of one label: its text, barcodes and pictures.'}
+        action={<button type="button" onClick={onNewTemplate} className="btn btn-primary">
           <Plus className="size-4" aria-hidden="true" /> New design
-        </button>
-      </div>
+        </button>}
+      />
       {templates.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2">
       <div className="segmented w-full sm:w-auto" role="group" aria-label="Show">
         <SegmentedIndicator index={showArchived ? 1 : 0} count={2} />
-        <button type="button" onClick={() => setShowArchived(false)} aria-pressed={!showArchived}>Active ({templates.filter((t) => !t.archivedAt).length})</button>
-        <button type="button" onClick={() => setShowArchived(true)} aria-pressed={showArchived}>Archived ({templates.filter((t) => t.archivedAt).length})</button>
+        <button type="button" onClick={() => setShowArchived(false)} aria-pressed={!showArchived}><CountLabel text="Active" count={templates.filter((t) => !t.archivedAt).length} /></button>
+        <button type="button" onClick={() => setShowArchived(true)} aria-pressed={showArchived}><CountLabel text="Archived" count={templates.filter((t) => t.archivedAt).length} /></button>
       </div>
-        <input type="search" aria-label="Search designs" placeholder="Search designs…" value={query} onChange={e => setQuery(e.target.value)} className="field min-w-0 flex-1 sm:max-w-xs" />
+        <SearchField label="Search designs" value={query} onChange={setQuery} className="min-w-0 flex-1 sm:max-w-xs" />
         <div className="w-full sm:w-64">
           <CustomSelect
             aria-label="Filter by label size"
@@ -221,6 +224,8 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
   }, [format, sampleData, template]);
 
   if (!format) return <div className="w-full h-full bg-zinc-900 rounded-lg" />;
+  // A round label is drawn round (its size names it and it is square).
+  const round = format.width === format.height && /\b(round|circle)\b/i.test(format.name);
 
   if (format.type === 'thermal' && thermalUrl) {
     return (
@@ -228,7 +233,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
         <img
           src={thermalUrl}
           alt={`${template.name} preview`}
-          className="max-w-full max-h-full object-contain"
+          className={round ? 'h-full w-auto max-w-full rounded-full object-contain' : 'h-full w-full object-contain'}
           style={{ imageRendering: 'pixelated' }}
         />
         {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-zinc-950 px-1 text-xs text-amber-300">Needs a fix</span>}
@@ -242,7 +247,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
   if (format.type !== 'thermal' && sheetSvg) {
     const { vbW, vbH } = labelViewBox(format);
     return (
-      <svg viewBox={`0 0 ${vbW} ${vbH}`} className="max-h-full max-w-full" style={{ aspectRatio: `${vbW} / ${vbH}` }} role="img" aria-label={`${template.name} preview`}>
+      <svg viewBox={`0 0 ${vbW} ${vbH}`} className={`h-full max-h-full w-auto max-w-full ${round ? 'rounded-full' : ''}`} style={{ aspectRatio: `${vbW} / ${vbH}` }} role="img" aria-label={`${template.name} preview`}>
         <rect x={0} y={0} width={vbW} height={vbH} fill="#ffffff" />
         <g dangerouslySetInnerHTML={{ __html: sheetBody(sheetSvg) }} />
       </svg>
@@ -283,19 +288,19 @@ function TemplateCard({
       onClick={onSelect}
       className="group cursor-pointer overflow-hidden rounded-xl bg-zinc-900 transition-colors hover:bg-zinc-800/70"
     >
-      {/* Preview area */}
-      <div className="h-[140px] bg-zinc-950 p-3">
+      {/* Preview area: on the card's own surface, so card and picture read as one. */}
+      <div className="h-[140px] px-4 pt-4">
         <CardPreview key={`${template.id}:${template.updatedAt}`} template={template} format={format} />
       </div>
 
       {/* Info area */}
       <div className="p-3 pl-4">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="min-w-0 flex-1 text-sm font-semibold text-zinc-100">
+          <h2 className="min-w-0 flex-1 text-sm font-semibold text-zinc-100">
             <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} title={template.name} className="min-h-control-sm max-w-full rounded-sm py-1.5 text-left break-words line-clamp-2">
               {template.name}
             </button>
-          </h3>
+          </h2>
           {/* One menu instead of three icon buttons on every card. */}
           <div className="-mr-1 flex-shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
             <Menu

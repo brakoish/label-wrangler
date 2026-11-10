@@ -176,7 +176,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Chooseâ€
 
   if (compact) {
     const menu = (
-      <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 ring-1 ring-zinc-700 rounded-lg shadow-xl shadow-black/50 overflow-hidden">
+      <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 rounded-lg shadow-xl shadow-black/50 overflow-hidden">
         {options.map((option, index) => (
           <div
             key={option.value}
@@ -216,7 +216,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Chooseâ€
   }
 
   const fullMenu = (
-    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 ring-1 ring-zinc-700 rounded-lg shadow-xl shadow-black/50 overflow-hidden">
+    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 rounded-lg shadow-xl shadow-black/50 overflow-hidden">
       {options.map((option, index) => (
         <div
           key={option.value}

@@ -4,12 +4,17 @@
 require('../thermal/register.cjs');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');
-const {buildChanged,builtInBuild}=require('../../src/lib/buildCheck.ts');
+const {buildChanged,builtInBuild,versionRouteGone}=require('../../src/lib/buildCheck.ts');
 assert.equal(buildChanged('a','a'),false);
 assert.equal(buildChanged('a','b'),true);
 assert.equal(buildChanged(null,'b'),false,'unknown when loaded: no prompt');
 assert.equal(buildChanged('a',null),false,'unknown now: no prompt');
 assert.equal(buildChanged(undefined,undefined),false);
+// After a rollback to a build without /api/version, the 404 means "out of
+// date", but only for a tab that knows its own build had the route.
+assert.equal(versionRouteGone(404,true),true,'rolled back past the route: reload');
+assert.equal(versionRouteGone(404,false),false,'never knew the route: no prompt');
+for(const status of [500,502,503,504,401,403,429])assert.equal(versionRouteGone(status,true),false,`${status} is trouble, not a new version`);
 (async()=>{
  process.env.VERCEL_GIT_COMMIT_SHA='0123456789abcdef0123456789abcdef01234567';
  const route=require('../../src/app/api/version/route.ts');
@@ -23,7 +28,10 @@ assert.equal(buildChanged(undefined,undefined),false);
  const shell=fs.readFileSync(path.join(__dirname,'../../src/components/AppShell.tsx'),'utf8');
  assert.match(shell,/<NewVersionNotice \/>/,'every page with the app shell shows the notice');
  const notice=fs.readFileSync(path.join(__dirname,'../../src/components/NewVersionNotice.tsx'),'utf8');
- assert.match(notice,/A new version is ready — reload/);
+ assert.match(notice,/Label Wrangler was updated\. Reload to keep working\./);
+ assert.match(notice,/versionRouteGone\(response\.status, knewRoute\)/,'a 404 after a rollback asks for a reload');
+ assert.match(notice,/gone404 >= 2/,'one stray 404 is not enough');
+ assert.match(notice,/catch \{ \/\* offline: try again later \*\/ \}/,'a network error never asks');
  assert.match(notice,/if \(canLeaveLocalPrint\(\)\) window\.location\.reload\(\)/,'a reload never cuts off a print in progress');
  assert.doesNotMatch(notice,/location\.reload\(\);?\s*\}\s*,\s*\d/,'nothing reloads on its own');
  // The build is built into the page (next.config env) with the same value the
