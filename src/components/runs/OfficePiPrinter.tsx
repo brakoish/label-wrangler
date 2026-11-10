@@ -151,14 +151,14 @@ function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadB
   firstHadBlank?:boolean}){
   const [open,setOpen]=useState(false);
   const where=after?`after label ${after.toLocaleString()}`:'after the last one';
-  if(firstHadBlank)return <label className="flex cursor-pointer items-start gap-3 text-sm text-zinc-200">
+  if(firstHadBlank)return <label className="flex cursor-pointer items-start gap-3 text-sm text-zinc-100">
     <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
     <span>Your first send ended with a blank label. Add one {where}?</span>
   </label>;
   return <div className="-mt-1">
     <FoldToggle open={open} onToggle={()=>setOpen(v=>!v)} controls={`${id}-more`}>{checked && !open?<>More options<span className="text-zinc-300"> · one blank label {where}</span></>:'More options'}</FoldToggle>
     <Fold open={open} id={`${id}-more`}>
-      <label className="flex cursor-pointer items-start gap-3 pb-1 text-sm text-zinc-200">
+      <label className="flex cursor-pointer items-start gap-3 pb-1 text-sm text-zinc-100">
         <input type="checkbox" aria-describedby={`${id}-help`} className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
         <span>Feed one blank label {where}<span id={`${id}-help`} className="block text-zinc-400">Useful for tearing off.{inParts?' Only after the last part.':''} Counts don’t change.</span></span>
       </label>
@@ -239,7 +239,6 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // The panel's own box (not a queue row's) stands in for the panel's other actions.
   const chooseAgain=!!again && !again.requestId;
   const [sendOther,setSendOther]=useState(false);
-  const [sentThisVisit,setSentThisVisit]=useState(false);
   const stationErrorRef=useRef('');
   const bitmap = template?.thermalRenderMode === 'bitmap-v1';
   const across = Math.max(1, format?.labelsAcross || 1);
@@ -263,6 +262,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [series,setSeries]=useState<Series|null>(null);
   const seriesRunning=useRef(false);
   const stopSeries=useRef(false);
+  // "Stop" was pressed during this series: the button says it registered.
+  const [stopAsked,setStopAsked]=useState<string|null>(null);
   // A one-tap send (resend after a refusal, a reprint from the fix dialog or a
   // queue row) sets the range and checks it in the same tap: don't cancel that check.
   const directRunning=useRef(false);
@@ -673,7 +674,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         if(payload.endBlank===true && typeof result?.requestId==='string')rememberBlankSend(result.requestId);
         if(heldBlankAt!==null && payload.to===heldBlankAt)saveHeldBlank(null);
         if(!target)setNotice({text:queuedNotice(Range(payload.from,payload.to),payload.from===payload.to,status,payload.endBlank===true?payload.to:undefined),requestId:typeof result?.requestId==='string'?result.requestId:undefined,at:Date.now(),queued:true});
-        setReprintOf('');if(!direct)setAgain(null);setSendOther(false);rangeEdited.current=false;setSentThisVisit(true);
+        setReprintOf('');if(!direct)setAgain(null);setSendOther(false);rangeEdited.current=false;
         outcome='sent';
       }catch(err){
         setPosting(false);
@@ -762,7 +763,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   };
   const runSeries=async(start:OfficePartsPlan)=>{
     if(seriesRunning.current || !printer || seriesLocks.has(runId))return;
-    seriesRunning.current=true;seriesLocks.add(runId);stopSeries.current=false;clearRefusal();setNotice(null);setError('');
+    seriesRunning.current=true;seriesLocks.add(runId);stopSeries.current=false;setStopAsked(null);clearRefusal();setNotice(null);setError('');
     let current=start;savePartsPlan(current);
     const leftOut:{span:OfficeSpan|null}={span:null};
     let blankSent=false;
@@ -943,9 +944,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :tooBig && parts.length>1?`Send all ${sendCount.toLocaleString()} in ${parts.length} parts`
     // Labels a "Print in order" fix held back: the button names them, so the plan's last step is plainly this press.
     :sendingHeld && plan.kind!=='reprint'?`${proofCurrent?'Send':'Check & send'} ${fromNumber===toNumber?`label ${fromNumber.toLocaleString()}`:nums(fromNumber,toNumber)}`
+    // Never a count of 0: until the boxes hold a real range, the button names no number.
+    :!sendCount?'Send to office printer'
     :!proofCurrent?(plan.kind==='reprint'?'Check labels to print again':`Check ${plural(sendCount)}`)
     :plan.kind==='reprint'?`Print ${plural(sendCount)} again`
-    :sentThisVisit?`Send the next ${plural(sendCount)}`
+    // One wording for the same state, before and after a reload, in every tab.
     :`Send ${plural(sendCount)} to office printer`;
   const onPrimary=async()=>{
     if(pending && pendingInPlan && partsPlan){void runSeries(partsPlan);return;}
@@ -1241,7 +1244,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         ? <><div className="flex items-center justify-between gap-2"><label htmlFor={`${uid}-again`} className="font-medium text-zinc-100">{question}</label><button type="button" className="btn btn-ghost btn-sm -mr-2 text-zinc-300" onClick={()=>setAgain(null)}>Cancel</button></div>
           <input id={`${uid}-again`} className={inputClass} inputMode="text" autoComplete="off" autoFocus placeholder="For example 5–8, 12" aria-describedby={`${uid}-again-help`} disabled={busy} value={again.text} onChange={e=>{const text=e.target.value;setAgain(a=>a?{...a,text}:a);}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void sendAgainNext();}}} />
           <p id={`${uid}-again-help`} className="text-zinc-400">Type label numbers. A dash means every label in between.</p></>
-        : <p className="text-zinc-200">{again.sent?`${Range(again.sent.from,again.sent.to)} ${again.sent.from===again.sent.to?'is':'are'} queued. `:''}Next: {spanWords(again.queue)}.</p>}
+        : <p className="text-zinc-100">{again.sent?`${Range(again.sent.from,again.sent.to)} ${again.sent.from===again.sent.to?'is':'are'} queued. `:''}Next: {spanWords(again.queue)}.</p>}
       {againParsed.error && <p role="alert" className="text-amber-300">{againParsed.error}</p>}
       {!again.queue.length && againNext && againSpans.length>1 && <p className="text-zinc-300">{capitalise(range(againNext.from,againNext.to))} go{one?'es':''} first, then {spanWords(againSpans.slice(1))}: one more press each.</p>}
       {againWait && <p role="status" className="text-zinc-400">{againWait.why==='needs-check'?`${Range(againWait.overlap.from,againWait.overlap.to)} need${againWait.overlap.from===againWait.overlap.to?'s':''} a check first (see above).`:`${Range(againWait.overlap.from,againWait.overlap.to)} ${againWait.overlap.from===againWait.overlap.to?'is':'are'} still on the way to the office printer. Print ${againWait.overlap.from===againWait.overlap.to?'it':'them'} again once ${againWait.overlap.from===againWait.overlap.to?'it’s':'they’re'} done.`}</p>}
@@ -1300,7 +1303,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {series && <div role="status" className="space-y-2 text-sm">
       <p className="flex items-center gap-2 text-zinc-100 tabular-nums"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />Part {series.index+1} of {series.total}: {series.phase==='checking'?`checking ${range(series.part.from,series.part.to)}${series.progress?` (${series.progress.completed.toLocaleString()} of ${series.progress.total.toLocaleString()})`:''}…`:`sending ${range(series.part.from,series.part.to)}…`}</p>
       <p className="text-zinc-400">Keep this page open until the last part is queued.</p>
-      <button type="button" onClick={()=>{stopSeries.current=true;}} className="btn btn-secondary btn-sm">Stop after this part</button>
+      {/* A part still being checked isn't sent once stop is pressed, so the button says so; a part being sent finishes. */}
+      {!stopAsked
+        ?<button type="button" onClick={()=>{stopSeries.current=true;setStopAsked(series.phase==='checking'?(series.index>0?`Stopping after part ${series.index}…`:'Stopping…'):`Stopping after part ${series.index+1}…`);}} className="btn btn-secondary btn-sm">{series.phase==='checking'?`Don’t send part ${series.index+1}`:'Stop after this part'}</button>
+        :<p className="flex flex-wrap items-center gap-x-3 gap-y-1"><button type="button" disabled className="btn btn-secondary btn-sm">{stopAsked}</button><button type="button" className="link" onClick={()=>{stopSeries.current=false;setStopAsked(null);}}>Keep going</button></p>}
     </div>}
     {!series && leftParts.length>0 && !cancelled && <div className="space-y-2 text-sm">
       {!pending && <p className="text-amber-300">{leftParts.length===1?`The last part (${range(leftParts[0].from,leftParts[0].to)}) wasn’t sent yet.`:`${leftParts.length} parts (${range(leftParts[0].from,leftParts[leftParts.length-1].to)}) weren’t sent yet.`}</p>}
@@ -1354,12 +1360,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <label className="text-xs font-medium text-zinc-400">Stop after label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={to} onChange={e=>{rangeEdited.current=true;setTo(e.target.value);}} /></label>
       <label className="text-xs font-medium text-zinc-400">How many<input type="number" inputMode="numeric" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending || busy} className={inputClass+' mt-1'} value={rangeValid?sendCount:''} onChange={e=>{rangeEdited.current=true;const n=Number(e.target.value);if(Number(from)>=1 && n>=1)setTo(String(Math.min(total,Number(from)+Math.floor(n)-1)));}} /></label>
     </div>}
-    {!pending && !rangeValid && from.trim()!=='' && to.trim()!=='' && <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total.toLocaleString()}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
+    {!pending && !rangeValid && (from.trim()!=='' || to.trim()!=='') && (!/^\d*$/.test(from.trim()) || !/^\d*$/.test(to.trim())) && <p role="alert" className="text-sm text-amber-300">Type one label number in each box, like 5.{/[-–,]/.test(from+to)?' For a list like 5–8, 12, use “Print some labels again…”.':''}</p>}
+    {!pending && !rangeValid && from.trim()!=='' && to.trim()!=='' && /^\d*$/.test(from.trim()) && /^\d*$/.test(to.trim()) && <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total.toLocaleString()}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
     {!pending && tooBig && parts.length>1 && <p className="text-sm text-zinc-400">Goes in parts of up to {plural(cap)}, one after another.</p>}
-    {!pending && tooBig && parts.length<2 && <div className="space-y-1 text-sm text-amber-300"><p>The office printer takes up to {plural(cap)} of this design in one send.</p><button type="button" className="btn btn-ghost btn-sm -ml-2 text-zinc-200" onClick={()=>{rangeEdited.current=true;setTo(String(fromNumber+cap-1));}}>Send {nums(fromNumber,fromNumber+cap-1)} now</button></div>}
+    {!pending && tooBig && parts.length<2 && <div className="space-y-1 text-sm text-amber-300"><p>The office printer takes up to {plural(cap)} of this design in one send.</p><button type="button" className="btn btn-ghost btn-sm -ml-2 text-zinc-100" onClick={()=>{rangeEdited.current=true;setTo(String(fromNumber+cap-1));}}>Send {nums(fromNumber,fromNumber+cap-1)} now</button></div>}
     {!pending && rangeValid && plan.kind==='wait' && <p role="status" className="text-sm text-zinc-400">{plan.why==='needs-check'?`${Range(plan.overlap.from,plan.overlap.to)} need a check first (see above).`:`${Range(plan.overlap.from,plan.overlap.to)} ${plan.overlap.from===plan.overlap.to?'is':'are'} still on the way to the office printer. Send these once ${plan.overlap.from===plan.overlap.to?'it’s':'they’re'} sent.`}</p>}
     {!pending && rangeValid && plan.kind==='reprint' && !tooBig && fixedRange.current!==`${fromNumber}-${toNumber}` && <p className="text-sm text-amber-300">{Range(plan.overlap.from,plan.overlap.to)} went to the office printer before, so this prints {plan.overlap.from===plan.overlap.to?'it':'them'} again.</p>}
-    {!pending && alreadyPrinted && <div className="space-y-1 text-sm text-amber-300"><p>{Range(fromNumber,Math.min(toNumber,printedCount))} {fromNumber===Math.min(toNumber,printedCount)?'is':'are'} already counted as printed.</p>{printedCount<toNumber && <button type="button" className="btn btn-ghost btn-sm -ml-2 text-zinc-200" onClick={()=>{rangeEdited.current=true;setFrom(String(printedCount+1));}}>Send {nums(printedCount+1,toNumber)} instead</button>}</div>}
+    {!pending && alreadyPrinted && <div className="space-y-1 text-sm text-amber-300"><p>{Range(fromNumber,Math.min(toNumber,printedCount))} {fromNumber===Math.min(toNumber,printedCount)?'is':'are'} already counted as printed.</p>{printedCount<toNumber && <button type="button" className="btn btn-ghost btn-sm -ml-2 text-zinc-100" onClick={()=>{rangeEdited.current=true;setFrom(String(printedCount+1));}}>Send {nums(printedCount+1,toNumber)} instead</button>}</div>}
     {!printAllowed && printBlockedReason && <p className="text-sm text-amber-300">{printBlockedReason}</p>}
     {!formReady && !pending && <p role="status" className="text-sm text-zinc-400">Reading the office queue first…</p>}
     {/* A saved request is resent exactly as it was first sent, blank label included. */}
@@ -1380,7 +1387,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     {requestsError && requestsError.status!==401 && requestsError.status!==403 && <p role="status" className="text-sm text-zinc-400">The office queue couldn’t be read just now. It tries again on its own.</p>}
     {/* The amber waiting line already says why queued labels aren't printing. */}
-    {notice && !(notice.queued && (movingLine || (markShown && !moving))) && <p role="status" className={`text-sm ${notice.tone==='next'?'reveal text-zinc-200':'animate-enter text-emerald-400'}`}>{notice.text}</p>}
+    {notice && !(notice.queued && (movingLine || (markShown && !moving))) && <p role="status" className={`text-sm ${notice.tone==='next'?'reveal text-zinc-100':'animate-enter text-emerald-400'}`}>{notice.text}</p>}
     {requests.length>0 && <div>
       <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue{queueWords && <span className="tabular-nums"> · {queueWords}</span>}</FoldToggle>
       <Fold open={queueOpen} id={`${uid}-queue`}>
@@ -1401,7 +1408,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <p className="text-zinc-400">{[formatWhen(r.created_at),r.username].filter(Boolean).join(' · ')}</p>
           {many && <p className="text-zinc-300 tabular-nums">{r.jobs.length.toLocaleString()} batches · {tally}</p>}
           {shown.length>0 && <ul className="space-y-1">{foldJobs(shown,attention).map(j=><li key={j.id} className="text-zinc-300"><span className="tabular-nums">{nums(j.from,j.to)}</span>: {j.review && j.state!=='rejected'?'Needs a check':labels[j.state] ?? 'Unknown'}{j.reason && (j.review || ['rejected','needs_review'].includes(j.state)) && <span className="block text-zinc-400">{capitalise(plainJobReason(j.reason))}.</span>}
-            {canPrint && !pending && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-zinc-200" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
+            {canPrint && !pending && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-zinc-100" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
           </li>)}</ul>}
           <div className="flex flex-wrap gap-1 -ml-2">
             {many && <button type="button" aria-expanded={open} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>setOpenSends(prev=>{const next=new Set(prev);if(next.has(r.id))next.delete(r.id);else next.add(r.id);return next;})}>{open?'Hide batches':`Show all ${r.jobs.length.toLocaleString()} batches`}</button>}
