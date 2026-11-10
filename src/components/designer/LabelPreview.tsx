@@ -10,6 +10,7 @@ import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { friendlyRenderError, friendlyRenderFailure } from '@/lib/userMessages';
 import { friendlyFieldName } from '@/lib/fieldLabels';
 import { plainRenderWarning, type Box, type LayoutProblem } from '@/lib/designerLayout';
+import { DesignNotice } from './DesignNotice';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -66,7 +67,16 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   }, [bitmap, bitmapKey, elements, format, testData]);
   const hatchId = useId().replace(/:/g, '');
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showAllProblems, setShowAllProblems] = useState(false);
+  // Touch screens: "Double-tap", not "Double-click".
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia?.('(pointer: coarse)');
+    if (!query) return;
+    const update = () => setCoarsePointer(query.matches);
+    update();
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, []);
   const svgRef = useRef<SVGSVGElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{
@@ -508,25 +518,13 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const badQr = bitmapProof?.key === bitmapKey ? elements.find(e => e.type === 'qr' && [...bitmapProof.warnings, ...bitmapProof.advisories].some(w => w.elementId === e.id) && bitmapProof.qrBounds[e.id]) : undefined;
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
-  // Problems that stop printing first; each says what to change.
-  const shownProblems = [...layoutProblems].sort((a, b) => Number(!!b.blocking) - Number(!!a.blocking));
-  const problemText = (problem: LayoutProblem) => `${problem.message}${problem.fix ? ` ${problem.fix.replace(/\.$/, '')}.` : ''}`;
   return (
     <div data-designer-canvas className="relative flex-1 shrink-0 flex flex-col overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
       {/* Notices sit above the label, in the page flow, so the canvas never
           covers them (the space is kept so the label doesn't jump). */}
       <div className="shrink-0 space-y-1 px-3 pt-2 min-h-12 sm:min-h-16 sm:px-6">
-      {bitmap && <p role="status" className={`text-sm ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
-      {!bitmap && shownProblems.length > 0 && (
-        <div role="status" className={`text-sm ${shownProblems[0].blocking ? 'text-red-400' : 'text-amber-300'}`}>
-          <p>
-            {problemText(shownProblems[0])}
-            {shownProblems.length > 1 && <> <button type="button" aria-expanded={showAllProblems} onClick={() => setShowAllProblems((v) => !v)} className="font-medium underline underline-offset-2">{showAllProblems ? 'Show less' : `and ${shownProblems.length - 1} more`}</button></>}
-          </p>
-          {showAllProblems && <ul className="fold-reveal mt-1 list-disc space-y-1 pl-5">{shownProblems.slice(1).map((problem) => <li key={problem.ids.join(',') + problem.kind} className={problem.blocking ? 'text-red-400' : 'text-amber-300'}>{problemText(problem)}</li>)}</ul>}
-          {noticeAction && <div className="pt-1.5">{noticeAction}</div>}
-        </div>
-      )}
+      {bitmap && <p role="status" className={`text-sm ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData, format)) : `This is exactly how it will print. ${coarsePointer ? 'Double-tap' : 'Double-click'} text to edit it.` : 'Updating the print preview…')}</p>}
+      {!bitmap && <DesignNotice problems={layoutProblems} action={noticeAction} />}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });

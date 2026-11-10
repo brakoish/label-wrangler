@@ -10,10 +10,12 @@ import type { LabelTemplate, LabelFormat } from '@/lib/types';
 import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError } from '@/lib/userMessages';
 
-export function BitmapTemplateActions({ source, format, values = {}, onCreated, requestCopy = 0 }: {
+export function BitmapTemplateActions({ source, format, values = {}, onCreated, requestCopy = 0, onShowCode }: {
   source?: LabelTemplate; format?: LabelFormat; values?: Record<string, string>; onCreated: (id: string) => void;
   /** Bumped by a "Make an exact-print copy" button elsewhere on the page (the barcode notice). */
   requestCopy?: number;
+  /** Admins: show the raw printer commands (kept here, out of the main view). */
+  onShowCode?: () => void;
 }) {
   const file = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<{ template: LabelTemplate; format: LabelFormat; report: string[] } | null>(null);
@@ -37,6 +39,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
   // Draft captures the conversion inputs. Parent changes do not alter this proof.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
+  const canCopy = !!source && source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal';
   const startCopy = () => {
     if (!source || !format || source.thermalRenderMode === 'bitmap-v1' || format.type !== 'thermal') return;
     setError('');
@@ -62,7 +65,10 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   return <div className="text-sm">
-    {source ? source.thermalRenderMode !== 'bitmap-v1' && format?.type === 'thermal' && <details className="group relative"><summary className="btn btn-ghost btn-sm list-none [&::-webkit-details-marker]:hidden">More</summary><div className="popover-enter absolute right-0 top-full z-30 mt-1 w-72 rounded-xl bg-zinc-900 p-3 shadow-xl shadow-black/40 [--origin:top_right]"><p className="pb-2 text-zinc-400">Make a copy that prints any font as an exact picture. This design stays as it is.</p><button type="button" className="btn btn-secondary btn-sm w-full" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); startCopy(); }}>Make an exact-print copy</button></div></details> : <details><summary className="inline-flex min-h-control-sm cursor-pointer items-center text-zinc-400 hover:text-zinc-100">For admins: import a design or load the sample</summary><div className="flex flex-wrap gap-3 pt-2">
+    {source ? (canCopy || onShowCode) && <details className="group relative"><summary className="btn btn-ghost btn-sm list-none [&::-webkit-details-marker]:hidden">More</summary><div className="popover-enter absolute right-0 top-full z-30 mt-1 w-72 space-y-3 rounded-xl bg-zinc-900 p-3 shadow-xl shadow-black/40 [--origin:top_right]">
+      {canCopy && <div><p className="pb-2 text-zinc-400">Make a copy that prints any font as an exact picture. This design stays as it is.</p><button type="button" className="btn btn-secondary btn-sm w-full max-sm:min-h-11" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); startCopy(); }}>Make an exact-print copy</button></div>}
+      {onShowCode && <div><p className="pb-2 text-zinc-400">For admins setting up a printer.</p><button type="button" className="btn btn-ghost btn-sm w-full max-sm:min-h-11" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); onShowCode(); }}>Show printer commands</button></div>}
+    </div></details> : <details><summary className="inline-flex min-h-control-sm cursor-pointer items-center text-zinc-400 hover:text-zinc-100">For admins: import a design or load the sample</summary><div className="flex flex-wrap gap-3 pt-2">
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => file.current?.click()}>Import a design file</button>
       <button type="button" className="btn btn-secondary btn-sm" onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Load the sample design</button>
       <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />

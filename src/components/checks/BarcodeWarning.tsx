@@ -15,10 +15,10 @@ export function WhyToggle({ children, label = 'Why?' }: { children: ReactNode; l
   const id = useId();
   return (
     <>
-      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="link inline-flex min-h-control-sm items-center">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="link -my-3 py-3">
         {open ? 'Hide why' : label}
       </button>
-      <div id={id} className="fold basis-full" data-open={open}>
+      <div id={id} className="fold" data-open={open}>
         <div className="fold-inner">
           <p className="pt-1 text-zinc-400">{children}</p>
         </div>
@@ -66,7 +66,7 @@ export function BarcodeWarning({ items, stops, isTicked, onTick, fix, why, ticka
                 <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
                 <span>{barcodePlainSentence(item)}</span>
               </p>
-              {details && <div className="flex flex-wrap items-center gap-x-4 pl-5.5"><WhyToggle>{details}</WhyToggle></div>}
+              {details && <div className="pl-5.5"><WhyToggle>{details}</WhyToggle></div>}
               {canTick && (
                 <label htmlFor={`${uid}-${i}`} className="press ml-5.5 flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
                   <input id={`${uid}-${i}`} type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={ticked(item)} onChange={(e) => onTick!(item, e.target.checked)} />
