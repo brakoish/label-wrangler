@@ -25,12 +25,13 @@ export const metadata: Metadata = {
 };
 
 // Mobile-friendly viewport so phone browsers don't render the desktop
-// breakpoints zoomed out to fit. themeColor matches our dark background
-// so the status bar on iOS/Android blends in instead of flashing white.
+// breakpoints zoomed out to fit. No zoom limit: people who need bigger text
+// can pinch as far as they like (WCAG 1.4.4). themeColor matches our dark
+// background so the status bar on iOS/Android blends in instead of flashing
+// white.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 2,
   themeColor: "#0c0c0e",
 };
 
