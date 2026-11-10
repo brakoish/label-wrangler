@@ -306,12 +306,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const officeHeldBy = transport === 'office' ? panelHold.by : null;
   // What the office panel says (a send it isn't sure arrived, a refused send,
   // a paused printer), so the header and the panel never disagree.
-  type PanelState = { unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean; sending: string | null };
-  const [panelState, setPanelState] = useState<PanelState>({ unsure: null, refused: null, paused: false, sending: null });
+  type PanelState = { unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean; sending: string | null; held?: OfficeSpan | null };
+  const [panelState, setPanelState] = useState<PanelState>({ unsure: null, refused: null, paused: false, sending: null, held: null });
   const onPanelState = useCallback((next: PanelState) => {
-    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to ? prev : next));
+    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to && prev.held?.from === next.held?.from && prev.held?.to === next.held?.to ? prev : next));
   }, []);
-  const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null };
+  const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null, held: null };
   // The labels the office panel's main button sends next (for "Print anyway" words).
   const [officeSend, setOfficeSend] = useState<OfficeSpan | null>(null);
   const onOfficeRange = useCallback((span: OfficeSpan | null) => {
@@ -327,9 +327,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const uncheckedLabels = officeMark.ranges.reduce((n, r) => n + r.to - r.from + 1, 0);
   // Labels after progress that no office send covers: what is still to send (the same rule as the Runs list).
   const stillToSend = office.loaded && office.jobs.length > 0 ? officeUnsentSpans(office.jobs, total, printedCount).reduce((n, s) => n + s.to - s.from + 1, 0) : 0;
-  const officeSummary = (office.loaded && office.jobs.length > 0) || officeHeldBy || panel.unsure || panel.refused || panel.paused || panel.sending
+  const officeSummary = (office.loaded && office.jobs.length > 0) || officeHeldBy || panel.unsure || panel.refused || panel.paused || panel.sending || panel.held
     ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld,
-      unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused, sending: panel.sending, stillToSend }
+      unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused, sending: panel.sending, stillToSend, heldBack: panel.held ?? null }
     : null;
   // Labels at or sent to the office printer that nobody counted yet: the lighter part of the progress bar,
   // named apart ("sent to the printer", "waiting at the office") like the office panel names them.

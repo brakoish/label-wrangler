@@ -26,6 +26,8 @@ export interface RunOfficeSummary {
   sending?: string | null;
   /** Labels after progress that no office send covers yet (parts still to send, or labels never sent). */
   stillToSend?: number;
+  /** The run page's office panel: labels a "Print in order" fix held back, waiting for a press to send them. */
+  heldBack?: { from: number; to: number } | null;
 }
 
 /**
@@ -88,9 +90,18 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   // A send going out right now (a part of "Send all in parts", or one the page
   // is checking) is never "Ready": the header says what the panel is doing.
   if (office?.sending) return out('printing', 'active', office.sending);
-  if (office?.heldBy && run.status !== 'draft') return out('paused', 'paused', `“${office.heldBy.runName || 'Another run'}” needs a check first`);
+  // Another run's part stops the shared printer. Only labels of this run
+  // already waiting there make it "Paused"; a run with nothing there is
+  // still "Ready", and says what it waits for. The run header and the Runs
+  // list both read this, so they use the same word.
+  if (office?.heldBy && run.status !== 'draft') {
+    const name = office.heldBy.runName || 'Another run';
+    return office.onTheWay > 0 ? out('paused', 'paused', `“${name}” needs a check first`) : out('ready', 'idle', `Waits for “${name}”`);
+  }
   if (office && office.onTheWay > 0) return office.held ? out('paused', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'At the office printer');
   if (office?.printerPaused) return out('paused', 'paused', 'The office printer is paused');
+  // Labels a "Print in order" fix held back: nothing sends them but a press.
+  if (office?.heldBack) return out('ready', 'confirm', `${labelsWord(office.heldBack)} held back · send them`);
   if (run.status === 'printing') return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
   // The question is only about what was sent; labels still to send are said apart.

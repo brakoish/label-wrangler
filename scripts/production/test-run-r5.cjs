@@ -104,8 +104,9 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
 {
   const save=panel.slice(panel.indexOf('const saveFix='),panel.indexOf('const pendingWords='));
   assert.ok(save.indexOf('saveHeld(')>save.indexOf("method:'DELETE'"),'held labels are remembered only after the office cancelled them');
-  assert.match(panel,/<li>1\. Hold \{spanWords\(fixLater\.spans\)\}<\/li>\s*<li>2\. Print \{range\(again\.from,again\.to\)\} again<\/li>\s*<li>3\. Then send \{spanWords\(fixLater\.spans\)\}<\/li>/,'the dialog says what really happens, in three steps');
-  assert.match(panel,/:sendingHeld\?`Send \$\{range\(fromNumber,toNumber\)\} now`/,'after the reprint: "Send labels 76–150 now"');
+  assert.match(panel,/<li>1\. Hold \{spanWords\(fixLater\.spans\)\}<\/li>\s*<li>2\. Print \{range\(again\.from,again\.to\)\} again<\/li>\s*<li>3\. Then you send \{spanWords\(fixLater\.spans\)\} \(one tap, after the reprint\)<\/li>/,'the dialog says what really happens, in three steps');
+  assert.match(panel,/:sendingHeld && plan\.kind!=='reprint'\?`\$\{proofCurrent\?'Send':'Check & send'\} /,'after the reprint: "Check & send 76–150", named before the generic check');
+  assert.ok(panel.indexOf(":sendingHeld && plan.kind!=='reprint'")<panel.indexOf(":!proofCurrent?(plan.kind==='reprint'"),'the held labels are named even before their check');
   assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
   assert.match(panel,/setOfficeSeriesRunning\(true,\(\)=>\{stopSeries\.current=true;\}\)/,'in-app links ask too, and can stop after this part');
@@ -154,8 +155,14 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(paused.text, /^Paused/);
   const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
   const held = D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
-  assert.equal(held.label, 'Paused', 'held by another run: said once, in the detail');
-  assert.equal(held.detail, '“Run A” needs a check first');
+  // Round 11: nothing of this run waits at the office, so it is still "Ready" and says what it waits for.
+  assert.equal(held.label, 'Ready', 'held by another run, nothing waiting: not "Paused"');
+  assert.equal(held.detail, 'Waits for “Run A”');
+  const waiting = D.runDisplayStatus(run, { sent: 10, onTheWay: 10, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
+  assert.equal(waiting.label, 'Paused', 'labels waiting behind another run: Paused, said once, in the detail');
+  assert.equal(waiting.detail, '“Run A” needs a check first');
+  const heldBack = D.runDisplayStatus(run, { sent: 75, onTheWay: 0, failed: 0, unchecked: 75, stillToSend: 1925, heldBack: { from: 76, to: 150 } });
+  assert.equal(heldBack.detail, 'Labels 76–150 held back · send them', 'held labels of a "Print in order" fix are named in the header');
   assert.notEqual(D.runDisplayStatus({ ...run, status: 'draft' }, { sent: 0, onTheWay: 0, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } }).label, 'Paused', 'drafts are not "waiting"');
   assert.equal(D.runDisplayStatus(run, { sent: 0, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print', from: 51, to: 100, reason: 'media out' } }).detail, 'Out of labels', 'the header names a known cause');
   // The fix dialog asks what came out, never for a tick the person can't verify; Pause is not red.
@@ -199,8 +206,8 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(office, /:markShown && !moving\?'mark'/, 'the mark answer owns the primary only when it is on screen');
   assert.match(office, /\{markShown && <div/);
   const list = read('src/app/runs/page.tsx');
-  // Round 8: only a run with labels waiting at the office reads "Paused" behind another run's part.
-  assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && \(run\.office\?\.onTheWay \?\? 0\) > 0 \? holdRun : null;/, 'the station hold shows only on runs with labels waiting at the office');
+  // Round 11: the list gives runDisplayStatus the same hold the run page does; only labels waiting there make it "Paused".
+  assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && unfinished \? holdRun : null;/, 'the station hold reaches every unfinished office run, like the run header');
   assert.doesNotMatch(list, /officeDefault && leftToSend/);
   assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
   console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');

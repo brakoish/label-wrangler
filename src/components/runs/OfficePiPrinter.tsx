@@ -31,7 +31,8 @@ async function api(path:string,init?:RequestInit){
 const labels:Record<string,string>={queued:'Waiting to be sent',claimed:'Picked up by the office',submitted:'In the office print queue',sent_to_printer:'Sent to the printer',rejected:'Didn’t print',needs_review:'Needs a check',cancelled:'Cancelled before sending',resolved:'Checked at the office'};
 const inputClass='field tabular-nums';
 const plural=(n:number)=>n===1?'1 label':`${n.toLocaleString()} labels`;
-const nums=(a:number,b:number)=>a===b?a.toLocaleString():`${a.toLocaleString()}–${b.toLocaleString()}`;
+// Word joiners keep "41–60" on one line on a phone.
+const nums=(a:number,b:number)=>a===b?a.toLocaleString():`${a.toLocaleString()}\u2060–\u2060${b.toLocaleString()}`;
 const range=(a:number,b:number)=>a===b?`label ${a.toLocaleString()}`:`labels ${nums(a,b)}`;
 const Range=(a:number,b:number)=>a===b?`Label ${a.toLocaleString()}`:`Labels ${nums(a,b)}`;
 const capitalise=(text:string)=>text.charAt(0).toUpperCase()+text.slice(1);
@@ -201,7 +202,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   /** The progress line above already names what is still to go: not said again here. */
   toGoShown?:boolean;
   /** Tells the run header what this panel says (a send it isn't sure arrived, a refused send, a paused printer), so both say the same. */
-  onPanelState?:(state:{unsure:OfficeSpan|null;refused:OfficeSpan|null;paused:boolean;sending:string|null})=>void;
+  onPanelState?:(state:{unsure:OfficeSpan|null;refused:OfficeSpan|null;paused:boolean;sending:string|null;held?:OfficeSpan|null})=>void;
   /** The labels the main button sends next (null when none), so the run page's "Print anyway" ticks name the same range. */
   onRangeChange?:(span:OfficeSpan|null)=>void}){
   const uid=useId();
@@ -940,9 +941,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :heldWait?`Waiting for ${nums(heldMoving[0].from,heldMoving[heldMoving.length-1].to)}…`
     :plan.kind==='wait'?'Waiting for office printer…'
     :tooBig && parts.length>1?`Send all ${sendCount.toLocaleString()} in ${parts.length} parts`
+    // Labels a "Print in order" fix held back: the button names them, so the plan's last step is plainly this press.
+    :sendingHeld && plan.kind!=='reprint'?`${proofCurrent?'Send':'Check & send'} ${fromNumber===toNumber?`label ${fromNumber.toLocaleString()}`:nums(fromNumber,toNumber)}`
     :!proofCurrent?(plan.kind==='reprint'?'Check labels to print again':`Check ${plural(sendCount)}`)
     :plan.kind==='reprint'?`Print ${plural(sendCount)} again`
-    :sendingHeld?`Send ${range(fromNumber,toNumber)} now`
     :sentThisVisit?`Send the next ${plural(sendCount)}`
     :`Send ${plural(sendCount)} to office printer`;
   const onPrimary=async()=>{
@@ -1214,10 +1216,14 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :pending && pendingPhase==='checking'?`Checking ${range(pending.from,pending.to)} at the office`
     :directCheck?`Checking ${range(directCheck.span.from,directCheck.span.to)}`
     :null;
+  // Labels a "Print in order" fix held back wait for a press: the header says so.
+  const heldShownFrom=heldOffer && !pending && !series?heldUnsent[0].from:undefined;
+  const heldShownTo=heldOffer && !pending && !series?heldUnsent[heldUnsent.length-1].to:undefined;
   useEffect(()=>{onPanelState?.({
     unsure:unsureFrom!==undefined && unsureTo!==undefined?{from:unsureFrom,to:unsureTo}:null,
     refused:refusedFrom!==undefined && refusedTo!==undefined?{from:refusedFrom,to:refusedTo}:null,
-    paused:panelPaused,sending:sendingWords});},[unsureFrom,unsureTo,refusedFrom,refusedTo,panelPaused,sendingWords,onPanelState]);
+    paused:panelPaused,sending:sendingWords,
+    held:heldShownFrom!==undefined && heldShownTo!==undefined?{from:heldShownFrom,to:heldShownTo}:null});},[unsureFrom,unsureTo,refusedFrom,refusedTo,panelPaused,sendingWords,heldShownFrom,heldShownTo,onPanelState]);
   // The labels the main button sends next, for the run page's "Print anyway" words.
   // A part that needs fixing comes first: the preview shows the labels the problem is about.
   const fixFirst=owner==='problem' && !pending?failedParts[0]:undefined;
@@ -1340,7 +1346,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {showForm && !refusalOwnsSend && <>
     {(reprintOf || sendOther) && !pending && <div className="flex items-center justify-between gap-2 text-sm text-zinc-300"><span>{reprintOf?'Print these labels again.':'Choose which labels to send.'}</span><button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setReprintOf('');setSendOther(false);rangeEdited.current=false;}}>Cancel</button></div>}
     {heldWait && <p role="status" className="text-sm text-zinc-300">{capitalise(spanWords(heldMoving))} {single(heldMoving)?'is':'are'} on {single(heldMoving)?'its':'their'} way to the office printer, after the reprint. Send more once {single(heldMoving)?'it’s':'they’re'} sent.</p>}
-    {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300">{capitalise(spanWords(heldUnsent))} {single(heldUnsent)?'was':'were'} held back so the reprint came out first.{sendingHeld?'':` Send ${range(heldOffer.from,heldOffer.to)} next.`}</p>}
+    {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300"><span className="font-medium text-zinc-100">Next: send {spanWords(heldUnsent)}.</span> {single(heldUnsent)?'It was':'They were'} held back so the reprint came out first.{heldCarriesBlank && endBlank?` Ends with one blank label after ${heldOffer.to.toLocaleString()}.`:''}</p>}
     {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(unsentSpans.length===1 && rangeValid && unsentSpans[0].from===fromNumber && unsentSpans[0].to===toNumber) && !toGoShown && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
     {/* "Send again" resends the saved request, so the range boxes step aside. */}
     {!pending && <div className="grid grid-cols-3 gap-2">
@@ -1444,7 +1450,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           {fixLater.spans.length>0 && fix.order==='in-order' && <ol className="space-y-1 pl-2 text-zinc-300 tabular-nums">
             <li>1. Hold {spanWords(fixLater.spans)}</li>
             <li>2. Print {range(again.from,again.to)} again</li>
-            <li>3. Then send {spanWords(fixLater.spans)}</li>
+            <li>3. Then you send {spanWords(fixLater.spans)} (one tap, after the reprint)</li>
           </ol>}
         </div>}
         {again && <BlankOption id={`${uid}-fix-blank`} checked={fix.blank} disabled={busy} onChange={value=>setFix(f=>f?{...f,blank:value}:f)} firstHadBlank={sentWithBlank(part.requestId)}

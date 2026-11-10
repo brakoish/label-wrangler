@@ -19,7 +19,7 @@ import { officeStatusLine, type OfficeReviewHold } from '@/lib/officeSendOutcome
 import { officeProblemWords } from '@/lib/officeProblem';
 import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from '@/components/runs/officeCancel';
 import { scannedLabelNumbers } from '@/lib/scannedLabels';
-import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
+import { readHeldSpans, readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 import { intersectSpans, printedLabelCount, printedSpans, stillToGo } from '@/lib/runProgress';
 import { spanNumbers } from '@/components/runs/RunProgress';
@@ -66,12 +66,30 @@ const spanCount = (spans: ReadonlyArray<OfficeSpan> | undefined) => (spans ?? []
  * nobody checked yet read "N labels sent, not checked yet".
  */
 function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null) {
-  const heldBy = holdRun && holdRun.runId !== run.id && (run.office?.onTheWay ?? 0) > 0 ? holdRun : null;
+  // Another run's check holds the shared printer: an unfinished run that uses
+  // the office waits for it, the same rule as the run page's header.
+  const unfinished = run.status !== 'cancelled' && run.status !== 'completed' && printedShown(run) < run.totalLabels;
+  const heldBy = holdRun && holdRun.runId !== run.id && unfinished ? holdRun : null;
   // Labels still to send are said beside "Did they all come out?", like the run page.
-  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent) } : null;
+  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) } : null;
 }
 
-function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null }) | null }) {
+/**
+ * Labels a "Print in order" fix on this device held back and nothing has
+ * sent or printed since (the run page's panel saves them), so the row says
+ * what the run page's header says.
+ */
+function heldBackOnThisDevice(run: ListRun): OfficeSpan | null {
+  if (!run.office?.unsent?.length) return null;
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(`lw:office-held:${run.id}`); } catch { raw = null; }
+  const held = readHeldSpans(raw, run.totalLabels);
+  if (!held.length) return null;
+  const left = intersectSpans(held, intersectSpans(run.office.unsent, stillToGo(printedSpans(run.printedCount || 0, run.countedSpans ?? [], run.totalLabels), run.totalLabels)));
+  return left[0] ?? null;
+}
+
+function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null; heldBack?: OfficeSpan | null }) | null }) {
   const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : 'text-zinc-300'}`}>
