@@ -814,15 +814,16 @@ function DesignerContent() {
   };
   const noticeAction = (problem: LayoutProblem) => {
     const buttons: ReactNode[] = [];
-    if (problem === barcodeProblem) {
-      if (autoFixes.fix) buttons.push(<button key="fix" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.fix!)}>{autoFixes.fix.label}</button>);
-      else if (autoFixes.qr) buttons.push(<button key="qr" type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.qr!)}>{autoFixes.qr.label}</button>);
-    }
-    if (textProblem && textFix && problem.kind === 'overlap' && problem.ids[0] === textProblem.ids[0] && problem.ids.join() === textProblem.ids.join()) {
+    const moveFix = problem === barcodeProblem ? autoFixes.fix : null;
+    // Printer font bars can't get thinner, so when nothing on this design can
+    // move, Fix it for me offers the picture copy (its dialog says what it makes).
+    const copyIsTheFix = problem === copyProblem && !moveFix;
+    if (moveFix) buttons.push(<button key="fix" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => applyFix(moveFix)}>{moveFix.label}</button>);
+    if (copyIsTheFix) buttons.push(<button key="copy" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Fix it for me</button>);
+    if (problem === barcodeProblem && !autoFixes.fix && autoFixes.qr) buttons.push(<button key="qr" type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => applyFix(autoFixes.qr!)}>{autoFixes.qr.label}</button>);
+    if (problem === copyProblem && !copyIsTheFix) buttons.push(<button key="copy" type="button" className="btn btn-ghost btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Make a picture copy</button>);
+    if (textProblem && textFix && problem.kind === 'overlap' && problem.ids.join() === textProblem.ids.join()) {
       buttons.push(<button key="text" type="button" className="btn btn-primary btn-sm max-sm:min-h-11" onClick={() => applyFix(textFix, textProblem.ids[0])}>{textFix.label}</button>);
-    }
-    if (problem === copyProblem) {
-      buttons.push(<button key="copy" type="button" className={buttons.length ? 'btn btn-ghost btn-sm max-sm:min-h-11' : 'btn btn-secondary btn-sm max-sm:min-h-11'} onClick={() => setExactCopyRequest((n) => n + 1)}>Make a picture copy</button>);
     }
     if (problem.kind === 'characters' && characterFixIds.includes(problem.ids[0])) {
       buttons.push(<button key="chars" type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => replaceCharacters([problem.ids[0]])}>{characterWords([problem.ids[0]])}</button>);
@@ -863,7 +864,7 @@ function DesignerContent() {
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className={`${shownPane === 'layers' || shownPane === 'data' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`}>
+        <div className={`${shownPane === 'layers' || shownPane === 'data' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`} role="region" aria-label={leftPanel === 'layers' ? 'Items on the label' : 'Sample values for the preview'}>
           <div className="p-2 max-lg:hidden">
           <div className="segmented" role="group" aria-label="Designer panels">
             <SegmentedIndicator index={leftPanel === 'data' ? 1 : 0} count={2} />
@@ -871,7 +872,6 @@ function DesignerContent() {
             <button aria-pressed={leftPanel === 'data'} onClick={() => setLeftPanel('data')}>Sample values</button>
           </div>
           </div>
-          <h2 className="sr-only">{leftPanel === 'layers' ? 'Items on the label' : 'Sample values for the preview'}</h2>
           <div className={leftPanel === 'layers' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
           <ElementList
             elements={currentTemplate.elements}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Globe } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Bookmark } from 'lucide-react';
 import { Dialog } from '@/components/ui/Dialog';
 import { ElementType } from '@/lib/types';
 
@@ -50,7 +50,7 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
         onClick={() => { onClose(); onInsertGlobal(); }}
         className="btn btn-ghost btn-sm mt-3 -ml-2"
       >
-        <Globe className="size-4" aria-hidden="true" />
+        <Bookmark className="size-4" aria-hidden="true" />
         Add a saved item
       </button>
     </Dialog>

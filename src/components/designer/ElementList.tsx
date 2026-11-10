@@ -1,6 +1,6 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, Plus, ArrowLeft, Copy, Globe, Save, Lock, Unlock, ChevronRight } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, Plus, ArrowLeft, Copy, Bookmark, Save, Lock, Unlock, ChevronRight } from 'lucide-react';
 import { useRubberBand } from '@/components/motion/rubberBand';
 import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
@@ -92,7 +92,7 @@ export function ElementList({
             onClick={onInsertGlobal}
             className="btn btn-secondary btn-sm w-full"
           >
-            <Globe className="w-4 h-4" />
+            <Bookmark className="w-4 h-4" />
             Add a saved item
           </button>
         )}
