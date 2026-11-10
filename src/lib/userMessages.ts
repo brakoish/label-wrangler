@@ -161,6 +161,21 @@ export function friendlySaveError(message: string, elements: TemplateElement[], 
   return friendlyError(message, fallback);
 }
 
+/**
+ * The designer's "not saved" line: a cause the person can act on (an item's
+ * size, another tab, signed out, offline), else one plain sentence. Raw
+ * server text ("Failed") is never shown.
+ */
+export function designSaveProblem(message: string, elements: TemplateElement[]): string {
+  if (/^\s*Invalid (width|height|x|y|fontSize|minFontSize|lineHeight|strokeWidth|borderRadius)\.?\s*$/i.test(message)) {
+    const named = friendlySaveError(message, elements, '');
+    if (/can’t be used/.test(named)) return named;
+  }
+  if (/^(Failed to fetch\s*$|NetworkError|Load failed)|network/i.test(message)) return OFFLINE_MESSAGE;
+  if (/Session expired|changed in another tab|Draft recovery storage/i.test(message)) return message;
+  return 'Label Wrangler couldn’t save that just now.';
+}
+
 function elementTypeLabel(type: string): string {
   return ({ text: 'A text box', qr: 'The QR code', barcode: 'The barcode', line: 'A line', rectangle: 'A box', image: 'A picture' } as Record<string, string>)[type] ?? 'One item';
 }

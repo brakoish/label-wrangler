@@ -39,7 +39,8 @@ import { describeUnprintable, elementUnprintable, usesPrinterFont } from '@/lib/
 import { designSampleValues } from '@/lib/sampleValues';
 import { barcodeFitFix } from '@/lib/barcodeFit';
 import { elementTypeName } from '@/lib/fieldLabels';
-import { friendlySaveError } from '@/lib/userMessages';
+import { designSaveProblem } from '@/lib/userMessages';
+import { choiceDialog } from '@/components/ui/feedback';
 
 type NewTemplateElement = TemplateElement extends infer T
   ? T extends TemplateElement
@@ -141,22 +142,49 @@ function DesignerContent() {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, []);
-  const saveBeforeLeaving = async () => {
-    if (!currentTemplate || (!unsavedChanges.current && !gesture.current)) return true;
+  const trySave = async (): Promise<true | string | null> => {
+    if (!currentTemplate) return true;
     const revision = ++saveRevision.current;
     try {
       setSaving(true);
       unsavedChanges.current = true;
       await saveTemplate(currentTemplate.id);
-      if (revision !== saveRevision.current) return false;
+      if (revision !== saveRevision.current) return null;
       setSaving(false);
       setSaveError('');
       unsavedChanges.current = false;
       return true;
     } catch (error) {
-      if (revision !== saveRevision.current) return false;
+      if (revision !== saveRevision.current) return null;
       setSaving(false);
       setSaveError((error as Error).message);
+      return (error as Error).message || 'Failed';
+    }
+  };
+  // Leaving with a change that won't save: ask, never just stay put.
+  const saveBeforeLeaving = async (): Promise<boolean> => {
+    if (!currentTemplate || (!unsavedChanges.current && !gesture.current)) return true;
+    for (;;) {
+      const saved = await trySave();
+      if (saved === null) return false;
+      if (saved === true) return true;
+      const template = useTemplateStore.getState().getTemplateById(currentTemplate.id) ?? currentTemplate;
+      const choice = await choiceDialog({
+        title: 'Your last change isn’t saved',
+        body: designSaveProblem(saved, template.elements),
+        confirmLabel: 'Try saving again',
+        altLabel: 'Save as a copy',
+        extraLabel: 'Leave without it',
+      });
+      if (choice === 'confirm') continue;
+      if (choice === 'alt') {
+        try {
+          await addTemplate({ name: `${template.name} (copy)`, description: template.description, formatId: template.formatId, elements: template.elements, thermalRenderMode: template.thermalRenderMode });
+          unsavedChanges.current = false;
+          return true;
+        } catch (error) { setSaveError((error as Error).message); continue; }
+      }
+      if (choice === 'extra') { unsavedChanges.current = false; return true; }
       return false;
     }
   };
@@ -756,7 +784,7 @@ function DesignerContent() {
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
       <PageTitle title={`${currentTemplate.name} · Designer`} />
-      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlySaveError(saveError, currentTemplate.elements, 'Your changes were not saved.')} <button type="button" className="link" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">Your last change isn’t saved. {designSaveProblem(saveError, currentTemplate.elements)} <button type="button" className="link" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button type="button" className="link" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button type="button" className="link ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
