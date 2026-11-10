@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
@@ -18,10 +18,22 @@ interface CustomSelectProps {
   placeholder?: string;
   className?: string;
   compact?: boolean; // For property panel (smaller)
+  /** id for the trigger, so a <label htmlFor> can name it. */
+  id?: string;
+  'aria-label'?: string;
+  'aria-labelledby'?: string;
+  disabled?: boolean;
 }
 
-export function CustomSelect({ value, options, onChange, placeholder = 'Select...', className = '', compact = false }: CustomSelectProps) {
-  const [open, setOpen] = useState(false);
+export function CustomSelect({ value, options, onChange, placeholder = 'Select...', className = '', compact = false, id, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledBy, disabled = false }: CustomSelectProps) {
+  const [open, setOpenState] = useState(false);
+  const [active, setActive] = useState(-1);
+  const listId = useId();
+  const optionId = (index: number) => `${listId}-opt-${index}`;
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    if (next) setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+  };
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -63,21 +75,73 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
       const t = e.target as Node;
       if (ref.current?.contains(t)) return;
       if (menuRef.current?.contains(t)) return;
-      setOpen(false);
+      setOpenState(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Close on Escape
+  // Keep the active option scrolled into view while moving with the keyboard.
   useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open]);
+    if (!open || active < 0) return;
+    document.getElementById(optionId(active))?.scrollIntoView({ block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, active]);
+
+  const choose = (index: number) => {
+    const option = options[index];
+    if (!option) return;
+    onChange(option.value);
+    setOpenState(false);
+    triggerRef.current?.focus();
+  };
+
+  // Keyboard model of a select-only combobox: focus stays on the trigger and
+  // aria-activedescendant points at the highlighted option.
+  const onTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    const last = options.length - 1;
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        if (!open) setOpen(true); else setActive((i) => Math.min(last, i + 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        if (!open) setOpen(true); else setActive((i) => Math.max(0, i - 1));
+        break;
+      case 'Home':
+        if (open) { e.preventDefault(); setActive(0); }
+        break;
+      case 'End':
+        if (open) { e.preventDefault(); setActive(last); }
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        if (open && active >= 0) choose(active); else setOpen(true);
+        break;
+      case 'Escape':
+        if (open) { e.preventDefault(); e.stopPropagation(); setOpenState(false); }
+        break;
+      case 'Tab':
+        if (open) setOpenState(false);
+        break;
+    }
+  };
+
+  const triggerA11y = {
+    id,
+    role: 'combobox' as const,
+    'aria-haspopup': 'listbox' as const,
+    'aria-expanded': open,
+    'aria-controls': listId,
+    'aria-activedescendant': open && active >= 0 ? optionId(active) : undefined,
+    'aria-label': ariaLabel,
+    'aria-labelledby': ariaLabelledBy,
+    disabled,
+    onKeyDown: onTriggerKeyDown,
+  };
 
   // Render the dropdown menu into document.body so it isn't clipped by
   // parent stacking contexts (e.g. our .glass cards that use backdrop-filter).
@@ -105,21 +169,25 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
 
   if (compact) {
     const menu = (
-      <div className="py-1 bg-zinc-900 border border-zinc-700/50 rounded-xl shadow-xl shadow-black/40 backdrop-blur-xl overflow-hidden">
-        {options.map((option) => (
-          <button
+      <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 border border-zinc-700/50 rounded-xl shadow-xl shadow-black/40 backdrop-blur-xl overflow-hidden">
+        {options.map((option, index) => (
+          <div
             key={option.value}
-            type="button"
-            onClick={() => { onChange(option.value); setOpen(false); }}
-            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors ${
+            id={optionId(index)}
+            role="option"
+            aria-selected={option.value === value}
+            onMouseDown={(e) => e.preventDefault()}
+            onMouseEnter={() => setActive(index)}
+            onClick={() => choose(index)}
+            className={`w-full flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-xs transition-colors ${
               option.value === value
                 ? 'bg-amber-500/10 text-amber-400'
                 : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
-            }`}
+            } ${index === active ? 'ring-1 ring-inset ring-amber-500/50' : ''}`}
           >
             <span className="truncate flex-1 text-left">{option.label}</span>
             {option.value === value && <Check className="w-3 h-3 text-amber-400 flex-shrink-0" />}
-          </button>
+          </div>
         ))}
       </div>
     );
@@ -128,6 +196,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
         <button
           ref={triggerRef}
           type="button"
+          {...triggerA11y}
           onClick={() => setOpen(!open)}
           className="w-full flex items-center justify-between bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 h-7 hover:border-zinc-700 focus:outline-none focus:border-amber-500/30 transition-all"
         >
@@ -140,17 +209,21 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   }
 
   const fullMenu = (
-    <div className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden">
-      {options.map((option) => (
-        <button
+    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden">
+      {options.map((option, index) => (
+        <div
           key={option.value}
-          type="button"
-          onClick={() => { onChange(option.value); setOpen(false); }}
-          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+          id={optionId(index)}
+          role="option"
+          aria-selected={option.value === value}
+          onMouseDown={(e) => e.preventDefault()}
+          onMouseEnter={() => setActive(index)}
+          onClick={() => choose(index)}
+          className={`w-full flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
             option.value === value
               ? 'bg-amber-500/10 text-amber-400'
               : 'text-zinc-300 hover:bg-zinc-800/80 hover:text-zinc-100'
-          }`}
+          } ${index === active ? 'ring-1 ring-inset ring-amber-500/50' : ''}`}
         >
           {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
           <div className="flex-1 text-left truncate">
@@ -160,7 +233,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
             )}
           </div>
           {option.value === value && <Check className="w-4 h-4 text-amber-400 flex-shrink-0" />}
-        </button>
+        </div>
       ))}
     </div>
   );
@@ -170,6 +243,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
       <button
         ref={triggerRef}
         type="button"
+        {...triggerA11y}
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 px-4 py-3 hover:border-zinc-700 focus:outline-none focus:border-amber-500/50 transition-all"
       >

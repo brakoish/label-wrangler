@@ -1,0 +1,93 @@
+import type { RunPrintOutput, RunStatus, TemplateElement } from './types';
+
+/**
+ * Plain-language wrappers for messages that come from frozen or low-level code
+ * (render server, office API, fetch). Nothing here changes what prints; it
+ * only changes what a person reads.
+ */
+
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+export const OFFLINE_MESSAGE = "Couldn't reach Label Wrangler — check your internet connection and try again.";
+
+export function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'TypeError' && /fetch|network|load failed/i.test(error.message)
+    || /^(Failed to fetch|NetworkError|Load failed)/i.test(error.message);
+}
+
+/** Remove internal IDs and tidy leftover punctuation. */
+export function stripInternalIds(message: string): string {
+  return message
+    .replace(/\s*\(?(?:request|id|job)\s+[0-9a-f]{8}\)?/gi, '')
+    .replace(UUID, '')
+    .replace(/,\s*:/g, ':')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,:])/g, '$1')
+    .replace(/\.{2,}/g, '.')
+    .trim();
+}
+
+/** A message safe to show a person, for any thrown value. */
+export function friendlyError(error: unknown, fallback = 'Something went wrong. Try again.'): string {
+  if (isNetworkError(error)) return OFFLINE_MESSAGE;
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (!message) return fallback;
+  if (/^Office printing request failed/i.test(message) || /^Internal Server Error$/i.test(message)) return 'Label Wrangler is having trouble right now. Try again in a minute.';
+  return stripInternalIds(message) || fallback;
+}
+
+const STATUS_LABELS: Record<RunStatus, string> = {
+  draft: 'Draft',
+  queued: 'Ready to print',
+  printing: 'Printing',
+  paused: 'Paused',
+  completed: 'Done',
+  cancelled: 'Cancelled',
+};
+export function runStatusLabel(status: RunStatus | string): string {
+  return STATUS_LABELS[status as RunStatus] ?? (status ? status[0].toUpperCase() + status.slice(1) : '');
+}
+
+const OUTPUT_LABELS: Record<RunPrintOutput, string> = {
+  'roll-zpl': 'thermal printer',
+  'roll-pdf': 'PDF',
+  'sheet-pdf': 'sheet printer / PDF',
+  scan: 'scan mode',
+  'office-pi': 'office printer',
+};
+export function printOutputLabel(output: RunPrintOutput | string): string {
+  return OUTPUT_LABELS[output as RunPrintOutput] ?? 'printer';
+}
+
+function elementNoun(element: TemplateElement): string {
+  if (element.type === 'image') return 'The picture box';
+  if (element.type === 'qr') return element.fieldName ? `The QR code "${element.fieldName}"` : 'The QR code';
+  if (element.type === 'barcode') return element.fieldName ? `The barcode "${element.fieldName}"` : 'The barcode';
+  if (element.type === 'text') return element.fieldName ? `The text "${element.fieldName}"` : 'A text box';
+  if (element.type === 'line') return 'A line';
+  return 'A box';
+}
+
+const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement) => string]> = [
+  [/^Image is missing$/i, () => 'has no picture yet — choose a file or delete the box.'],
+  [/^Missing QR\/barcode value$/i, (el) => el && !el.isStatic ? 'has no value — type one under "Sample text (preview only)", or fill it from your data.' : 'has no value — type one in the properties panel.'],
+  [/^Text overflows its box/i, () => 'doesn\'t fit its box — make the box bigger, use a smaller size, or turn on Auto-fit.'],
+  [/^Artwork is entirely outside the label$/i, () => 'is outside the label — drag it back onto the label.'],
+  [/^Barcode box is too small/i, () => 'is too small to scan — make its box bigger.'],
+];
+
+/**
+ * Turn "Lane 1, 087b8c70-…: Image is missing" (render server wording) into
+ * "The picture box has no picture yet — choose a file or delete the box."
+ */
+export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1): string {
+  return message.replace(/Lane (\d+), ([^:]+): ([^\n]+)/g, (_match, lane: string, ref: string, detail: string) => {
+    const element = elements.find((el) => el.id === ref.trim()) ?? elements.find((el) => el.fieldName === ref.trim());
+    const subject = element ? elementNoun(element) : UUID.test(ref) ? 'One item' : `"${ref.trim()}"`;
+    UUID.lastIndex = 0;
+    const phrase = RENDER_PHRASES.find(([re]) => re.test(detail.trim()));
+    const where = labelsAcross > 1 ? ` (label position ${lane})` : '';
+    return phrase ? `${subject}${where} ${phrase[1](element)}` : `${subject}${where}: ${detail}`;
+  }).replace(UUID, '').trim();
+}

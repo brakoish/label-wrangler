@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { StoreHydrator } from "@/components/StoreHydrator";
+import { FeedbackHost } from "@/components/ui/feedback";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -41,6 +42,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${inter.variable} ${plexMono.variable} font-sans antialiased`}>
         <StoreHydrator>{children}</StoreHydrator>
+        <FeedbackHost />
       </body>
     </html>
   );
