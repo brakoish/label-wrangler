@@ -67,7 +67,7 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
  assert.doesNotMatch(panel,/lw:office-pending:[^`]*`[^;]*tab:/,'nothing new in the saved request');
  // Start reads the count the server saved: another device ahead pauses with a word, nothing prints twice.
  const runPage=fs.readFileSync(path.join(__dirname,'../../src/components/runs/RunPrinter.tsx'),'utf8');
- assert.match(runPage,/if \(!plan\.rewind && Number\.isFinite\(serverCount\) && serverCount > startCount\) \{\s*setStatus\('paused'\); setPrintedCount\(serverCount\);\s*setErrorMsg\(`Another device already printed up to label/);
+ assert.match(runPage,/if \(!plan\.rewind && Number\.isFinite\(serverCount\) && serverCount > startCount\) \{\s*setStatus\('paused'\); setPrintedCount\(serverCount\); clearRangeDrafts\(\); setStopAt\(0\);\s*setErrorMsg\(`Another device already printed up to label/);
  // Pause/resume on a shared device: an older build's device-wide request is never taken over silently.
  {
   const P=require('../../src/lib/officeControlPending.ts');

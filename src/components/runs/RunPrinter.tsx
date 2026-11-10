@@ -898,8 +898,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // until the person has looked, so no label comes out twice.
     const serverCount = Number(started?.printedCount);
     if (!plan.rewind && Number.isFinite(serverCount) && serverCount > startCount) {
-      setStatus('paused'); setPrintedCount(serverCount);
-      setErrorMsg(`Another device already printed up to label ${serverCount.toLocaleString('en-US')}, so nothing was printed here. Check the labels, then press Start to carry on.`);
+      setStatus('paused'); setPrintedCount(serverCount); clearRangeDrafts(); setStopAt(0);
+      setErrorMsg(`Another device already printed up to label ${serverCount.toLocaleString('en-US')}, so nothing was printed here.${serverCount < total ? ` Press “Resume from label ${(serverCount + 1).toLocaleString('en-US')}” to carry on.` : ''}`);
       try { await setRunStatus(run.id, 'paused', serverCount); } catch { /* the count above is still right */ }
       return;
     }
