@@ -194,11 +194,17 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
       <button
         type="submit"
         disabled={!canAdd}
-        className="btn btn-primary"
+        aria-describedby={!canAdd ? 'nabis-add-reason' : undefined}
+        className="btn btn-secondary"
       >
         <Plus className="h-4 w-4" />
         Add
       </button>
+      {!canAdd && (
+        <p id="nabis-add-reason" className="text-sm text-zinc-400 sm:col-span-4">
+          {itemName.trim() ? 'Type the package tag to add it' : tag.trim() ? 'Type the item name to add it' : 'Type the item name and package tag to add a package'}
+        </p>
+      )}
     </form>
   );
 }
@@ -239,7 +245,8 @@ function Barcode({
 }
 
 function LabelPreview({ label }: { label: LabelInfo }) {
-  const unitsText = `${label.unitsPerCase || '-'} Units Per Case`;
+  // Left blank (a line to write on) when empty, not a dash.
+  const unitsText = label.unitsPerCase.trim() ? `${label.unitsPerCase.trim()} Units Per Case` : '____ Units Per Case';
   const casesText = label.cases.trim()
     ? `${label.cases.trim()} ${label.cases.trim() === '1' ? 'Case' : 'Cases'}`
     : '';
@@ -278,7 +285,7 @@ function LabelPreview({ label }: { label: LabelInfo }) {
             </div>
             <div className="flex min-w-0 items-center justify-center overflow-hidden border border-black px-[0.045in]">
               <FittedText maxPx={12} minPx={7.5}>
-                {label.batch || '-'}
+                {label.batch || '\u00a0'}
               </FittedText>
             </div>
           </div>
@@ -431,10 +438,10 @@ export default function NabisPage() {
         <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 sm:px-8">
           <div className="lg:col-span-2">
             <h1 className="text-2xl font-semibold text-zinc-100">Nabis labels</h1>
-            <p className="mt-1 text-sm text-zinc-400">Print Nabis case labels from a Metrc package.</p>
+            <p className="mt-1 text-sm text-zinc-400">Print a 6×4 case label for a Nabis delivery. Find the package by its name or state tracking (Metrc) tag, or type it in.</p>
           </div>
           <section className="min-h-0 space-y-4">
-            <div className="card p-4 sm:p-5">
+            <div>
               <h2 className="mb-3 text-base font-semibold text-zinc-100">Find a package</h2>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
@@ -499,7 +506,7 @@ export default function NabisPage() {
               })}
             </div>
 
-            <div className="card p-4 sm:p-5">
+            <div className="pt-4">
               <h2 className="mb-3 text-base font-semibold text-zinc-100">Add a package by hand</h2>
               <ManualPackageForm
                 onAdd={(pkg) => {
@@ -510,8 +517,8 @@ export default function NabisPage() {
             </div>
           </section>
 
-          <section className="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] [&>*]:min-w-0">
-            <div className="card p-4 sm:p-5">
+          <section className="min-h-0 space-y-5 [&>*]:min-w-0">
+            <div>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-zinc-100">Check the label</h2>
                 <div className="flex items-center gap-3">
@@ -529,7 +536,11 @@ export default function NabisPage() {
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="nabis-print mb-5">
+                <LabelPreview label={label} />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
                 {(
                   [
                     ['distributor', 'Distributor'],
@@ -541,21 +552,17 @@ export default function NabisPage() {
                     ['cases', 'Cases'],
                   ] as const
                 ).map(([field, labelText]) => (
-                  <label key={field} className="block">
+                  <label key={field} className={`block ${field === 'itemName' ? 'sm:col-span-2' : ''}`}>
                     <span className="field-label mb-1.5">{labelText}</span>
                     <input
                       value={label[field]}
                       onChange={(event) => setLabelField(field, event.target.value)}
                       className={`field w-full ${field === 'uid' ? 'tabular-nums' : ''}`}
                     />
-                    {field === 'unitsPerCase' && !label.unitsPerCase.trim() && <span className="mt-1 block text-xs text-zinc-500">Empty prints as a dash</span>}
+                    {field === 'unitsPerCase' && !label.unitsPerCase.trim() && <span className="mt-1 block text-xs text-zinc-500">Empty prints a blank line to write on</span>}
                   </label>
                 ))}
               </div>
-            </div>
-
-            <div className="nabis-print">
-              <LabelPreview label={label} />
             </div>
           </section>
         </div>
