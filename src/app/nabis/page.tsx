@@ -160,7 +160,7 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
 
   return (
     <form
-      className="grid grid-cols-1 gap-3 rounded-lg border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[1.6fr_1.2fr_1fr_auto]"
+      className="grid grid-cols-1 gap-3 rounded-lg border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] [&>*]:min-w-0"
       onSubmit={(event) => {
         event.preventDefault();
         if (!canAdd) return;
@@ -183,18 +183,21 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
         value={itemName}
         onChange={(event) => setItemName(event.target.value)}
         placeholder="Item name"
+        aria-label="Item name"
         className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
       />
       <input
         value={tag}
         onChange={(event) => setTag(event.target.value)}
         placeholder="Package tag"
+        aria-label="Package tag"
         className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
       />
       <input
         value={batch}
         onChange={(event) => setBatch(event.target.value)}
         placeholder="Batch"
+        aria-label="Batch"
         className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-amber-500/70"
       />
       <button
@@ -433,7 +436,7 @@ export default function NabisPage() {
       `}</style>
 
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(420px,0.95fr)_minmax(420px,1.05fr)] lg:p-6">
+        <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 lg:p-6">
           <section className="min-h-0 space-y-4">
             <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
               <div className="mb-3 flex items-center gap-2">
@@ -446,6 +449,7 @@ export default function NabisPage() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search item name or tag"
+                  aria-label="Search packages by item name or tag"
                   className="h-12 w-full rounded-lg border border-zinc-800 bg-zinc-950 pl-10 pr-10 text-sm text-white outline-none focus:border-amber-500/70"
                 />
                 {query && (
@@ -517,7 +521,7 @@ export default function NabisPage() {
             </div>
           </section>
 
-          <section className="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(300px,0.8fr)_minmax(340px,1fr)]">
+          <section className="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] [&>*]:min-w-0">
             <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
