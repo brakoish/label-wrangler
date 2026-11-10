@@ -50,7 +50,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
-      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1)));
+      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1, testData)));
       setPreviewUrl(null); setZpl('');
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {

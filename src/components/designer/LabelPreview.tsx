@@ -57,7 +57,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     const timer = setTimeout(() => {
       getBitmapProof({ id: 'editor', name: '', formatId: format.id, elements, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, testData ?? {}, true)
         .then(result => { if (active) setBitmapProof({ advisories: result.advisories || [], key: bitmapKey, url: result.proof, elements, layers: result.editorLayers || [], warnings: result.warnings || [], qrBounds: result.qrBounds || {}, qrInkBounds: result.qrInkBounds || {} }); })
-        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements)); });
+        .catch(error => { if (active) setBitmapError(friendlyRenderError(friendlyError(error, 'The preview could not be drawn.'), elements, 1, testData)); });
     }, 180);
     return () => { active = false; clearTimeout(timer); };
   }, [bitmap, bitmapKey, elements, format, testData]);
@@ -506,7 +506,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
     <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-2 pt-12 pb-4 sm:px-6 sm:pt-16 sm:pb-6 overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements, 1, testData))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements, 1, testData)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
       {!bitmap && layoutProblems.length > 0 && <p role="status" className="absolute top-1 left-3 right-3 text-sm text-amber-300">{layoutProblems[0].message}{layoutProblems.length > 1 ? ` (and ${layoutProblems.length - 1} more)` : ''}</p>}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();

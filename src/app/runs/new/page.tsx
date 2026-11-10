@@ -977,7 +977,7 @@ function NewRunContent() {
   const barcodeItems = barcodeCheck.issues.slice(0, 5).map((issue) => describeBarcodeIssue(issue, fieldIsFromSheet(issue.field)));
   const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
   const previewMessage = previewState.status === 'error' && checkTemplate
-    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1)
+    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues)
     : '';
   const sheetWord = inputMode === 'manifest' ? 'Manifest' : 'spreadsheet';
 

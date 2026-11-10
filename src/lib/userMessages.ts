@@ -1,4 +1,6 @@
 import type { RunPrintEvent, RunPrintOutput, RunStatus, TemplateElement } from './types';
+import { friendlyFieldName } from './fieldLabels';
+import { barcodeValueProblem } from './barcodeCheck';
 
 /**
  * Plain-language wrappers for messages that come from frozen or low-level code
@@ -72,16 +74,34 @@ export function printOutputLabel(output: RunPrintOutput | string): string {
 
 function elementNoun(element: TemplateElement): string {
   if (element.type === 'image') return 'The picture box';
-  if (element.type === 'qr') return element.fieldName ? `The QR code "${element.fieldName}"` : 'The QR code';
-  if (element.type === 'barcode') return element.fieldName ? `The barcode "${element.fieldName}"` : 'The barcode';
-  if (element.type === 'text') return element.fieldName ? `The text "${element.fieldName}"` : 'A text box';
+  const field = !element.isStatic && element.fieldName ? friendlyFieldName(element.fieldName) : '';
+  if (element.type === 'qr') return field ? `The ${field} QR code` : 'The QR code';
+  if (element.type === 'barcode') return field ? `The ${field} barcode` : 'The barcode';
+  if (element.type === 'text') return field ? `The ${field} text` : 'A text box';
   if (element.type === 'line') return 'A line';
   return 'A box';
 }
 
-const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement) => string]> = [
+function barcodeValue(element: TemplateElement | undefined, values?: Record<string, string>): string {
+  if (!element) return '';
+  const fromValues = !element.isStatic && element.fieldName ? values?.[element.fieldName] : undefined;
+  return fromValues || element.defaultValue || ('content' in element ? element.content || '' : '');
+}
+
+const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement, values?: Record<string, string>) => string]> = [
+  // The artwork renderer throws a bare "Artwork failed" (or the barcode
+  // library's own words) when a value doesn't suit the barcode type.
+  [/^(Artwork failed|Invalid barcode content.*|.*is not a valid input for.*)$/i, (el, values) => {
+    if (el?.type === 'barcode') {
+      const problem = barcodeValueProblem(el.barcodeFormat, barcodeValue(el, values));
+      if (problem) return `${problem}.`.replace(/\.\.$/, '.');
+      return 'can’t be drawn with this value. Check the value suits the barcode type.';
+    }
+    if (el?.type === 'qr') return 'can’t be drawn with this value. Make the value shorter.';
+    return 'couldn’t be drawn. Check its value, or delete it and add it again.';
+  }],
   [/^Image is missing$/i, () => 'has no picture yet — choose a file or delete the box.'],
-  [/^Missing QR\/barcode value$/i, (el) => el && !el.isStatic ? 'has no value — type one under "Sample text (preview only)", or fill it from your data.' : 'has no value — type one in the properties panel.'],
+  [/^Missing QR\/barcode value$/i, (el) => el && !el.isStatic ? 'has no value — type a sample under "Sample for the preview", or fill it from your data.' : 'has no value — type one in the properties panel.'],
   [/^Text overflows its box/i, () => 'doesn\'t fit its box — make the box bigger, use a smaller size, or turn on Auto-fit.'],
   [/^Artwork is entirely outside the label$/i, () => 'is outside the label — drag it back onto the label.'],
   [/^Barcode box is too small/i, () => 'is too small to scan — make its box bigger.'],
@@ -91,14 +111,14 @@ const RENDER_PHRASES: Array<[RegExp, (element?: TemplateElement) => string]> = [
  * Turn "Lane 1, 087b8c70-…: Image is missing" (render server wording) into
  * "The picture box has no picture yet — choose a file or delete the box."
  */
-export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1): string {
+export function friendlyRenderError(message: string, elements: TemplateElement[] = [], labelsAcross = 1, values?: Record<string, string>): string {
   return message.replace(/Lane (\d+), ([^:]+): ([^\n]+)/g, (_match, lane: string, ref: string, detail: string) => {
     const element = elements.find((el) => el.id === ref.trim()) ?? elements.find((el) => el.fieldName === ref.trim());
     const subject = element ? elementNoun(element) : UUID.test(ref) ? 'One item' : `"${ref.trim()}"`;
     UUID.lastIndex = 0;
     const phrase = RENDER_PHRASES.find(([re]) => re.test(detail.trim()));
     const where = labelsAcross > 1 ? ` (label position ${lane})` : '';
-    return phrase ? `${subject}${where} ${phrase[1](element)}` : `${subject}${where}: ${detail}`;
+    return phrase ? `${subject}${where} ${phrase[1](element, values)}` : `${subject}${where}: ${detail}`;
   }).replace(UUID, '').trim();
 }
 
