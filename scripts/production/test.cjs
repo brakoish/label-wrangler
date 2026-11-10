@@ -20,6 +20,7 @@ for(const file of [
  'scripts/production/test-run-preview.cjs',
  'scripts/production/test-run-data-check.cjs',
  'scripts/production/test-template-previews.cjs',
+ 'scripts/production/test-run-field-setup.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',
