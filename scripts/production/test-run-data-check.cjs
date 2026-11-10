@@ -116,3 +116,17 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   assert.deepEqual(contentModeUpdates({ type: 'line', isStatic: true, fieldName: 'x' }, false), { isStatic: false });
   console.log('PASS: content mode switch carries typed text into the sample and back');
 }
+
+// Designer: new objects don't stack exactly on top of each other.
+{
+  const { staggeredPosition } = require('../../src/lib/elementPlacement.ts');
+  const label = { width: 400, height: 200 }, size = { width: 100, height: 40 };
+  assert.deepEqual(staggeredPosition([], { x: 20, y: 10 }, 12, label, size), { x: 20, y: 10 });
+  assert.deepEqual(staggeredPosition([{ x: 20, y: 10 }], { x: 20, y: 10 }, 12, label, size), { x: 32, y: 22 });
+  assert.deepEqual(staggeredPosition([{ x: 20, y: 10 }, { x: 32, y: 22 }], { x: 20, y: 10 }, 12, label, size), { x: 44, y: 34 });
+  const crowded = Array.from({ length: 30 }, (_, i) => ({ x: 20 + i * 12, y: 10 + i * 12 }));
+  const spot = staggeredPosition(crowded, { x: 20, y: 10 }, 12, label, size);
+  assert.ok(spot.x + size.width <= label.width + 12 && spot.y + size.height <= label.height + 12, 'stays on the label');
+  assert.ok(!crowded.some((p) => p.x === spot.x && p.y === spot.y), 'never exactly on top of another object');
+  console.log('PASS: new designer objects are offset, not stacked');
+}

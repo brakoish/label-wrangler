@@ -9,6 +9,7 @@ import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
 import { OfficePreviewPrint } from './OfficePreviewPrint';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
+import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
 
 interface ZPLPreviewProps {
   format: LabelFormat;
@@ -48,7 +49,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
-      setError(err instanceof Error ? err.message : 'Preview failed');
+      setError(friendlyRenderError(friendlyError(err, 'The preview could not be drawn.'), template.elements, format.labelsAcross || 1));
       setPreviewUrl(null); setZpl('');
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {
@@ -150,7 +151,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
 
       {expanded && (
         <div className="px-6 py-4 flex flex-col" style={{ minHeight: '320px', maxHeight: '65vh' }}>
-          {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Editing preview — fix before printing: {error}</p>}
+          {error && previewUrl && <p role="status" className="text-sm text-amber-400 mb-2">Fix this before printing: {error}</p>}
           {/* ZPL Code view */}
           {showZPL && (
             <div className="mb-3 p-3 bg-zinc-950 rounded-lg border border-zinc-800/50 max-h-[200px] overflow-auto">

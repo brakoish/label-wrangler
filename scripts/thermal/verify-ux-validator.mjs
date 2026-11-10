@@ -84,7 +84,7 @@ try{
  // Repeat the independent geometry audit on every build/host.
  for (const [width,height] of [[1366,768],[1440,900],[1920,1080]]) {
   await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
-  await row('text'); await waitFor("document.body.innerText.includes('Exact bitmap artwork')"); await pause(300);
+  await row('text'); await waitFor("document.body.innerText.includes('This is exactly how it will print')"); await pause(300);
   const metrics=await evaluate(`(()=>{
    const rows=[...document.querySelectorAll('[data-layer-id]')];
    const clip=rows[0].parentElement.getBoundingClientRect();
@@ -108,18 +108,18 @@ try{
  assert.equal(await evaluate(`document.querySelector('[aria-label="Select layer product"]').getAttribute('aria-pressed')`),'true');
  await button('Test data');assert.equal(await evaluate(`document.querySelector('input[placeholder="DEFAULT"]').value`),'VALIDATOR SAMPLE');
  await evaluate("[...document.querySelectorAll('button')].find(b=>b.textContent.startsWith('Layers ')).click()");
- await evaluate('window.failNextSave=true');await button('Move to top');await waitFor('document.body.innerText.includes("Retry save")');
- await button('Retry save');await waitFor('document.body.innerText.includes("All changes saved")');
+ await evaluate('window.failNextSave=true');await button('Move to top');await waitFor('document.body.innerText.includes("Try saving again")');
+ await button('Try saving again');await waitFor('document.body.innerText.includes("All changes saved")');
 
  await evaluate('window.holdSave=true');await button('Move to back');await waitFor('!!window.releaseSave');
  await evaluate(`document.querySelector('a[href="/designer"]').click()`);await pause(300);assert.ok((await evaluate('location.href')).includes('id=thermal-ui-test'));
  await evaluate('window.holdSave=false;window.releaseSave()');await waitFor('!location.search.includes("id=")');
  console.log('PASS pending header navigation waits for save before leaving');
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});await waitFor(`!!document.querySelector('[aria-label="Select layer product"]')`);
- await row('text');await evaluate('window.failNextSave=true');await button('Move to top');await waitFor('document.body.innerText.includes("Retry save")');
- await evaluate('window.failNextSave=true');await evaluate(`document.querySelector('a[href="/runs"]').click()`);await pause(600);assert.ok((await evaluate('location.href')).includes('id=thermal-ui-test'));assert.ok(await evaluate('document.body.innerText.includes("Retry save")'));
+ await row('text');await evaluate('window.failNextSave=true');await button('Move to top');await waitFor('document.body.innerText.includes("Try saving again")');
+ await evaluate('window.failNextSave=true');await evaluate(`document.querySelector('a[href="/runs"]').click()`);await pause(600);assert.ok((await evaluate('location.href')).includes('id=thermal-ui-test'));assert.ok(await evaluate('document.body.innerText.includes("Try saving again")'));
  console.log('PASS failed-save header navigation retains editor and retry');
- await button('Retry save');await waitFor('document.body.innerText.includes("All changes saved")');
+ await button('Try saving again');await waitFor('document.body.innerText.includes("All changes saved")');
  await evaluate(`Array.from(document.querySelectorAll('a[href="/designer"]')).find(a=>!a.closest('header')).click()`);
  await waitFor(`!location.search.includes('id=') && !!document.querySelector('[aria-label="Search templates"]')`);
  console.log('PASS exact Templates breadcrumb returns to the library after recovery');

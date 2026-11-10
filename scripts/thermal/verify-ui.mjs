@@ -212,7 +212,7 @@ try{
  await waitFor("Array.from(document.querySelectorAll('input')).some(e=>e.value==='SELECTED PRODUCT')");
  await evaluate(`(()=>{const e=Array.from(document.querySelectorAll('input')).find(e=>e.value==='SELECTED PRODUCT');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'MANUAL OVERRIDE');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
  await click('[data-element-id="second"] > rect');
- await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Dynamic').click()");
+ await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Changes per label').click()");
  await waitFor(`!!document.querySelector('input[placeholder="product_name"]')`);
  const bindField=async value=>{await evaluate(`(()=>{const e=document.querySelector('input[placeholder="product_name"]');e.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));e.blur();})()`);};
  await bindField('thcPercent');

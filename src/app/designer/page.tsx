@@ -26,6 +26,8 @@ import { TestDataPanel } from '@/components/designer/TestDataPanel';
 import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { staggeredPosition } from '@/lib/elementPlacement';
+import { friendlyError } from '@/lib/userMessages';
 
 type NewTemplateElement = TemplateElement extends infer T
   ? T extends TemplateElement
@@ -509,7 +511,12 @@ function DesignerContent() {
         return;
     }
 
-    commitEdit({ elements: [...currentTemplate.elements, { ...elementData, id: crypto.randomUUID(), zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + 1 } as TemplateElement] });
+    // Don't stack new objects exactly on top of each other.
+    const position = staggeredPosition(currentTemplate.elements, { x: elementData.x, y: elementData.y }, isThermal ? Math.max(8, Math.round(unit * 0.06)) : Math.round(unit * 0.06 * 100) / 100 || 0.05, { width: labelW, height: labelH }, { width: elementData.width, height: elementData.height });
+    const id = crypto.randomUUID();
+    commitEdit({ elements: [...currentTemplate.elements, { ...elementData, ...position, id, zIndex: Math.max(0, ...currentTemplate.elements.map(e => e.zIndex)) + 1 } as TemplateElement] });
+    // Select it so the properties panel shows what was just added.
+    setSelectedIds(new Set([id]));
   };
 
   const handleUpdateElement = (updates: Partial<TemplateElement>) => {
@@ -577,16 +584,18 @@ function DesignerContent() {
       <PageTitle title="Designer" />
       <div className="px-4 py-2 flex flex-wrap items-center gap-3 text-xs text-zinc-400 border-b border-zinc-800/50">
         <span role="status" aria-live="polite" className={saveError ? 'text-red-400' : saving ? 'text-amber-400' : 'text-emerald-400'}>{saveError ? 'Not saved' : saving ? 'Saving…' : 'All changes saved'}</span>
+        <button type="button" onClick={() => persistEdits(currentTemplate.id)} disabled={saving} className="min-h-9 rounded-md border border-zinc-700 px-3 text-xs font-medium text-zinc-200 hover:border-amber-500/50 hover:text-amber-300 disabled:opacity-40">{saving ? 'Saving…' : 'Save now'}</button>
+        <span className="text-zinc-500">Changes save on their own.</span>
         {currentFormat.type === 'thermal' && <>
         <span>{currentTemplate.thermalRenderMode === 'bitmap-v1' ? 'Bitmap label' : 'Native label'}</span>
         <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={testData} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />
         </>}
       </div>
-      {saveError && <p role="alert" className="text-red-400 px-6">{saveError} <button className="underline" onClick={() => persistEdits(currentTemplate.id)}>Retry save</button></p>}
-      {recovery.length > 0 && <div role="alert" className="px-6 py-2 text-amber-300 text-sm">Recovered unsaved drafts are available. Recovering makes a separate template, so the saved design is not overwritten.
+      {saveError && <p role="alert" className="text-red-400 px-6">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      {recovery.length > 0 && <div role="alert" className="px-6 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
-      {saveError && <button className="text-amber-300 underline px-6 text-left" onClick={()=>void recoverCopy(currentTemplate)}>Save my edits as a separate template</button>}
+      {saveError && <button className="text-amber-300 underline px-6 text-left" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}

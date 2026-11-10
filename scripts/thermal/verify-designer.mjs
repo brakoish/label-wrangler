@@ -85,18 +85,18 @@ try{
  await button('Move to top');await waitSaves(4);assert.deepEqual(await order(),['second','text','qr']);
  // Lost acknowledgment: retry the exact locally committed order, don't move again.
  await evaluate('window.loseAck=true');await button('Move to back');
- await waitFor('document.body.innerText.includes("Retry save")');
+ await waitFor('document.body.innerText.includes("Try saving again")');
  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('[data-layer-id]')).map(e=>e.dataset.layerId)"),['second','qr','text']);
  const failed = await evaluate('window.attempts.at(-1)');
- await button('Retry save');await waitSaves(5);
+ await button('Try saving again');await waitSaves(5);
  assert.deepEqual(await evaluate('window.attempts.at(-1)'),failed);
  // Duplicate/delete use the same recovery path without duplicate copies.
  await row('text');await evaluate('window.failNextSave=true');await click('[data-layer-id="text"] button[title="Duplicate"]');
- await waitFor('document.body.innerText.includes("Retry save")');
+ await waitFor('document.body.innerText.includes("Try saving again")');
  const duplicate = await evaluate('window.attempts.at(-1).elements.find(e=>!["text","second","qr"].includes(e.id)).id');
- await button('Retry save');await waitSaves(6);assert.equal(await evaluate('window.fixture.elements.length'),4);
+ await button('Try saving again');await waitSaves(6);assert.equal(await evaluate('window.fixture.elements.length'),4);
  await evaluate('window.failNextSave=true');await click(`[data-layer-id="${duplicate}"] button[title="Delete"]`);
- await waitFor('document.body.innerText.includes("Retry save")');await button('Retry save');await waitSaves(7);
+ await waitFor('document.body.innerText.includes("Try saving again")');await button('Try saving again');await waitSaves(7);
  assert.equal(await evaluate('window.fixture.elements.length'),3);
  // Lock persists, disables editing and canvas handles; keyboard cannot move it.
  await row('text');await button('Lock selected');await waitSaves(8);
@@ -115,7 +115,7 @@ try{
  await waitFor("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.startsWith('4 x 2'))");
  await evaluate('window.failNextSave=true');
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('4 x 2')).click()");
- await waitFor('document.body.innerText.includes("Retry save")');await button('Retry save');await waitSaves(11);
+ await waitFor('document.body.innerText.includes("Try saving again")');await button('Try saving again');await waitSaves(11);
  assert.equal(await evaluate('window.fixture.formatId'),'large-format');
  const scaledElements=await evaluate('window.fixture.elements');
  assert.equal(scaledElements.find(e=>e.id==='text').x,42);
@@ -150,6 +150,6 @@ try{
  assert.ok(Math.abs((copies[1].x-copies[0].x)-(group[1].x-group[0].x)) < 1e-9);
  assert.ok(Math.abs((copies[1].y-copies[0].y)-(group[1].y-group[0].y)) < 1e-9);
  await undo();await waitSaves(3);assert.equal(await evaluate('window.fixture.elements.length'),3);
- if(process.env.DESIGNER_SCREENSHOT){await row('text');await row('qr',true);await waitFor('document.body.innerText.includes("Exact bitmap artwork")');await fs.writeFile(process.env.DESIGNER_SCREENSHOT,Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
+ if(process.env.DESIGNER_SCREENSHOT){await row('text');await row('qr',true);await waitFor('document.body.innerText.includes("This is exactly how it will print")');await fs.writeFile(process.env.DESIGNER_SCREENSHOT,Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
  console.log('PASS multi-layer ordering, failed saves/retry for move/duplicate/delete/format, lock/unlock/nudge/inline protections, format undo/redo and exact elements, persisted lock/format, search/size/archive/clear filters. All template writes intercepted.');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}
