@@ -43,7 +43,7 @@ function BitmapLayout({ format, elements, values }: { format: LabelFormat; eleme
     getBitmapProof({ id: 'layout', name: '', elements, formatId: format.id, thermalRenderMode: 'bitmap-v1', createdAt: '', updatedAt: '' }, format, values).then(r => { if (active) setImage(r.proof); }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [format, elements, values]);
-  return image ? <img src={image} alt="Exact thermal bitmap layout" className="max-w-full" style={{ imageRendering: 'pixelated' }} /> : <p className="text-xs text-zinc-400">{error || 'Rendering bitmap proof…'}</p>;
+  return image ? <img src={image} alt="Exact thermal bitmap layout" className="mx-auto block max-h-[360px] max-w-full" style={{ imageRendering: 'pixelated' }} /> : <p className="text-xs text-zinc-400">{error || 'Rendering bitmap proof…'}</p>;
 }
 
 // Get the viewBox dimensions for the label content (matches LabelPreview)
@@ -312,16 +312,12 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
   const viewH = sheetH + pad * 2;
 
   return (
-    <div className="border-t border-zinc-800/50 px-4 py-3">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-zinc-500 font-medium">Sheet Layout</span>
-        <span className="text-xs text-zinc-500">{cols}×{rows} = {cols * rows} labels</span>
-      </div>
-      <div className="flex justify-center">
-        <svg
+    <figure className="space-y-2">
+      <svg
           viewBox={`0 0 ${viewW} ${viewH}`}
-          className="w-full rounded-lg"
-          style={{ background: '#0a0a0c' }}
+          className="mx-auto block h-auto max-h-[360px] w-full"
+          role="img"
+          aria-label="Sheet layout"
         >
           {/* Sheet */}
           <rect x={pad} y={pad} width={sheetW} height={sheetH} fill="#f9fafb" stroke="#d1d5db" strokeWidth={0.02} rx={0.04} />
@@ -359,8 +355,8 @@ function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabe
             })
           )}
         </svg>
-      </div>
-    </div>
+      <figcaption className="text-center text-xs text-zinc-500">{cols}×{rows} = {cols * rows} labels on the sheet</figcaption>
+    </figure>
   );
 }
 
@@ -389,16 +385,12 @@ function RollLayout({ format, elements, testData }: LayoutPreviewProps) {
   const viewH = totalH + pad * 2;
 
   return (
-    <div className="border-t border-zinc-800/50 px-4 py-3">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-zinc-500 font-medium">Roll Layout</span>
-        <span className="text-xs text-zinc-500">{across} across, {linerW.toFixed(2)}&quot; liner</span>
-      </div>
-      <div className="flex justify-center">
-        <svg
+    <figure className="space-y-2">
+      <svg
           viewBox={`0 0 ${viewW} ${viewH}`}
-          className="w-full rounded-lg"
-          style={{ background: '#0a0a0c' }}
+          className="mx-auto block h-auto max-h-[360px] w-full"
+          role="img"
+          aria-label="Roll layout"
         >
           {/* Liner */}
           <rect x={pad} y={0} width={linerW} height={viewH} fill="#e5e7eb" stroke="#d1d5db" strokeWidth={linerW * 0.005} />
@@ -418,7 +410,7 @@ function RollLayout({ format, elements, testData }: LayoutPreviewProps) {
             })
           )}
         </svg>
-      </div>
-    </div>
+      <figcaption className="text-center text-xs text-zinc-500">{across} across on a {linerW.toFixed(2)}&quot; liner</figcaption>
+    </figure>
   );
 }

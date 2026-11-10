@@ -7,6 +7,7 @@ import { Upload, Clipboard, Save, Play, AlertCircle, FileSpreadsheet, Download, 
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { CustomSelect } from '@/components/ui/CustomSelect';
+import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useFormatStore } from '@/lib/store';
 import { useTemplateStore } from '@/lib/templateStore';
 import { NewTemplateDialog } from '@/components/designer/TemplateList';
@@ -806,61 +807,55 @@ function NewRunContent() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-[1180px] mx-auto w-full p-4 sm:p-6 lg:p-8 space-y-5 pb-48 sm:pb-28">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold text-zinc-500">Print workflow</p>
-              <h1 className="mt-1 text-2xl font-bold text-zinc-100">New print run</h1>
-            </div>
-            <ol className="grid grid-cols-4 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/60">
+            <h1 className="text-2xl font-semibold text-zinc-50">New print run</h1>
+            <ol className="flex flex-wrap items-center gap-x-4 gap-y-1">
               {workflowSteps.map((step, index) => (
                 <li
                   key={step.label}
-                  className={`flex min-w-0 items-center gap-2 border-r border-zinc-800 px-3 py-2 last:border-r-0 ${
-                    step.done ? 'text-emerald-400' : index === workflowSteps.findIndex((s) => !s.done) ? 'text-amber-300' : 'text-zinc-500'
+                  className={`flex min-w-0 items-center gap-1.5 text-sm ${
+                    step.done ? 'text-emerald-400' : index === workflowSteps.findIndex((s) => !s.done) ? 'text-zinc-100' : 'text-zinc-500'
                   }`}
                 >
-                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                    step.done ? 'bg-emerald-500/10' : 'bg-zinc-900'
-                  }`}>
-                    <span aria-hidden="true">{step.done ? '✓' : index + 1}</span>
-                  </span>
-                  <span className="truncate text-xs font-medium">{step.label}<span className="sr-only">{step.done ? ' (done)' : ' (not done yet)'}</span></span>
+                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${
+                    step.done ? 'bg-emerald-400' : index === workflowSteps.findIndex((s) => !s.done) ? 'bg-amber-500' : 'border border-zinc-600'
+                  }`} />
+                  <span className="truncate font-medium">{step.label}<span className="sr-only">{step.done ? ' (done)' : ' (not done yet)'}</span></span>
                 </li>
               ))}
             </ol>
           </div>
 
           {/* Setup */}
-          <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+          <section className="card p-4 sm:p-5 space-y-4">
             <SectionHeader
-              number="1"
               title="Setup"
               detail="Name the job and choose the label template."
             />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor={`${formId}-name`} className="text-xs text-zinc-400 block mb-1.5">Run name</label>
+                <label htmlFor={`${formId}-name`} className="field-label mb-1.5">Run name</label>
                 <input
                   id={`${formId}-name`}
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Jack Herer 3.5g — Apr 21 batch"
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
+                  className="field"
                 />
               </div>
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span id={`${formId}-template`} className="text-xs text-zinc-400">Label design</span>
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span id={`${formId}-template`} className="field-label">Label design</span>
+                  <div className="-mr-2 flex items-center">
                     {/* Edit the currently-selected template without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
                     {template && (
                       <Link
                         href={`/designer?id=${template.id}&returnTo=${encodeURIComponent('/runs/new')}`}
-                        className="flex items-center gap-1 text-xs text-zinc-500 hover:text-amber-400 transition-colors"
+                        className="btn btn-ghost btn-sm"
                         title="Open this design in the designer"
                       >
-                        <Pencil className="w-3 h-3" /> Edit design
+                        <Pencil className="hidden size-4 sm:block" aria-hidden="true" /> Edit design
                       </Link>
                     )}
                     <button
@@ -868,7 +863,7 @@ function NewRunContent() {
                       onClick={() => setShowNewTemplateDialog(true)}
                       disabled={formats.length === 0}
                       title={formats.length === 0 ? 'Create a label size first' : 'Create a new label design'}
-                      className="flex items-center gap-1 text-xs text-zinc-500 hover:text-amber-400 transition-colors disabled:opacity-40 disabled:hover:text-zinc-500"
+                      className="btn btn-ghost btn-sm"
                     >
                       <Plus className="w-3 h-3" /> New design
                     </button>
@@ -899,14 +894,14 @@ function NewRunContent() {
               </div>
             </div>
             {template && format && (
-              <div className="border-t border-zinc-800/60 pt-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold text-zinc-500">Design preview</span>
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="section-title">Design preview</span>
                   <span className="truncate text-xs text-zinc-500" title={`${template.name} · ${format.name}`}>
                     {template.name} · {format.name}
                   </span>
                 </div>
-                <div className="max-h-[260px] overflow-auto rounded-xl bg-zinc-950/60 p-3">
+                <div className="rounded-lg bg-zinc-950 p-3">
                   <LayoutPreview thermalRenderMode={template.thermalRenderMode} format={format} elements={(previewTemplate ?? template).elements} testData={previewValues} />
                 </div>
               </div>
@@ -916,15 +911,15 @@ function NewRunContent() {
           {template && <RunImagePicker key={template.id} template={template} selections={imageSelections} onBusyChange={setImageBusy} onChange={value => setImagesByTemplate(current => ({ ...current, [template.id]: value }))} />}
 
           {template && unnamedDynamic.length > 0 && (
-            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/10 space-y-3">
-              <h2 className="text-xs text-amber-400 font-semibold">Unnamed Fields</h2>
-              <p className="text-xs text-zinc-400">
+            <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 sm:p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-amber-300">Unnamed Fields</h2>
+              <p className="text-sm text-zinc-300">
                 {unnamedDynamic.length === 1 ? '1 dynamic element has' : `${unnamedDynamic.length} dynamic elements have`} no field name, so {unnamedDynamic.length === 1 ? 'it' : 'they'} can&apos;t be filled in this run. Naming them saves the shared design.
               </p>
               <button
                 onClick={() => void nameUnnamedFields()}
                 disabled={namingFields}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+                className="btn btn-primary btn-sm"
               >
                 {namingFields ? 'Saving design…' : 'Name fields and save design'}
               </button>
@@ -933,9 +928,9 @@ function NewRunContent() {
           )}
 
           {template && flippable.length > 0 && (
-            <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/10 space-y-3">
-              <h2 className="text-xs text-amber-400 font-semibold">Make it change per label</h2>
-              <p className="text-xs text-zinc-400">
+            <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 sm:p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-amber-300">Make it change per label</h2>
+              <p className="text-sm text-zinc-300">
                 These are set to &ldquo;Same on every label&rdquo;. Switch one to &ldquo;Changes per label&rdquo; to fill it from your spreadsheet. What it shows now stays as the preview sample.
               </p>
               <div className="flex flex-wrap gap-2">
@@ -949,10 +944,10 @@ function NewRunContent() {
                       updateElementLocal(template.id, f.id, current ? { ...contentModeUpdates({ ...current, fieldName: '' }, false, () => f.suggestedName) } : { isStatic: false, fieldName: f.suggestedName });
                       await saveTemplate(template.id);
                     }}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/10 transition-colors"
+                    className="btn btn-secondary btn-sm h-auto py-1.5 text-left"
                   >
                     Make the <span className="font-semibold">{f.type === 'qr' ? 'QR code' : f.type}</span> change per label
-                    <span className="text-xs text-amber-400">→ {f.suggestedName}</span>
+                    <span className="text-zinc-400">→ {f.suggestedName}</span>
                   </button>
                 ))}
               </div>
@@ -966,10 +961,9 @@ function NewRunContent() {
 
           {template && allDynamicFields.length > 0 && (
             <>
-              <section className="glass rounded-xl p-5 border border-zinc-800 space-y-3">
+              <section className="card p-4 sm:p-5 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <SectionHeader
-                    number="2"
                     title="Fields"
                     detail="Hide anything that should not be filled for this run."
                   />
@@ -988,10 +982,11 @@ function NewRunContent() {
                         type="button"
                         onClick={() => toggleRunFieldVisibility(field)}
                         title={hidden ? `Show ${field} in this run` : `Hide ${field} from this run`}
-                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        aria-pressed={!hidden}
+                        className={`btn btn-sm border ${
                           hidden
-                            ? 'border-zinc-800 bg-zinc-950 text-zinc-500 hover:text-zinc-300'
-                            : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/10'
+                            ? 'border-zinc-800 bg-transparent text-zinc-500 line-through hover:text-zinc-300'
+                            : 'border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700'
                         }`}
                       >
                         {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -1003,63 +998,63 @@ function NewRunContent() {
               </section>
 
               {/* Data source */}
-              <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+              <section className="card p-4 sm:p-5 space-y-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <SectionHeader
-                    number="3"
                     title="Data source"
                     detail="Choose how Label Wrangler should fill the fields."
                   />
-                  <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 sm:flex sm:items-center">
+                  <div className="segmented w-full md:w-auto" role="group" aria-label="Data source">
+                    <SegmentedIndicator index={['manual', 'paste', 'csv', 'manifest'].indexOf(inputMode)} count={4} />
                     <button
                       onClick={() => setInputMode('manual')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manual' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      aria-pressed={inputMode === 'manual'}
                     >
                       <Pencil className="w-3 h-3" /> Manual
                     </button>
                     <button
                       onClick={() => setInputMode('paste')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'paste' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      aria-pressed={inputMode === 'paste'}
                     >
-                      <Clipboard className="w-3 h-3" /> Paste
+                      <Clipboard className="hidden size-4 sm:block" aria-hidden="true" /> Paste
                     </button>
                     <button
                       onClick={() => setInputMode('csv')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'csv' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      aria-pressed={inputMode === 'csv'}
                     >
-                      <FileSpreadsheet className="w-3 h-3" /> CSV
+                      <FileSpreadsheet className="hidden size-4 sm:block" aria-hidden="true" /> CSV
                     </button>
                     <button
                       onClick={() => setInputMode('manifest')}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${inputMode === 'manifest' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      aria-pressed={inputMode === 'manifest'}
                     >
-                      <Search className="w-3 h-3" /> Manifest
+                      <Search className="hidden size-4 sm:block" aria-hidden="true" /> Manifest
                     </button>
                   </div>
                 </div>
 
                 {inputMode === 'manual' ? (
                   <div className="space-y-3">
-                    <p className="text-xs text-zinc-400">
+                    <p className="text-sm text-zinc-300">
                       Type a value for each part that changes, then set how many copies to print.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {dynamicFields.map((field) => (
                         <div key={field}>
-                          <label htmlFor={`${formId}-manual-${field}`} className="text-xs text-zinc-400 block mb-1.5">{field}</label>
+                          <label htmlFor={`${formId}-manual-${field}`} className="field-label mb-1.5">{field}</label>
                           <input
                             id={`${formId}-manual-${field}`}
                             type="text"
                             value={staticValues[field] ?? ''}
                             onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
                             placeholder={`Value for ${field}`}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
+                            className="field"
                           />
                         </div>
                       ))}
                     </div>
                     <div className="flex items-center gap-3 pt-1">
-                      <label htmlFor={`${formId}-qty`} className="text-xs text-zinc-400">Quantity</label>
+                      <label htmlFor={`${formId}-qty`} className="field-label">Quantity</label>
                       <input
                         id={`${formId}-qty`}
                         type="number"
@@ -1081,7 +1076,7 @@ function NewRunContent() {
                             e.currentTarget.blur();
                           }
                         }}
-                        className="w-24 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30 tabular-nums"
+                        className="field w-24 tabular-nums"
                       />
                       <span className="text-xs text-zinc-500">labels</span>
                     </div>
@@ -1089,18 +1084,18 @@ function NewRunContent() {
                 ) : inputMode === 'paste' ? (
                   <>
                     <div>
-                      <label htmlFor={`${formId}-paste`} className="text-xs text-zinc-400 block mb-1.5">One value per line</label>
+                      <label htmlFor={`${formId}-paste`} className="field-label mb-1.5">One value per line</label>
                       <textarea
                         id={`${formId}-paste`}
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
                         rows={7}
                         placeholder={'HTTPS://1A4.COM/5LO1I9DSOPW43WR19JI8\nHTTPS://1A4.COM/5LO1I9DSOPW43WR19JI9\n...'}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-100 font-mono px-3 py-2 focus:border-amber-500/30 resize-y"
+                        className="field font-mono text-xs resize-y"
                       />
                     </div>
                     <div>
-                      <span id={`${formId}-paste-field`} className="text-xs text-zinc-400 block mb-1.5">Fill which field with these values?</span>
+                      <span id={`${formId}-paste-field`} className="field-label mb-1.5">Fill which field with these values?</span>
                       <CustomSelect
                         aria-labelledby={`${formId}-paste-field`}
                         value={pasteField ?? ''}
@@ -1114,7 +1109,7 @@ function NewRunContent() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-300 transition-colors"
+                        className="btn btn-primary"
                       >
                         <Upload className="w-4 h-4" /> {csvHeaders.length > 0 ? 'Replace CSV' : 'Upload CSV'}
                       </button>
@@ -1122,7 +1117,7 @@ function NewRunContent() {
                         onClick={downloadCsvTemplate}
                         disabled={dynamicFields.length === 0}
                         title="Download a blank CSV with headers matching your template fields"
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-400 transition-colors disabled:opacity-40"
+                        className="btn btn-secondary"
                       >
                         <Download className="w-4 h-4" /> Blank spreadsheet
                       </button>
@@ -1157,12 +1152,12 @@ function NewRunContent() {
                         }}
                         placeholder="Search package tag, item, or batch"
                         aria-label="Search Manifest packages"
-                        className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
+                        className="field min-w-0 flex-1"
                       />
                       <button
                         onClick={handleManifestSearch}
                         disabled={manifestSearch.trim().length < 2 || isSearchingManifest}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-amber-500/30 text-sm text-zinc-300 transition-colors disabled:opacity-40"
+                        className="btn btn-secondary"
                       >
                         <Search className="w-4 h-4" /> {isSearchingManifest ? 'Searching' : 'Search'}
                       </button>
@@ -1179,7 +1174,7 @@ function NewRunContent() {
                               {selectedManifestPackageSummary.row.tag || '(no tag)'}
                             </p>
                           </div>
-                          <span className="shrink-0 rounded-md border border-amber-500/30 px-2 py-1 text-xs font-medium text-amber-300">
+                          <span className="shrink-0 text-xs font-medium text-amber-300">
                             {selectedManifestPackageSummary.labelRows.toLocaleString()} label{selectedManifestPackageSummary.labelRows === 1 ? '' : 's'}
                           </span>
                         </div>
@@ -1193,9 +1188,9 @@ function NewRunContent() {
                       </div>
                     )}
                     {manifestRows.length > 0 && (
-                      <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/50">
+                      <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">
                         <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-                          <span className="text-xs font-medium text-zinc-500">Select Package</span>
+                          <span className="section-title">Choose a package</span>
                           <span className="text-xs text-zinc-500">
                             {manifestPackageSummaries.length.toLocaleString()} package{manifestPackageSummaries.length === 1 ? '' : 's'}
                           </span>
@@ -1238,7 +1233,7 @@ function NewRunContent() {
                       </div>
                     )}
                     {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
-                      <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-3 text-xs text-zinc-500">
+                      <div className="rounded-lg bg-zinc-950 px-3 py-3 text-sm text-zinc-400">
                         No Manifest packages found.
                       </div>
                     )}
@@ -1248,9 +1243,8 @@ function NewRunContent() {
 
               {/* Field mapping for row-backed sources. */}
               {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
-                <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+                <section className="card p-4 sm:p-5 space-y-4">
                   <SectionHeader
-                    number="3a"
                     title="Field mapping"
                     detail={`Match each field on the label to a ${inputMode === 'manifest' ? 'Manifest field' : 'column in your spreadsheet'}.`}
                   />
@@ -1271,15 +1265,16 @@ function NewRunContent() {
                       const mapping = fieldMappings[field] ?? { mode: 'static' };
                       const needsChoice = mapping.mode === 'column' ? !mapping.csvColumn : !(staticValues[field] ?? '').trim();
                       return (
-                        <div key={field} className={`flex flex-col gap-2 p-3 rounded-lg bg-zinc-950 border sm:flex-row sm:items-center sm:gap-3 ${needsChoice ? 'border-amber-500/30' : 'border-zinc-800/60'}`}>
+                        <div key={field} className={`flex flex-col gap-2 rounded-lg border-l-2 bg-zinc-950 p-3 sm:flex-row sm:items-center sm:gap-3 ${needsChoice ? 'border-amber-500' : 'border-transparent'}`}>
                           <div id={`${formId}-map-${field}`} className="w-36 shrink-0 font-medium text-sm text-zinc-200 break-words">{field}</div>
-                          <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="flex w-fit items-center gap-0.5 p-0.5 rounded-md bg-zinc-900 border border-zinc-800">
+                          <div role="radiogroup" aria-labelledby={`${formId}-map-${field}`} className="segmented w-full sm:w-auto sm:shrink-0">
+                            <SegmentedIndicator index={mapping.mode === 'column' ? 1 : 0} count={2} />
                             <button
                               type="button"
                               role="radio"
                               aria-checked={mapping.mode === 'static'}
                               onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'static' } }))}
-                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${mapping.mode === 'static' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500'}`}
+                              data-active={mapping.mode === 'static'}
                             >
                               Same on every label
                             </button>
@@ -1288,7 +1283,7 @@ function NewRunContent() {
                               role="radio"
                               aria-checked={mapping.mode === 'column'}
                               onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn ?? '' } }))}
-                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${mapping.mode === 'column' ? 'bg-amber-500/10 text-amber-400' : 'text-zinc-500'}`}
+                              data-active={mapping.mode === 'column'}
                             >
                               {fromSheetLabel}
                             </button>
@@ -1310,7 +1305,7 @@ function NewRunContent() {
                               value={staticValues[field] ?? ''}
                               onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
                               placeholder="Type the value for every label"
-                              className="flex-1 min-w-0 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-1.5 focus:border-amber-500/30"
+                              className="field flex-1 min-w-0"
                             />
                           )}
                         </div>
@@ -1322,22 +1317,21 @@ function NewRunContent() {
 
               {/* Paste-mode static fields */}
               {inputMode === 'paste' && staticFieldNames.length > 0 && (
-                <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
+                <section className="card p-4 sm:p-5 space-y-4">
                   <SectionHeader
-                    number="3a"
                     title="Same on every label"
                     detail="Values here print the same on every label."
                   />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {staticFieldNames.filter((f) => f !== pasteField).map((f) => (
                       <div key={f}>
-                        <label htmlFor={`${formId}-static-${f}`} className="text-xs text-zinc-400 block mb-1.5">{f}</label>
+                        <label htmlFor={`${formId}-static-${f}`} className="field-label mb-1.5">{f}</label>
                         <input
                           id={`${formId}-static-${f}`}
                           type="text"
                           value={staticValues[f] ?? ''}
                           onChange={(e) => setStaticValues((s) => ({ ...s, [f]: e.target.value }))}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
+                          className="field"
                         />
                       </div>
                     ))}
@@ -1349,19 +1343,18 @@ function NewRunContent() {
                   no data yet, we still render the template with its placeholders
                   so the user can see what they're working with. */}
               {format && (
-                <section className="glass rounded-xl p-5 border border-zinc-800 space-y-4">
-                  <div className="flex items-center justify-between">
+                <section className="card p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <SectionHeader
-                      number="4"
                       title="Review"
                       detail="Check the label output before starting the run."
                     />
                     {labelCount > 0 ? (
-                      <div className="flex items-center gap-2 text-xs">
+                      <div className="flex items-center gap-2 text-sm">
                         <button
                           onClick={() => setPreviewIndex((i) => Math.max(0, i - 1))}
                           disabled={previewIndex === 0}
-                          className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                          className="btn btn-secondary btn-sm"
                         >
                           Prev
                         </button>
@@ -1371,16 +1364,16 @@ function NewRunContent() {
                         <button
                           onClick={() => setPreviewIndex((i) => Math.min(labelCount - 1, i + 1))}
                           disabled={previewIndex >= labelCount - 1}
-                          className="px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200 disabled:opacity-30"
+                          className="btn btn-secondary btn-sm"
                         >
                           Next
                         </button>
                       </div>
                     ) : (
-                      <span className="text-xs text-zinc-500">Showing the design&apos;s sample text — add data to see each label</span>
+                      <span className="text-sm text-zinc-500">Showing the design&apos;s sample text</span>
                     )}
                   </div>
-                  <div className="rounded-xl bg-zinc-950/60 p-4">
+                  <div className="rounded-lg bg-zinc-950 p-3 sm:p-4">
                     {format.type === 'sheet' ? (
                       // Sheets can't render via the ZPL WASM engine — show the
                       // actual sheet-grid layout so the user sees 10x20 /
@@ -1401,21 +1394,21 @@ function NewRunContent() {
               )}
 
               {/* Save preset + print */}
-              <section className="glass rounded-xl p-5 border border-zinc-800 space-y-3">
+              <section className="card p-4 sm:p-5 space-y-3">
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={saveAsPresetName}
                     onChange={(e) => setSaveAsPresetName(e.target.value)}
-                    placeholder="Save as preset..."
-                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-100 px-3 py-2 focus:border-amber-500/30"
+                    placeholder="Save these settings as a preset"
+                    className="field flex-1"
                   />
                   <button
                     onClick={handleSaveAsPreset}
                     disabled={!saveAsPresetName.trim() || !template}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                    className="btn btn-secondary"
                   >
-                    <Save className="w-3.5 h-3.5" /> Save
+                    <Save className="size-4" aria-hidden="true" /> Save
                   </button>
                 </div>
                 {hasData && template && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} />}
@@ -1431,13 +1424,13 @@ function NewRunContent() {
                   </p>
                 )}
               </section>
-              <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-zinc-950 px-4 py-3 backdrop-blur">
+              <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-800 bg-zinc-950 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 <div className="mx-auto flex max-w-[1180px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-zinc-100">
+                    <p className="truncate text-sm font-semibold text-zinc-100 max-sm:hidden">
                       {name.trim() || 'Untitled run'}
                     </p>
-                    <p className="text-xs text-zinc-500">
+                    <p className="truncate text-xs text-zinc-500 max-sm:hidden">
                       {template?.name || 'No design selected'} · {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}
                     </p>
                   </div>
@@ -1454,7 +1447,7 @@ function NewRunContent() {
                     <button
                       onClick={handleSaveAndPrint}
                       disabled={!canCreate || !previewReady || isCreatingRun}
-                      className="flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                      className="btn btn-primary w-full shrink-0 sm:w-auto"
                     >
                       <Play className="h-4 w-4" /> {isCreatingRun ? 'Starting…' : `Start run (${labelCount.toLocaleString()} label${labelCount === 1 ? '' : 's'})`}
                     </button>
@@ -1489,23 +1482,16 @@ function NewRunContent() {
 }
 
 function SectionHeader({
-  number,
   title,
   detail,
 }: {
-  number: string;
   title: string;
   detail: string;
 }) {
   return (
-    <div className="flex min-w-0 items-start gap-3">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-xs font-bold text-amber-300 ring-1 ring-zinc-800">
-        {number}
-      </span>
-      <div className="min-w-0">
-        <h2 className="text-xs font-semibold text-zinc-400">{title}</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">{detail}</p>
-      </div>
+    <div className="min-w-0">
+      <h2 className="text-base font-semibold text-zinc-100">{title}</h2>
+      <p className="mt-0.5 text-sm text-zinc-400">{detail}</p>
     </div>
   );
 }
