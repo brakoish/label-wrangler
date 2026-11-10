@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
+import { IconSwap } from '@/components/motion/IconSwap';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useFormatStore } from '@/lib/store';
@@ -39,6 +40,12 @@ import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
+
+/** “Strain, THC, CBD and Batch”: a plain list join for the wait reasons. */
+function andList(items: string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
 
 const PASTE_COLUMN = '__paste__';
 
@@ -265,6 +272,8 @@ function NewRunContent() {
   const [inputMode, setInputMode] = useState<RunInputMode>('manual');
   const [pasteText, setPasteText] = useState('');
   const [pasteField, setPasteField] = useState<string | null>(null);
+  // Type mode marks an empty field only after it was left empty, not on arrival.
+  const [touchedManual, setTouchedManual] = useState<ReadonlySet<string>>(() => new Set());
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   // The digits behind numbers Excel formats ("$1,234.50" -> "1234.50"),
@@ -625,9 +634,14 @@ function NewRunContent() {
   useEffect(() => {
     if (!template) return;
     if (pasteField && dynamicFields.includes(pasteField)) return;
-    // Prefer a QR-ish field, else the first dynamic field.
-    const qr = dynamicFields.find((f) => /qr|url|code|tag/i.test(f));
-    setPasteField(qr ?? dynamicFields[0] ?? null);
+    // Prefer the first barcode, then a tag or code field, then a QR code,
+    // else the first field: pasted lists are usually package tags.
+    const types = codeFieldTypes(template);
+    const pick = dynamicFields.find((f) => types[f] === 'barcode')
+      ?? dynamicFields.find((f) => /\btag\b|barcode|uid|package/i.test(f))
+      ?? dynamicFields.find((f) => types[f] === 'qr')
+      ?? dynamicFields.find((f) => /qr|url|code/i.test(f));
+    setPasteField(pick ?? dynamicFields[0] ?? null);
   }, [template, dynamicFields, pasteField]);
 
   const manifestSelectedRows = useMemo(() => {
@@ -955,7 +969,7 @@ function NewRunContent() {
                   : null;
   const checkReasons = setupReason || !format ? [] : [
     !blanksOk && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
-      ? `Give ${blankCheck.issues.map((issue) => friendlyFieldName(issue.field)).join(' and ')} a column or one value above.`
+      ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
@@ -973,12 +987,25 @@ function NewRunContent() {
           : null;
   const blockReasons = setupReason ? [setupReason] : previewReason ? [previewReason] : checkReasons;
 
+  // The fixed footer never covers the last buttons: the page is padded by
+  // its measured height (it grows on phones and with a long reason).
+  const [footerHeight, setFooterHeight] = useState(176);
+  const footerObserver = useRef<ResizeObserver | null>(null);
+  const footerRef = useCallback((el: HTMLDivElement | null) => {
+    footerObserver.current?.disconnect();
+    footerObserver.current = null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setFooterHeight(Math.ceil(el.getBoundingClientRect().height)));
+    observer.observe(el);
+    footerObserver.current = observer;
+  }, []);
+
   // Leaving a half-filled run: ask first, and keep a draft in this tab so a
   // refresh or Back can pick it up again.
   const formDirty = !leavingAfterCreate && (name.trim().length > 0 || !!templateId || csvRows.length > 0 || pasteText.trim().length > 0 || manifestRows.length > 0);
   const confirmLeave = useCallback(async () => {
     if (!formDirty) return true;
-    return confirmDialog({ title: 'Leave this new run?', body: 'We keep it in this browser tab, so you can pick it up again from New run.', confirmLabel: 'Leave', cancelLabel: 'Stay here', danger: true });
+    return confirmDialog({ title: 'Leave this new run?', body: 'We keep it in this browser tab, so you can pick it up again from New run.', confirmLabel: 'Leave', cancelLabel: 'Stay here' });
   }, [formDirty]);
   useEffect(() => {
     if (!formDirty) return;
@@ -1262,7 +1289,7 @@ function NewRunContent() {
     <AppShell beforeLeave={confirmLeave}>
       <PageTitle title={name.trim() ? `New run · ${name.trim()}` : 'New run'} />
       <div className="flex-1 overflow-auto">
-        <div className="page-container space-y-5 pb-48 sm:pb-28">
+        <div className="page-container space-y-5" style={{ paddingBottom: footerHeight + 24 }}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <h1 className="text-2xl font-semibold text-zinc-100">New print run</h1>
             <ol className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Progress">
@@ -1289,7 +1316,8 @@ function NewRunContent() {
           )}
 
           {/* Design */}
-          <section className="card card-flat p-4 sm:p-5 space-y-4">
+          <section className="card card-flat p-4 sm:p-5 space-y-4" aria-labelledby={`${formId}-design-h`}>
+            <h2 id={`${formId}-design-h`} className="text-base font-semibold text-zinc-100">Name and design</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <div className="mb-1 flex min-h-control-sm items-center"><label htmlFor={`${formId}-name`} className="field-label">Run name</label></div>
@@ -1335,8 +1363,8 @@ function NewRunContent() {
                   <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
                 ) : templates.length === 0 ? (
                   <p className="text-sm text-zinc-400 py-2">
-                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="text-amber-400 hover:underline disabled:opacity-40">Make one</button>
-                    {formats.length === 0 && <> (add a <Link href="/formats" className="text-amber-400 hover:underline">label size</Link> first)</>}
+                    No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="link disabled:opacity-40">Make one</button>
+                    {formats.length === 0 && <> (add a <Link href="/formats" className="link">label size</Link> first)</>}
                   </p>
                 ) : (
                   <CustomSelect
@@ -1415,7 +1443,7 @@ function NewRunContent() {
           )}
           {template && allDynamicFields.length === 0 && flippable.length === 0 && (
             <p role="status" className="text-sm text-amber-300">
-              Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link>{' '}and set the parts that should change to &ldquo;Changes per label&rdquo;.
+              Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="link">designer</Link>{' '}and set the parts that should change to &ldquo;Changes per label&rdquo;.
             </p>
           )}
 
@@ -1445,7 +1473,9 @@ function NewRunContent() {
                             type="text"
                             value={staticValues[field] ?? ''}
                             onChange={(e) => setStaticValues((s) => ({ ...s, [field]: e.target.value }))}
-                            className={`field ${!(staticValues[field] ?? '').trim() ? 'border-amber-500/60' : ''}`}
+                            onBlur={() => setTouchedManual((t) => (t.has(field) ? t : new Set(t).add(field)))}
+                            aria-invalid={touchedManual.has(field) && !(staticValues[field] ?? '').trim() ? true : undefined}
+                            className={`field ${touchedManual.has(field) && !(staticValues[field] ?? '').trim() ? 'border-amber-500/60' : ''}`}
                           />
                         </div>
                       ))}
@@ -1490,7 +1520,7 @@ function NewRunContent() {
                         className="field resize-y"
                       />
                       {pasteInfo.heading && <p className="mt-1.5 text-sm text-zinc-400">The first line, “{pasteInfo.heading}”, looks like a heading, so it isn’t a label.</p>}
-                      {pasteInfo.table && <p className="mt-1.5 text-sm text-zinc-400">This looks like a table from a spreadsheet. <button type="button" onClick={usePasteAsSpreadsheet} className="text-amber-400 hover:underline">Use it as a spreadsheet</button></p>}
+                      {pasteInfo.table && <p className="mt-1.5 text-sm text-zinc-400">This looks like a table from a spreadsheet. <button type="button" onClick={usePasteAsSpreadsheet} className="link">Use it as a spreadsheet</button></p>}
                     </div>
                     <div>
                       <span id={`${formId}-paste-field`} className="field-label mb-1.5">These values fill</span>
@@ -1542,7 +1572,7 @@ function NewRunContent() {
                           <span className="min-w-0 break-words">
                             {csvFileName ? <span className="text-zinc-100">{csvFileName}</span> : 'Your file'}: {csvRows.length.toLocaleString()} row{csvRows.length === 1 ? '' : 's'}, so {csvRows.length.toLocaleString()} label{csvRows.length === 1 ? '' : 's'}
                           </span>
-                          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                          <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 link">
                             <Upload className="size-4" aria-hidden="true" /> Choose another file
                           </button>
                         </p>
@@ -1550,7 +1580,7 @@ function NewRunContent() {
                         {/* Where the column names are: only asked when they weren't
                             in row 1 or some parts found no column. */}
                         {fileInfo && lastFile.current && !fileInfo.titleSkipped && fileInfo.headerRow === 1 && unmatchedShown.length > 0 && !headerRowAsked && headingsLookLikeData(csvHeaders) && (
-                          <button type="button" onClick={() => setHeaderRowAsked(true)} className="inline-flex min-h-control-sm items-center text-zinc-400 underline-offset-2 hover:text-zinc-100 hover:underline">Column names aren’t in row 1?</button>
+                          <button type="button" onClick={() => setHeaderRowAsked(true)} className="link inline-flex min-h-control-sm items-center">Column names aren’t in row 1?</button>
                         )}
                         {fileInfo && lastFile.current && (fileInfo.titleSkipped || fileInfo.headerRow !== 1 || (unmatchedShown.length > 0 && headerRowAsked)) && (
                           <label className="fold-reveal flex flex-wrap items-center gap-2">
@@ -1773,9 +1803,9 @@ function NewRunContent() {
                           onClick={() => toggleRunFieldVisibility(field)}
                           title={hidden ? `Fill ${friendlyFieldName(field)} in this run` : `Leave ${friendlyFieldName(field)} off this run`}
                           aria-pressed={!hidden}
-                          className={`btn btn-sm ${hidden ? 'btn-ghost text-zinc-500 line-through' : 'btn-secondary'}`}
+                          className={`btn btn-sm ${hidden ? 'btn-ghost text-zinc-400 line-through' : 'btn-secondary'}`}
                         >
-                          {hidden ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+                          <IconSwap on={!hidden} onIcon={<Eye className="size-4" />} offIcon={<EyeOff className="size-4" />} />
                           <span>{friendlyFieldName(field)}</span>
                         </button>
                       );
@@ -1886,7 +1916,7 @@ function NewRunContent() {
                     {plainNumberFields.filter((f) => visibleFieldSet.has(f)).map((field) => (
                       <p key={field} className="text-sm text-zinc-400">
                         {friendlyFieldName(field)} prints the number without its “$” from your spreadsheet.{' '}
-                        <button type="button" className="text-amber-400 hover:underline" onClick={() => setPlainNumberFields((list) => list.filter((f) => f !== field))}>Undo</button>
+                        <button type="button" className="link" onClick={() => setPlainNumberFields((list) => list.filter((f) => f !== field))}>Undo</button>
                       </p>
                     ))}
                     <ProblemList
@@ -1895,7 +1925,7 @@ function NewRunContent() {
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
                       actions={lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) ? (
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 text-amber-400 hover:underline">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex min-h-control-sm items-center gap-1.5 link">
                           <Upload className="size-4" aria-hidden="true" /> Choose another file
                         </button>
                       ) : undefined}
@@ -1932,14 +1962,11 @@ function NewRunContent() {
                   </button>
                 </div>
               </details>
-              <div className="fixed inset-x-0 bottom-0 z-30 bg-zinc-950 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div ref={footerRef} className="fixed inset-x-0 bottom-0 z-30 bg-zinc-950 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                 <div className="page-container flex flex-col gap-3 py-0 sm:flex-row sm:items-center sm:justify-between sm:py-0 lg:py-0">
                   <div className="min-w-0 max-sm:hidden">
-                    <p className="truncate text-sm font-semibold text-zinc-100">
-                      {name.trim() || 'Untitled run'}
-                    </p>
                     <p className="truncate text-sm text-zinc-400">
-                      {template?.name || 'No design chosen'} · {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}
+                      <span className="font-semibold text-zinc-100">{name.trim() || 'Untitled run'}</span> · {template?.name || 'No design chosen'}
                     </p>
                   </div>
                   <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -1948,12 +1975,7 @@ function NewRunContent() {
                         <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> {createRunError}
                       </p>
                     ) : blockReasons.length && !isCreatingRun ? (
-                      <div role="status" className="flex items-start gap-1.5 text-sm text-amber-300 sm:max-w-md">
-                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                        {blockReasons.length === 1 ? <p>{blockReasons[0]}</p> : (
-                          <div><p>{blockReasons.length} things before you can start:</p><ul className="list-disc pl-4">{blockReasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}</ul></div>
-                        )}
-                      </div>
+                      <WaitReasons reasons={blockReasons} />
                     ) : null}
                     <button
                       onClick={handleSaveAndPrint}
@@ -2033,5 +2055,37 @@ export default function NewRunPage() {
     <Suspense fallback={null}>
       <NewRunContent />
     </Suspense>
+  );
+}
+
+/**
+ * Why Start is waiting, on one line: the reason itself when there is one,
+ * else “3 things left” that opens the list above the footer.
+ */
+function WaitReasons({ reasons }: { reasons: string[] }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (reasons.length === 1) {
+    return (
+      <p role="status" className="flex items-start gap-1.5 text-sm text-amber-300 sm:max-w-md">
+        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{reasons[0]}
+      </p>
+    );
+  }
+  return (
+    <div role="status" className="relative text-sm">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)} className="press inline-flex min-h-11 items-center gap-1.5 text-amber-300 hover:text-amber-200">
+        <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+        {reasons.length} things left before you can start
+        <ChevronRight className={`size-4 shrink-0 transition-transform duration-200 ease-in-out motion-reduce:transition-none ${open ? '-rotate-90' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <ul id={id} className="popover-enter absolute bottom-full left-0 z-40 mb-2 w-[min(28rem,calc(100vw-2rem))] space-y-2 rounded-lg bg-zinc-800 p-4 text-zinc-100 shadow-xl">
+          {reasons.map((reason) => (
+            <li key={reason} className="flex items-start gap-1.5"><Circle className="mt-1.5 size-2 shrink-0 fill-current text-amber-300" aria-hidden="true" />{reason}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
