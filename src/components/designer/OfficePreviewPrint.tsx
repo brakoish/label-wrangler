@@ -33,7 +33,7 @@ function listError(error: unknown) {
   return 'Couldn’t reach the office printer list. It tries again on its own.';
 }
 async function api(url: string, options?: RequestInit) {
-  const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json' } });
+  const response = await fetch(url, { ...options, cache: 'no-store', headers: { 'Content-Type': 'application/json' } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new OfficeRequestError(data.error || 'Office printer request failed', response.status, typeof data.code === 'string' ? data.code : undefined);
   return data;
@@ -99,6 +99,28 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
     return () => { active = false; clearInterval(timer); };
   }, [open]);
 
+  // While a POST is out, this tab keeps a fresh mark another tab can see, so
+  // a second tab on the same design says "sending from another tab" instead
+  // of a false "not sure" (it also follows the saved test print as it changes).
+  const sendingKey = `lw:designer-office-sending:${template.id}`;
+  const [otherTabSending, setOtherTabSending] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      if (inFlight.current) { setOtherTabSending(false); return; }
+      try { const at = Number(localStorage.getItem(sendingKey)); setOtherTabSending(at > 0 && Date.now() - at < 12_000); } catch { setOtherTabSending(false); }
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === storageKey && !inFlight.current) {
+        try { setPending(event.newValue ? JSON.parse(event.newValue) : null); } catch { /* keep what is shown */ }
+      }
+      if (event.key === storageKey || event.key === sendingKey) check();
+    };
+    check();
+    window.addEventListener('storage', onStorage);
+    const timer = setInterval(check, 2000);
+    return () => { window.removeEventListener('storage', onStorage); clearInterval(timer); };
+  }, [storageKey, sendingKey]);
+
   const printer = printers.find(p => p.id === (pending?.printerId ?? selected));
   const submit = async () => {
     if (inFlight.current || !printer || (bitmap && !pending && proofs?.key !== proofKey)) return;
@@ -117,8 +139,16 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       localStorage.setItem(storageKey, JSON.stringify(payload));
       setPending(payload);
       clearRefusal();
+      const mark = () => { try { localStorage.setItem(sendingKey, String(Date.now())); } catch { /* only a hint for other tabs */ } };
+      mark();
+      const heartbeat = setInterval(mark, 4000);
       try {
-        const result = await api('/api/office/preview', { method: 'POST', body: JSON.stringify(payload) });
+        // A stalled connection ends as "no answer" (the same print is kept to
+        // send again) a little after the server's own 60s limit.
+        const result = await api('/api/office/preview', { method: 'POST', body: JSON.stringify(payload), signal: AbortSignal.timeout(75_000) }).finally(() => {
+          clearInterval(heartbeat);
+          try { localStorage.removeItem(sendingKey); } catch { /* lapses on its own */ }
+        });
         localStorage.removeItem(storageKey); setPending(null); setRunId(result.runId);
       } catch (error) {
         // A definite refusal (400/404/409/413) means nothing was queued, so
@@ -146,7 +176,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   const readiness = officeStatusLine(printer);
   const shownRefusal = refusalStillApplies(refusal, printer) ? refusal : null;
   const quantityOk = Number.isInteger(quantity) && quantity >= 1 && quantity <= 25;
-  const canSend = !busy && canPrint && !!printer && (pending ? true : readiness.canSend && quantityOk && !(bitmap && proofs?.key !== proofKey));
+  const canSend = !busy && !otherTabSending && canPrint && !!printer && (pending ? true : readiness.canSend && quantityOk && !(bitmap && proofs?.key !== proofKey));
   const dot = readiness.tone === 'ok' ? 'bg-emerald-400' : readiness.tone === 'bad' ? 'bg-red-400' : 'bg-amber-400';
 
   return <div className="text-sm">
@@ -164,11 +194,12 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
         <span id="office-test-quantity-help" className="text-zinc-400">up to 25</span>
       </label>
       {bitmap && !pending && <div className="space-y-1">{proofs?.key === proofKey ? proofs.results.map((r, i) => <img key={i} src={r.proof} alt={`Test label ${i + 1} as it will print`} className="w-full bg-white" style={{ imageRendering: 'pixelated' }} />) : <p role="status" className="text-zinc-400">Drawing the label exactly as it will print…</p>}</div>}
-      {pending && !busy && <p role="status" className="text-amber-300">We’re not sure the office got your last test print. {pending.status === undefined || uncertainSendWords(pending.status, pending.code).cause === 'no-answer' ? 'Press “Send again”. It resends that same print (not later edits), so it won’t print twice.' : uncertainSendWords(pending.status, pending.code).message.replace('come back to this run', 'come back to this design')}</p>}
+      {pending && !busy && otherTabSending && <p role="status" className="text-zinc-300">Sending this test print from another tab or window…</p>}
+      {pending && !busy && !otherTabSending && <p role="status" className="text-amber-300">We’re not sure the office got your last test print. {pending.status === undefined || uncertainSendWords(pending.status, pending.code).cause === 'no-answer' ? 'Press “Send again”. It resends that same print (not later edits), so it won’t print twice.' : uncertainSendWords(pending.status, pending.code).message.replace('come back to this run', 'come back to this design')}</p>}
       {shownRefusal && !pending && <p role="alert" className="text-amber-300">Your last test print wasn’t sent. {shownRefusal.message}</p>}
-      <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending ? 'Send again' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
+      <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending && otherTabSending ? 'Sending from another tab…' : pending ? 'Send again' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
       {error && <p role="alert" className="text-red-400">{error}</p>}
-      {pending && !busy && <p className="text-zinc-400"><Link href="/runs" className="link">Check Runs</Link> first, or <button type="button" className="link" onClick={async () => {
+      {pending && !busy && !otherTabSending && <p className="text-zinc-400"><Link href="/runs" className="link">Check Runs</Link> first, or <button type="button" className="link" onClick={async () => {
         const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first. The office may already have this test print, and starting over doesn’t cancel anything already sent.', confirmLabel: 'Start over' });
         if (!ok) return;
         localStorage.removeItem(storageKey); setPending(null); setError('');
