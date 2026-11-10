@@ -880,7 +880,8 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   const rawFontHDots = thermalLayout?.fontHeight ?? element.fontSize * (dpi / 72);
 
   // Calibration to match Zebra Font 0's visual footprint in the SVG preview.
-  // 0.8 matches the cap height of the condensed canvas font to Font 0.
+  // For thermal, svgFontSize only feeds the wrap metric below (0.8 x 0.6 =
+  // 0.48 x fontH); glyphs are drawn at glyphFontSize further down.
   const zebraHeightCalibration = isThermal ? 0.8 : 1.0;
 
   const svgFontSize = isThermal
@@ -931,29 +932,32 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   if (element.textAlign === 'center') baseX = element.x + element.width / 2;
   else if (element.textAlign === 'right') baseX = element.x + element.width;
 
+  // Native thermal labels always print in Zebra Font 0 (^A0), whatever
+  // family is picked. Font 0 is a bold condensed sans whose glyphs are
+  // squeezed horizontally by the ^A0 width/height ratio. Draw it the same
+  // way: a bold condensed face at the field height, scaled by that ratio.
+  // Wrapping above still uses the established 0.48 x fontH metric, so line
+  // breaks and printed bytes are unchanged; only the drawn glyphs differ.
+  const thermalPrintFont = 'var(--font-zebra), "Roboto Condensed", "Arial Narrow", sans-serif';
+  const effectiveFontFamily = isThermal ? thermalPrintFont : element.fontFamily;
+  const effectiveFontWeight = isThermal ? 700 : element.fontWeight;
+  const glyphFontSize = isThermal ? rawFontHDots : svgFontSize;
+  const glyphScaleX = isThermal
+    ? Math.min(2, Math.max(0.2, thermalLayout ? thermalLayout.fontWidth / Math.max(1, thermalLayout.fontHeight) : (element.charWidth ?? 0.5)))
+    : 1;
+
   // Measure and report
   useEffect(() => {
     if (textRef.current && onMeasure) {
       try {
         const bbox = textRef.current.getBBox();
         if (bbox.width > 0) {
-          onMeasure(element.id, Math.max(bbox.width, element.width), Math.max(bbox.height, element.height));
+          onMeasure(element.id, Math.max(bbox.width * glyphScaleX, element.width), Math.max(bbox.height, element.height));
         }
       } catch {}
     }
-  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.autoFit, element.minFontSize, element.id, onMeasure]);
+  }, [displayContent, element.fontSize, element.fontFamily, element.fontWeight, element.width, element.height, element.autoFit, element.minFontSize, element.id, onMeasure, glyphScaleX]);
 
-  // Native thermal labels always print in Zebra Font 0 (^A0), whatever
-  // family is picked, and Font 0 is a bold condensed sans. Draw it that way
-  // so the canvas looks like the printout. Line widths are forced with
-  // textLength to exactly what the old preview used (0.48 x fontH per glyph
-  // for the default fonts, fontH x charWidth for the others), so wrapping,
-  // selection boxes and printed bytes are unchanged; only glyph shapes differ.
-  const thermalPrintFont = 'var(--font-zebra), "Roboto Condensed", "Arial Narrow", sans-serif';
-  const isDefaultThermalFont = !element.fontFamily || element.fontFamily === 'Arial' || element.fontFamily === 'Helvetica' || element.fontFamily === 'IBM Plex Mono';
-  const effectiveFontFamily = isThermal ? thermalPrintFont : element.fontFamily;
-  const effectiveFontWeight = isThermal ? 700 : element.fontWeight;
-  const applyTextLengthCompression = isThermal;
 
   // Rotation handling: ZPL rotates around the field origin (^FO point, top-left
   // of the text box). SVG's rotate-around-center doesn't match. We use a <g>
@@ -977,25 +981,20 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   const textContent = (
     <text
       ref={textRef}
-      fontSize={svgFontSize}
+      fontSize={glyphFontSize}
       fontFamily={effectiveFontFamily}
       fontWeight={effectiveFontWeight}
       textAnchor={textAnchor}
       fill={color}
+      transform={glyphScaleX !== 1 ? `scale(${glyphScaleX} 1)` : undefined}
     >
       {visibleLines.map((line, i) => {
-        const widthRatio = element.charWidth ?? 0.5;
-        const forcedLen = applyTextLengthCompression && line.length > 0
-          ? line.length * (isDefaultThermalFont ? svgFontSize * 0.6 : rawFontHDots * widthRatio)
-          : undefined;
         const lineOffset = i * lineHeight;
         return (
           <tspan
             key={i}
-            x={needsRotation ? localBaseX : baseX}
+            x={(needsRotation ? localBaseX : baseX) / glyphScaleX}
             y={needsRotation ? (baselineOffset + lineOffset) : (element.y + baselineOffset + lineOffset)}
-            textLength={forcedLen}
-            lengthAdjust={forcedLen ? 'spacingAndGlyphs' : undefined}
           >
             {line}
           </tspan>
