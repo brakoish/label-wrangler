@@ -70,17 +70,17 @@ export default function RunsPage() {
   const runsLoading = useRunStore((state) => state.loading);
   const runsError = useRunStore((state) => state.error);
   const requestDeleteRun = async (run: Run) => {
-    const ok = await confirmDialog({ title: `Delete “${run.name}”?`, body: 'Its print history goes too. This can’t be undone.', confirmLabel: 'Delete run', danger: true });
+    const ok = await confirmDialog({ title: `Delete “${run.name}”?`, body: 'A run with print history is kept for your records and can’t be deleted. A run with no print history is removed for good.', confirmLabel: 'Delete run', danger: true });
     if (!ok) return;
     const refused = await deleteRun(run.id);
-    if (refused) void alertDialog('This run can’t be deleted', friendlyError(refused));
+    if (refused) void alertDialog('This run is kept for your records', refused);
     else toast('Run deleted');
   };
   const requestDeletePreset = async (preset: RunPreset) => {
-    const ok = await confirmDialog({ title: `Delete the preset “${preset.name}”?`, body: 'Runs you already made from it are not affected.', confirmLabel: 'Delete preset', danger: true });
+    const ok = await confirmDialog({ title: `Delete the preset “${preset.name}”?`, body: 'A preset that runs were made from is kept for your records and can’t be deleted. A preset no run used is removed for good.', confirmLabel: 'Delete preset', danger: true });
     if (!ok) return;
     const refused = await deletePreset(preset.id);
-    if (refused) void alertDialog('This preset can’t be deleted', friendlyError(refused));
+    if (refused) void alertDialog('This preset is kept for your records', refused);
   };
   const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? 'Deleted design';
   const formatName = (templateId: string) => {
