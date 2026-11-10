@@ -320,7 +320,9 @@ function DesignerContent() {
         ArrowDown: { dx: 0, dy: 1 },
       };
       const arrow = arrowMap[e.key];
-      if (arrow && currentTemplate && selectedIds.size > 0) {
+      // Print preview shows the printout, not the items: nothing moves there.
+      const previewing = view === 'exact' && currentFormat?.type === 'thermal';
+      if (arrow && currentTemplate && selectedIds.size > 0 && !previewing) {
         e.preventDefault();
         // Step: 0.01" (the smallest change the panel shows). Shift → 0.1".
         const isThermal = currentFormat?.type === 'thermal';
@@ -348,7 +350,7 @@ function DesignerContent() {
     const finishNudge = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow')) { if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current); finishGesture(); } };
     window.addEventListener('keydown', handler); window.addEventListener('keyup', finishNudge);
     return () => { window.removeEventListener('keydown', handler); window.removeEventListener('keyup', finishNudge); };
-  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation, showThermalOrientationPicker, uprightTurn]);
+  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation, showThermalOrientationPicker, uprightTurn, view]);
 
   // Clear undo history + selection when switching templates
   useEffect(() => {
@@ -843,8 +845,12 @@ function DesignerContent() {
 
   // Phone: "Change item" only shows once an item is chosen, so it is never an empty pane.
   // ("Change item", not a second "Edit" next to the Edit | Print preview toggle.)
-  const phoneTabs = ([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Change item']] as const).filter(([pane]) => pane !== 'edit' || selectedIds.size > 0);
-  const shownPane = phonePane === 'edit' && selectedIds.size === 0 ? 'label' : phonePane;
+  // Print preview is for looking and test printing: the item tools step
+  // aside (Items and Change item), the sample values stay.
+  const phoneTabs = ([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Change item']] as const)
+    .filter(([pane]) => (pane !== 'edit' || selectedIds.size > 0) && (!exactView || pane === 'label' || pane === 'data'));
+  const shownPane = (phonePane === 'edit' && selectedIds.size === 0) || (exactView && (phonePane === 'layers' || phonePane === 'edit')) ? 'label' : phonePane;
+  const shownPanel = exactView ? 'data' : leftPanel;
 
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
@@ -865,15 +871,19 @@ function DesignerContent() {
       {/* Editor layout fills the content area */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden mx-auto w-full">
         {/* Left Panel - Element List + Test Data */}
-        <div className={`${shownPane === 'layers' || shownPane === 'data' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`} role="region" aria-label={leftPanel === 'layers' ? 'Items on the label' : 'Sample values for the preview'}>
+        <div className={`${shownPane === 'layers' || shownPane === 'data' ? 'flex' : 'hidden'} lg:flex w-full lg:w-[248px] 2xl:w-[280px] lg:shrink-0 min-h-0 flex-col lg:bg-zinc-900 lg:max-h-none`} role="region" aria-label={shownPanel === 'layers' ? 'Items on the label' : 'Sample values for the preview'}>
           <div className="p-2 max-lg:hidden">
+          {exactView ? (
+            <h2 className="flex min-h-control-sm items-center px-2 text-sm font-medium text-zinc-100">Sample values</h2>
+          ) : (
           <div className="segmented" role="group" aria-label="Designer panels">
             <SegmentedIndicator index={leftPanel === 'data' ? 1 : 0} count={2} />
             <button aria-pressed={leftPanel === 'layers'} onClick={() => setLeftPanel('layers')}>Items <span className="tabular-nums text-zinc-400">{currentTemplate.elements.length}</span></button>
             <button aria-pressed={leftPanel === 'data'} onClick={() => setLeftPanel('data')}>Sample values</button>
           </div>
+          )}
           </div>
-          <div className={leftPanel === 'layers' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
+          <div className={shownPanel === 'layers' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
           <ElementList
             elements={currentTemplate.elements}
             selectedElementIds={selectedIds}
@@ -890,7 +900,7 @@ function DesignerContent() {
             onSaveAsGlobal={() => setShowGlobalSave(true)}
           />
           </div>
-          <div className={leftPanel === 'data' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
+          <div className={shownPanel === 'data' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
           <TestDataPanel
             key={currentTemplate.id}
             elements={currentTemplate.elements}
@@ -951,8 +961,10 @@ function DesignerContent() {
             {/* Saving is automatic: just say where it stands. */}
             <span role="status" aria-live="polite" className={`inline-flex min-h-control-sm items-center gap-1.5 ${saveError ? 'text-red-400' : 'text-zinc-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full ${saveError ? 'bg-red-400' : saving ? 'bg-zinc-500' : 'bg-emerald-400 animate-success'}`} />{saveError ? 'Not saved' : saving ? 'Saving…' : 'Saved'}</span>
 
-            {/* Undo/Redo */}
-            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
+            {/* View, undo/redo and More. On a narrow phone this wraps (More
+                never hides in a sideways scroller): the view switch on one
+                line, undo, redo and More on the next. */}
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 max-sm:w-full max-sm:justify-start">
               {currentFormat.type === 'thermal' && (
                 <div className="segmented mr-1" role="group" aria-label="What the label shows">
                   <SegmentedIndicator index={exactView ? 1 : 0} count={2} />
@@ -981,6 +993,7 @@ function DesignerContent() {
                   </div>
                 </>
               )}
+              <div className="ml-auto flex shrink-0 items-center gap-1">
               <button
                 onClick={handleUndo}
                 disabled={!canUndo()}
@@ -999,7 +1012,8 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <div><BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} closeKey={canvasProblems.map((p) => `${p.kind}:${p.ids.join(',')}`).join('|')} onShowCode={isAdmin ? () => setShowCode(true) : undefined} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /></div>}
+              {currentFormat.type === 'thermal' && <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} closeKey={canvasProblems.map((p) => `${p.kind}:${p.ids.join(',')}`).join('|')} onShowCode={isAdmin ? () => setShowCode(true) : undefined} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />}
+              </div>
             </div>
           </div>
 
@@ -1044,6 +1058,7 @@ function DesignerContent() {
           </div>
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (exactView && <>
+            <p role="status" className="px-4 pb-1 text-sm text-zinc-400">This is exactly how it prints. Press Edit to change it.</p>
             {canvasProblems.length > 0 && <div className="px-3 pt-2 sm:px-6"><DesignNotice problems={canvasProblems} action={noticeAction} /></div>}
             <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} problemsShown={canvasProblems.length > 0} />
           </>) : (
@@ -1052,7 +1067,7 @@ function DesignerContent() {
         </div>
 
         {/* Right Panel - Properties */}
-        <div className={shownPane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
+        <div className={exactView ? 'hidden' : shownPane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel
           element={selectedElement}
           selectedElements={currentTemplate.elements.filter((e) => selectedIds.has(e.id))}
