@@ -338,8 +338,12 @@ textarea:focus-visible {
     border-radius: var(--radius-md);
     background: var(--color-zinc-800);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-    transition: transform 220ms var(--ease-in-out);
+    transition: transform 220ms var(--ease-in-out), width 220ms var(--ease-in-out);
     pointer-events: none;
+  }
+  /* Segments as wide as their words, sharing what is left over. */
+  .segmented-fit {
+    grid-auto-columns: auto;
   }
 
   /* Switch: 44×24, the knob stretches a little while pressed. */

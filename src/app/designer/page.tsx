@@ -3,7 +3,7 @@
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Undo2, Redo2, Pencil, ChevronLeft } from 'lucide-react';
+import { Undo2, Redo2, Pencil, ChevronLeft, Plus } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -847,7 +847,7 @@ function DesignerContent() {
   // ("Change item", not a second "Edit" next to the Edit | Print preview toggle.)
   // Print preview is for looking and test printing: the item tools step
   // aside (Items and Change item), the sample values stay.
-  const phoneTabs = ([['label', 'Label'], ['layers', 'Items'], ['data', 'Samples'], ['edit', 'Change item']] as const)
+  const phoneTabs = ([['label', 'Label'], ['layers', 'Items'], ['data', 'Sample values'], ['edit', 'Change item']] as const)
     .filter(([pane]) => (pane !== 'edit' || selectedIds.size > 0) && (!exactView || pane === 'label' || pane === 'data'));
   const shownPane = (phonePane === 'edit' && selectedIds.size === 0) || (exactView && (phonePane === 'layers' || phonePane === 'edit')) ? 'label' : phonePane;
   const shownPanel = exactView ? 'data' : leftPanel;
@@ -861,8 +861,8 @@ function DesignerContent() {
       </div>}
       {saveError && <button type="button" className="link px-4 pb-2 text-left text-sm" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
       <div className="lg:hidden px-4 py-2">
-      <div role="tablist" aria-label="Designer panes" className="segmented [&>button]:px-1 max-[400px]:[&>button]:text-[13px]">
-        <SegmentedIndicator index={phoneTabs.findIndex(([pane]) => pane === shownPane)} count={phoneTabs.length} />
+      <div role="tablist" aria-label="Designer panes" className="segmented segmented-fit [&>button]:px-1.5">
+        <SegmentedIndicator fit index={phoneTabs.findIndex(([pane]) => pane === shownPane)} count={phoneTabs.length} />
         {phoneTabs.map(([pane, text]) => (
           <button key={pane} type="button" role="tab" aria-selected={shownPane === pane} onClick={() => { setPhonePane(pane); if (pane === 'layers' || pane === 'data') setLeftPanel(pane); }} >{text}</button>
         ))}
@@ -987,12 +987,14 @@ function DesignerContent() {
                 </>
               )}
               {currentFormat.type === 'thermal' && (
-                <div className="segmented mr-1 max-sm:order-first" role="group" aria-label="What the label shows">
+                <div className="segmented mr-1 max-sm:order-first max-sm:mr-0 max-sm:basis-full" role="group" aria-label="What the label shows">
                   <SegmentedIndicator index={exactView ? 1 : 0} count={2} />
                   <button type="button" aria-pressed={!exactView} onClick={() => setView('edit')} title="Move and change items">Edit</button>
                   <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Print preview</button>
                 </div>
               )}
+              {/* Phone: the Label tab gets its own way to add (Items has one too). */}
+              {!exactView && <button type="button" onClick={() => setShowAddElementMenu(true)} className="btn btn-secondary btn-sm lg:hidden"><Plus className="size-4" aria-hidden="true" /> Add</button>}
               <div className="ml-auto flex shrink-0 items-center gap-1">
               <button
                 onClick={handleUndo}

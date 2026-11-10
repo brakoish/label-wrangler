@@ -80,14 +80,19 @@ function onSegmentKey(event: KeyboardEvent) {
 
 /**
  * The sliding highlight for a `.segmented` control. Put it as the first child
- * of the control; segments are equal width, so the highlight only needs the
+ * of the control; segments are equal width (unless `fit`), so the highlight only needs the
  * active index and the number of segments. Hidden when nothing is active.
  *
  * It also gives its control radio-button keys and roles (see `enhance`), so
  * every segmented control in the app gets one tab stop, arrow keys, Home and
  * End without each page wiring them up.
  */
-export function SegmentedIndicator({ index, count }: { index: number; count: number }) {
+export function SegmentedIndicator({ index, count, fit = false }: {
+  index: number;
+  count: number;
+  /** Segments sized to their words (a control with `.segmented-fit`): the highlight measures the active one. */
+  fit?: boolean;
+}) {
   const ref = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     const control = ref.current?.parentElement;
@@ -99,6 +104,21 @@ export function SegmentedIndicator({ index, count }: { index: number; count: num
     control.addEventListener('keydown', onSegmentKey);
     return () => control.removeEventListener('keydown', onSegmentKey);
   }, []);
+  useLayoutEffect(() => {
+    const indicator = ref.current;
+    const control = indicator?.parentElement;
+    if (!fit || !indicator || !control) return;
+    const place = () => {
+      const segment = segmentsOf(control)[index];
+      if (!segment) return;
+      indicator.style.width = `${segment.offsetWidth}px`;
+      indicator.style.transform = `translateX(${segment.offsetLeft - 3}px)`;
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(control);
+    return () => observer.disconnect();
+  }, [fit, index, count]);
   const hidden = index < 0 || count < 1;
   return (
     <span
@@ -106,7 +126,7 @@ export function SegmentedIndicator({ index, count }: { index: number; count: num
       aria-hidden="true"
       hidden={hidden}
       className="segmented-indicator"
-      style={hidden ? undefined : { width: `calc((100% - 6px) / ${count})`, transform: `translateX(${index * 100}%)` }}
+      style={hidden || fit ? undefined : { width: `calc((100% - 6px) / ${count})`, transform: `translateX(${index * 100}%)` }}
     />
   );
 }

@@ -2287,7 +2287,7 @@ function NewRunContent() {
                 </section>
               )}
 
-              <details className="group px-1 text-sm">
+              <details className="group text-sm">
                 <summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 font-medium text-zinc-300 hover:text-zinc-100 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 shrink-0 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />Save these settings for next time</summary>
                 <div className="flex items-center gap-2 pt-3">
                   <input
