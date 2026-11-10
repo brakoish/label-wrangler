@@ -571,7 +571,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="text-zinc-100">Sent to the office printer: {markWords}. Did {single(markRanges)?'it':'they all'} come out?</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} onClick={()=>void onMarkPrinted()} className={`btn ${owner==='mark'?'btn-primary':'btn-secondary btn-sm'}`}><CheckCircle2 className="size-4" aria-hidden="true" />Yes, mark printed</button>
-        {canPrint && <button type="button" disabled={busy || !printer || !status.canSend} onClick={()=>{rangeEdited.current=true;setChooseAgain(true);setReprintOf('');setFrom('');setTo('');setNotice(null);}} className="btn btn-ghost btn-sm text-zinc-300">Some didn’t…</button>}
+        {canPrint && status.canSend && <button type="button" disabled={busy || !printer} onClick={()=>{rangeEdited.current=true;setChooseAgain(true);setReprintOf('');setFrom('');setTo('');setNotice(null);}} className="btn btn-ghost btn-sm text-zinc-300">Some didn’t…</button>}
       </div>
     </div>}
 

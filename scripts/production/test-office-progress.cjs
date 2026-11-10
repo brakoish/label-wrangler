@@ -79,6 +79,7 @@ assert.equal(R.officePrintedThrough(0, [sent(1, 500)], 400), 400, 'clamped to th
   assert.equal(R.extendThrough(10, [{ from: 11, to: 20 }, { from: 21, to: 30 }]), 30);
   assert.equal(R.spanWords([{ from: 1, to: 50 }, { from: 101, to: 150 }]), 'labels 1–50 and 101–150');
   assert.equal(R.spanWords([{ from: 7, to: 7 }]), 'label 7');
+  assert.equal(R.spanWords([{ from: 101, to: 125 }, { from: 76, to: 100 }, { from: 126, to: 150 }]), 'labels 76–150');
 }
 // --- Big runs: one explicit multi-part send, whole feeds at every boundary --
 {
@@ -239,6 +240,7 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
   assert.equal(runDisplayStatus(run('paused', 100), { sent: 100, onTheWay: 0, failed: 0 }).label, 'Done');
   assert.equal(runDisplayStatus(run('cancelled', 10), { sent: 0, onTheWay: 5, failed: 0 }).label, 'Cancelled');
   assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 0 }, 100), 'Sent to office printer: 20 of 100 · 30 on the way');
+  assert.equal(officeSentLine({ sent: 20, onTheWay: 30, failed: 1 }, 100), 'Sent to office printer: 20 of 100 · 30 waiting', 'held labels are not on their way');
   assert.equal(officeSentLine({ sent: 0, onTheWay: 0, failed: 0 }, 100), null);
   assert.equal(officeSentLine(null, 100), null);
 }

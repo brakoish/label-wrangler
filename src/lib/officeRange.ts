@@ -182,7 +182,13 @@ export function officeWaitingSpans(jobs: ReadonlyArray<OfficeJobLike>, total: nu
 }
 
 /** Labels from..to as merged spans, for messages like "labels 1–50 and 101–150". */
-export function spanWords(spans: ReadonlyArray<OfficeSpan>): string {
+export function spanWords(input: ReadonlyArray<OfficeSpan>): string {
+  // Touching parts read as one stretch: "labels 76–150", not "76–100, 101–125 and 126–150".
+  const spans: OfficeSpan[] = [];
+  for (const s of input.slice().sort((a, b) => a.from - b.from)) {
+    const last = spans[spans.length - 1];
+    if (last && s.from <= last.to + 1) last.to = Math.max(last.to, s.to); else spans.push({ from: s.from, to: s.to });
+  }
   const parts = spans.map((s) => (s.from === s.to ? `${s.from.toLocaleString()}` : `${s.from.toLocaleString()}–${s.to.toLocaleString()}`));
   const one = spans.length === 1 && spans[0].from === spans[0].to;
   const list = parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;

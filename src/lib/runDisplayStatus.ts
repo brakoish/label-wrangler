@@ -41,6 +41,7 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
 export function officeSentLine(office: RunOfficeSummary | null | undefined, total: number): string | null {
   if (!office || (office.sent === 0 && office.onTheWay === 0 && office.failed === 0)) return null;
   const parts = [`Sent to office printer: ${office.sent.toLocaleString()} of ${total.toLocaleString()}`];
-  if (office.onTheWay > 0) parts.push(`${office.onTheWay.toLocaleString()} on the way`);
+  // A part that needs a check stops the office printer, so the rest waits.
+  if (office.onTheWay > 0) parts.push(`${office.onTheWay.toLocaleString()} ${office.failed > 0 ? 'waiting' : 'on the way'}`);
   return parts.join(' · ');
 }
