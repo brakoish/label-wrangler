@@ -31,6 +31,7 @@ import { contentModeUpdates } from '@/lib/elementBinding';
 import { friendlyFieldName, nextFieldName } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeIssue } from '@/lib/barcodeCheck';
+import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { layoutProblems } from '@/lib/designerLayout';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
@@ -155,6 +156,8 @@ function NewRunContent() {
   const duplicateFrom = searchParams.get('duplicateFrom');
 
   const { templates, addTemplate, updateElementLocal, saveTemplate } = useTemplateStore();
+  const templatesLoadError = useTemplateStore((state) => state.error);
+  const templatesHydrated = useTemplateStore((state) => state.hydrated);
   const { formats, getFormatById } = useFormatStore();
   const { runs, presets, fetchRun, createRun, createPreset, updatePreset } = useRunStore();
 
@@ -668,8 +671,13 @@ function NewRunContent() {
 
   // Every barcode value must be one its barcode type can hold; checked for
   // every label, so label 10 can't stop a run part-way.
-  const barcodeCheck = useMemo(() => (checkTemplate && hasData ? checkRunBarcodes(checkTemplate, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck]);
+  const barcodeCheck = useMemo(() => (checkTemplate && hasData ? checkRunBarcodes(checkTemplate, runDataForCheck, format) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
   const barcodesOk = barcodeCheck.issues.length === 0;
+
+  // Text the thermal printer can't print ("·", accents) would come out as
+  // junk: name the label and field so it can be fixed before printing.
+  const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
+  const charactersOk = characterCheck.issues.length === 0;
 
   // Items that cover each other or run off the label, on any label.
   const layoutIssues = useMemo(() => {
@@ -681,7 +689,11 @@ function NewRunContent() {
       const row = runDataForCheck.sourceData[index];
       if (row) for (const [field, mapping] of Object.entries(runDataForCheck.fieldMappings)) if (mapping.mode === 'column' && mapping.csvColumn) values[field] = row[mapping.csvColumn] ?? '';
       for (const problem of layoutProblems(checkTemplate.elements, format, values)) {
-        const key = `${problem.kind}:${problem.ids.join(',')}`;
+        // A barcode too long for the label is named by label and row in the
+        // barcode check above; don't say it twice.
+        const main = checkTemplate.elements.find((el) => el.id === problem.ids[0]);
+        if (main?.type === 'barcode' && !main.rotation && !problem.kinds.includes('overlap')) continue;
+        const key = `${problem.kinds.join('+')}:${problem.ids.join(',')}`;
         const entry = found.get(key) ?? { message: problem.message, labels: [], count: 0 };
         entry.count++;
         if (entry.labels.length < 3) entry.labels.push(index + 1);
@@ -704,6 +716,7 @@ function NewRunContent() {
     blanksOk &&
     sameOk &&
     barcodesOk &&
+    charactersOk &&
     layoutOk &&
     (inputMode === 'manual'
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
@@ -732,6 +745,8 @@ function NewRunContent() {
                       ? 'Confirm the value that prints on every label, or choose From spreadsheet.'
                       : !barcodesOk
                         ? `${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode value' : 's have barcode values'} that can’t print. See the list above.`
+                        : !charactersOk
+                          ? `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`
                         : !layoutOk
                           ? 'Items overlap or run off the label. Check the list above.'
                           : format.type === 'thermal' && previewState.status === 'error'
@@ -960,6 +975,7 @@ function NewRunContent() {
   const currentStep = workflowSteps.findIndex((s) => !s.done);
   const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
   const barcodeItems = barcodeCheck.issues.slice(0, 5).map((issue) => describeBarcodeIssue(issue, fieldIsFromSheet(issue.field)));
+  const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
   const previewMessage = previewState.status === 'error' && checkTemplate
     ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1)
     : '';
@@ -1037,7 +1053,13 @@ function NewRunContent() {
                     </button>
                   </div>
                 </div>
-                {templates.length === 0 ? (
+                {templates.length === 0 && templatesLoadError ? (
+                  <p role="alert" className="py-2 text-sm text-red-400">
+                    Couldn’t load your label designs. <button type="button" onClick={() => void useTemplateStore.getState().fetchTemplates()} className="text-amber-400 hover:underline">Try again</button>
+                  </p>
+                ) : templates.length === 0 && !templatesHydrated ? (
+                  <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
+                ) : templates.length === 0 ? (
                   <p className="text-sm text-zinc-400 py-2">
                     No label designs yet. <button type="button" onClick={() => setShowNewTemplateDialog(true)} disabled={formats.length === 0} className="text-amber-400 hover:underline disabled:opacity-40">Make one</button>
                     {formats.length === 0 && <> (add a <Link href="/formats" className="text-amber-400 hover:underline">label size</Link> first)</>}
@@ -1500,6 +1522,12 @@ function NewRunContent() {
                       heading={`${barcodeCheck.badLabels.toLocaleString()} label${barcodeCheck.badLabels === 1 ? ' has a barcode that' : 's have barcodes that'} can’t print`}
                       items={barcodeItems}
                       more={barcodeCheck.issues.length > barcodeItems.length ? barcodeCheck.badLabels - barcodeItems.length : 0}
+                    />
+                    <ProblemList
+                      tone="error"
+                      heading={`${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`}
+                      items={characterItems}
+                      more={characterCheck.issues.length - characterItems.length}
                     />
                     <ProblemList
                       heading="Some items overlap or run off the label"
