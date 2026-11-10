@@ -21,6 +21,11 @@ export function PageTitle({ title }: { title: string }) {
   useEffect(() => {
     const full = title ? `${title} — Label Wrangler` : 'Label Wrangler';
     document.title = full;
+    // Streamed metadata (for example on the 404 page) can rewrite <title>
+    // after this runs; put the page's own title back while it is shown.
+    const observer = new MutationObserver(() => { if (document.title !== full) document.title = full; });
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
   }, [title]);
   return null;
 }

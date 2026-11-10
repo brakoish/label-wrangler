@@ -534,7 +534,7 @@ function RunRow({
   const pinned = !!run.pinnedAt;
 
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800/60 sm:gap-4 sm:px-4">
+    <div className="flex items-center gap-2 rounded-xl bg-zinc-900 p-3 transition-colors hover:bg-zinc-800 sm:gap-4 sm:px-4">
       <Link href={`/runs/${run.id}`} className="flex min-w-0 flex-1 flex-col gap-2 rounded-lg sm:flex-row sm:items-center sm:gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
@@ -556,7 +556,7 @@ function RunRow({
           </div>
         </div>
         {unfinished && (
-          <span className="btn btn-secondary btn-sm max-sm:self-start">
+          <span className="btn btn-secondary btn-sm max-sm:self-start sm:w-32">
             <Play className="h-4 w-4 text-amber-400" aria-hidden="true" /> {printed > 0 ? 'Continue' : 'Print'}
           </span>
         )}

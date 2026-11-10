@@ -213,12 +213,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const connection=<div className="space-y-3">
     {printers.length>1
       ? <div className="space-y-1"><span id={`${uid}-printer`} className="field-label">Office printer</span><CustomSelect aria-labelledby={`${uid}-printer`} value={selected} onChange={setSelected} options={printers.map(p=>({value:`${p.station_id}/${p.id}`,label:p.name}))} /></div>
-      : <p className="text-sm text-zinc-300">{printer?printer.name:loaded?'No office printer is set up for your account.':'Looking for the office printer…'}</p>}
+      : !printer && <p className="text-sm text-zinc-300">{loaded?'No office printer is set up for your account.':'Looking for the office printer…'}</p>}
     {printer && <div className="space-y-1 text-sm">
-      <p className={`flex items-center gap-2 ${statusTone}`}><span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${readiness.tone==='ok'?'bg-emerald-400':readiness.tone==='bad'?'bg-red-400':'bg-amber-300'}`} />{readiness.text}</p>
+      {/* The printer and whether it can take jobs, on one line when all is well. */}
+      <p className={`flex items-start gap-2 ${readiness.tone==='ok'?'text-zinc-200':statusTone}`}><span aria-hidden="true" className={`mt-1.5 size-2 shrink-0 rounded-full ${readiness.tone==='ok'?'bg-emerald-400':readiness.tone==='bad'?'bg-red-400':'bg-amber-300'}`} /><span>{printers.length>1?'':`${printer.name} · `}{readiness.tone==='ok'?<span className="text-emerald-400">Ready</span>:readiness.text}</span></p>
       {readiness.tone==='ok' && printer.dispatch_hold_reason && holdReasons[printer.dispatch_hold_reason] && <p className="text-amber-300">{holdReasons[printer.dispatch_hold_reason]}</p>}
     </div>}
-    {printer && <OfficePrinterControls />}
+    {printer && printer.dispatch_enabled && printer.paired_at!==null && (!done || chooseAgain || !!reprintOf) && <OfficePrinterControls />}
     {printer && <details className="text-sm text-zinc-400"><summary className="flex min-h-control cursor-pointer items-center hover:text-zinc-200">Connection details</summary><p className="pb-2">Last contact: {printer.last_seen?new Date(printer.last_seen).toLocaleString():'not set up yet'} · {printer.dpi} DPI</p></details>}
   </div>;
   return <div className="space-y-4">
@@ -249,7 +250,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {!printAllowed && <p className="text-sm text-amber-300">Sending is off until every label has a value (see the list above).</p>}
     {waitingOnQueue && <p role="status" className="text-sm text-zinc-400">Some of these labels are already on their way. Once they&apos;re sent, use Reprint if you need them again.</p>}
     <button type="button" disabled={disabled} onClick={onPrimary} className="btn btn-primary w-full">{busy?<Loader2 className="w-4 h-4 animate-spin" />:<PrinterIcon className="w-4 h-4" />}{primaryLabel}</button>
-    {blockedByPrinter && !busy && printer && <p className="text-sm text-zinc-400">{!canPrint?'Your account can’t send labels to the office printer.':readiness.text}</p>}
+    {blockedByPrinter && !canPrint && !busy && printer && <p className="text-sm text-zinc-400">Your account can’t send labels to the office printer.</p>}
     </>}
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     {notice && <p role="status" className="text-sm text-emerald-400 animate-enter">{notice}</p>}
