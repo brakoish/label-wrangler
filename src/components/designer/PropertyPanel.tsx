@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   AlignHorizontalJustifyCenter, AlignHorizontalJustifyStart, AlignHorizontalJustifyEnd,
   AlignVerticalJustifyCenter, AlignVerticalJustifyStart, AlignVerticalJustifyEnd,
-  Move, Maximize2, RotateCw, Type, QrCode, Barcode, Square, Image,
+  Move, Maximize2, RotateCw, Type, QrCode, Barcode, Square, Image, AlertCircle,
 } from 'lucide-react';
 import { BarcodeFormat, LabelFormat, TemplateElement, TextElement, QRElement, BarcodeElement, LineElement, RectangleElement, ImageElement } from '@/lib/types';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
@@ -15,6 +15,7 @@ import { BITMAP_FONTS } from '@/lib/thermal/import';
 import type { AlignAction } from '@/lib/thermal/editorGeometry';
 import { snapZplQrSize } from '@/lib/zplGenerator';
 import { contentModeUpdates } from '@/lib/elementBinding';
+import { elementTypeName, friendlyFieldName, nextFieldName } from '@/lib/fieldLabels';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -24,29 +25,38 @@ interface PropertyPanelProps {
   onUpdateSelected?: (updates: Partial<TemplateElement>) => void;
   bitmap?: boolean;
   onArrange?: (action: AlignAction) => void;
+  /** Every item on the design: for unique default names and the Manifest picker. */
+  allElements?: TemplateElement[];
+  /** Layout problems that involve the selected item, in plain words. */
+  problems?: string[];
 }
 
-export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange }: PropertyPanelProps) {
+/** The right-hand panel: a plain surface, no rules or borders. */
+const PANEL = 'w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 lg:bg-zinc-900 overflow-y-auto';
+
+export function PropertyPanel({ element, selectedElements = [], format, onUpdate, onUpdateSelected, bitmap = false, onArrange, allElements = [], problems = [] }: PropertyPanelProps) {
+  const [showManifest, setShowManifest] = useState(false);
   const multiSelected = selectedElements.length > 1;
   const selectedTextElements = selectedElements.filter((el): el is TextElement => el.type === 'text');
 
   if (element?.locked || selectedElements.some(e => e.locked)) {
-    return <div className="w-full lg:w-[264px] 2xl:w-[280px] p-4 text-sm text-zinc-400 border-l border-zinc-800">Selection includes locked layers. Unlock them in the layer list to edit properties.</div>;
+    return <div className={`${PANEL} p-4 text-sm text-zinc-400`}>Some of these items are locked. Unlock them in Layers to change them.</div>;
   }
 
   if (multiSelected) {
     const canEditTextGroup = selectedTextElements.length === selectedElements.length && !!onUpdateSelected;
 
     return (
-      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800 overflow-y-auto">
-        <div className="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-2">
-          <span className="text-sm font-medium text-zinc-200">
-            {canEditTextGroup ? `${selectedTextElements.length} text layers` : `${selectedElements.length} selected`}
-          </span>
-        </div>
+      <div className={PANEL}>
+        <h2 className="px-4 pt-3 text-sm font-semibold text-zinc-100">
+          {canEditTextGroup ? `${selectedTextElements.length} text items` : `${selectedElements.length} items selected`}
+        </h2>
 
-        {format.type === 'thermal' && onArrange && <div className="p-3 grid grid-cols-3 gap-1">
-          {(['left', 'center', 'right', 'top', 'middle', 'bottom', 'distribute-x', 'distribute-y'] as AlignAction[]).map(action => <button key={action} title={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} onClick={() => onArrange(action)} className="btn btn-secondary btn-sm px-1 text-xs capitalize">{action.replace('distribute-', 'Space ')}</button>)}
+        {format.type === 'thermal' && onArrange && <div className="px-3 pt-2">
+          <h3 className="px-1 pb-1 text-sm font-medium text-zinc-300">Line up</h3>
+          <div className="grid grid-cols-3 gap-1">
+          {([['left', 'Left edges'], ['center', 'Centers'], ['right', 'Right edges'], ['top', 'Tops'], ['middle', 'Middles'], ['bottom', 'Bottoms'], ['distribute-x', 'Space across'], ['distribute-y', 'Space down']] as Array<[AlignAction, string]>).map(([action, text]) => <button key={action} disabled={action.startsWith('distribute') && selectedElements.length < 3} title={action.startsWith('distribute') && selectedElements.length < 3 ? 'Select 3 or more items to space them out' : undefined} onClick={() => onArrange(action)} className="btn btn-secondary btn-sm px-1 text-xs">{text}</button>)}
+          </div>
         </div>}
         {canEditTextGroup ? (
           <div className="p-3 space-y-1">
@@ -59,7 +69,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           </div>
         ) : (
           <div className="min-h-20 flex items-center justify-center px-4">
-            <p className="text-zinc-400 text-sm">These layers have different settings. Select one type to edit it.</p>
+            <p className="text-zinc-400 text-sm">These are different kinds of items. Select one kind to change its settings.</p>
           </div>
         )}
       </div>
@@ -68,15 +78,19 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
   if (!element) {
     return (
-      <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 min-h-20 lg:min-h-0 border-t lg:border-t-0 lg:border-l border-zinc-800 flex items-center justify-center">
-        <div className="p-5 space-y-3 text-sm text-zinc-400"><h2 className="text-base font-semibold text-zinc-100">Edit your label</h2><p>Select an object on the label or in Layers to edit it.</p><p>Double-click text to edit. Shift-click to select several objects.</p><p className="text-xs">Arrow keys move · Shift + arrow moves faster · Ctrl/⌘ Z undoes</p></div>
+      <div className={`${PANEL} min-h-20 lg:min-h-0`}>
+        <div className="p-4 space-y-2 text-sm text-zinc-400"><h2 className="text-sm font-semibold text-zinc-100">Nothing selected</h2><p>Click an item on the label to change it. Double-click text to type.</p><p>Shift-click to pick several. Arrow keys nudge the selected item.</p></div>
       </div>
     );
   }
 
-  const step = format.type === 'thermal' ? 1 : 0.01;
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;
+  // Sizes are shown in inches everywhere; thermal designs store dots, so
+  // convert at the edge and keep whole dots in the design.
+  const toInches = (v: number) => (isThermal ? Math.round((v / dpi) * 100) / 100 : v);
+  const fromInches = (v: number) => (isThermal ? Math.round(v * dpi) : v);
+  const step = 0.01;
   const labelW = isThermal ? format.width * dpi : format.width;
   const labelH = isThermal ? format.height * dpi : format.height;
 
@@ -91,28 +105,32 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   };
 
   return (
-    <div className="w-full lg:w-[264px] 2xl:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-zinc-800 overflow-y-auto">
-      {/* Element type header */}
-      <div className="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-2">
+    <div className={PANEL}>
+      {/* Item header */}
+      <div className="px-4 pt-3 flex items-center gap-2">
         <span className="flex size-4 items-center justify-center text-zinc-400" aria-hidden="true">
           {typeIcons[element.type]}
         </span>
-        <span className="text-sm font-medium text-zinc-200 capitalize">{element.type}</span>
-        <span className="ml-auto text-xs text-zinc-500">{isThermal ? `Sizes in dots (${dpi} per inch)` : 'Sizes in inches'}</span>
+        <h2 className="min-w-0 truncate text-sm font-semibold text-zinc-100">{elementTypeName(element.type)}{!element.isStatic && element.fieldName ? `: ${friendlyFieldName(element.fieldName)}` : ''}</h2>
       </div>
+      {problems.length > 0 && (
+        <ul role="alert" className="mx-4 mt-2 space-y-1 text-sm text-amber-300">
+          {problems.slice(0, 3).map((message) => <li key={message} className="flex items-start gap-1.5"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{message}</li>)}
+        </ul>
+      )}
 
       <div className="p-3 space-y-1.5">
         {/* ── Size ── */}
-        <SectionLabel icon={<Maximize2 className="w-3 h-3" />} label="Size" />
+        <SectionLabel icon={<Maximize2 className="w-3 h-3" />} label="Size (inches)" />
         {element.type === 'qr' ? (
           <div className="grid grid-cols-1">
             <CompactInput
               label="S"
-              value={element.width}
+              value={toInches(element.width)}
               onChange={(v) => {
                 const qr = element as QRElement;
                 const content = qr.defaultValue || qr.content || 'QR';
-                const size = isThermal ? snapZplQrSize(content, qr.errorCorrection || 'M', v) : v;
+                const size = isThermal ? snapZplQrSize(content, qr.errorCorrection || 'M', fromInches(v)) : v;
                 onUpdate({ width: size, height: size });
               }}
               step={step}
@@ -120,21 +138,16 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-1.5">
-            <CompactInput label="W" value={element.width} onChange={(v) => onUpdate({ width: v })} step={step} />
-            <CompactInput label="H" value={element.height} onChange={(v) => onUpdate({ height: v })} step={step} />
+            <CompactInput label="W" value={toInches(element.width)} onChange={(v) => onUpdate({ width: fromInches(v) })} step={step} />
+            <CompactInput label="H" value={toInches(element.height)} onChange={(v) => onUpdate({ height: fromInches(v) })} step={step} />
           </div>
         )}
-        <p className="text-xs text-zinc-500">
-          {element.type === 'qr'
-            ? `Size ${physicalSize(element.width, isThermal, dpi)}`
-            : `Width ${physicalSize(element.width, isThermal, dpi)} · Height ${physicalSize(element.height, isThermal, dpi)}`}
-        </p>
 
         {/* ── Position ── */}
-        <SectionLabel icon={<Move className="w-3 h-3" />} label="Position" />
+        <SectionLabel icon={<Move className="w-3 h-3" />} label="Position (inches from the corner)" />
         <div className="grid grid-cols-2 gap-1.5">
-          <CompactInput label="X" value={element.x} onChange={(v) => onUpdate({ x: v })} step={step} />
-          <CompactInput label="Y" value={element.y} onChange={(v) => onUpdate({ y: v })} step={step} />
+          <CompactInput label="X" value={toInches(element.x)} onChange={(v) => onUpdate({ x: fromInches(v) })} step={step} />
+          <CompactInput label="Y" value={toInches(element.y)} onChange={(v) => onUpdate({ y: fromInches(v) })} step={step} />
         </div>
 
         {/* ── Rotation ── */}
@@ -159,13 +172,14 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {/* ── Alignment ── */}
         <div className="pt-1">
-          <div className="flex items-center justify-between" role="group" aria-label="Align to label">
-            <AlignBtn icon={<AlignHorizontalJustifyStart className="size-4" />} tip="Left" onClick={() => onUpdate({ x: 0 })} />
-            <AlignBtn icon={<AlignHorizontalJustifyCenter className="size-4" />} tip="Center H" onClick={() => onUpdate({ x: (labelW - element.width) / 2 })} />
-            <AlignBtn icon={<AlignHorizontalJustifyEnd className="size-4" />} tip="Right" onClick={() => onUpdate({ x: labelW - element.width })} />
-            <AlignBtn icon={<AlignVerticalJustifyStart className="size-4" />} tip="Top" onClick={() => onUpdate({ y: 0 })} />
-            <AlignBtn icon={<AlignVerticalJustifyCenter className="size-4" />} tip="Center V" onClick={() => onUpdate({ y: (labelH - element.height) / 2 })} />
-            <AlignBtn icon={<AlignVerticalJustifyEnd className="size-4" />} tip="Bottom" onClick={() => onUpdate({ y: labelH - element.height })} />
+          <h3 id="align-to-label" className="sr-only">Move on the label</h3>
+          <div className="flex items-center justify-between" role="group" aria-labelledby="align-to-label">
+            <AlignBtn icon={<AlignHorizontalJustifyStart className="size-4" />} tip="Move to the left edge" onClick={() => onUpdate({ x: 0 })} />
+            <AlignBtn icon={<AlignHorizontalJustifyCenter className="size-4" />} tip="Center left to right" onClick={() => onUpdate({ x: (labelW - element.width) / 2 })} />
+            <AlignBtn icon={<AlignHorizontalJustifyEnd className="size-4" />} tip="Move to the right edge" onClick={() => onUpdate({ x: labelW - element.width })} />
+            <AlignBtn icon={<AlignVerticalJustifyStart className="size-4" />} tip="Move to the top" onClick={() => onUpdate({ y: 0 })} />
+            <AlignBtn icon={<AlignVerticalJustifyCenter className="size-4" />} tip="Center top to bottom" onClick={() => onUpdate({ y: (labelH - element.height) / 2 })} />
+            <AlignBtn icon={<AlignVerticalJustifyEnd className="size-4" />} tip="Move to the bottom" onClick={() => onUpdate({ y: labelH - element.height })} />
           </div>
         </div>
 
@@ -191,7 +205,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
               aria-checked={!element.isStatic}
               // Keeps what was typed as the preview sample and picks a
               // column name if there isn't one yet (renamable below).
-              onClick={() => onUpdate(contentModeUpdates(element, false))}
+              onClick={() => onUpdate(contentModeUpdates(element, false, () => nextFieldName(element.type, allElements)))}
               data-active={!element.isStatic}
             >
               Changes per label
@@ -201,21 +215,34 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1.5">
-            <CompactTextInput label="Spreadsheet column name" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
-            <CustomSelect
-              compact
-              value={MANIFEST_FIELD_OPTIONS.some((option) => option.value === element.fieldName) ? element.fieldName || '' : ''}
-              onChange={(v) => {
-                if (v) onUpdate({ fieldName: v });
-              }}
-              aria-label="Pick a manifest column"
-              options={[{ value: '', label: 'Or pick a manifest column' }, ...MANIFEST_FIELD_OPTIONS]}
-            />
-            <CompactTextInput label="Sample text (preview only)" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Shown in the preview" />
+            <StackedField label="Spreadsheet column" hint="Type the column heading from your spreadsheet, e.g. Product Name.">
+              {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.fieldName || ''} onChange={(e) => onUpdate({ fieldName: e.target.value })} placeholder="e.g. Product Name" />}
+            </StackedField>
+            {(showManifest || usesManifest(allElements, element)) ? (
+              <StackedField label="Or a Metrc Manifest field">
+                {(id) => <CustomSelect
+                  compact
+                  id={id}
+                  value={MANIFEST_FIELD_OPTIONS.some((option) => option.value === element.fieldName) ? element.fieldName || '' : ''}
+                  onChange={(v) => { if (v) onUpdate({ fieldName: v }); }}
+                  placeholder="Pick a Manifest field"
+                  options={MANIFEST_FIELD_OPTIONS}
+                />}
+              </StackedField>
+            ) : (
+              <button type="button" className="min-h-control-sm text-left text-sm text-zinc-400 hover:text-zinc-100" onClick={() => setShowManifest(true)}>Printing from a Metrc Manifest?</button>
+            )}
+            <StackedField label="Sample for the preview">
+              {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.defaultValue || ''} onChange={(e) => onUpdate({ defaultValue: e.target.value })} placeholder="Only shown here, never printed" />}
+            </StackedField>
             {element.type === 'text' && (
-              <div className="grid grid-cols-1 gap-1.5">
-                <CompactTextInput label="Text before" value={element.prefix || ''} onChange={(v) => onUpdate({ prefix: v })} placeholder="SKU: " />
-                <CompactTextInput label="Text after" value={element.suffix || ''} onChange={(v) => onUpdate({ suffix: v })} placeholder=" oz" />
+              <div className="grid grid-cols-2 gap-1.5">
+                <StackedField label="Text before">
+                  {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.prefix || ''} onChange={(e) => onUpdate({ prefix: e.target.value })} placeholder="e.g. SKU:" />}
+                </StackedField>
+                <StackedField label="Text after">
+                  {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.suffix || ''} onChange={(e) => onUpdate({ suffix: e.target.value })} placeholder="e.g. oz" />}
+                </StackedField>
               </div>
             )}
           </div>
@@ -238,186 +265,82 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 // ── Type-specific property sections ──
 
 function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat; bitmap: boolean }) {
-  const isThermal = format.type === 'thermal';
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
       <textarea
         value={element.isStatic ? element.content : element.defaultValue || ''}
-        aria-label={element.isStatic ? 'Text on every label' : 'Sample text (preview only)'}
+        aria-label={element.isStatic ? 'Text on every label' : 'Sample for the preview'}
         onChange={(e) => onUpdate(element.isStatic ? { content: e.target.value } : { defaultValue: e.target.value })}
-        placeholder={element.isStatic ? 'Type the text' : 'Sample text for the preview'}
+        placeholder={element.isStatic ? 'Type the text' : 'Sample for the preview'}
         rows={3}
         className="field field-sm w-full resize-y py-1.5"
       />
-      <div className="grid grid-cols-2 gap-1.5">
-        <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
-        <CompactInput label="LH" value={element.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
-        <div className="col-span-2"><CompactSelect value={element.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
-      </div>
-      {/* Thermal-only: horizontal character width ratio. Controls ZPL fontW/fontH.
-          0.5 = Zebra native (default, tight/squished), 0.6 = balanced, 0.8 = roomy. */}
-      {isThermal && (
-        <>
-          <div className="grid grid-cols-1 gap-1.5">
-            <CompactInput
-              label="CW"
-              value={element.charWidth ?? (bitmap ? 1 : 0.5)}
-              onChange={(v) => onUpdate({ charWidth: v })}
-              step={0.05}
-              labelRight
-            />
-            <div className="segmented segmented-xs" role="group" aria-label="Letter width preset">
-            <SegmentedIndicator index={[bitmap ? 0.8 : 0.5, bitmap ? 1 : 0.6, bitmap ? 1.2 : 0.8].indexOf(element.charWidth ?? 0.5)} count={3} />
-            {([
-              { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
-              { label: 'Normal', value: bitmap ? 1 : 0.6 },
-              { label: 'Roomy', value: bitmap ? 1.2 : 0.8 },
-            ] as const).map((p) => (
-              <button
-                key={p.label}
-                onClick={() => onUpdate({ charWidth: p.value })}
-                aria-pressed={(element.charWidth ?? 0.5) === p.value}
-                title={`Set character width ratio to ${p.value}`}
-              >
-                {p.label}
-              </button>
-            ))}
-            </div>
-          </div>
-          <div className="flex min-h-control-sm items-center gap-2">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={(element.autoFit ?? bitmap)}
-              onClick={() => onUpdate({ autoFit: !(element.autoFit ?? bitmap) })}
-              aria-labelledby="autofit-label"
-              className="switch"
-            />
-            <span id="autofit-label" className="text-sm text-zinc-300">Auto-fit text</span>
-            {(element.autoFit ?? bitmap) && (
-              <div className="ml-auto w-32">
-                <CompactInput label="Min" value={element.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />
-              </div>
-            )}
-          </div>
-        </>
-      )}
-      {bitmap && <>
-        <div className="grid grid-cols-2 gap-1.5"><CompactSelect value={element.fontStyle ?? 'normal'} options={['normal', 'italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} /><CompactInput label="Track" value={element.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} /></div>
-        <CompactSelect value={element.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} />
-      </>}
-      <CompactSelect value={element.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
-      <div className="segmented segmented-xs" role="group" aria-label="Text alignment">
-        <SegmentedIndicator index={['left', 'center', 'right'].indexOf(element.textAlign)} count={3} />
-        {(['left', 'center', 'right'] as const).map((a) => (
-          <button
-            key={a}
-            onClick={() => onUpdate({ textAlign: a })}
-            aria-pressed={element.textAlign === a}
-          >
-            {a.charAt(0).toUpperCase() + a.slice(1)}
-          </button>
-        ))}
-      </div>
-      {format.type === 'sheet' && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-zinc-400 w-12">Color</span>
-          <input
-            type="color"
-            value={element.color}
-            onChange={(e) => onUpdate({ color: e.target.value })}
-            className="w-6 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
-          />
-          <span className="text-xs text-zinc-400 font-mono">{element.color}</span>
-        </div>
-      )}
+      <TextStyleControls first={element} onUpdate={onUpdate} format={format} bitmap={bitmap} />
     </>
   );
 }
 
 function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: TextElement[]; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat; bitmap: boolean }) {
   const first = elements[0];
-  const isThermal = format.type === 'thermal';
-
   if (!first) return null;
-
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
+      <TextStyleControls first={first} onUpdate={onUpdate} format={format} bitmap={bitmap} />
+    </>
+  );
+}
+
+/** Size, weight, spacing, letter width, auto-fit, font and alignment. */
+function TextStyleControls({ first, onUpdate, format, bitmap }: { first: TextElement; onUpdate: (u: Partial<TemplateElement>) => void; format: LabelFormat; bitmap: boolean }) {
+  const isThermal = format.type === 'thermal';
+  const widths = [bitmap ? 0.8 : 0.5, bitmap ? 1 : 0.6, bitmap ? 1.2 : 0.8];
+  const currentWidth = first.charWidth ?? (bitmap ? 1 : 0.5);
+  const autoFit = first.autoFit ?? bitmap;
+  return (
+    <>
       <div className="grid grid-cols-2 gap-1.5">
         <CompactInput label="Pt" value={first.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
-        <CompactInput label="LH" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
-        <div className="col-span-2"><CompactSelect value={first.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
+        <CompactSelect ariaLabel="Weight" value={first.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
       </div>
+      <CompactInput label="LH" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
       {isThermal && (
         <>
-          <div className="grid grid-cols-1 gap-1.5">
-            <CompactInput
-              label="CW"
-              value={first.charWidth ?? (bitmap ? 1 : 0.5)}
-              onChange={(v) => onUpdate({ charWidth: v })}
-              step={0.05}
-              labelRight
-            />
-            <div className="segmented segmented-xs" role="group" aria-label="Letter width preset">
-            <SegmentedIndicator index={[bitmap ? 0.8 : 0.5, bitmap ? 1 : 0.6, bitmap ? 1.2 : 0.8].indexOf(first.charWidth ?? 0.5)} count={3} />
-            {([
-              { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
-              { label: 'Normal', value: bitmap ? 1 : 0.6 },
-              { label: 'Roomy', value: bitmap ? 1.2 : 0.8 },
-            ] as const).map((p) => (
-              <button
-                key={p.label}
-                onClick={() => onUpdate({ charWidth: p.value })}
-                aria-pressed={(first.charWidth ?? 0.5) === p.value}
-                title={`Set character width ratio to ${p.value}`}
-              >
-                {p.label}
-              </button>
-            ))}
+          <Row label="Letter width" id="letter-width-label" stacked>
+            <div className="segmented segmented-xs" role="group" aria-labelledby="letter-width-label">
+              <SegmentedIndicator index={widths.indexOf(currentWidth)} count={3} />
+              {(['Narrow', 'Normal', 'Wide'] as const).map((text, i) => (
+                <button key={text} onClick={() => onUpdate({ charWidth: widths[i] })} aria-pressed={currentWidth === widths[i]}>{text}</button>
+              ))}
             </div>
+          </Row>
+          <div className="flex min-h-control-sm items-center gap-2">
+            <button type="button" role="switch" aria-checked={autoFit} onClick={() => onUpdate({ autoFit: !autoFit })} aria-labelledby="autofit-label" className="switch" />
+            <span id="autofit-label" className="text-sm text-zinc-300">Shrink long text to fit</span>
           </div>
-          <button
-            type="button"
-            onClick={() => onUpdate({ autoFit: !(first.autoFit ?? bitmap) })}
-            aria-pressed={(first.autoFit ?? bitmap)}
-            className="btn btn-secondary btn-sm w-full"
-          >
-            Auto-fit text {(first.autoFit ?? bitmap) ? 'on' : 'off'}
-          </button>
+          {autoFit && <CompactInput label="Min" value={first.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />}
         </>
       )}
       {bitmap && <>
-        <CompactSelect value={first.fontStyle ?? 'normal'} options={['normal', 'italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} />
-        <CompactInput label="Track" value={first.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} />
-        <CompactSelect value={first.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} />
+        <Row label="Style"><CompactSelect ariaLabel="Style" value={first.fontStyle ?? 'normal'} options={['normal', 'italic']} labels={['Regular', 'Italic']} onChange={v => onUpdate({ fontStyle: v as 'normal' | 'italic' })} /></Row>
+        <CompactInput label="Track" value={first.letterSpacing ?? 0} onChange={v => onUpdate({ letterSpacing: v })} step={0.25} labelRight />
+        <Row label="Sits at"><CompactSelect ariaLabel="Where the text sits in its box" value={first.verticalAlign ?? 'top'} options={['top', 'middle', 'bottom']} labels={['Top', 'Middle', 'Bottom']} onChange={v => onUpdate({ verticalAlign: v as 'top' | 'middle' | 'bottom' })} /></Row>
       </>}
-      <CompactSelect value={first.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} />
-      <div className="segmented segmented-xs" role="group" aria-label="Text alignment">
-        <SegmentedIndicator index={['left', 'center', 'right'].indexOf(first.textAlign)} count={3} />
-        {(['left', 'center', 'right'] as const).map((a) => (
-          <button
-            key={a}
-            onClick={() => onUpdate({ textAlign: a })}
-            aria-pressed={first.textAlign === a}
-          >
-            {a.charAt(0).toUpperCase() + a.slice(1)}
-          </button>
-        ))}
-      </div>
-      {format.type === 'sheet' && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-zinc-400 w-12">Color</span>
-          <input
-            type="color"
-            value={first.color}
-            onChange={(e) => onUpdate({ color: e.target.value })}
-            className="w-6 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
-          />
-          <span className="text-xs text-zinc-400 font-mono">{first.color}</span>
-        </div>
+      {isThermal && !bitmap ? (
+        <p className="text-sm text-zinc-400">Prints in the printer&rsquo;s built-in font.</p>
+      ) : (
+        <Row label="Font"><CompactSelect ariaLabel="Font" value={first.fontFamily} options={bitmap ? BITMAP_FONTS : ['Arial', 'Helvetica', 'IBM Plex Mono', 'Times New Roman', 'Courier', 'monospace']} onChange={(v) => onUpdate({ fontFamily: v })} /></Row>
       )}
+      <Row label="Align" id="text-align-label" stacked>
+        <div className="segmented segmented-xs" role="group" aria-labelledby="text-align-label">
+          <SegmentedIndicator index={['left', 'center', 'right'].indexOf(first.textAlign)} count={3} />
+          {(['left', 'center', 'right'] as const).map((a) => (
+            <button key={a} onClick={() => onUpdate({ textAlign: a })} aria-pressed={first.textAlign === a}>{a.charAt(0).toUpperCase() + a.slice(1)}</button>
+          ))}
+        </div>
+      </Row>
+      {format.type === 'sheet' && <ColorRow label="Color" value={first.color} onChange={(v) => onUpdate({ color: v })} />}
     </>
   );
 }
@@ -425,34 +348,44 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
 function QRProps({ element, onUpdate }: { element: QRElement; onUpdate: (u: Partial<TemplateElement>) => void }) {
   return (
     <>
-      <SectionLabel icon={<QrCode className="w-3 h-3" />} label="QR Code" />
+      <SectionLabel icon={<QrCode className="w-3 h-3" />} label="QR code" />
       {element.isStatic
-        ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Web address or text to encode" full />
-        : <p className="text-xs text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
-      <CompactSelect
-        value={element.errorCorrection}
-        options={['L', 'M', 'Q', 'H']}
-        labels={['Error correction: low', 'Error correction: medium', 'Error correction: quartile', 'Error correction: high']}
-        onChange={(v) => onUpdate({ errorCorrection: v as 'L' | 'M' | 'Q' | 'H' })}
-      />
+        ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Web address or text" full />
+        : <p className="text-sm text-zinc-400">Each label gets its own value from the spreadsheet.</p>}
+      <Row label="Survives damage">
+        <CompactSelect
+          ariaLabel="How much damage the QR code survives"
+          value={element.errorCorrection}
+          options={['L', 'M', 'Q', 'H']}
+          labels={['A little (smallest)', 'Some (recommended)', 'More', 'Most (largest)']}
+          onChange={(v) => onUpdate({ errorCorrection: v as 'L' | 'M' | 'Q' | 'H' })}
+        />
+      </Row>
     </>
   );
 }
+
+const BARCODE_TYPES: Array<[BarcodeFormat, string]> = [
+  ['CODE128', 'Code 128 (letters and numbers)'],
+  ['CODE39', 'Code 39 (capitals and numbers)'],
+  ['UPC', 'UPC-A (12 digits)'],
+  ['EAN13', 'EAN-13 (13 digits)'],
+  ['EAN8', 'EAN-8 (8 digits)'],
+  ['ITF14', 'ITF-14 (14 digits)'],
+];
 
 function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate: (u: Partial<TemplateElement>) => void }) {
   return (
     <>
       <SectionLabel icon={<Barcode className="w-3 h-3" />} label="Barcode" />
       {element.isStatic
-        ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Number or text to encode" full />
-        : <p className="text-xs text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
-      <CompactSelect
-        value={element.barcodeFormat}
-        options={['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14']}
-        onChange={(v) => onUpdate({ barcodeFormat: v as BarcodeFormat })}
-      />
-      <div className="flex min-h-control-sm items-center justify-between">
-        <span id="barcode-text-label" className="text-sm text-zinc-300">Show the number under the barcode</span>
+        ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Number or text" full />
+        : <p className="text-sm text-zinc-400">Each label gets its own value from the spreadsheet.</p>}
+      <Row label="Type">
+        <CompactSelect ariaLabel="Barcode type" value={element.barcodeFormat} options={BARCODE_TYPES.map(([v]) => v)} labels={BARCODE_TYPES.map(([, l]) => l)} onChange={(v) => onUpdate({ barcodeFormat: v as BarcodeFormat })} />
+      </Row>
+      <div className="flex min-h-control-sm items-center justify-between gap-2">
+        <span id="barcode-text-label" className="text-sm text-zinc-300">Show the number under it</span>
         <Toggle checked={element.showText} onChange={(v) => onUpdate({ showText: v })} labelledBy="barcode-text-label" />
       </div>
     </>
@@ -463,8 +396,8 @@ function LineProps({ element, onUpdate }: { element: LineElement; onUpdate: (u: 
   return (
     <>
       <SectionLabel icon={<span className="w-3 h-0.5 bg-current rounded" />} label="Line" />
-      <CompactSelect value={element.lineStyle || 'solid'} options={['solid', 'dotted', 'dashed']} onChange={(v) => onUpdate({ lineStyle: v as LineElement['lineStyle'] })} />
-      <CompactInput label="Wt" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} />
+      <Row label="Style"><CompactSelect ariaLabel="Line style" value={element.lineStyle || 'solid'} options={['solid', 'dotted', 'dashed']} labels={['Solid', 'Dotted', 'Dashed']} onChange={(v) => onUpdate({ lineStyle: v as LineElement['lineStyle'] })} /></Row>
+      <CompactInput label="Wt" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} labelRight />
       <ColorRow label="Color" value={element.color} onChange={(v) => onUpdate({ color: v })} />
     </>
   );
@@ -473,12 +406,12 @@ function LineProps({ element, onUpdate }: { element: LineElement; onUpdate: (u: 
 function RectProps({ element, onUpdate }: { element: RectangleElement; onUpdate: (u: Partial<TemplateElement>) => void }) {
   return (
     <>
-      <SectionLabel icon={<Square className="w-3 h-3" />} label="Rectangle" />
+      <SectionLabel icon={<Square className="w-3 h-3" />} label="Box" />
       <div className="grid grid-cols-2 gap-1.5">
-        <CompactInput label="Bdr" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} />
-        <CompactInput label="Rad" value={element.borderRadius} onChange={(v) => onUpdate({ borderRadius: v })} step={1} />
+        <CompactInput label="Bdr" value={element.strokeWidth} onChange={(v) => onUpdate({ strokeWidth: v })} step={0.5} labelRight />
+        <CompactInput label="Rad" value={element.borderRadius} onChange={(v) => onUpdate({ borderRadius: v })} step={1} labelRight />
       </div>
-      <ColorRow label="Stroke" value={element.strokeColor} onChange={(v) => onUpdate({ strokeColor: v })} />
+      <ColorRow label="Border" value={element.strokeColor} onChange={(v) => onUpdate({ strokeColor: v })} />
       <ColorRow label="Fill" value={element.fillColor || '#000000'} onChange={(v) => onUpdate({ fillColor: v })} />
     </>
   );
@@ -498,23 +431,25 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
   };
   return (
     <>
-      <SectionLabel icon={<Image className="w-3 h-3" />} label="Image" />
+      <SectionLabel icon={<Image className="w-3 h-3" />} label="Picture" />
       <input
         type="file"
+        aria-label="Choose a picture"
         accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
         disabled={uploading}
         onChange={e => void handleUpload(e)}
-        className="text-sm text-zinc-400 file:mr-2 file:min-h-control-sm file:px-3 file:rounded-md file:border file:border-zinc-700 file:text-sm file:font-medium file:bg-zinc-800 file:text-zinc-100 hover:file:bg-zinc-700 file:cursor-pointer w-full"
+        className="text-sm text-zinc-400 file:mr-2 file:min-h-control-sm file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-zinc-800 file:text-zinc-100 hover:file:bg-zinc-700 file:cursor-pointer w-full"
       />
-      {uploading && <p className="text-xs text-zinc-500">Preparing image…</p>}
-      {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
-      <p className="text-xs text-zinc-500">Large images are scaled down to 1200 px on the longest side.</p>
+      {uploading && <p className="text-sm text-zinc-400">Preparing the picture…</p>}
+      {uploadError && <p role="alert" className="text-sm text-red-400">{uploadError}</p>}
+      <Row label="Picture fit">
+        <CompactSelect ariaLabel="Picture fit" value={element.objectFit} options={['contain', 'cover', 'fill']} labels={['Shrink to fit', 'Fill and crop', 'Stretch']} onChange={(v) => onUpdate({ objectFit: v as ImageElement['objectFit'] })} />
+      </Row>
       <label className="flex min-h-control-sm items-center gap-2 text-sm text-zinc-300">
-        <input type="checkbox" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
-        Choose image during run setup
+        <input type="checkbox" className="size-4 accent-amber-500" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
+        Pick the picture when starting a run
       </label>
-      <p className="text-xs text-zinc-500">One image per run, not per data row. This image remains the default; position, size and fit stay fixed.</p>
-      <CompactSelect value={element.objectFit} options={['contain', 'cover', 'fill']} onChange={(v) => onUpdate({ objectFit: v as ImageElement['objectFit'] })} />
+      {element.runSelectable && <p className="text-sm text-zinc-400">One picture for the whole run. This one is used if you don&rsquo;t pick another.</p>}
     </>
   );
 }
@@ -531,10 +466,38 @@ function Divider() {
   return <div className="h-1" aria-hidden="true" />;
 }
 
+/** A label to the left of a control, so every select says what it is. */
+function Row({ label, id, children, stacked }: { label: string; id?: string; children: React.ReactNode; stacked?: boolean }) {
+  return (
+    <div className={stacked ? 'space-y-1 pt-1' : 'flex min-h-control-sm items-center gap-2'}>
+      <span id={id} className={stacked ? 'block text-sm text-zinc-400' : 'w-24 shrink-0 text-sm text-zinc-400'}>{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+/** A label above a text field, with an optional one-line hint below. */
+function StackedField({ label, hint, children }: { label: string; hint?: string; children: (id: string) => React.ReactNode }) {
+  const id = useId();
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className="block text-sm text-zinc-400">{label}</label>
+      {children(id)}
+      {hint && <p className="text-xs text-zinc-500">{hint}</p>}
+    </div>
+  );
+}
+
+/** Show the Manifest picker only for designs that already use Manifest fields. */
+function usesManifest(elements: TemplateElement[], current: TemplateElement): boolean {
+  const names = new Set<string>(MANIFEST_FIELD_OPTIONS.map((o) => o.value));
+  return [...elements, current].some((el) => !!el.fieldName && names.has(el.fieldName));
+}
+
 function CompactInput({ label, value, onChange, step, labelRight }: {
   label: string; value: number; onChange: (v: number) => void; step: number; labelRight?: boolean;
 }) {
-  const accessibleLabel = ({ S: 'QR size', W: 'Width', H: 'Height', X: 'Distance from left edge', Y: 'Distance from top edge', Pt: 'Font size in points', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest font size for auto-fit', Track: 'Letter spacing', Wt: 'Line thickness', Bdr: 'Border thickness', Rad: 'Corner rounding' } as Record<string, string>)[label] || label;
+  const accessibleLabel = ({ S: 'QR size', W: 'Width', H: 'Height', X: 'Distance from left edge', Y: 'Distance from top edge', Pt: 'Font size in points', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest font size for auto-fit', Track: 'Letter spacing', Wt: 'Line thickness in dots', Bdr: 'Border thickness in dots', Rad: 'Corner rounding in dots' } as Record<string, string>)[label] || label;
   const visibleLabel = VISIBLE_LABELS[label] || label;
   const [draft, setDraft] = useState(() => formatInputNumber(value));
   const [isFocused, setIsFocused] = useState(false);
@@ -592,14 +555,7 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
   );
 }
 
-const VISIBLE_LABELS: Record<string, string> = { S: 'Size', W: 'Width', H: 'Height', X: 'Left', Y: 'Top', Pt: 'Font pt', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest', Track: 'Letter spacing', Wt: 'Thickness', Bdr: 'Border', Rad: 'Corners' };
-
-/** "203 dots" -> "1.00 in (25.4 mm)"; inches -> "1.00 in (25.4 mm)". */
-function physicalSize(value: number, isThermal: boolean, dpi: number): string {
-  const inches = isThermal ? value / dpi : value;
-  if (!Number.isFinite(inches)) return '';
-  return `${inches.toFixed(2)} in (${(inches * 25.4).toFixed(1)} mm)`;
-}
+const VISIBLE_LABELS: Record<string, string> = { S: 'Size', W: 'Width', H: 'Height', X: 'From left', Y: 'From top', Pt: 'Size (pt)', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest size (pt)', Track: 'Letter spacing', Wt: 'Thickness', Bdr: 'Border', Rad: 'Corners' };
 
 function formatInputNumber(value: number): string {
   return Number.isFinite(value) ? String(Math.round(value * 1000) / 1000) : '';
@@ -625,12 +581,13 @@ function CompactTextInput({ label, value, onChange, placeholder, full }: {
   );
 }
 
-function CompactSelect({ value, options, labels, onChange }: {
-  value: string; options: string[]; labels?: string[]; onChange: (v: string) => void;
+function CompactSelect({ value, options, labels, onChange, ariaLabel }: {
+  value: string; options: string[]; labels?: string[]; onChange: (v: string) => void; ariaLabel?: string;
 }) {
   return (
     <CustomSelect
       compact
+      aria-label={ariaLabel}
       value={value}
       onChange={onChange}
       options={options.map((o, i) => ({ value: o, label: labels ? labels[i] : o }))}
@@ -641,14 +598,13 @@ function CompactSelect({ value, options, labels, onChange }: {
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="flex items-center gap-2 h-control-sm">
-      <span className="text-sm text-zinc-400 w-12 flex-shrink-0">{label}</span>
+      <span className="text-sm text-zinc-400 w-24 flex-shrink-0">{label}</span>
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="size-7 rounded border border-zinc-700 bg-transparent cursor-pointer flex-shrink-0"
       />
-      <span className="text-xs text-zinc-400 font-mono">{value}</span>
     </label>
   );
 }

@@ -5,6 +5,7 @@ import { Printer, RefreshCw, Code2, ZoomIn, ZoomOut, Maximize2, SquareDashed, Ch
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
+import { plainRenderWarning } from '@/lib/designerLayout';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { PrintControls } from './PrintControls';
 import { OfficePreviewPrint } from './OfficePreviewPrint';
@@ -49,7 +50,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
       setZpl(nextZpl); setPreviewUrl(url); setRenderedSignature(signature);
     } catch (err) {
       if (token !== revision.current) return;
-      setError(friendlyRenderError(friendlyError(err, 'The preview could not be drawn.'), template.elements, format.labelsAcross || 1));
+      setError(plainRenderWarning(friendlyError(err, 'The preview could not be drawn.'), (m) => friendlyRenderError(m, template.elements, format.labelsAcross || 1)));
       setPreviewUrl(null); setZpl('');
       if (template.thermalRenderMode === 'bitmap-v1') {
         try {
@@ -81,7 +82,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
   const basePreviewWidth = Math.min(900, Math.max(520, format.width * (format.dpi || 203) * 1.25));
 
   return (
-    <div className="border-t border-zinc-800 flex flex-col shrink-0">
+    <div className="flex flex-col shrink-0">
       <div className="flex items-center gap-2 px-4 py-2 flex-wrap sm:px-6">
         <Printer className="w-4 h-4 text-zinc-500 max-sm:hidden" aria-hidden="true" />
         <button
@@ -90,7 +91,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md text-left min-h-control-sm"
         >
           <span className="text-sm text-zinc-100 font-medium">Print preview</span>
-          <span className="text-xs text-zinc-400 max-sm:hidden">{template.thermalRenderMode === 'bitmap-v1' ? 'Exact bitmap proof — bundled fonts' : 'Actual ZPL output — open to check alignment'}</span>
+          <span className="text-xs text-zinc-400 max-sm:hidden">Exactly what the printer makes</span>
           <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
 
@@ -135,15 +136,6 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
             <SquareDashed className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setShowZPL(!showZPL)}
-            title="View ZPL code"
-            aria-label="View ZPL code"
-            aria-pressed={showZPL}
-            className={`btn btn-ghost btn-icon btn-sm ${showZPL ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400'}`}
-          >
-            <Code2 className="w-4 h-4" />
-          </button>
-          <button
             onClick={fetchPreview}
             disabled={loading}
             title="Refresh preview"
@@ -171,7 +163,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
         {loading && !previewUrl ? (
           <div className="flex items-center justify-center text-zinc-500 text-sm">
             <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-            Rendering…
+            Drawing the preview…
           </div>
         ) : error && !previewUrl ? (
           <div className="flex items-center justify-center text-red-400 text-sm">
@@ -186,7 +178,7 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
                 At zoom>1 it grows past container bounds and parent scrolls. */}
             <img
               src={previewUrl}
-              alt={error ? 'Editing preview with warnings' : 'ZPL Preview'}
+              alt={error ? 'Print preview, with problems to fix' : 'Print preview'}
               className="rounded-md"
               style={{
                 // Native-DPI render — keep pixelated for sharp bitmap-font edges;
@@ -207,10 +199,14 @@ export function ZPLPreview({ format, template, testData }: ZPLPreviewProps) {
           </div>
         ) : (
           <div className="flex items-center justify-center text-zinc-500 text-sm">
-            No preview available
+            No preview yet
           </div>
         )}
           </div>
+          {/* The raw printer commands, for whoever sets up printers. */}
+          <button type="button" onClick={() => setShowZPL(!showZPL)} aria-pressed={showZPL} className="mt-2 inline-flex min-h-control-sm items-center gap-1.5 self-start text-xs text-zinc-500 hover:text-zinc-300">
+            <Code2 className="size-3.5" aria-hidden="true" />{showZPL ? 'Hide printer code' : 'Show printer code'}
+          </button>
         </div>
       )}
     </div>

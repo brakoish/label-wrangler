@@ -1,8 +1,9 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, Plus, ArrowLeft, Copy, Globe, Save, Lock, Unlock } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Trash2, Plus, ArrowLeft, Copy, Globe, Save, Lock, Unlock, ChevronRight } from 'lucide-react';
 import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
+import { elementTypeName, friendlyFieldName } from '@/lib/fieldLabels';
 
 interface ElementListProps {
   elements: TemplateElement[];
@@ -42,7 +43,7 @@ export function ElementList({
       {onBackToTemplates && (
         <button
           onClick={onBackToTemplates}
-          className="btn btn-ghost justify-start rounded-none border-b border-zinc-800"
+          className="btn btn-ghost justify-start rounded-none"
         >
           <ArrowLeft className="w-4 h-4" />
           All designs
@@ -56,9 +57,9 @@ export function ElementList({
           className="btn btn-primary w-full"
         >
           <Plus className="w-4 h-4" />
-          Add element
+          Add an item
         </button>
-        <details className="group text-sm text-zinc-400"><summary className="flex min-h-control-sm cursor-pointer items-center rounded-md hover:text-zinc-100">Reusable elements</summary>
+        <details className="group text-sm text-zinc-400"><summary className="flex min-h-control-sm cursor-pointer list-none items-center gap-1.5 rounded-md hover:text-zinc-100 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 transition-transform duration-200 ease-out group-open:rotate-90" aria-hidden="true" />Saved items</summary>
         <div className="space-y-2 pt-1">
         {onInsertGlobal && (
           <button
@@ -66,7 +67,7 @@ export function ElementList({
             className="btn btn-secondary btn-sm w-full"
           >
             <Globe className="w-4 h-4" />
-            Insert reusable element
+            Add a saved item
           </button>
         )}
         {onSaveAsGlobal && elements.length > 0 && (
@@ -76,7 +77,7 @@ export function ElementList({
             className="btn btn-secondary btn-sm w-full"
           >
             <Save className="w-4 h-4" />
-            Save selection for reuse
+            Save selected for reuse
           </button>
         )}
         </div>
@@ -85,13 +86,13 @@ export function ElementList({
 
       <p className="px-3 pb-2 text-xs text-zinc-500 max-lg:hidden">Shift or Ctrl-click to select several.</p>
       {primary && <div className="mx-3 mb-2 space-y-1.5 rounded-lg bg-zinc-900 p-2" aria-label="Selected layer actions">
-        <p className="text-xs text-zinc-400">{selected.length} selected{selected.some(e => e.locked) ? ' · locked layers stay protected' : ''}</p>
+        <p className="text-xs text-zinc-400">{selected.length} selected{selected.some(e => e.locked) ? '. Locked items can’t move.' : ''}</p>
         <div className="grid grid-cols-2 gap-0.5">
           {([['top', 'Move to top'], ['back', 'Move to back'], ['up', 'Move up'], ['down', 'Move down']] as const).map(([direction, label]) => (
             <button key={direction} onClick={() => onMoveElement(primary.id, direction)} disabled={moveLayers(elements, selectedElementIds, direction) === elements} className="btn btn-ghost btn-sm justify-start px-2 text-xs">{label}</button>
           ))}
-          <button onClick={() => onLockElements(selectedElementIds, true)} disabled={selected.every(e => e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Lock selected</button>
-          <button onClick={() => onLockElements(selectedElementIds, false)} disabled={selected.every(e => !e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Unlock selected</button>
+          <button onClick={() => onLockElements(selectedElementIds, true)} disabled={selected.every(e => e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Lock</button>
+          <button onClick={() => onLockElements(selectedElementIds, false)} disabled={selected.every(e => !e.locked)} className="btn btn-ghost btn-sm justify-start px-2 text-xs">Unlock</button>
         </div>
       </div>}
       {/* Element list */}
@@ -137,7 +138,7 @@ function ElementItem({
 }) {
   const icon = getElementIcon(element.type, `w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-zinc-400'}`);
   const label = getElementLabel(element);
-  const typeLabel = element.type.charAt(0).toUpperCase() + element.type.slice(1);
+  const typeLabel = elementTypeName(element.type);
 
   return (
     <div
@@ -159,16 +160,9 @@ function ElementItem({
       {/* Label */}
       <div className="flex-1 min-w-0">
         <button aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-zinc-500">{typeLabel}</span>
-          {!element.isStatic && (
-            <span className="text-xs text-amber-300">
-              · Changes per label
-            </span>
-          )}
-        </div>
+        {(label !== typeLabel || !element.isStatic) && <p className="truncate text-xs text-zinc-500">{label !== typeLabel ? typeLabel : ''}{!element.isStatic ? `${label !== typeLabel ? ', c' : 'C'}hanges per label` : ''}</p>}
       </div>
-      {(isSelected || element.locked) && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
+      {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 
       {/* Actions */}
       <div className={isSelected ? "flex items-center" : "hidden"}>
@@ -207,14 +201,7 @@ function getElementIcon(type: string, className: string) {
 }
 
 function getElementLabel(element: TemplateElement): string {
-  if (element.fieldName && !element.isStatic) return element.fieldName;
-  switch (element.type) {
-    case 'text': return element.content || 'Text';
-    case 'qr': return 'QR Code';
-    case 'barcode': return 'Barcode';
-    case 'line': return 'Line';
-    case 'rectangle': return 'Rectangle';
-    case 'image': return 'Image';
-    default: return 'Element';
-  }
+  if (element.fieldName && !element.isStatic) return friendlyFieldName(element.fieldName);
+  if (element.type === 'text' && element.content?.trim()) return element.content.trim();
+  return elementTypeName(element.type);
 }

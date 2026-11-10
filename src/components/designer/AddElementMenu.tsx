@@ -15,86 +15,44 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
   if (!isOpen) return null;
 
   const elementTypes: Array<{ type: ElementType; icon: typeof Type; label: string; description: string }> = [
-    {
-      type: 'text',
-      icon: Type,
-      label: 'Text',
-      description: 'Words, descriptions, or text that changes per label',
-    },
-    {
-      type: 'qr',
-      icon: QrCode,
-      label: 'QR Code',
-      description: 'Add scannable QR codes for URLs, IDs, or data',
-    },
-    {
-      type: 'barcode',
-      icon: Barcode,
-      label: 'Barcode',
-      description: 'Add 1D barcodes (CODE128, UPC, EAN, etc.)',
-    },
-    {
-      type: 'line',
-      icon: Minus,
-      label: 'Line',
-      description: 'Add decorative or dividing lines',
-    },
-    {
-      type: 'rectangle',
-      icon: Square,
-      label: 'Rectangle',
-      description: 'Add boxes, borders, or backgrounds',
-    },
-    {
-      type: 'image',
-      icon: Image,
-      label: 'Image',
-      description: 'Add logos or static images',
-    },
+    { type: 'text', icon: Type, label: 'Text', description: 'Words or numbers' },
+    { type: 'barcode', icon: Barcode, label: 'Barcode', description: 'Bars a scanner reads' },
+    { type: 'qr', icon: QrCode, label: 'QR code', description: 'A web link or ID' },
+    { type: 'image', icon: Image, label: 'Picture', description: 'A logo or symbol' },
+    { type: 'line', icon: Minus, label: 'Line', description: 'A divider' },
+    { type: 'rectangle', icon: Square, label: 'Box', description: 'A border or block' },
   ];
 
   return (
-    <Dialog open={isOpen} onClose={onClose} title="Add to your label" className="max-w-2xl">
-      <div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 stagger">
-          {elementTypes.map(({ type, icon: Icon, label, description }) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => {
-                onAddElement(type);
-                onClose();
-              }}
-              className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-800 active:scale-[0.99] group"
-            >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 group-hover:bg-zinc-700 group-hover:text-zinc-50 transition-colors">
-                <Icon className="w-5 h-5" aria-hidden="true" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-zinc-100">
-                  {label}
-                </div>
-                <div className="mt-0.5 text-sm text-zinc-400">{description}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => { onClose(); onInsertGlobal(); }}
-          className="mt-3 flex w-full items-center gap-3 rounded-lg border border-dashed border-zinc-700 p-3 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-800 group"
-        >
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-zinc-300">
-            <Globe className="w-5 h-5" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="font-medium text-zinc-100">Insert a reusable element</div>
-            <div className="mt-0.5 text-sm text-zinc-400">Pieces you saved to use on any design</div>
-          </div>
-        </button>
+    <Dialog open={isOpen} onClose={onClose} title="Add to your label" className="max-w-xl">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 stagger">
+        {elementTypes.map(({ type, icon: Icon, label, description }, i) => (
+          <button
+            key={type}
+            type="button"
+            data-autofocus={i === 0 ? true : undefined}
+            onClick={() => {
+              onAddElement(type);
+              onClose();
+            }}
+            className="flex min-h-control flex-col items-start gap-2 rounded-lg bg-zinc-800 p-3 text-left transition-colors hover:bg-zinc-700 active:scale-[0.98] group"
+          >
+            <Icon className="size-5 text-zinc-300 group-hover:text-zinc-100" aria-hidden="true" />
+            <span>
+              <span className="block font-medium text-zinc-100">{label}</span>
+              <span className="block text-sm text-zinc-400">{description}</span>
+            </span>
+          </button>
+        ))}
       </div>
+      <button
+        type="button"
+        onClick={() => { onClose(); onInsertGlobal(); }}
+        className="btn btn-ghost btn-sm mt-3 -ml-2"
+      >
+        <Globe className="size-4" aria-hidden="true" />
+        Add a saved item
+      </button>
     </Dialog>
   );
 }

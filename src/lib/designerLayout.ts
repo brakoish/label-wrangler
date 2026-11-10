@@ -160,13 +160,16 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
     .map((el) => ({ el, box: printedBounds(el, format, values) }))
     .filter((item): item is { el: TemplateElement; box: Box } => !!item.box);
 
+  // A Code 128 is as wide as its value needs, whatever its box says. That
+  // only matters when the extra width lands on something or off the label,
+  // so it is named inside those problems rather than on its own.
+  const wider = new Set(placed.filter(({ el, box }) => el.type === 'barcode' && rotation(el) % 180 === 0 && box.width > el.width + 2).map(({ el }) => el.id));
+  const widerNote = (el: TemplateElement) => (wider.has(el.id) ? ' is wider than its box and' : '');
+
   for (const { el, box } of placed) {
-    if (el.type === 'barcode' && rotation(el) % 180 === 0 && box.width > el.width + 2) {
-      problems.push({ kind: 'wider-than-box', ids: [el.id], message: `${capitalise(itemName(el))} prints ${Math.round(box.width / dpi * 100) / 100}" wide, wider than its box. Shorten the value or make room.` });
-    }
     const tolerance = 2;
     if (box.x < -tolerance || box.y < -tolerance || box.x + box.width > labelW + tolerance || box.y + box.height > labelH + tolerance) {
-      problems.push({ kind: 'off-label', ids: [el.id], message: `${capitalise(itemName(el))} runs off the edge of the label and will be cut off.` });
+      problems.push({ kind: 'off-label', ids: [el.id], message: `${capitalise(itemName(el))}${widerNote(el)} runs off the edge of the label${wider.has(el.id) ? '' : ' and will be cut off'}.` });
     }
   }
 
@@ -182,10 +185,13 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
       // Name the item drawn on top first.
       const [top, under] = a.el.zIndex >= b.el.zIndex ? [a.el, b.el] : [b.el, a.el];
       const scan = top.type === 'barcode' || top.type === 'qr' || under.type === 'barcode' || under.type === 'qr';
+      const wide = wider.has(top.id) ? top : wider.has(under.id) ? under : null;
       problems.push({
         kind: 'overlap',
         ids: [top.id, under.id],
-        message: `${capitalise(itemName(top))} covers ${itemName(under)}${scan ? ' — it may not scan' : ''}.`,
+        message: wide
+          ? `${capitalise(itemName(wide))}${widerNote(wide)} prints over ${itemName(wide === top ? under : top)} — it may not scan.`
+          : `${capitalise(itemName(top))} covers ${itemName(under)}${scan ? ' — it may not scan' : ''}.`,
       });
     }
   }
@@ -221,4 +227,16 @@ export function freeSpot(
     }
   }
   return { x: round(margin), y: round(margin), fits: false };
+}
+
+/**
+ * Render warnings in plain words for the designer. friendlyRenderError
+ * handles "Lane 1, <id>: …"; the bitmap proof also says "Lane 1: …" with no
+ * item named, and "Lane" means nothing to a person.
+ */
+export function plainRenderWarning(message: string, friendly: (message: string) => string): string {
+  return friendly(message)
+    .replace(/Lane \d+:\s*Image is missing/gi, 'A picture box has no picture yet. Choose a file or delete the box.')
+    .replace(/Lane \d+:\s*/g, '')
+    .trim();
 }

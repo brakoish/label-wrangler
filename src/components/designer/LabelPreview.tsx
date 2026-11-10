@@ -11,6 +11,8 @@ import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 import { barcodeViewBox } from '@/lib/barcodeViewBox';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
+import { friendlyFieldName } from '@/lib/fieldLabels';
+import { plainRenderWarning, printedBounds, type LayoutProblem } from '@/lib/designerLayout';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -26,9 +28,12 @@ interface LabelPreviewProps {
   onSelectElements?: (ids: string[]) => void;
   onDuplicateSelection?: (ids: Set<string>) => TemplateElement[];
   onGestureCancel?: () => void;
+  /** Items that overlap or run off the label (native thermal): outlined in red and listed. */
+  layoutProblems?: LayoutProblem[];
 }
 
-export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [] }: LabelPreviewProps) {
+  const problemIdSet = useMemo(() => new Set(layoutProblems.flatMap(p => p.ids)), [layoutProblems]);
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
   const [bitmapProof, setBitmapProof] = useState<{ advisories: Array<{ elementId: string; message: string }>; key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
   // Keep editor artwork attached to the current gesture, not a delayed HTTP result.
@@ -475,7 +480,8 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
     <div ref={containerRef} data-designer-canvas className="relative flex-1 shrink-0 flex items-center justify-center px-6 pt-16 pb-6 overflow-hidden" style={{ minHeight: '340px', height: 'calc(100dvh - 270px)', maxHeight: '800px' }}>
-      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix highlighted objects before printing: ${bitmapProof.warnings[0].message}` : bitmapProof.advisories.length ? bitmapProof.advisories[0].message : 'This is exactly how it will print · double-click text to edit' : 'Updating the print preview…')}</p>}
+      {bitmap && <p role="status" className={`absolute top-1 left-3 right-3 text-xs ${bitmapError ? 'text-red-400' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? bitmapProof.warnings.length ? `Fix the item outlined in red before printing: ${plainRenderWarning(bitmapProof.warnings[0].message, (m) => friendlyRenderError(m, elements))}` : bitmapProof.advisories.length ? plainRenderWarning(bitmapProof.advisories[0].message, (m) => friendlyRenderError(m, elements)) : 'This is exactly how it will print. Double-click text to edit it.' : 'Updating the print preview…')}</p>}
+      {!bitmap && layoutProblems.length > 0 && <p role="status" className="absolute top-1 left-3 right-3 text-sm text-amber-300">{layoutProblems[0].message}{layoutProblems.length > 1 ? ` (and ${layoutProblems.length - 1} more)` : ''}</p>}
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button className="absolute top-8 left-3 z-10 rounded bg-amber-500 px-2 py-1 text-xs text-black" onClick={() => {
         onDragStart?.();
         onUpdateElement(badQr.id, { x: badQr.x + Math.max(0, Math.min(viewBoxWidth - badQrBounds.width, badQrBounds.x)) - badQrBounds.x, y: badQr.y + Math.max(0, Math.min(viewBoxHeight - badQrBounds.height, badQrBounds.y)) - badQrBounds.y });
@@ -560,18 +566,29 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
                 </g>
                 {/* Hit area — invisible rect that ensures small/thin elements are still draggable */}
                 {(() => {
-                  const bounds = liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) ?? elementInteractionBounds(element, textBounds);
+                  const box = liveBounds(element.id, bitmapProof?.qrInkBounds[element.id]) ?? elementInteractionBounds(element, textBounds);
+                  // What the printer really draws (a Code 128 is as wide as its
+                  // value needs), so the bars you can see are the bars you can grab.
+                  const printed = !bitmap && format.type === 'thermal' && element.type === 'barcode' ? printedBounds(element, format, testData) : null;
+                  const bounds = printed ? unionBox(box, printed) : box;
+                  const problem = problemIdSet.has(element.id);
                   return (
-                    <rect
-                      x={bounds.x}
-                      y={bounds.y}
-                      width={Math.max(bounds.width, viewBoxWidth * 0.02)}
-                      height={Math.max(bounds.height, viewBoxHeight * 0.02)}
-                      fill="transparent"
-                      stroke={bitmapProof?.warnings.some(w => w.elementId === element.id) ? '#ef4444' : undefined}
-                      strokeWidth={1}
-                      strokeDasharray="3 2"
-                    />
+                    <>
+                      <rect
+                        x={bounds.x}
+                        y={bounds.y}
+                        width={Math.max(bounds.width, viewBoxWidth * 0.02)}
+                        height={Math.max(bounds.height, viewBoxHeight * 0.02)}
+                        fill="transparent"
+                        stroke={bitmapProof?.warnings.some(w => w.elementId === element.id) ? '#ef4444' : undefined}
+                        strokeWidth={1}
+                        strokeDasharray="3 2"
+                      />
+                      {problem && (() => {
+                        const outline = (format.type === 'thermal' && !bitmap ? printedBounds(element, format, testData) : null) ?? box;
+                        return <rect data-layout-problem={element.id} x={outline.x} y={outline.y} width={outline.width} height={outline.height} fill="none" stroke="#ef4444" strokeWidth={Math.max(1.5, Math.min(viewBoxWidth, viewBoxHeight) * 0.006)} pointerEvents="none" />;
+                      })()}
+                    </>
                   );
                 })()}
                 {selectedElementIds.has(element.id) && !element.locked && selectedElementIds.size === 1 && (
@@ -764,7 +781,7 @@ function renderElement(element: TemplateElement, format: LabelFormat, elements: 
     case 'qr':
       return <QRElementRenderer key={element.id} element={element as QRElement} format={format} transform={transform} testData={testData} />;
     case 'barcode':
-      return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} transform={transform} testData={testData} />;
+      return <BarcodeElementRenderer key={element.id} element={element as BarcodeElement} format={format} transform={transform} testData={testData} />;
     case 'line':
       return <LineElementRenderer key={element.id} element={element as LineElement} transform={transform} format={format} />;
     case 'rectangle':
@@ -774,6 +791,11 @@ function renderElement(element: TemplateElement, format: LabelFormat, elements: 
     default:
       return null;
   }
+}
+
+function unionBox(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
 }
 
 function normalizedRightAngle(rotation: number | undefined): 0 | 90 | 180 | 270 {
@@ -853,7 +875,8 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
     rawContent = element.content;
   } else {
     const testValue = element.fieldName && testData?.[element.fieldName];
-    rawContent = testValue || element.defaultValue || `{{${element.fieldName || 'field'}}}`;
+    // No sample yet: show the field's plain name, never a {{code}} token.
+    rawContent = testValue || element.defaultValue || friendlyFieldName(element.fieldName);
   }
   const prefix = (!element.isStatic && element.prefix) ? element.prefix : '';
   const suffix = (!element.isStatic && element.suffix) ? element.suffix : '';
@@ -1016,129 +1039,104 @@ function TextElementRenderer({ element, format, onMeasure, testData }: { element
   );
 }
 
-function QRElementRenderer({ element, format, transform, testData }: { element: QRElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
-  const [dataUrl, setDataUrl] = useState<string>('');
-  const clipId = useId().replace(/:/g, '');
-  const content = resolveElementContent(element, testData) || 'QR';
-  const thermalGeometry = format.type === 'thermal' ? thermalRenderGeometry(format) : null;
-
+/**
+ * One element drawn by the same ZPL renderer the print preview uses, so the
+ * canvas shows exactly what the printer makes (a Code 128 as wide as its
+ * value needs, a QR at its whole-dot size). Preview only: the printed bytes
+ * come from generateZPL as before. While a new raster is drawn, the last one
+ * follows the element, so dragging stays smooth.
+ */
+function useElementRaster(element: TemplateElement, format: LabelFormat, testData: Record<string, string> | undefined, enabled: boolean) {
+  const [raster, setRaster] = useState<{ url: string; x: number; y: number; failed?: boolean } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
-    setDataUrl('');
+    const timer = setTimeout(() => {
+      const zpl = generateZPL({ id: `${element.id}-canvas`, name: 'Canvas', formatId: format.id, elements: [element], createdAt: '', updatedAt: '' }, format, testData);
+      renderZplToDataUrl(zpl, format)
+        .then((url) => { if (active) setRaster({ url, x: element.x, y: element.y }); })
+        .catch(() => { if (active) setRaster({ url: '', x: element.x, y: element.y, failed: true }); });
+    }, 60);
+    return () => { active = false; clearTimeout(timer); };
+  }, [element, format, testData, enabled]);
+  return enabled ? raster : null;
+}
 
-    const renderBrowserQr = () => QRCode.toDataURL(content, {
-      errorCorrectionLevel: element.errorCorrection,
-      width: 256,
-      margin: 0,
-      color: { dark: '#000000', light: '#ffffff' },
-    });
-
-    if (format.type !== 'thermal') {
-      renderBrowserQr()
-        .then((url: string) => { if (active) setDataUrl(url); })
-        .catch(() => { if (active) setDataUrl(''); });
-      return () => { active = false; };
-    }
-
-    const zpl = generateZPL(
-      {
-        id: `${element.id}-thermal-preview`,
-        name: 'Thermal Preview',
-        formatId: format.id,
-        elements: [element],
-        createdAt: '',
-        updatedAt: '',
-      },
-      format,
-      testData,
-    );
-
-    renderZplToDataUrl(zpl, format)
-      .then((url) => { if (active) setDataUrl(url); })
-      .catch(() => {
-        if (active) setDataUrl('');
-      });
-
-    return () => { active = false; };
-  }, [content, element, format, testData]);
-
-  if (dataUrl && thermalGeometry) {
-    return (
-      <>
-        <clipPath id={clipId}>
-          <rect
-            x={element.x}
-            y={element.y}
-            width={element.width}
-            height={element.height}
-          />
-        </clipPath>
-        <image
-          x={-thermalGeometry.effectiveSideMDots}
-          y={0}
-          width={thermalGeometry.linerDots}
-          height={thermalGeometry.heightDots}
-          href={dataUrl}
-          clipPath={`url(#${clipId})`}
-          preserveAspectRatio="none"
-          style={{ mixBlendMode: 'multiply' }}
-        />
-      </>
-    );
-  }
-
+function ThermalRaster({ raster, element, format }: { raster: { url: string; x: number; y: number }; element: TemplateElement; format: LabelFormat }) {
+  const clipId = useId().replace(/:/g, '');
+  const geometry = thermalRenderGeometry(format);
+  const dpi = format.dpi || 203;
   return (
     <>
-      {dataUrl ? (
-        <image
-          x={element.x}
-          y={element.y}
-          width={element.width}
-          height={element.height}
-          href={dataUrl}
-          transform={transform}
-          preserveAspectRatio="xMidYMid meet"
-        />
-      ) : (
-        // Placeholder while QR generates
-        <rect
-          x={element.x}
-          y={element.y}
-          width={element.width}
-          height={element.height}
-          fill="#f4f4f5"
-          stroke="#a1a1aa"
-          strokeWidth={element.width * 0.02}
-          strokeDasharray={`${element.width * 0.05} ${element.width * 0.03}`}
-          transform={transform}
-        />
-      )}
+      <clipPath id={clipId}>
+        <rect x={0} y={0} width={format.width * dpi} height={format.height * dpi} />
+      </clipPath>
+      {/* The clip sits on the image itself: a clipped group would isolate
+          the multiply blend and paint white over the items below. */}
+      <image
+        x={-geometry.effectiveSideMDots + element.x - raster.x}
+        y={element.y - raster.y}
+        width={geometry.linerDots}
+        height={geometry.heightDots}
+        href={raster.url}
+        clipPath={`url(#${clipId})`}
+        preserveAspectRatio="none"
+        style={{ mixBlendMode: 'multiply', imageRendering: 'pixelated' }}
+      />
     </>
   );
 }
 
-function BarcodeElementRenderer({ element, transform, testData }: { element: BarcodeElement; transform?: string; testData?: Record<string, string> }) {
+function QRElementRenderer({ element, format, transform, testData }: { element: QRElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
+  const [dataUrl, setDataUrl] = useState<string>('');
+  const content = resolveElementContent(element, testData) || 'QR';
+  const thermal = format.type === 'thermal';
+  const raster = useElementRaster(element, format, testData, thermal);
+
+  useEffect(() => {
+    if (thermal) return;
+    let active = true;
+    QRCode.toDataURL(content, { errorCorrectionLevel: element.errorCorrection, width: 256, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
+      .then((url: string) => { if (active) setDataUrl(url); })
+      .catch(() => { if (active) setDataUrl(''); });
+    return () => { active = false; };
+  }, [content, element.errorCorrection, thermal]);
+
+  if (thermal && raster?.url) return <ThermalRaster raster={raster} element={element} format={format} />;
+
+  return dataUrl && !thermal ? (
+    <image x={element.x} y={element.y} width={element.width} height={element.height} href={dataUrl} transform={transform} preserveAspectRatio="xMidYMid meet" />
+  ) : (
+    // Placeholder while the QR is drawn
+    <rect
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      fill="#f4f4f5"
+      stroke="#a1a1aa"
+      strokeWidth={element.width * 0.02}
+      strokeDasharray={`${element.width * 0.05} ${element.width * 0.03}`}
+      transform={transform}
+    />
+  );
+}
+
+function BarcodeElementRenderer({ element, format, transform, testData }: { element: BarcodeElement; format: LabelFormat; transform?: string; testData?: Record<string, string> }) {
   const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
   const content = resolveElementContent(element, testData) || '123456789';
+  const thermal = format.type === 'thermal';
+  // A per-label barcode with no sample yet still shows bars, as the old canvas did.
+  const values = useMemo(() => (!element.isStatic && element.fieldName && !testData?.[element.fieldName] && !element.defaultValue ? { ...testData, [element.fieldName]: content } : testData), [element.isStatic, element.fieldName, element.defaultValue, testData, content]);
+  const raster = useElementRaster(element, format, values, thermal);
 
   useEffect(() => {
     try {
       const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       document.body.appendChild(tempSvg);
       try {
-      JsBarcode(tempSvg, content, {
-        format: element.barcodeFormat,
-        width: 2,
-        height: 80,
-        displayValue: element.showText,
-        margin: 0,
-        fontSize: 14,
-      });
-
-      // Get the rendered dimensions from JsBarcode's width/height attributes
-      const viewBox = barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height'));
-      const svgContent = tempSvg.innerHTML;
-      setBarcodeData({ svg: svgContent, viewBox });
+        JsBarcode(tempSvg, content, { format: element.barcodeFormat, width: 2, height: 80, displayValue: element.showText, margin: 0, fontSize: 14 });
+        setBarcodeData({ svg: tempSvg.innerHTML, viewBox: barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height')) });
       } finally {
         // Also on a JsBarcode error (e.g. a partial EAN13), so nodes don't leak.
         tempSvg.remove();
@@ -1148,30 +1146,25 @@ function BarcodeElementRenderer({ element, transform, testData }: { element: Bar
     }
   }, [content, element.barcodeFormat, element.showText]);
 
+  if (thermal && raster?.url && !raster.failed) return <ThermalRaster raster={raster} element={element} format={format} />;
+
   if (!barcodeData) {
-    return (
-      <rect
-        x={element.x}
-        y={element.y}
-        width={element.width}
-        height={element.height}
-        fill="#f4f4f5"
-        stroke="#a1a1aa"
-        strokeWidth={element.width * 0.01}
-        transform={transform}
-      />
-    );
+    return <rect x={element.x} y={element.y} width={element.width} height={element.height} fill="#f4f4f5" stroke="#a1a1aa" strokeWidth={element.width * 0.01} transform={transform} />;
   }
 
+  // On a thermal label the bars are as wide as the printer makes them, not
+  // stretched to the box; elsewhere they fit the box as before.
+  const printed = thermal ? printedBounds({ ...element, rotation: 0 }, format, values) : null;
   return (
     <svg
       x={element.x}
       y={element.y}
-      width={element.width}
-      height={element.height}
+      width={printed?.width ?? element.width}
+      height={printed?.height ?? element.height}
       viewBox={barcodeData.viewBox}
-      preserveAspectRatio="xMidYMid meet"
+      preserveAspectRatio={printed ? 'none' : 'xMidYMid meet'}
       transform={transform}
+      overflow="visible"
     >
       <g dangerouslySetInnerHTML={{ __html: barcodeData.svg }} />
     </svg>
