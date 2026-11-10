@@ -424,7 +424,7 @@ function DesignerContent() {
       p.barcodeFit ? { ...p, fix: barcodeFitFix(p.barcodeFit, 'designer') || p.fix } : p
     ));
   }, [currentTemplate, currentFormat, previewValues, measured]);
-  // A barcode that only fits as an exact-print copy gets that action right in the notice.
+  // A barcode that only fits as a picture copy gets that action right in the notice.
   const canExactCopy = currentFormat?.type === 'thermal' && designProblems.some((p) => p.barcodeFit?.fixes.includes('exact-copy'));
   const [exactCopyRequest, setExactCopyRequest] = useState(0);
   // A barcode that won't print whole: a safe change to this design only
@@ -488,8 +488,9 @@ function DesignerContent() {
             onDuplicateTemplate={async (t) => { await useTemplateStore.getState().fetchTemplate(t.id); const full=useTemplateStore.getState().getTemplateById(t.id); if(full && !full.summaryOnly) setDuplicateSource(full); }}
             onRenameTemplate={(t) => setRenameSource(t)}
             onNewTemplate={() => setShowNewTemplateDialog(true)}
-            // Importing outside designs is an admin tool, not an everyday one.
-            extra={isAdmin ? <BitmapTemplateActions onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /> : undefined}
+            // With no designs, everyone can start from the sample; importing a
+            // file is an admin tool, and only admins see these under a list.
+            extra={templates.length === 0 || isAdmin ? <BitmapTemplateActions admin={isAdmin} quiet={templates.length > 0} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} /> : undefined}
           />
 
         </div>

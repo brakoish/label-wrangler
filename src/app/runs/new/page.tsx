@@ -1443,7 +1443,7 @@ function NewRunContent() {
       <div className="flex-1 overflow-auto">
         <div className="page-container space-y-5" style={{ paddingBottom: footerHeight + 24 }}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <h1 className="text-2xl font-semibold text-zinc-100">New print run</h1>
+            <h1 className="text-2xl font-semibold text-zinc-100">New run</h1>
             <ol className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Progress">
               {workflowSteps.map((step, index) => {
                 const current = index === currentStep;

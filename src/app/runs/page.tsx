@@ -492,7 +492,7 @@ export default function RunsPage() {
           <section>
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
-                <h1 className="text-2xl font-semibold text-zinc-100">Print runs</h1>
+                <h1 className="text-2xl font-semibold text-zinc-100">Runs</h1>
                 <p className="mt-1 text-sm text-zinc-400">{runs.length > 0 ? 'Start a run, or pick up where you left off.' : 'A run prints one design with your data, one label per row.'}</p>
               </div>
               {/* One primary on screen: with no runs (empty or couldn't load), the body has it. */}
@@ -724,7 +724,7 @@ function RunsEmptyState({ hasTemplates }: { hasTemplates: boolean }) {
 
 /** Compact chip-sized preset — used when the user has a small number of
  *  presets and we can afford to show them all inline as quick-launch pills
- *  without eating vertical space. Click runs. Hover exposes delete. */
+ *  without eating vertical space. Click runs; Delete sits behind More. */
 function PresetChip({
   preset,
   templateName,
@@ -753,15 +753,12 @@ function PresetChip({
           </span>
         </div>
       </Link>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="ml-1 btn btn-ghost btn-icon btn-sm text-zinc-400 hover:text-red-400"
-        title="Delete preset"
-        aria-label={`Delete preset ${preset.name}`}
-      >
-        <Trash2 className="w-4 h-4" aria-hidden="true" />
-      </button>
+      <Menu
+        label={`More for ${preset.name}`}
+        showLabel={false}
+        className="ml-1 self-center"
+        items={[{ label: 'Delete preset…', icon: <Trash2 className="w-4 h-4" aria-hidden="true" />, danger: true, onSelect: onDelete }]}
+      />
     </div>
   );
 }
@@ -784,15 +781,11 @@ function PresetCard({
           <h3 className="text-sm font-semibold text-zinc-100 truncate">{preset.name}</h3>
           <p className="text-xs text-zinc-400 mt-0.5 truncate">{templateName} {formatName && <span>· {formatName}</span>}</p>
         </div>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="btn btn-ghost btn-icon btn-sm text-zinc-400 hover:text-red-400"
-          title="Delete preset"
-          aria-label={`Delete preset ${preset.name}`}
-        >
-          <Trash2 className="w-4 h-4" aria-hidden="true" />
-        </button>
+        <Menu
+          label={`More for ${preset.name}`}
+          showLabel={false}
+          items={[{ label: 'Delete preset…', icon: <Trash2 className="w-4 h-4" aria-hidden="true" />, danger: true, onSelect: onDelete }]}
+        />
       </div>
       <div className="flex items-center gap-3 text-xs text-zinc-400 mt-3">
         {preset.useCount > 0 && <span>Used {preset.useCount}×</span>}

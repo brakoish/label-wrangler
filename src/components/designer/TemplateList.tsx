@@ -34,7 +34,7 @@ interface TemplateListProps {
   /** When the whole list failed while a design link was opening: one error, one Try again for both. */
   openingName?: string;
   onRetryOpen?: () => void;
-  /** Extra tools under the list (the admin import fold); centred inside the empty state. */
+  /** The empty state's actions when there are no designs yet (load the sample; admins can import). */
   extra?: ReactNode;
 }
 
@@ -118,8 +118,9 @@ export function TemplateList({
       ) : visibleTemplates.length === 0 ? (
         <EmptyState
           title={isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}
-          body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
-        >{templates.length === 0 ? extra : null}</EmptyState>
+          body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design, or start from the sample.'}
+          actions={templates.length === 0 ? extra : undefined}
+        />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 stagger">
 
