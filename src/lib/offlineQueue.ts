@@ -6,9 +6,10 @@ const PREFIX = 'lw:run-op:';
 const DEAD = 'lw:run-op-dead:';
 const LEGACY = 'lw:pending-run-ops';
 /** Responses that will never succeed on retry. These operations are set aside
- * (dead-lettered) so they stop blocking newer progress. Network failures,
+ * (dead-lettered) so they stop blocking newer progress. 413/415 never change
+ * on retry either. Network failures,
  * 401 (sign in again), 408, 429 and 5xx keep retrying in order. */
-export const TERMINAL_STATUSES: ReadonlySet<number> = new Set([400, 403, 404, 409, 410, 422]);
+export const TERMINAL_STATUSES: ReadonlySet<number> = new Set([400, 403, 404, 409, 410, 413, 415, 422]);
 export interface DeadLetter {
   id: string;
   runId: string | null;
@@ -47,6 +48,7 @@ function plainReason(status: number | null, serverMessage: string): string {
     : status === 403 ? 'Your account does not have permission to record this.'
     : status === 409 ? 'This update conflicts with one the server already saved.'
     : status === 400 || status === 422 ? 'The server rejected this update as invalid (for example, the run is now shorter than the saved progress).'
+    : status === 413 || status === 415 ? 'The server could not accept this update in the form it was saved on this device.'
     : 'This saved update could not be read.';
   return serverMessage ? `${reason} Server said: ${serverMessage.slice(0, 200)}` : reason;
 }

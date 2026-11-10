@@ -16,19 +16,20 @@ const queue=require('../../src/lib/offlineQueue.ts');
  assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.pendingPatchCount('gone'),0);
  let dead=queue.deadLetteredOps();assert.equal(dead.length,1);assert.equal(dead[0].status,404);assert.equal(dead[0].runId,'gone');assert.match(dead[0].message,/no longer exists/);assert.match(dead[0].message,/Run not found/);
  // Every permanent status dead-letters; each of them is attempted exactly once.
- for(const status of [400,403,409,410,422]){
+ for(const status of [400,403,409,410,413,415,422]){
   let calls=0;global.fetch=async()=>{calls++;return Response.json({error:'nope'},{status});};
   await queue.updateRunWithQueue('r'+status,{printedCount:1});await queue.flushOfflineQueue();
   assert.equal(calls,1,`status ${status} retried`);assert.equal(queue.pendingPatchCount(),0,`status ${status} still pending`);
  }
- assert.equal(queue.deadLetteredOps().length,6);
+ assert.equal(queue.deadLetteredOps().length,8);
  assert.match(queue.deadLetteredOps().find(d=>d.status===403).message,/permission/);
+ assert.match(queue.deadLetteredOps().find(d=>d.status===413).message,/could not accept/);
  // Print events dead-letter too and keep the original event for export.
  global.fetch=async()=>Response.json({error:'Print event key already used for another event'},{status:409});
  await queue.savePrintEvent('ev',{eventType:'sent',output:'roll-zpl',rangeFrom:1,rangeTo:2,labelCount:2,printedCountAfter:2,printerName:null,message:null});
  dead=queue.deadLetteredOps().find(d=>d.runId==='ev');assert.equal(dead.kind,'event');assert.equal(dead.op.event.rangeTo,2);
- const exported=JSON.parse(queue.exportDeadLetters());assert.equal(exported.setAsideUpdates.length,7);
- queue.discardDeadLetters([dead.id]);assert.equal(queue.deadLetteredOps().length,6);
+ const exported=JSON.parse(queue.exportDeadLetters());assert.equal(exported.setAsideUpdates.length,9);
+ queue.discardDeadLetters([dead.id]);assert.equal(queue.deadLetteredOps().length,8);
  queue.discardDeadLetters();assert.equal(queue.deadLetteredOps().length,0);
  // Retryable failures (5xx, 401, network) stay queued in order for that run only.
  const order=[];
@@ -51,5 +52,5 @@ const queue=require('../../src/lib/offlineQueue.ts');
  global.fetch=async()=>Response.json({id:'after'});
  await queue.flushOfflineQueue();
  assert.equal(queue.pendingPatchCount(),0);assert.equal(queue.deadLetteredOps().length,1);assert.equal(queue.deadLetteredOps()[0].kind,'unreadable');
- console.log('PASS outbox: permanent 4xx set aside (400/403/404/409/410/422), export/discard, per-run ordering, 5xx/401/network retained, corrupt entry isolated');
+ console.log('PASS outbox: permanent 4xx set aside (400/403/404/409/410/413/415/422), export/discard, per-run ordering, 5xx/401/network retained, corrupt entry isolated');
 })().catch(e=>{console.error(e);process.exitCode=1;});
