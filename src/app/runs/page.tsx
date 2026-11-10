@@ -18,6 +18,7 @@ import { officeSentLine, runDisplayStatus, type RunDisplayTone } from '@/lib/run
 import { officeStatusLine, plainJobReason, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { readPartsPlan, remainingParts, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
+import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
 interface ListOffice {
@@ -114,7 +115,7 @@ function OfficePrinterBar({ onHeld }: { onHeld?: (held: boolean) => void }) {
   const printer = printers?.find((p) => p.dispatch_enabled && p.paired_at) ?? null;
   const status = officeStatusLine(printer ?? undefined);
   const watch = status.stopped || status.paused || status.tone !== 'ok';
-  const held = !!printer && (status.stopped || status.paused);
+  const held = officePrinterHeld(printers);
   useEffect(() => { onHeld?.(held); }, [held, onHeld]);
   useEffect(() => {
     let active = true;

@@ -11,6 +11,7 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { useOfficeRequests } from './useOfficeRequests';
+import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { PrintCheckList } from '@/components/checks/RunChecks';
@@ -240,8 +241,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // never move the run's progress: "sent to the printer" isn't proof that a
   // label printed, so marking them printed is an explicit, confirmed step.
   const office = useOfficeRequests(runId, transport === 'office', total, { printedCount, printedSpans: officeConfirmed });
+  // A paused or held office printer: queued labels wait, so the header says
+  // "Waiting", never "Sending". The office panel knows its printer's status;
+  // with another printer chosen, the station status is read while labels wait.
+  const [panelHeld, setPanelHeld] = useState(false);
+  const stationHeld = useOfficeHeld(transport !== 'office' && office.loaded && office.summary.onTheWay > 0);
+  const officeHeld = transport === 'office' ? panelHeld : stationHeld;
   const officeSummary = office.loaded && office.jobs.length > 0
-    ? { sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0] }
+    ? { sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld }
     : null;
   // Every stretch the office reported sent and nobody counted yet.
   const officeMark = useMemo(() => {
@@ -1560,7 +1567,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} />}
         </section>
           </div>
 

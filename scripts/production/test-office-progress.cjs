@@ -339,6 +339,18 @@ console.log('PASS field display names');
   assert.doesNotMatch(page, /label: 'Scan mode'/, 'scan mode is not offered in the menu where it cannot work');
   assert.match(page, /officeMarkPlan\(/, 'mark printed offers every sent stretch');
 
+  // The run header never says "Sending" while the office printer is paused or held.
+  {
+    const { officePrinterHeld } = require('../../src/components/runs/useOfficeHeld.ts');
+    const base = { online: true, available: true, dispatch_enabled: true, paired_at: '2026-01-01', needs_review: false };
+    assert.equal(officePrinterHeld([{ ...base, dispatch_hold_reason: 'printer_paused' }]), true, 'paused');
+    assert.equal(officePrinterHeld([{ ...base, needs_review: true, review_holds: [{ run_id: 'x', from: 1, to: 2 }] }]), true, 'stopped for a check');
+    assert.equal(officePrinterHeld([base]), false, 'ready');
+    assert.equal(officePrinterHeld([]), false, 'no printer');
+    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld \}/, 'the run header gets the station status');
+    assert.match(page, /onHeldChange=\{setPanelHeld\}/, 'lifted from the office panel');
+    assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld\);\},\[printerHeld,onHeldChange\]\);/);
+  }
   // Designer test print: a first send refused as signed out / no access queued nothing (plain refusal); a resend keeps its key.
   const preview = read('src/components/designer/OfficePreviewPrint.tsx');
   assert.match(preview, /const resend = !!pending;/);

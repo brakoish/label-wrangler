@@ -59,7 +59,7 @@ type Series={total:number;index:number;part:OfficeSpan;phase:'checking'|'sending
 type Fix={part:OfficeFailedPart;choice:''|'printed'|'reprint';checked:boolean;note:string;order:'in-order'|'let-run'};
 const tone={bad:'text-red-400',warn:'text-amber-300',ok:'text-emerald-400'} as const;
 const dotTone={bad:'bg-red-400',warn:'bg-amber-300',ok:'bg-emerald-400'} as const;
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -80,7 +80,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   /** Asks once, then counts every sent stretch as printed. */
   onMarkPrinted?:()=>Promise<void>;
   /** Counts labels a person saw come out (a part the office never confirmed) as printed. */
-  onRecordPrinted?:(ranges:OfficeSpan[],note:string)=>Promise<boolean>}){
+  onRecordPrinted?:(ranges:OfficeSpan[],note:string)=>Promise<boolean>;
+  /** Tells the run header when the chosen office printer is paused or stopped, so it never says "Sending". */
+  onHeldChange?:(held:boolean)=>void}){
   const uid=useId();
   const [printers,setPrinters]=useState<Printer[]>([]);const [selected,setSelected]=useState('');
   const [stationsLoaded,setStationsLoaded]=useState(false);const [canPrint,setCanPrint]=useState(false);
@@ -208,6 +210,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const printer=printers.find(p=>`${p.station_id}/${p.id}`===selected);
   const status=officeStatusLine(printer,runId);
   const moving=summary.onTheWay>0;
+  const printerHeld=!!printer && (status.stopped || status.paused);
+  useEffect(()=>{onHeldChange?.(printerHeld);},[printerHeld,onHeldChange]);
   const watchClosely=!!pending || moving || status.stopped || status.paused || !!series || busy;
   useEffect(()=>{
     let active=true;
