@@ -14,7 +14,10 @@ const { restyleSheetPrintToolbar } = require('../../src/lib/sheetPrintChrome.ts'
   assert.doesNotMatch(out, /Print setting: 100%/);
   assert.match(out, /<a class="back" href="\/runs\/run%201">Back to run<\/a>/);
   assert.match(out, /text-transform: none/);
-  assert.match(out, /button\.done \{ background: #f59e0b/);
+  assert.match(out, /\.toolbar button\.secondary \{ background: #f59e0b/, '"Print or save PDF" is the main button first');
+  assert.match(out, /\.toolbar\.lw-printed button\.done \{ background: #f59e0b/, '"Mark as printed" becomes the main button after printing');
+  assert.match(out, /addEventListener\('afterprint'/);
+  assert.match(out, /<title>[^<]* — Label Wrangler<\/title>/, 'the standard title');
   assert.match(out, /id="markPrintedButton"[^>]*>Mark as printed</);
   // Everything from the first label page on is unchanged.
   const pagesAt = html.indexOf('<section class="sheet-page"');

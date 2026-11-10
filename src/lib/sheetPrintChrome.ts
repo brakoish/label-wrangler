@@ -13,8 +13,11 @@ const TOOLBAR_STYLE = `
     .print-warning { border: 0; border-radius: 0; padding: 0; background: none; color: #fcd34d; font-weight: 500; text-transform: none; letter-spacing: 0; }
     .toolbar-title { margin: 0; font-size: 14px; font-weight: 600; color: #f4f4f5; }
     .toolbar button, .toolbar .back { min-height: 44px; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
-    .toolbar button.secondary, .toolbar .back { background: #27272a; color: #f4f4f5; border: 0; }
-    .toolbar button.done { background: #f59e0b; color: #18181b; }
+    .toolbar .back, .toolbar button.done { background: #27272a; color: #f4f4f5; border: 0; }
+    /* One main button at a time: print first, then mark it printed once the print dialog closes. */
+    .toolbar button.secondary { background: #f59e0b; color: #18181b; }
+    .toolbar.lw-printed button.secondary { background: #27272a; color: #f4f4f5; }
+    .toolbar.lw-printed button.done { background: #f59e0b; color: #18181b; }
     .toolbar button:focus-visible, .toolbar .back:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
     .toolbar .back { display: inline-flex; align-items: center; text-decoration: none; }
     .track-status { font-size: 13px; color: #a1a1aa; }
@@ -43,13 +46,24 @@ function fitScript(sheetWidthInches: number): string {
 `;
 }
 
+/** After the print dialog closes, "Mark as printed" becomes the main button. */
+const AFTER_PRINT_SCRIPT = `
+  <script data-lw-afterprint>
+    window.addEventListener('afterprint', function () {
+      var bar = document.querySelector('.toolbar');
+      if (bar) bar.classList.add('lw-printed');
+    });
+  </script>
+`;
+
 export function restyleSheetPrintToolbar(html: string, runId: string): string {
   if (html.includes('data-lw-toolbar')) return html;
   const back = `<a class="back" href="/runs/${encodeURIComponent(runId)}">Back to run</a>`;
   const sheetWidth = Number(/\.sheet-page \{\s*position: relative;\s*width: ([\d.]+)in;/.exec(html)?.[1] ?? '8.5') || 8.5;
   return html
     .replace('<html>', '<html lang="en">')
-    .replace('</head>', `${TOOLBAR_STYLE}${fitScript(sheetWidth)}</head>`)
+    .replace(/<title>([^<]*)<\/title>/, (m, title: string) => (/Label Wrangler/.test(title) ? m : `<title>${title} — Label Wrangler</title>`))
+    .replace('</head>', `${TOOLBAR_STYLE}${fitScript(sheetWidth)}${AFTER_PRINT_SCRIPT}</head>`)
     .replace(/<body>\s*<div class="toolbar">\s*<div class="toolbar-main">\s*<div>([^<]*)<\/div>/, (_m, title: string) => `<body>\n  <main>\n  <div class="toolbar">\n    <div class="toolbar-main">\n      <h1 class="toolbar-title">${title}</h1>`)
     .replace(/<\/body>(?![\s\S]*<\/body>)/, '</main>\n</body>')
     .replace('Print setting: 100% / Actual size. Do not use Fit to page.', 'Print at 100% (Actual size), not Fit to page')
