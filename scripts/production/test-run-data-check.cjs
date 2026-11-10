@@ -130,3 +130,14 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   assert.ok(!crowded.some((p) => p.x === spot.x && p.y === spot.y), 'never exactly on top of another object');
   console.log('PASS: new designer objects are offset, not stacked');
 }
+
+// Scan mode: other changing fields need a value, or each scan prints the sample.
+{
+  const scanTemplate = { elements: [text('qr_value'), text('batch', { defaultValue: 'B-000' })] };
+  const scanCheck = (staticValues) => checkRunData(scanTemplate, { sourceData: [{ __scan__: 'scanned' }], fieldMappings: { qr_value: { mode: 'column', csvColumn: '__scan__' } }, staticValues });
+  assert.equal(scanCheck({}).issues[0].field, 'batch');
+  assert.equal(scanCheck({}).issues[0].outcome, 'sample');
+  assert.equal(blankCheckAllowsPrinting(scanCheck({}), true), false);
+  assert.equal(scanCheck({ batch: 'B-123' }).issues.length, 0);
+  console.log('PASS: scan mode blocks a scan that would print another field\'s sample');
+}
