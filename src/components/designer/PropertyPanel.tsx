@@ -13,6 +13,7 @@ import { prepareDesignerImage } from '@/lib/imageUpload';
 import { BITMAP_FONTS } from '@/lib/thermal/import';
 import type { AlignAction } from '@/lib/thermal/editorGeometry';
 import { snapZplQrSize } from '@/lib/zplGenerator';
+import { contentModeUpdates } from '@/lib/elementBinding';
 
 interface PropertyPanelProps {
   element: TemplateElement | null;
@@ -75,7 +76,6 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
     );
   }
 
-  const u = format.type === 'thermal' ? 'dots' : 'in';
   const step = format.type === 'thermal' ? 1 : 0.01;
   const isThermal = format.type === 'thermal';
   const dpi = format.dpi || 203;
@@ -100,7 +100,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           {typeIcons[element.type]}
         </div>
         <span className="text-sm font-medium text-zinc-200 capitalize">{element.type}</span>
-        <span className="ml-auto text-[10px] text-zinc-600 uppercase tracking-wider">{u}</span>
+        <span className="ml-auto text-[10px] text-zinc-500">{isThermal ? `Sizes in dots (${dpi} per inch)` : 'Sizes in inches'}</span>
       </div>
 
       <div className="p-3 space-y-1">
@@ -126,6 +126,11 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
             <CompactInput label="H" value={element.height} onChange={(v) => onUpdate({ height: v })} step={step} />
           </div>
         )}
+        <p className="text-[10px] text-zinc-500">
+          {element.type === 'qr'
+            ? `Size ${physicalSize(element.width, isThermal, dpi)}`
+            : `Width ${physicalSize(element.width, isThermal, dpi)} · Height ${physicalSize(element.height, isThermal, dpi)}`}
+        </p>
 
         {/* ── Position ── */}
         <SectionLabel icon={<Move className="w-3 h-3" />} label="Position" />
@@ -175,54 +180,52 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
 
         {/* Images are selected once per run, never bound to source rows. */}
         {element.type !== 'image' && <div className="flex items-center justify-between py-1">
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Binding</span>
-          <div className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
+          <span id="content-mode-label" className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Content</span>
+          <div role="radiogroup" aria-labelledby="content-mode-label" className="flex gap-0.5 p-0.5 bg-zinc-900/80 rounded-md border border-zinc-800/50">
             <button
-              onClick={() => onUpdate({ isStatic: true })}
+              type="button"
+              role="radio"
+              aria-checked={element.isStatic}
+              onClick={() => onUpdate(contentModeUpdates(element, true))}
               className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
                 element.isStatic ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              Static
+              Same on every label
             </button>
             <button
-              onClick={() => {
-                // When flipping to dynamic, auto-assign a field name if the
-                // element doesn't have one yet. Derives from element type + a
-                // short timestamp suffix so multiple dynamic elements don't
-                // collide. User can still rename in the 'Field' input below.
-                const updates: Partial<TemplateElement> = { isStatic: false };
-                if (!element.fieldName || !element.fieldName.trim()) {
-                  const suffix = Math.random().toString(36).slice(2, 5);
-                  (updates as { fieldName?: string }).fieldName = `${element.type}_${suffix}`;
-                }
-                onUpdate(updates);
-              }}
+              type="button"
+              role="radio"
+              aria-checked={!element.isStatic}
+              // Keeps what was typed as the preview sample and picks a
+              // column name if there isn't one yet (renamable below).
+              onClick={() => onUpdate(contentModeUpdates(element, false))}
               className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
                 !element.isStatic ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              Dynamic
+              Changes per label
             </button>
           </div>
         </div>}
 
         {element.type !== 'image' && !element.isStatic && (
           <div className="space-y-1">
-            <CompactTextInput label="Field" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
+            <CompactTextInput label="Spreadsheet column name" value={element.fieldName || ''} onChange={(v) => onUpdate({ fieldName: v })} placeholder="product_name" />
             <CustomSelect
               compact
               value={MANIFEST_FIELD_OPTIONS.some((option) => option.value === element.fieldName) ? element.fieldName || '' : ''}
               onChange={(v) => {
                 if (v) onUpdate({ fieldName: v });
               }}
-              options={[{ value: '', label: 'Manifest fields' }, ...MANIFEST_FIELD_OPTIONS]}
+              aria-label="Pick a manifest column"
+              options={[{ value: '', label: 'Or pick a manifest column' }, ...MANIFEST_FIELD_OPTIONS]}
             />
-            <CompactTextInput label="Default" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Preview..." />
+            <CompactTextInput label="Sample text (preview only)" value={element.defaultValue || ''} onChange={(v) => onUpdate({ defaultValue: v })} placeholder="Shown in the preview" />
             {element.type === 'text' && (
-              <div className="grid grid-cols-2 gap-1">
-                <CompactTextInput label="Pre" value={element.prefix || ''} onChange={(v) => onUpdate({ prefix: v })} placeholder="SKU: " />
-                <CompactTextInput label="Suf" value={element.suffix || ''} onChange={(v) => onUpdate({ suffix: v })} placeholder=" oz" />
+              <div className="grid grid-cols-1 gap-1">
+                <CompactTextInput label="Text before" value={element.prefix || ''} onChange={(v) => onUpdate({ prefix: v })} placeholder="SKU: " />
+                <CompactTextInput label="Text after" value={element.suffix || ''} onChange={(v) => onUpdate({ suffix: v })} placeholder=" oz" />
               </div>
             )}
           </div>
@@ -251,22 +254,22 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
       <textarea
         value={element.isStatic ? element.content : element.defaultValue || ''}
-        aria-label={element.isStatic ? 'Text content' : 'Bound field default'}
+        aria-label={element.isStatic ? 'Text on every label' : 'Sample text (preview only)'}
         onChange={(e) => onUpdate(element.isStatic ? { content: e.target.value } : { defaultValue: e.target.value })}
-        placeholder="Enter text..."
+        placeholder={element.isStatic ? 'Type the text' : 'Sample text for the preview'}
         rows={3}
         className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:outline-none focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-600"
       />
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-2 gap-1">
         <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
         <CompactInput label="LH" value={element.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
-        <CompactSelect value={element.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
+        <div className="col-span-2"><CompactSelect value={element.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
       </div>
       {/* Thermal-only: horizontal character width ratio. Controls ZPL fontW/fontH.
           0.5 = Zebra native (default, tight/squished), 0.6 = balanced, 0.8 = roomy. */}
       {isThermal && (
         <>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-1 gap-1">
             <CompactInput
               label="CW"
               value={element.charWidth ?? (bitmap ? 1 : 0.5)}
@@ -274,7 +277,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
               step={0.05}
               labelRight
             />
-            <div className="col-span-2 flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5">
             {([
               { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
               { label: 'Normal', value: bitmap ? 1 : 0.6 },
@@ -307,7 +310,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
             </button>
             <span className="text-[10px] text-zinc-400">Auto-fit text</span>
             {(element.autoFit ?? bitmap) && (
-              <div className="ml-auto w-20">
+              <div className="ml-auto w-32">
                 <CompactInput label="Min" value={element.minFontSize ?? 4} onChange={(v) => onUpdate({ minFontSize: Math.max(1, v) })} step={1} labelRight />
               </div>
             )}
@@ -357,14 +360,14 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
   return (
     <>
       <SectionLabel icon={<Type className="w-3 h-3" />} label="Text" />
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-2 gap-1">
         <CompactInput label="Pt" value={first.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />
         <CompactInput label="LH" value={first.lineHeight || 1.2} onChange={(v) => onUpdate({ lineHeight: v })} step={0.1} labelRight />
-        <CompactSelect value={first.fontWeight} options={['normal', 'bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} />
+        <div className="col-span-2"><CompactSelect value={first.fontWeight} options={['normal', 'bold']} labels={['Regular', 'Bold']} onChange={(v) => onUpdate({ fontWeight: v as 'normal' | 'bold' })} /></div>
       </div>
       {isThermal && (
         <>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-1 gap-1">
             <CompactInput
               label="CW"
               value={first.charWidth ?? (bitmap ? 1 : 0.5)}
@@ -372,7 +375,7 @@ function MultiTextProps({ elements, onUpdate, format, bitmap }: { elements: Text
               step={0.05}
               labelRight
             />
-            <div className="col-span-2 flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5">
             {([
               { label: 'Tight', value: bitmap ? 0.8 : 0.5 },
               { label: 'Normal', value: bitmap ? 1 : 0.6 },
@@ -441,11 +444,13 @@ function QRProps({ element, onUpdate }: { element: QRElement; onUpdate: (u: Part
   return (
     <>
       <SectionLabel icon={<QrCode className="w-3 h-3" />} label="QR Code" />
-      <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="URL or data" full />
+      {element.isStatic
+        ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Web address or text to encode" full />
+        : <p className="text-[10px] text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
       <CompactSelect
         value={element.errorCorrection}
         options={['L', 'M', 'Q', 'H']}
-        labels={['Low', 'Medium', 'Quartile', 'High']}
+        labels={['Error correction: low', 'Error correction: medium', 'Error correction: quartile', 'Error correction: high']}
         onChange={(v) => onUpdate({ errorCorrection: v as 'L' | 'M' | 'Q' | 'H' })}
       />
     </>
@@ -456,7 +461,9 @@ function BarcodeProps({ element, onUpdate }: { element: BarcodeElement; onUpdate
   return (
     <>
       <SectionLabel icon={<Barcode className="w-3 h-3" />} label="Barcode" />
-      <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Value to encode" full />
+      {element.isStatic
+        ? <CompactTextInput label="" value={element.content} onChange={(v) => onUpdate({ content: v })} placeholder="Number or text to encode" full />
+        : <p className="text-[10px] text-zinc-500">Each label gets its value from the spreadsheet column above. The sample is used for the preview only.</p>}
       <CompactSelect
         value={element.barcodeFormat}
         options={['CODE128', 'CODE39', 'UPC', 'EAN13', 'EAN8', 'ITF14']}
@@ -548,7 +555,8 @@ function Divider() {
 function CompactInput({ label, value, onChange, step, labelRight }: {
   label: string; value: number; onChange: (v: number) => void; step: number; labelRight?: boolean;
 }) {
-  const accessibleLabel = ({ S: 'QR size', W: 'Width', H: 'Height', X: 'Horizontal position', Y: 'Vertical position', Pt: 'Font size in points', LH: 'Line height', CW: 'Character width', Min: 'Minimum font size', Track: 'Letter spacing', Wt: 'Line weight', Bdr: 'Border width', Rad: 'Corner radius' } as Record<string, string>)[label] || label;
+  const accessibleLabel = ({ S: 'QR size', W: 'Width', H: 'Height', X: 'Distance from left edge', Y: 'Distance from top edge', Pt: 'Font size in points', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest font size for auto-fit', Track: 'Letter spacing', Wt: 'Line thickness', Bdr: 'Border thickness', Rad: 'Corner rounding' } as Record<string, string>)[label] || label;
+  const visibleLabel = VISIBLE_LABELS[label] || label;
   const [draft, setDraft] = useState(() => formatInputNumber(value));
   const [isFocused, setIsFocused] = useState(false);
 
@@ -569,7 +577,7 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
   return (
     <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
       {!labelRight && (
-        <span className="text-[10px] text-zinc-500 font-medium w-6 text-center flex-shrink-0 border-r border-zinc-800/40">{label}</span>
+        <span aria-hidden="true" className="text-[10px] text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-r border-zinc-800/40">{visibleLabel}</span>
       )}
       <input
         type="number"
@@ -599,10 +607,19 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
         className="flex-1 bg-transparent text-xs text-zinc-100 px-1.5 h-full focus:outline-none min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
       {labelRight && (
-        <span className="text-[10px] text-zinc-500 font-medium w-5 text-center flex-shrink-0 border-l border-zinc-800/40">{label}</span>
+        <span aria-hidden="true" className="text-[10px] text-zinc-500 font-medium px-1.5 whitespace-nowrap flex-shrink-0 border-l border-zinc-800/40">{visibleLabel}</span>
       )}
     </div>
   );
+}
+
+const VISIBLE_LABELS: Record<string, string> = { S: 'Size', W: 'Width', H: 'Height', X: 'Left', Y: 'Top', Pt: 'Font pt', LH: 'Line spacing', CW: 'Letter width', Min: 'Smallest', Track: 'Letter spacing', Wt: 'Thickness', Bdr: 'Border', Rad: 'Corners' };
+
+/** "203 dots" -> "1.00 in (25.4 mm)"; inches -> "1.00 in (25.4 mm)". */
+function physicalSize(value: number, isThermal: boolean, dpi: number): string {
+  const inches = isThermal ? value / dpi : value;
+  if (!Number.isFinite(inches)) return '';
+  return `${inches.toFixed(2)} in (${(inches * 25.4).toFixed(1)} mm)`;
 }
 
 function formatInputNumber(value: number): string {
@@ -615,10 +632,11 @@ function CompactTextInput({ label, value, onChange, placeholder, full }: {
   return (
     <div className="flex items-center bg-zinc-900/60 border border-zinc-800/50 rounded-lg overflow-hidden h-7">
       {label && (
-        <span className="text-[10px] text-zinc-500 font-medium px-2 flex-shrink-0 border-r border-zinc-800/40">{label}</span>
+        <span aria-hidden="true" className="text-[10px] text-zinc-500 font-medium px-2 flex-shrink-0 border-r border-zinc-800/40">{label}</span>
       )}
       <input
         type="text"
+        aria-label={label || placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

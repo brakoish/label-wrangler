@@ -18,7 +18,7 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
       type: 'text',
       icon: Type,
       label: 'Text',
-      description: 'Add text labels, descriptions, or dynamic fields',
+      description: 'Words, descriptions, or text that changes per label',
     },
     {
       type: 'qr',

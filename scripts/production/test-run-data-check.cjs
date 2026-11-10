@@ -105,3 +105,14 @@ console.log('PASS: whole-run blank check (sample/error/blank outcomes, no unsafe
   assert.notEqual(officeProofKey(run, { t: 1 }, { f: 1 }, '1', '2'), key);
   console.log('PASS: office range helpers (skip queued, overlap wait, validation, print-only check key)');
 }
+
+// Designer: switching "Same on every label" <-> "Changes per label" keeps what was typed.
+{
+  const { contentModeUpdates } = require('../../src/lib/elementBinding.ts');
+  assert.deepEqual(contentModeUpdates({ type: 'text', isStatic: true, content: 'Wildflower Honey' }, false, () => 'product_name'), { isStatic: false, defaultValue: 'Wildflower Honey', fieldName: 'product_name' });
+  assert.deepEqual(contentModeUpdates({ type: 'barcode', isStatic: true, content: '123', defaultValue: 'keep', fieldName: 'sku' }, false), { isStatic: false }, 'an existing sample and column name are kept');
+  assert.deepEqual(contentModeUpdates({ type: 'qr', isStatic: false, content: '', defaultValue: 'https://example.test' }, true), { isStatic: true, content: 'https://example.test' });
+  assert.deepEqual(contentModeUpdates({ type: 'text', isStatic: false, content: 'typed', defaultValue: 'sample' }, true), { isStatic: true }, 'fixed text is not overwritten');
+  assert.deepEqual(contentModeUpdates({ type: 'line', isStatic: true, fieldName: 'x' }, false), { isStatic: false });
+  console.log('PASS: content mode switch carries typed text into the sample and back');
+}

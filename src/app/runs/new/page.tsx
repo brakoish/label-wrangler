@@ -26,6 +26,7 @@ import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
 import type { FieldMapping, RunDataSource } from '@/lib/types';
+import { contentModeUpdates } from '@/lib/elementBinding';
 
 const PASTE_COLUMN = '__paste__';
 const MANIFEST_HEADERS = [...MANIFEST_FIELDS];
@@ -933,9 +934,9 @@ function NewRunContent() {
 
           {template && flippable.length > 0 && (
             <section className="glass rounded-xl p-5 border border-amber-500/30 bg-amber-500/5 space-y-3">
-              <h2 className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Convert to Dynamic</h2>
+              <h2 className="text-xs text-amber-400 uppercase tracking-wider font-semibold">Make it change per label</h2>
               <p className="text-xs text-zinc-400">
-                These elements are currently static. Convert them to dynamic so they can vary per label in this run.
+                These are set to &ldquo;Same on every label&rdquo;. Switch one to &ldquo;Changes per label&rdquo; to fill it from your spreadsheet. What it shows now stays as the preview sample.
               </p>
               <div className="flex flex-wrap gap-2">
                 {flippable.map((f) => (
@@ -943,12 +944,14 @@ function NewRunContent() {
                     key={f.id}
                     onClick={async () => {
                       // Flip this element to dynamic with the suggested name, then persist.
-                      updateElementLocal(template.id, f.id, { isStatic: false, fieldName: f.suggestedName });
+                      // Keep the current text as the preview sample.
+                      const current = template.elements.find((el) => el.id === f.id);
+                      updateElementLocal(template.id, f.id, current ? { ...contentModeUpdates({ ...current, fieldName: '' }, false, () => f.suggestedName) } : { isStatic: false, fieldName: f.suggestedName });
                       await saveTemplate(template.id);
                     }}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
                   >
-                    Make <span className="font-semibold">{f.type.toUpperCase()}</span> dynamic
+                    Make the <span className="font-semibold">{f.type === 'qr' ? 'QR code' : f.type}</span> change per label
                     <span className="text-[10px] text-amber-500/70">→ {f.suggestedName}</span>
                   </button>
                 ))}
@@ -957,7 +960,7 @@ function NewRunContent() {
           )}
           {template && allDynamicFields.length === 0 && flippable.length === 0 && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-300">
-              This template has no dynamic fields. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link> and mark elements as Dynamic to use them in a print run.
+              Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="underline">designer</Link> and set the parts that should change to &ldquo;Changes per label&rdquo;.
             </div>
           )}
 
@@ -1038,7 +1041,7 @@ function NewRunContent() {
                 {inputMode === 'manual' ? (
                   <div className="space-y-3">
                     <p className="text-xs text-zinc-400">
-                      Enter values for each dynamic field, then set how many copies to print.
+                      Type a value for each part that changes, then set how many copies to print.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {dynamicFields.map((field) => (
