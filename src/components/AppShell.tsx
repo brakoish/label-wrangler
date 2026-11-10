@@ -39,7 +39,13 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   // Every page gets a tab title: pages set their own with <PageTitle>, and
   // the section name fills in for any that don't.
   useEffect(() => {
-    if (!pageHasOwnTitle()) document.title = activeLabel ? `${activeLabel} — Label Wrangler` : 'Label Wrangler';
+    const fallback = activeLabel ? `${activeLabel} — Label Wrangler` : 'Label Wrangler';
+    const apply = () => { if (!pageHasOwnTitle() && document.title !== fallback) document.title = fallback; };
+    apply();
+    // Streamed metadata can rewrite <title> after hydration; keep the fallback.
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
   }, [pathname, activeLabel]);
 
   // Exactly one h1 per page: when the page content has none, a visually
