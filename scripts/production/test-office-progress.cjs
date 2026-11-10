@@ -273,3 +273,68 @@ assert.equal(fieldDisplayName('Product Name'), 'Product Name', 'spreadsheet head
 assert.equal(fieldDisplayName('SKU'), 'SKU');
 assert.equal(fieldDisplayName('url'), 'Link');
 console.log('PASS field display names');
+
+// --- Round 4: the office panel, run page and Runs list follow the rules ------
+{
+  // Labels still at the office (queued or picked up), merged, minus sent ones.
+  const jobs = [
+    { from: 1, to: 50, state: 'sent_to_printer' }, { from: 51, to: 75, state: 'rejected', review: true },
+    { from: 76, to: 100, state: 'queued' }, { from: 101, to: 150, state: 'queued' }, { from: 151, to: 160, state: 'claimed', review: true },
+  ];
+  assert.deepEqual(R.officeWaitingSpans(jobs, 200), [{ from: 76, to: 150 }], 'held labels are named as one stretch; a part that needs a check is not "waiting"');
+  assert.equal(R.spanWords(R.officeWaitingSpans(jobs, 200)), 'labels 76–150');
+
+  const { runDisplayStatus } = require('../../src/lib/runDisplayStatus.ts');
+  const run = { status: 'queued', printedCount: 0, totalLabels: 100 };
+  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'print-again' } }).label, 'Labels to print again', 'a checked-off part that never printed again is named');
+  assert.equal(runDisplayStatus(run, { sent: 50, onTheWay: 0, failed: 1, firstFailed: { kind: 'did-not-print' } }).label, 'Office print needs a check');
+
+  const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+  const panel = read('src/components/runs/OfficePiPrinter.tsx');
+  // A failed storage write is said, not silent, and nothing is sent.
+  assert.match(panel, /try\{localStorage\.setItem\(storageKey,JSON\.stringify\(payload\)\);\}\s*catch\{setError\('This device can’t save the request, so it wasn’t sent/, 'a failed save stops the send and says so');
+  // "Send again" reuses the saved key whatever the printer says (the server answers a saved key first).
+  assert.match(panel, /const disabled=pending\?busy:/, '"Send again" is only disabled while busy');
+  // The reason for "not sure" is kept beside the saved request, so a refresh says the same.
+  assert.match(panel, /localStorage\.setItem\(metaKey,JSON\.stringify\(meta\)\)/);
+  assert.match(panel, /readPendingMeta\(meta\)/);
+  // No "Try again" after a refusal only someone else can fix.
+  assert.match(panel, /noAccess\?'Ask your admin for print access\.'/);
+  assert.match(panel, /:shownRefusal && !noAccess\?'refusal'/, 'no primary button after a no-access refusal');
+  // Nothing new is sent before one read of the office queue succeeded.
+  assert.match(panel, /if\(!printAllowed \|\| !requestsEverLoaded\)return;/);
+  // A multi-part send is one explicit tap, and each part goes through the one POST site with its own saved key.
+  assert.match(panel, /`Send all \$\{sendCount\.toLocaleString\(\)\} in \$\{parts\.length\} parts`/);
+  assert.match(panel, /const outcome=await submit\(part\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
+  assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
+  // Fixing a part: later parts are held before the check lets the office carry on; a 409 means already checked.
+  const save = panel.slice(panel.indexOf('const saveFix='), panel.indexOf('const pendingWords='));
+  assert.ok(save.indexOf("method:'DELETE'") > 0 && save.indexOf("method:'DELETE'") < save.indexOf("'/api/office/review'"), 'hold the rest before recording the check');
+  assert.match(save, /err\.status===409/, 'already checked counts as done');
+  assert.match(save, /\['resolved','cancelled','sent_to_printer'\]\.includes\(job\.state\)\)continue;/, 'a fresh read skips parts already checked');
+  assert.match(save, /onRecordPrinted\?\.\(/, '"They printed" counts them only on that explicit choice');
+  // "Print some labels again" starts empty.
+  assert.match(panel, /Print some labels again…/);
+  assert.ok((panel.match(/setChooseAgain\(true\);setReprintOf\(''\);setFrom\(''\);setTo\(''\)/g) || []).length >= 3, 'choosing labels again starts with an empty range');
+
+  const page = read('src/components/runs/RunPrinter.tsx');
+  assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: 'Skip and count as printed'/, 'the safe start is the primary button');
+  assert.match(page, /confirmLabel: `Keep progress at \$\{printedCount\}`,\s*altLabel: 'Count them too'/, 'keeping progress honest is the primary button');
+  assert.match(page, /resetProgress: true, expectedPrintedCount: before/, 'a rewind says which count it expects');
+  assert.match(page, /\.\.\.\(plan\.rewind \? \{ expectedPrintedCount: printedCount \} : \{\}\)/);
+  assert.doesNotMatch(page, /label: 'Scan mode'/, 'scan mode is not offered in the menu where it cannot work');
+  assert.match(page, /officeMarkPlan\(/, 'mark printed offers every sent stretch');
+
+  const controls = read('src/components/runs/OfficePrinterControls.tsx');
+  assert.match(controls, /setInterval\(update,pending\|\|busy\?2000:15000\)/, 'controls read fast only while a pause or resume is on its way');
+  assert.match(controls, /controlFailure\(r\.status,typeof answer\.code==='string'\?answer\.code:undefined,resend\)/, 'a resend keeps its key when signed out or refused');
+  assert.match(controls, /`\$\{LEGACY_KEY\}:\$\{userId\}`/, 'the saved pause/resume is per account');
+
+  const list = read('src/app/runs/page.tsx');
+  assert.doesNotMatch(list, /Otherwise it’s deleted for good/, 'the delete dialog says the one case that applies');
+  assert.match(list, /moving \? 5000 : 15000/, 'the Runs list reads faster only while labels are on their way');
+  assert.match(list, /Mark sent labels as printed/, 'bulk mark printed on the Runs list');
+  const feedback = read('src/components/ui/feedback.tsx');
+  assert.match(feedback, /resolve\(outcome === 'dismiss' \? null : outcome\)/, 'closing a choice dialog picks neither choice');
+}
+console.log('PASS office r4: held labels named, print-again status, storage/send-again/meta/no-access rules, parts one by one, fix holds the rest first, safe primaries, guarded rewinds, quieter polling, plain delete');
