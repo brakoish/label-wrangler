@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, FileSpreadsheet } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
@@ -13,6 +13,13 @@ import { useFormatStore } from '@/lib/store';
 import type { Run, RunPreset, RunStatus } from '@/lib/types';
 import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
 import { friendlyError, runStatusLabel } from '@/lib/userMessages';
+import { officeSentLine, runDisplayStatus, type RunDisplayTone } from '@/lib/runDisplayStatus';
+import { plainJobReason } from '@/lib/officeSendOutcome';
+import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
+
+/** Read-only extras the runs list API adds (left out when it can't tell). */
+interface ListOffice { sent: number; onTheWay: number; failed: number; firstFailed: { from: number; to: number; reason: string | null; didNotPrint: boolean } | null }
+type ListRun = Run & { office?: ListOffice | null; hasPrintHistory?: boolean };
 
 type StatusFilter = 'all' | 'active' | RunStatus;
 
@@ -20,21 +27,75 @@ const RUN_SCROLL_THRESHOLD = 15;
 const ACTIVE_STATUSES: RunStatus[] = ['draft', 'queued', 'printing', 'paused'];
 
 /** Status is a coloured dot plus plain words — no pills. */
-const STATUS_DOT: Record<RunStatus, string> = {
-  draft: 'bg-zinc-500',
-  queued: 'bg-zinc-400',
-  printing: 'bg-amber-400',
+const TONE_DOT: Record<RunDisplayTone, string> = {
+  idle: 'bg-transparent ring-2 ring-inset ring-zinc-500',
+  active: 'bg-amber-400',
+  attention: 'bg-red-400',
   paused: 'bg-transparent ring-2 ring-inset ring-amber-300',
-  completed: 'bg-emerald-400',
-  cancelled: 'bg-red-400',
+  done: 'bg-emerald-400',
+  cancelled: 'bg-zinc-500',
 };
 
-function RunStatusText({ status }: { status: RunStatus }) {
+function RunStatusText({ run }: { run: ListRun }) {
+  const display = runDisplayStatus(run, run.office);
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-zinc-300">
-      <span aria-hidden="true" className={`size-2 rounded-full ${STATUS_DOT[status] || STATUS_DOT.draft}`} />
-      {runStatusLabel(status)}
+    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
+      <span aria-hidden="true" className={`size-2 rounded-full ${TONE_DOT[display.tone]}`} />
+      {display.label}
     </span>
+  );
+}
+
+/**
+ * Keeps progress and office status on this page current without reloading
+ * the whole list: re-reads the first page every 15 seconds while the page is
+ * visible and merges only those fields into the runs already shown.
+ */
+function useLiveRunsList() {
+  useEffect(() => {
+    let active = true;
+    const update = async () => {
+      if (document.visibilityState === 'hidden' || !useRunStore.getState().hydrated) return;
+      try {
+        const response = await fetch('/api/runs?offset=0', { cache: 'no-store' });
+        if (!response.ok || !active) return;
+        const rows = await response.json() as ListRun[];
+        if (!Array.isArray(rows) || !active) return;
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        useRunStore.setState((state) => ({
+          runs: state.runs.map((old) => {
+            const fresh = byId.get(old.id);
+            if (!fresh) return old;
+            return { ...old, printedCount: fresh.printedCount, status: fresh.status, completedAt: fresh.completedAt,
+              ...('office' in fresh ? { office: fresh.office } : {}), ...('hasPrintHistory' in fresh ? { hasPrintHistory: fresh.hasPrintHistory } : {}) } as Run;
+          }),
+        }));
+      } catch { /* the next try catches up */ }
+    };
+    const timer = setInterval(() => void update(), 15000);
+    const onVisible = () => { if (document.visibilityState === 'visible') void update(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+}
+
+/** Pause/Resume for the shared office printer, reachable without opening a run. */
+function OfficePrinterBar({ attention }: { attention: boolean }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/office/stations', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => { if (active && Array.isArray(data?.printers) && data.printers.some((p: { dispatch_enabled?: boolean; paired_at?: string | null }) => p.dispatch_enabled && p.paired_at)) setShown(true); })
+      .catch(() => { /* no office printer for this account */ });
+    return () => { active = false; };
+  }, []);
+  if (!shown) return null;
+  return (
+    <section aria-label="Office printer" className="space-y-1">
+      <h2 className="section-title">Office printer</h2>
+      <div className="max-w-xl"><OfficePrinterControls attention={attention} onUnavailable={() => setShown(false)} /></div>
+    </section>
   );
 }
 
@@ -61,8 +122,13 @@ export default function RunsPage() {
   const runsHydrated = useRunStore((state) => state.hydrated);
   const runsLoading = useRunStore((state) => state.loading);
   const runsError = useRunStore((state) => state.error);
-  const requestDeleteRun = async (run: Run) => {
-    const ok = await confirmDialog({ title: `Delete “${run.name}”?`, body: 'A run with print history is kept for your records and can’t be deleted. A run with no print history is removed for good.', confirmLabel: 'Delete run', danger: true });
+  useLiveRunsList();
+  const requestDeleteRun = async (run: ListRun) => {
+    // Say plainly what will happen. When the list couldn't tell, say both.
+    const body = run.hasPrintHistory === false
+      ? 'Nothing has been printed from this run, so it’s deleted for good. This can’t be undone.'
+      : 'If anything was printed from this run, it’s kept for your records and nothing is deleted. Otherwise it’s deleted for good.';
+    const ok = await confirmDialog({ title: `Delete “${run.name}”?`, body, confirmLabel: 'Delete run', danger: true });
     if (!ok) return;
     const refused = await deleteRun(run.id);
     if (refused) void alertDialog('This run is kept for your records', refused);
@@ -202,7 +268,7 @@ export default function RunsPage() {
           <section>
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
-                <h1 className="text-2xl font-semibold text-zinc-50">Print runs</h1>
+                <h1 className="text-2xl font-semibold text-zinc-100">Print runs</h1>
                 <p className="mt-1 text-sm text-zinc-400">Start a run, or pick up where you left off.</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -237,6 +303,9 @@ export default function RunsPage() {
               <span><span className="font-semibold text-zinc-100 tabular-nums">{stats.totalLabelsPrinted.toLocaleString()}</span> labels printed</span>
             </p>
           )}
+
+          {/* The office printer can be paused even with no run open. */}
+          <OfficePrinterBar attention={(runs as ListRun[]).some((r) => (r.office?.failed ?? 0) > 0)} />
 
           {/* Toolbar: primary New Run button + search + filters + view toggle */}
           {runs.length > 0 && (
@@ -446,7 +515,7 @@ function PresetChip({
     <div className="group relative flex items-stretch">
       <Link
         href={`/runs/new?presetId=${preset.id}`}
-        className="flex min-h-control items-center gap-2.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-[background-color,transform] active:scale-[0.98]"
+        className="flex min-h-control items-center gap-2.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-[background-color,transform] active:scale-[0.97]"
         title={`${templateName}${formatName ? ' · ' + formatName : ''}`}
       >
         <Play className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
@@ -521,16 +590,22 @@ function RunRow({
   onDelete,
   onTogglePin,
 }: {
-  run: Run;
+  run: ListRun;
   templateName: string;
   formatName: string;
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
+  const office = run.office ?? null;
+  const sentLine = officeSentLine(office, run.totalLabels);
+  const failed = office?.firstFailed ?? null;
   const printed = Math.min(run.printedCount || 0, run.totalLabels);
   const finished = run.totalLabels > 0 && printed >= run.totalLabels;
   const pct = run.totalLabels > 0 ? Math.round((printed / run.totalLabels) * 100) : 0;
   const unfinished = !finished && run.status !== 'cancelled';
+  // Everything left is already with the office printer: open the run to
+  // check or mark it printed, rather than inviting another print.
+  const withOffice = !!office && office.failed === 0 && office.sent + office.onTheWay >= run.totalLabels;
   const pinned = !!run.pinnedAt;
 
   return (
@@ -539,11 +614,16 @@ function RunRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <h3 className="truncate text-sm font-semibold text-zinc-100">{run.name}</h3>
-            <RunStatusText status={run.status} />
+            <RunStatusText run={run} />
           </div>
           <p className="mt-0.5 truncate text-xs text-zinc-400">
             {templateName}{formatName ? ` · ${formatName}` : ''} · <span className="whitespace-nowrap">{formatDate(run.createdAt)}</span>
           </p>
+          {failed && run.status !== 'cancelled' && (
+            <p className="mt-0.5 text-xs text-red-400">
+              {failed.from === failed.to ? `Label ${failed.from}` : `Labels ${failed.from}–${failed.to}`} {failed.didNotPrint ? `didn’t print: ${plainJobReason(failed.reason)}` : 'may not have printed: check the office printer'}{office && office.failed > 1 ? ` (and ${office.failed - 1} more)` : ''}.
+            </p>
+          )}
         </div>
         <div className="w-full shrink-0 sm:w-36 sm:text-right">
           <p className="text-sm tabular-nums text-zinc-400">
@@ -554,10 +634,11 @@ function RunRow({
           <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
             <div className={`h-full rounded-full ${finished ? 'bg-emerald-400' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
           </div>
+          {sentLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{sentLine}</p>}
         </div>
         {unfinished && (
           <span className="btn btn-secondary btn-sm max-sm:self-start sm:w-32">
-            <Play className="h-4 w-4 text-amber-400" aria-hidden="true" /> {printed > 0 ? 'Continue' : 'Print'}
+            {failed || withOffice ? 'Open' : <><Play className="h-4 w-4 text-amber-400" aria-hidden="true" /> {printed > 0 ? 'Continue' : 'Print'}</>}
           </span>
         )}
       </Link>
@@ -568,7 +649,8 @@ function RunRow({
         items={[
           ...(onTogglePin ? [{ label: pinned ? 'Unpin' : 'Pin to top', icon: pinned ? <PinOff className="h-4 w-4 text-zinc-400" aria-hidden="true" /> : <Pin className="h-4 w-4 text-zinc-400" aria-hidden="true" />, onSelect: onTogglePin }] : []),
           { label: 'Re-run with the same data', icon: <Copy className="h-4 w-4 text-zinc-400" aria-hidden="true" />, href: `/runs/new?duplicateFrom=${run.id}` },
-          { label: 'Delete run', icon: <Trash2 className="h-4 w-4" aria-hidden="true" />, danger: true, onSelect: onDelete },
+          // A run with print history can't be deleted (it's kept for your records).
+          ...(run.hasPrintHistory ? [] : [{ label: 'Delete run', icon: <Trash2 className="h-4 w-4" aria-hidden="true" />, danger: true, onSelect: onDelete }]),
         ]}
       />
     </div>
