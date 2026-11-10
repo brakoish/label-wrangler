@@ -29,12 +29,14 @@ function without(spans: ReadonlyArray<OfficeSpan>, minus: ReadonlyArray<OfficeSp
  * is paused). Neither is ever called printed, and "still to go" names only
  * labels never sent.
  */
-export function RunProgress({ printedCount, total, confirmed, sent = [], waiting = [], tone, animate = false }: {
+export function RunProgress({ printedCount, total, confirmed, sent = [], waiting = [], waitingLabel = 'waiting at the office', tone, animate = false }: {
   printedCount: number; total: number; confirmed: ReadonlyArray<OfficeSpan>;
   /** Labels the office reported sent to the printer, not counted as printed yet. */
   sent?: ReadonlyArray<OfficeSpan>;
   /** Labels at the office that haven't gone to the printer yet. */
   waiting?: ReadonlyArray<OfficeSpan>;
+  /** Their words ("waiting at the office", "on the way to the office printer"); empty when the office panel already says it. */
+  waitingLabel?: string;
   tone: 'done' | 'active' | 'muted'; animate?: boolean;
 }) {
   const spans = printedSpans(printedCount, confirmed, total);
@@ -51,7 +53,7 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   const sentFill = tone === 'muted' ? 'bg-zinc-600' : 'bg-amber-500/35';
   const leftWords = spanWords(left);
   const motion = animate ? 'transition-[left,width,background-color] duration-300 ease-in-out' : '';
-  const officeWords = [sentCount ? `${sentCount.toLocaleString()} sent to the printer` : '', waitingCount ? `${waitingCount.toLocaleString()} waiting at the office` : ''].filter(Boolean);
+  const officeWords = [sentCount ? `${sentCount.toLocaleString()} sent to the printer` : '', waitingCount && waitingLabel ? `${waitingCount.toLocaleString()} ${waitingLabel}` : ''].filter(Boolean);
   const valueText = [`${printed.toLocaleString()} of ${total.toLocaleString()} printed`, ...officeWords, gapped && left.length ? `${leftWords} still to go` : ''].filter(Boolean).join('; ');
   return <div className="space-y-2">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
