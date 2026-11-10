@@ -2,8 +2,11 @@
 
 import { use, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
 import { useRunStore } from '@/lib/runStore';
 import { buildSheetPrintHtml } from '@/lib/sheetPrint';
+import { checkRunData, describeBlankSummary, hasBlankChoice } from '@/lib/runDataCheck';
+import { friendlyError } from '@/lib/userMessages';
 
 export default function SheetRunPrintPage({
   params,
@@ -18,6 +21,7 @@ export default function SheetRunPrintPage({
   const [error, setError] = useState<string | null>(null);
 
   const { runs, fetchRun } = useRunStore();
+  const loadError = useRunStore((s) => s.runLoadErrors[id]);
 
   const run = runs.find((r) => r.id === id) ?? null;
   const template = run?.designSnapshot?.template ?? null;
@@ -45,7 +49,17 @@ export default function SheetRunPrintPage({
     }
 
     if (format.type !== 'sheet') {
-      setError('Print / PDF output is only available for sheet label runs.');
+      setError('Print / PDF is only for runs on sheet labels. Go back to the run to print on a thermal printer.');
+      return;
+    }
+
+    // Same whole-run check as the run page: a blank value would print the
+    // design's sample. Opening this page directly must not skip it.
+    const check = checkRunData(template, run);
+    let remembered = false;
+    try { remembered = hasBlankChoice(window.localStorage, run.id, check); } catch { remembered = false; }
+    if (check.issues.length && !remembered) {
+      setError(`${describeBlankSummary(check)}. Go back to the run to fix them before printing.`);
       return;
     }
 
@@ -58,9 +72,21 @@ export default function SheetRunPrintPage({
       })
       .catch((err) => {
         wroteDocument.current = false;
-        setError((err as Error)?.message || 'Could not build sheet print output.');
+        setError(friendlyError(err, 'The print page could not be prepared.'));
       });
   }, [format, hydrated, range, run, template]);
+
+  if (!run && loadError) {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
+        <div role="alert" className="max-w-md text-center space-y-3">
+          <h1 className="text-lg font-semibold">{loadError.status === 404 ? 'We couldn\u2019t find that run' : 'We couldn\u2019t load that run'}</h1>
+          <p className="text-sm text-zinc-400">{loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}</p>
+          <Link href="/runs" className="inline-flex min-h-10 items-center rounded-lg border border-zinc-700 px-4 text-sm">Back to runs</Link>
+        </div>
+      </main>
+    );
+  }
 
   if (error) {
     return (
@@ -68,9 +94,10 @@ export default function SheetRunPrintPage({
         <div className="max-w-md rounded-lg border border-red-500/30 bg-red-500/10 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-red-300">
             <AlertCircle className="w-4 h-4" />
-            Print output failed
+            Can&apos;t print yet
           </div>
           <p className="mt-2 text-sm text-red-100/80">{error}</p>
+          <a href={`/runs/${encodeURIComponent(id)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-zinc-700 px-4 text-sm text-zinc-100">Back to the run</a>
         </div>
       </main>
     );
@@ -80,7 +107,7 @@ export default function SheetRunPrintPage({
     <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
       <div className="grid gap-2 text-center text-sm">
         <Loader2 className="w-5 h-5 animate-spin justify-self-center text-amber-500" />
-        <div className="font-semibold text-amber-400">Preparing print page...</div>
+        <div className="font-semibold text-amber-400">Preparing the print page…</div>
         <div className="text-zinc-500">{run?.name || 'Loading run'}</div>
       </div>
     </main>
