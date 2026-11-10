@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { runPrintEvents } from "@/lib/db/schema";
 import { desc, eq, and } from "drizzle-orm";
 import { isForeignKeyViolation } from "@/lib/dbErrors";
+// An accepted "Go back to label N" (additive: older pages never send it).
+import { REWIND_EVENT } from "@/lib/runRewind";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -27,7 +29,7 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const body = await readBody(req,8192);
-    if (!['opened','sent','confirmed','failed','cancelled'].includes(String(body.eventType)) || !['roll-zpl','sheet-pdf','roll-pdf','scan','office-pi'].includes(String(body.output))) throw new OfficeError('Invalid print event');
+    if (!['opened','sent','confirmed','failed','cancelled',REWIND_EVENT].includes(String(body.eventType)) || !['roll-zpl','sheet-pdf','roll-pdf','scan','office-pi'].includes(String(body.output))) throw new OfficeError('Invalid print event');
     for (const key of ['rangeFrom','rangeTo','labelCount']) if(!Number.isInteger(body[key]) || Number(body[key])< (key==='labelCount'?0:1) || Number(body[key])>100000) throw new OfficeError('Invalid print range');
     if(Number(body.rangeTo)<Number(body.rangeFrom)) throw new OfficeError('Invalid print range');
     if(body.printedCountAfter!=null && (!Number.isInteger(body.printedCountAfter)||Number(body.printedCountAfter)<0||Number(body.printedCountAfter)>100000)) throw new OfficeError('Invalid print count');

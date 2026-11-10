@@ -233,7 +233,7 @@ export interface RunPreset {
 
 export type RunStatus = 'draft' | 'queued' | 'printing' | 'paused' | 'completed' | 'cancelled';
 export type RunDataSource = 'paste' | 'csv' | 'manual' | 'manifest';
-export type RunPrintEventType = 'opened' | 'sent' | 'confirmed' | 'failed' | 'cancelled';
+export type RunPrintEventType = 'opened' | 'sent' | 'confirmed' | 'failed' | 'cancelled' | 'rewind';
 export type RunPrintOutput = 'roll-zpl' | 'sheet-pdf' | 'roll-pdf' | 'scan' | 'office-pi';
 
 export interface RunDesign { template: LabelTemplate; format: LabelFormat; capturedAt: string; legacy?: boolean }

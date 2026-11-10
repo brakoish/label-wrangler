@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { runs, runPrintEvents, officeRequests } from "@/lib/db/schema";
 import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
 import { and, eq, sql, getTableColumns } from "drizzle-orm";
+import { followsCurrentRules, keepsHighWater } from "@/lib/runClientVersion";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -51,11 +52,13 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     if ('sourceData' in body && Array.isArray(body.sourceData)) {
       updates.totalLabels = body.sourceData.length;
     }
-    // Progress is a high-water mark: an older or out-of-order update (a stale
-    // tab, a sheet tab confirmed late, a delayed outbox entry) can never lower
-    // it. Only an explicit rewind (Reprint from / Reprint all) sends
-    // resetProgress:true to move the resume position backwards.
-    if (body.printedCount !== undefined && body.resetProgress !== true) updates.printedCount = sql`greatest(${runs.printedCount}, ${Number(body.printedCount)})`;
+    // Progress is a high-water mark for current code: an older or
+    // out-of-order update (a sheet tab confirmed late, a delayed outbox
+    // entry) can never lower it, and only an explicit rewind (resetProgress)
+    // moves the resume position backwards. A tab still running the code from
+    // before this rule (no X-LW-Client header) keeps its exact writes, so its
+    // "Reprint from" and "Reprint all" still go back instead of being ignored.
+    if (keepsHighWater(followsCurrentRules(req.headers, body as unknown as Record<string, unknown>), body as unknown as Record<string, unknown>)) updates.printedCount = sql`greatest(${runs.printedCount}, ${Number(body.printedCount)})`;
     const { sourceData: _source, designSnapshot: _design, ...summary } = getTableColumns(runs);
     // A rewind can say which progress it saw (expectedPrintedCount). It then
     // applies only if the stored count still matches, in the same statement,

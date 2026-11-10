@@ -80,7 +80,7 @@ export function OfficePrinterControls({attention=false,showStatus=false,onUnavai
   try{localStorage.removeItem(key);}catch{/* nothing saved */}await refresh().catch(()=>{});onChange?.();
  }finally{sending.current=false;setBusy(false);}};
  const requestPause=async()=>{
-  const ok=await confirmDialog({title:'Pause the office printer?',body:'This pauses the shared office printer for everyone, not just this run. It stops after the label it’s printing now. Anything waiting stays in line until someone taps Resume.',confirmLabel:'Pause printer',danger:true});
+  const ok=await confirmDialog({title:'Pause the office printer?',body:'It pauses for everyone, after the label printing now. Waiting labels stay in line until someone taps Resume.',confirmLabel:'Pause printer',danger:true});
   if(ok)void send('pause');
  };
  useEffect(()=>{if(readSaved(userId))setCanRetry(true);},[userId]);

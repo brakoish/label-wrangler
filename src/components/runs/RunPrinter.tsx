@@ -9,12 +9,16 @@ import { BlankValueCheck } from './BlankValueCheck';
 import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { lastRewindAt, rewindEvent, REWIND_EVENT } from '@/lib/runRewind';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { useOfficeRequests } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
-import { PrintCheckList } from '@/components/checks/RunChecks';
+import { RunBarcodeCheck } from './RunBarcodeCheck';
+import { barcodeItemTicked, barcodeTicksAllow, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
+import { labelListWords, scannedLabelNumbers, scannedSkipPlan, type LabelSpan } from '@/lib/scannedLabels';
+import { plainPrinterProblem } from '@/lib/printerWords';
 import { fieldDisplayName } from '@/lib/fieldDisplayName';
 import { columnSourceWords, runSourceWords } from '@/lib/fieldLabels';
 import { choiceDialog, confirmDialog } from '@/components/ui/feedback';
@@ -48,6 +52,16 @@ import {
 } from '@/lib/dazzlePrinter';
 
 type Transport = 'dazzle' | 'webusb' | 'office';
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+/** Sorted, merged spans (touching spans join). */
+function mergeSpans(spans: ReadonlyArray<OfficeSpan>): OfficeSpan[] {
+  const out: OfficeSpan[] = [];
+  for (const span of [...spans].sort((a, b) => a.from - b.from)) {
+    const last = out[out.length - 1];
+    if (last && span.from <= last.to + 1) last.to = Math.max(last.to, span.to); else out.push({ from: span.from, to: span.to });
+  }
+  return out;
+}
 type PrinterUiStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 type EditSourceField = { field: string; source: string; column: string | null; legacyPaste: boolean };
 type SheetPrintConfirmedMessage = {
@@ -142,6 +156,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const webUsbStatusWorkingRef = useRef(false);
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // The printer here stopped mid-run (out of labels, unplugged…): the header says so until the next start.
+  const [printerStopped, setPrinterStopped] = useState(false);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
 
   const total = run?.totalLabels ?? 0;
@@ -226,16 +242,41 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     void fetchPrintEvents(runId);
   }, [fetchPrintEvents, runId]);
 
-  // A deliberate "Go back" on this device: office work from before it is no
-  // longer offered as "mark printed", so the offer can't undo the rewind.
+  // A deliberate "Go back" that the server accepted: office work from before
+  // it is no longer offered as "mark printed", so the offer can't undo the
+  // rewind. Each accepted rewind is kept in the print history (a 'rewind'
+  // event), so every device and the Runs list respect it too; this device
+  // also remembers its own, for the moment before that event is read back.
   const rewindKey = `lw:run-rewound:${runId}`;
-  const [rewoundAt, setRewoundAt] = useState(0);
-  useEffect(() => { try { setRewoundAt(Number(localStorage.getItem(rewindKey)) || 0); } catch { setRewoundAt(0); } }, [rewindKey]);
-  const noteRewind = () => { const at = Date.now(); setRewoundAt(at); try { localStorage.setItem(rewindKey, String(at)); } catch { /* this page still knows */ } };
+  const [localRewoundAt, setLocalRewoundAt] = useState(0);
+  useEffect(() => { try { setLocalRewoundAt(Number(localStorage.getItem(rewindKey)) || 0); } catch { setLocalRewoundAt(0); } }, [rewindKey]);
+  const serverRewoundAt = useMemo(() => lastRewindAt(eventsForRun), [eventsForRun]);
+  const rewoundAt = Math.max(localRewoundAt, serverRewoundAt);
+  /** Only after the server accepted the rewind (never before, never when it was refused). */
+  const recordRewind = (goBackTo: number, before: number) => {
+    const at = Date.now(); setLocalRewoundAt(at);
+    try { localStorage.setItem(rewindKey, String(at)); } catch { /* the print history still says it */ }
+    void createPrintEvent(runId, rewindEvent(goBackTo, before));
+  };
+  // A rewind saved while offline counts once the server takes it.
+  const pendingRewind = useRef<{ goBackTo: number; before: number } | null>(null);
+  useEffect(() => {
+    const onSynced = (event: Event) => {
+      const run = (event as CustomEvent<{ id?: string; printedCount?: number }>).detail;
+      const waiting = pendingRewind.current;
+      if (!waiting || run?.id !== runId || run.printedCount !== waiting.goBackTo - 1) return;
+      pendingRewind.current = null;
+      recordRewind(waiting.goBackTo, waiting.before);
+    };
+    window.addEventListener('lw:run-synced', onSynced);
+    return () => window.removeEventListener('lw:run-synced', onSynced);
+  });
   // Ranges people confirmed came out of the office printer (print history).
   const officeConfirmed = useMemo<OfficeSpan[]>(() => eventsForRun
     .filter((event) => event.eventType === 'confirmed' && event.output === 'office-pi' && Date.parse(event.createdAt) > rewoundAt)
     .map((event) => ({ from: event.rangeFrom, to: event.rangeTo })), [eventsForRun, rewoundAt]);
+  // Labels printed one by one in scan mode (print history, any device).
+  const scannedLabels = useMemo(() => scannedLabelNumbers(eventsForRun, run?.totalLabels ?? Infinity, rewoundAt), [eventsForRun, run?.totalLabels, rewoundAt]);
 
   // The office printer's work on this run, for display only. Office sends
   // never move the run's progress: "sent to the printer" isn't proof that a
@@ -279,9 +320,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     rememberPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, runId, next);
     return next;
   });
-  const checksOk = printCheckAllows(printCheck, goAhead);
-  const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || goAhead.barcode !== printCheck.blockingKey)
-    ? printCheck.verdict.waitReason
+  // One tick per barcode problem, kept on this device. A go-ahead from the
+  // new-run wizard covers the milder ones, never a barcode that spoils the next label.
+  const [barcodeTicks, setBarcodeTicks] = useState<string[]>([]);
+  // "Print some labels again…" on a finished run's summary.
+  const [woken, setWoken] = useState(false);
+  const [officeChooser, setOfficeChooser] = useState(0);
+  useEffect(() => { setBarcodeTicks(readRunBarcodeTicks(typeof window !== 'undefined' ? window.localStorage : null, runId)); }, [runId]);
+  const wizardBarcodeGoAhead = !!printCheck.blocking.length && goAhead.barcode === printCheck.blockingKey;
+  const barcodeOk = barcodeTicksAllow(printCheck.blocking, barcodeTicks, wizardBarcodeGoAhead);
+  const tickBarcode = (item: string, value: boolean) => setBarcodeTicks((current) => {
+    // Once someone ticks here, every problem's tick is its own.
+    const explicit = printCheck.blocking.filter((problem) => problem === item ? value : barcodeItemTicked(problem, current, wizardBarcodeGoAhead));
+    saveRunBarcodeTicks(typeof window !== 'undefined' ? window.localStorage : null, runId, explicit);
+    chooseGoAhead('barcode', printCheck.blocking.every((problem) => explicit.includes(problem)) && printCheck.blockingKey);
+    return explicit;
+  });
+  const checksOk = printCheckAllows(printCheck, { ...goAhead, barcode: barcodeOk ? printCheck.blockingKey : undefined });
+  const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || !barcodeOk)
+    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : `${printCheck.verdict.heading}. Fix the design, or tick “Print anyway” for each problem above.`)
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.
@@ -582,11 +639,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             try {
               const printerStatus = await queryHostStatus(usbPrinter);
               webUsbStatusWorkingRef.current = true;
-              setPrinterStatusMessage(
-                printerStatus.labelsRemaining === null
-                  ? printerStatus.summary
-                  : `${printerStatus.summary} · ${printerStatus.labelsRemaining} label${printerStatus.labelsRemaining === 1 ? '' : 's'} remaining in printer batch`,
-              );
+              setPrinterStatusMessage(plainPrinterProblem(printerStatus.summary));
               if (!printerStatus.ready) {
                 throw new Error(printerStatus.summary);
               }
@@ -612,6 +665,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
     starting.current = true;
     try {
+    setPrinterStopped(false);
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
@@ -647,6 +701,24 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       });
       if (!ok) return;
     }
+    // Labels printed one by one in scan mode would come out twice: skipping
+    // them is the primary button, and they still count as printed.
+    let pieces: LabelSpan[] | null = null;
+    const scanned = scannedSkipPlan(selectedFrom, selectedThrough, scannedLabels);
+    if (scanned.skipped.length) {
+      const words = labelListWords(scanned.skipped);
+      const one = scanned.skipped.length === 1;
+      const choice = await choiceDialog({
+        title: `${words.charAt(0).toUpperCase()}${words.slice(1)} ${one ? 'was' : 'were'} already printed by scanning`,
+        body: scanned.keep.length
+          ? `Printing labels ${selectedFrom}–${selectedThrough} prints ${one ? 'it' : 'them'} a second time. Skipping leaves ${one ? 'it' : 'them'} out; ${one ? 'it still counts' : 'they still count'} as printed.`
+          : `Every label from ${selectedFrom} to ${selectedThrough} was printed by scanning. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
+        confirmLabel: scanned.keep.length ? `Skip ${one ? 'it' : 'them'}` : 'Don’t print',
+        altLabel: 'Print them again',
+      });
+      if (choice === null) return;
+      if (choice === 'confirm') { if (!scanned.keep.length) return; pieces = scanned.keep; }
+    }
     if (plan.rewind) {
       const ok = await confirmDialog({
         title: `Go back to label ${selectedFrom} and continue?`,
@@ -655,7 +727,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       });
       if (!ok) { setFromDraft(null); setCountDraft(null); return; }
       setPrintedCount(plan.startCount);
-      noteRewind();
     }
     const startCount = plan.startCount;
     setStatus('running');
@@ -665,7 +736,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try { await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
-    if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (pendingPatchCount(run.id)) { if (plan.rewind) pendingRewind.current = { goBackTo: selectedFrom, before: printedCount }; setStatus('paused'); setErrorMsg('Run start is saved locally but not synced. Retry sync before printing.'); return; }
+    if (plan.rewind) recordRewind(selectedFrom, printedCount);
     if (!mounted.current || controller.signal.aborted) return;
 
     const sender = makeSender(controller);
@@ -682,7 +754,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const { startFeed, stopFeed } = feedRangeForLabels(printRange, across);
     void stopFeed;
     let labelsToSend: string[];
-    try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange, { signal: controller.signal }); }
+    // With scanned labels skipped, each feed remembers the label it ends on.
+    let feedEnds: number[] | null = null;
+    try {
+      if (pieces) {
+        const all: string[] = []; const ends: number[] = [];
+        for (const piece of pieces) {
+          const feeds = await generateLabelsForRunWithImages(run, template, format, piece, { signal: controller.signal });
+          const first = feedRangeForLabels(piece, across).startFeed;
+          feeds.forEach((feed, k) => { all.push(feed); ends.push(Math.min((first + k + 1) * across, piece.to)); });
+        }
+        labelsToSend = all; feedEnds = ends;
+      } else labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange, { signal: controller.signal });
+    }
     catch (error) { if (controller.signal.aborted) return; setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', startCount); return; }
     if (!mounted.current || controller.signal.aborted) return;
     const handle = startPrintQueue(sender, {
@@ -693,7 +777,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       onProgress: async (feedsDone) => {
         // Each feed produced up to `across` physical labels. Clamp to total
         // so the last (possibly-partial) feed doesn't overshoot.
-        const physical = Math.min((startFeed + feedsDone) * across, printRange.to);
+        const physical = feedEnds
+          ? (feedsDone >= feedEnds.length ? printRange.to : feedsDone > 0 ? feedEnds[feedsDone - 1] : printRange.from - 1)
+          : Math.min((startFeed + feedsDone) * across, printRange.to);
         setFromDraft(null);
         setCountDraft(null);
         setPrintedCount(physical);
@@ -713,15 +799,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             labelCount: labelRangeCount(printRange),
             printedCountAfter: physical,
             printerName: transport === 'dazzle' ? dazzleSelected : usbPrinter?.productName ?? null,
-            message: null,
+            message: scanned.skipped.length && pieces ? `Skipped ${labelListWords(scanned.skipped)} (printed by scanning)` : null,
           });
         }
       },
       onError: async (err, atFeed) => {
         setStatus('error');
+        setPrinterStopped(true);
         setErrorMsg((err as Error)?.message || 'Print failed');
         // Persist physical-label count corresponding to the failed feed.
-        const atPhysical = Math.max(printRange.from - 1, Math.min((startFeed + atFeed) * across, printRange.to));
+        const atPhysical = feedEnds
+          ? (atFeed > 0 ? feedEnds[Math.min(atFeed, feedEnds.length) - 1] : printRange.from - 1)
+          : Math.max(printRange.from - 1, Math.min((startFeed + atFeed) * across, printRange.to));
         await setRunStatus(run.id, 'paused', atPhysical);
         await createPrintEvent(run.id, {
           eventType: 'failed',
@@ -852,7 +941,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setPrintedCount(n - 1);
     setStatus('paused');
     setShowReprint(false);
-    noteRewind();
     const refused = { reason: '' };
     const before = printedCount;
     await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason) => { refused.reason = reason; } });
@@ -863,7 +951,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0);
       return;
     }
-    if (pendingPatchCount(run.id)) setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
+    if (pendingPatchCount(run.id)) {
+      pendingRewind.current = { goBackTo: n, before };
+      setRewindNotice(`Going back to label ${n} is saved on this device and is sent when you’re back online. If another device prints more first, it isn’t applied and you’ll be told.`);
+      return;
+    }
+    recordRewind(n, before);
   };
 
   const normalizeSheetRange = (range?: { from?: number; to?: number }) => normalizeLabelRange({
@@ -1165,7 +1258,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       return (
         <div className="flex-1 flex items-center justify-center p-6">
           <div role="alert" className="max-w-sm space-y-3 text-center">
-            <h1 className="text-lg font-semibold text-zinc-100">{missing ? "We couldn't find that run" : "We couldn't load this run"}</h1>
+            <h1 className="text-lg font-semibold text-zinc-100">{missing ? 'We couldn’t find that run' : 'We couldn’t load this run'}</h1>
             <p className="text-sm text-zinc-400">{missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(new Error(loadError.message))}</p>
             <div className="flex flex-wrap justify-center gap-2">
               {!missing && <button type="button" onClick={() => void fetchRun(runId)} className="btn btn-primary">Try again</button>}
@@ -1180,7 +1273,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         <div className="flex-1 flex items-center justify-center p-6">
           <div role="alert" className="max-w-sm space-y-3 text-center">
             <h1 className="text-lg font-semibold text-zinc-100">This run has no saved design</h1>
-            <p className="text-sm text-zinc-400">It can&apos;t be printed. Use Re-run to start a new run from the same data.</p>
+            <p className="text-sm text-zinc-400">It can’t be printed. Use Re-run to start a new run from the same data.</p>
             <Link href="/runs" className="btn btn-secondary"><ArrowLeft className="h-4 w-4" /> Back to runs</Link>
           </div>
         </div>
@@ -1196,7 +1289,37 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const transportReady = (transport === 'dazzle' && !!dazzleSelected) || (transport === 'webusb' && !!usbPrinter);
   const pickerOpen = !isSheetFormat && (showTransportPicker || !transport);
   const runFinished = printedCount >= total && total > 0;
-  const display = runDisplayStatus({ status: run.status, printedCount, totalLabels: total }, officeSummary);
+  const display = runDisplayStatus({ status: run.status, printedCount, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
+  // A finished or cancelled run is a calm summary: no live printer, no other
+  // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
+  const officeNeedsSomeone = (officeSummary?.failed ?? 0) > 0 || (officeSummary?.onTheWay ?? 0) > 0;
+  const calm = (runFinished || run.status === 'cancelled' || status === 'cancelled') && !woken && status !== 'running'
+    && !reprinting && !showReprint && !(isSheetFormat && pendingSheetRange) && !officeNeedsSomeone && !officeMark.ranges.length;
+  const wakeForReprint = () => {
+    setWoken(true);
+    if (!isSheetFormat && transport === 'office') setOfficeChooser((n) => n + 1);
+    else openReprint(Math.max(1, Math.min(printedCount || 1, total)), Math.max(1, Math.min(printedCount || 1, total)));
+  };
+  // With an office part that failed, its fix comes before the barcode list (phones see it first).
+  const officeFixFirst = !isSheetFormat && transport === 'office' && (officeSummary?.failed ?? 0) > 0;
+  const checkList = (
+    <RunBarcodeCheck
+      check={printCheck}
+      ticks={barcodeTicks}
+      wizardGoAhead={wizardBarcodeGoAhead}
+      onTick={tickBarcode}
+      layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
+      onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
+      designHref={`/designer?id=${template.id}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
+    />
+  );
+  // Ranges counted as printed after a gap: the count above is "printed in
+  // order", so say why it hasn't moved past them yet.
+  const countedAhead = mergeSpans(officeConfirmed).filter((span) => span.from > printedCount + 1);
+  const gapTo = countedAhead.length ? countedAhead[0].from - 1 : 0;
+  const countedAheadLine = countedAhead.length > 0 && printedCount < total
+    ? `${capitalise(spanWords(countedAhead))} ${countedAhead.length === 1 && countedAhead[0].from === countedAhead[0].to ? 'is' : 'are'} counted as printed too. The count goes up past ${countedAhead.length === 1 && countedAhead[0].from === countedAhead[0].to ? 'it' : 'them'} once ${printedCount + 1 === gapTo ? `label ${gapTo.toLocaleString()} is` : `labels ${(printedCount + 1).toLocaleString()}–${gapTo.toLocaleString()} are`} printed or marked printed.`
+    : '';
   const sentLine = officeSentLine(officeSummary, total);
   // Scan mode is for printing here, one label per scan: kept out of the way
   // when the office printer is chosen or the run is over.
@@ -1256,7 +1379,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     <>
     <div className="flex-1 overflow-auto">
       <div className="page-container space-y-5 sm:space-y-6">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100 break-words">{run.name}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-zinc-400">
@@ -1267,7 +1390,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   display.tone === 'attention' ? 'bg-red-400' :
                   display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
                   display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
-                }`} /><span className={display.tone === 'attention' ? 'text-red-400' : undefined}>{display.label}</span></span>
+                }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap inline-flex gap-1.5 ${display.tone === 'attention' ? 'text-red-400' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300">· {display.detail}</span>}</span></span>
               <span aria-hidden="true">·</span>
               <span>{template.name}</span>
               <span aria-hidden="true">·</span>
@@ -1283,12 +1406,37 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             </Link>}
             <Menu items={moreItems} label="More" />
           </div>
-        </header>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-5 lg:gap-6">
           {/* Print first, on every screen: what you see first is what Tab reaches first. */}
           <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
         <section aria-label="Print" className="card card-flat p-4 sm:p-5 space-y-5">
+          {calm ? (
+            <div className="space-y-4 reveal">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <h2 className="section-title">Progress</h2>
+                  <span className="text-sm font-medium text-zinc-100 tabular-nums">Printed {printedCount.toLocaleString()} of {total.toLocaleString()}</span>
+                </div>
+                <div className="h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printedCount}>
+                  <div className={`h-full rounded-full ${runFinished ? 'bg-emerald-400' : 'bg-zinc-500'}`} style={{ width: `${pct}%` }} />
+                </div>
+                <p role="status" className={`text-sm ${runFinished ? 'flex items-center gap-2 font-medium text-emerald-400' : 'text-zinc-300'}`}>
+                  {runFinished
+                    ? <><CheckCircle2 className="h-4 w-4" aria-hidden="true" /> All {total.toLocaleString()} labels printed</>
+                    : `This run was cancelled after ${printedCount.toLocaleString()} of ${total.toLocaleString()} labels.`}
+                </p>
+                {countedAheadLine && <p className="text-sm text-zinc-400">{countedAheadLine}</p>}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {onDone && runFinished && <button type="button" onClick={onDone} className="btn btn-secondary">Done</button>}
+                <button type="button" onClick={wakeForReprint} className="btn btn-ghost btn-sm -ml-2 text-zinc-300" title="Jam, ribbon out, bad print? Print some labels again.">
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" /> Print some labels again…
+                </button>
+              </div>
+            </div>
+          ) : <>
           <div className="space-y-3">
             <div className="flex min-h-control items-center justify-between gap-3">
               <div className="min-w-0">
@@ -1366,7 +1514,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                           try {
                             const next = await queryHostStatus(usbPrinter);
                             webUsbStatusWorkingRef.current = true;
-                            setPrinterStatusMessage(next.summary);
+                            setPrinterStatusMessage(plainPrinterProblem(next.summary));
                           } catch (err) {
                             setPrinterStatusMessage(friendlyError(err, 'Status check failed'));
                           }
@@ -1375,7 +1523,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       >
                         Check paper and ribbon
                       </button>
-                      {printerStatusMessage && <p role="status" className="text-sm text-zinc-400">{printerStatusMessage}</p>}
+                      {printerStatusMessage && !errorMsg && <p role="status" className="text-sm text-zinc-400">{printerStatusMessage}</p>}
                     </div>
                   ) : <p className="text-sm text-zinc-400">This printer can&apos;t report paper or ribbon problems, so watch it while it prints.</p>}
                 </div>
@@ -1406,13 +1554,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           </div>
 
           {blankCheck && <BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact />}
-          <PrintCheckList
-            check={printCheck}
-            barcodeGoAhead={!!printCheck.blocking.length && goAhead.barcode === printCheck.blockingKey}
-            layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
-            onBarcodeGoAhead={(value) => chooseGoAhead('barcode', value && printCheck.blockingKey)}
-            onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
-          />
+          {!calm && !officeFixFirst && checkList}
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -1435,6 +1577,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )}
             {markNotice && <p role={markNotice.tone === 'bad' ? 'alert' : 'status'} className={`text-sm ${markNotice.tone === 'bad' ? 'text-red-400' : 'text-emerald-400'}`}>{markNotice.text}</p>}
             {rewindNotice && <p role="status" className="text-sm text-amber-300">{rewindNotice}</p>}
+            {countedAheadLine && <p className="reveal text-sm text-zinc-400">{countedAheadLine}</p>}
           </div>
 
           {(isSheetFormat || transport !== 'office') && <>
@@ -1453,7 +1596,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           )}
           {errorMsg && (
             <p role="alert" className="text-sm text-red-400 flex items-start gap-1.5">
-              <AlertCircle className="mt-0.5 w-4 h-4 shrink-0" aria-hidden="true" /> {friendlyRenderError(friendlyError(errorMsg), template.elements, across)}
+              <AlertCircle className="mt-0.5 w-4 h-4 shrink-0" aria-hidden="true" /> {friendlyRenderError(friendlyError(plainPrinterProblem(errorMsg)), template.elements, across)}
             </p>
           )}
 
@@ -1567,7 +1710,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {officeFixFirst && checkList}
+          </>}
         </section>
           </div>
 
@@ -1684,7 +1829,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                       event.eventType === 'cancelled' ? 'bg-amber-300' :
                       'bg-zinc-500'
                     }`} />
-                    {printEventLabel(event)}
+                    {event.eventType === REWIND_EVENT ? `Went back to label ${event.rangeFrom.toLocaleString()}` : printEventLabel(event)}
                   </span>
                   <span className="shrink-0 text-zinc-400 tabular-nums">{formatEventTime(event.createdAt)}</span>
                 </li>
