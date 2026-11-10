@@ -69,7 +69,7 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
 {
   const run=(status,printedCount,totalLabels=100)=>({status,printedCount,totalLabels});
   const words=new Set(Object.values(D.RUN_STATUS_WORDS));
-  assert.deepEqual([...words],['Needs you','Printing','Paused','Ready','Done','Cancelled']);
+  assert.deepEqual([...words],['Needs you','Needs a check','Printing','Paused','Ready','Done','Cancelled']);
   const cases=[
     [run('queued',0),null],[run('draft',0),null],[run('paused',40),null],[run('printing',10),null],[run('completed',100),null],[run('cancelled',3),null],
     [run('queued',0),{sent:0,onTheWay:20,failed:0}],[run('queued',0),{sent:0,onTheWay:20,failed:0,held:true}],[run('queued',0),{sent:100,onTheWay:0,failed:0}],[run('queued',0),{sent:20,onTheWay:0,failed:1}],
@@ -80,7 +80,7 @@ assert.equal(B.barcodeTicksAllow([],[],false),true);
   // Words never contradict: no "Ready · Draft", no "Printing" while the printer waits, "Needs you" always red.
   assert.deepEqual(D.runDisplayStatus(run('draft',0),null),{label:'Ready',tone:'idle',bucket:'ready',detail:''});
   assert.equal(D.runDisplayStatus(run('paused',0),null).detail,'','a paused run with nothing printed is plainly Ready');
-  for(const [r,o] of cases){const s=D.runDisplayStatus(r,o);if(s.bucket==='needs-you')assert.equal(s.tone,'attention',s.detail);if(s.bucket==='ready')assert.equal(s.tone,'idle',s.detail);}
+  for(const [r,o] of cases){const s=D.runDisplayStatus(r,o);if(s.bucket==='needs-you')assert.equal(s.tone,'attention',s.detail);if(s.bucket==='check')assert.equal(s.tone,'check',s.detail);if(s.bucket==='ready')assert.equal(s.tone,'idle',s.detail);}
   const waiting=D.runDisplayStatus(run('printing',0),{sent:0,onTheWay:20,failed:0,held:true});
   assert.equal(waiting.label,'Paused');assert.equal(waiting.detail,'Waiting for the office printer');
   const stopped=D.runDisplayStatus(run('paused',40),null,true);
@@ -104,7 +104,7 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
 {
   const save=panel.slice(panel.indexOf('const saveFix='),panel.indexOf('const pendingWords='));
   assert.ok(save.indexOf('saveHeld(')>save.indexOf("method:'DELETE'"),'held labels are remembered only after the office cancelled them');
-  assert.match(panel,/Print in order: cancel \$\{spanWords\(fixLater\.spans\)\} for now, print \$\{range\(fix\.part\.from,fix\.part\.to\)\} again, then offer to send/,'the dialog says what really happens');
+  assert.match(panel,/<li>1\. Hold \{spanWords\(fixLater\.spans\)\}<\/li>\s*<li>2\. Print \{range\(again\.from,again\.to\)\} again<\/li>\s*<li>3\. Then send \{spanWords\(fixLater\.spans\)\}<\/li>/,'the dialog says what really happens, in three steps');
   assert.match(panel,/:sendingHeld\?`Send \$\{range\(fromNumber,toNumber\)\} now`/,'after the reprint: "Send labels 76–150 now"');
   assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
@@ -199,8 +199,9 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(office, /:markShown && !moving\?'mark'/, 'the mark answer owns the primary only when it is on screen');
   assert.match(office, /\{markShown && <div/);
   const list = read('src/app/runs/page.tsx');
-  assert.match(list, /localStorage\.getItem\('lw:last-transport'\)/, 'the list reads the same printer choice as the run page');
-  assert.match(list, /officeDefault && leftToSend/);
+  // Round 8: only a run with labels waiting at the office reads "Paused" behind another run's part.
+  assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && \(run\.office\?\.onTheWay \?\? 0\) > 0 \? holdRun : null;/, 'the station hold shows only on runs with labels waiting at the office');
+  assert.doesNotMatch(list, /officeDefault && leftToSend/);
   assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');
   console.log('PASS run r6: fix reprint sends in one press; list and run page agree on waiting');
 }

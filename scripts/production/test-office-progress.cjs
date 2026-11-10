@@ -223,7 +223,7 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
   assert.match(O.officeStatusLine({ ...p, dispatch_hold_reason: 'control_pending' }).text, /confirm/);
   assert.match(O.officeStatusLine({ ...p, online: false }).text, /offline/);
   // After a send: never "the office keeps going" while paused or stopped.
-  assert.match(O.queuedNotice('Labels 1–20', false, paused), /paused, so nothing prints until someone taps Resume/);
+  assert.match(O.queuedNotice('Labels 1–20', false, paused), /paused, so nothing prints until someone presses Resume/);
   assert.doesNotMatch(O.queuedNotice('Labels 1–20', false, paused), /keeps going/);
   assert.doesNotMatch(O.queuedNotice('Labels 1–20', false, held), /keeps going/);
   assert.match(O.queuedNotice('Labels 1–20', false, O.officeStatusLine(p)), /keeps going/);
@@ -237,8 +237,8 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
 // --- Header and list wording --------------------------------------------------
 {
   const run = (status, printedCount, totalLabels = 100) => ({ status, printedCount, totalLabels });
-  { const s = runDisplayStatus(run('queued', 0), { sent: 0, onTheWay: 20, failed: 0 }); assert.equal(s.label, 'Printing', 'never "Ready" while printing'); assert.equal(s.detail, 'Sending to the office printer'); }
-  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Needs you', 'sent is not printed: someone confirms'); assert.match(s.detail, /^Sent to the office printer/); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 0, onTheWay: 20, failed: 0 }); assert.equal(s.label, 'Printing', 'never "Ready" while printing'); assert.equal(s.detail, 'At the office printer'); }
+  { const s = runDisplayStatus(run('queued', 0), { sent: 100, onTheWay: 0, failed: 0 }); assert.equal(s.label, 'Needs a check', 'sent is not printed: someone confirms'); assert.equal(s.tone, 'check', 'a routine check is amber, never red'); assert.match(s.detail, /^Sent: check they came out/); }
   assert.equal(runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 0 }).detail, 'Partly sent');
   { const s = runDisplayStatus(run('queued', 0), { sent: 20, onTheWay: 0, failed: 1 }); assert.equal(s.label, 'Needs you'); assert.equal(s.detail, 'Office print needs a check'); }
   assert.equal(runDisplayStatus(run('queued', 0), null).label, 'Ready');
@@ -352,7 +352,7 @@ console.log('PASS field display names');
     assert.equal(officePrinterHeld([{ ...base, needs_review: true, review_holds: [{ run_id: 'x', from: 1, to: 2 }] }]), true, 'stopped for a check');
     assert.equal(officePrinterHeld([base]), false, 'ready');
     assert.equal(officePrinterHeld([]), false, 'no printer');
-    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld \}/, 'the run header gets the station status');
+    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld,\s*unchecked: uncheckedLabels, unsure: panel\.unsure, refused: panel\.refused, printerPaused: panel\.paused \}/, 'the run header gets the station status and what the panel says');
     assert.match(page, /onHeldChange=\{setPanelHeld\}/, 'lifted from the office panel');
     assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld,heldById\?\{runId:heldById,runName:heldByName\}:null\);\}/, 'the header also learns which other run holds the printer');
   }
@@ -417,6 +417,8 @@ console.log('PASS field display names');
   assert.equal(R.statusAfterMarkPrinted(undefined, 10, 100), 'paused');
   assert.equal(R.statusAfterMarkPrinted('printing', 100, 100), 'completed', 'every label counted completes the run');
   assert.equal(R.statusAfterMarkPrinted('paused', 120, 100), 'completed');
+  assert.equal(R.statusAfterMarkPrinted('cancelled', 10, 100), null, 'a cancelled run is never un-cancelled by marking labels printed');
+  assert.equal(R.statusAfterMarkPrinted('cancelled', 100, 100), null);
   const store = read('src/lib/runStore.ts');
   assert.match(store, /recordPrinted: async \(id, printedCount, status, options\) => \{\n\s+if \(status\) return get\(\)\.setRunStatus\(id, status, printedCount, options\);\n\s+const run = await updateRunWithQueue\(id, \{ printedCount \}, options\?\.onSetAside\);/, 'no status: a progress-only (high-water) write');
   const queue = read('src/lib/offlineQueue.ts');

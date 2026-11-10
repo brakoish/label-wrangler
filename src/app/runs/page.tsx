@@ -22,8 +22,6 @@ import { scannedLabelNumbers } from '@/lib/scannedLabels';
 import { readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
-import { isDazzleRunning } from '@/lib/dazzlePrinter';
-import { isWebUsbSupported } from '@/lib/webusbPrinter';
 
 /** Read-only extras the runs list API adds (left out when it can't tell). */
 interface ListOffice {
@@ -46,27 +44,30 @@ const TONE_DOT: Record<RunDisplayTone, string> = {
   idle: 'bg-transparent ring-2 ring-inset ring-zinc-500',
   active: 'bg-amber-400',
   attention: 'bg-red-400',
+  check: 'bg-amber-300',
   paused: 'bg-transparent ring-2 ring-inset ring-amber-300',
   done: 'bg-emerald-400',
   cancelled: 'bg-zinc-500',
 };
 
+/** Labels in the given stretches. */
+const spanCount = (spans: ReadonlyArray<OfficeSpan> | undefined) => (spans ?? []).reduce((n, s) => n + s.to - s.from + 1, 0);
+
 /**
  * A row's office state, also used by the status filter so both agree.
- * Labels of this run waiting behind another run's part: "Paused", with that
- * run named once. A run with nothing sent yet waits too when this device
- * sends to the office printer, the same rule the run page uses.
+ * Only a run with labels waiting at the office reads "Paused" behind another
+ * run's part (named once); every other run keeps its own status. Sent labels
+ * nobody checked yet read "N labels sent, not checked yet".
  */
-function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null, officeDefault: boolean) {
-  const leftToSend = run.status !== 'draft' && run.status !== 'cancelled' && (run.printedCount || 0) < run.totalLabels;
-  const heldBy = holdRun && holdRun.runId !== run.id && ((run.office?.onTheWay ?? 0) > 0 || (officeDefault && leftToSend)) ? holdRun : null;
-  return run.office ? { ...run.office, held: printerHeld, heldBy } : heldBy ? { sent: 0, onTheWay: 0, failed: 0, firstFailed: null, held: printerHeld, heldBy } as ListOffice & { held: boolean; heldBy: typeof heldBy } : null;
+function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null) {
+  const heldBy = holdRun && holdRun.runId !== run.id && (run.office?.onTheWay ?? 0) > 0 ? holdRun : null;
+  return run.office ? { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges) } : null;
 }
 
 function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null }) | null }) {
   const display = runDisplayStatus(run, office);
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : 'text-zinc-300'}`}>
       <span aria-hidden="true" className={`size-2 rounded-full transition-colors duration-200 ${TONE_DOT[display.tone]}`} />
       <span key={display.label} className="status-swap">{display.label}</span>
     </span>
@@ -209,7 +210,9 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
         if (!response.ok) throw new Error(String(response.status));
         fresh = await response.json() as Run;
       } catch { failed.push(run.name); continue; }
-      if (norm(fresh) !== norm(run) || fresh.totalLabels !== run.totalLabels) {
+      // A go-back on another device (progress lowered since the list was read)
+      // is never undone from here: those labels may have jammed.
+      if (norm(fresh) !== norm(run) || fresh.totalLabels !== run.totalLabels || (fresh.printedCount || 0) < (run.printedCount || 0)) {
         changed.push(run.name);
         setPicked((current) => { const next = new Set(current); next.delete(run.id); return next; });
         continue;
@@ -219,7 +222,8 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
       const refused = { reason: '' };
       try {
         if (through > printed) {
-          // Never "paused" under a device that is printing this run: progress only.
+          // Never "paused" under a device that is printing this run, and a
+          // cancelled run stays cancelled: progress only.
           await recordPrinted(run.id, through, statusAfterMarkPrinted(fresh.status, through, fresh.totalLabels), { onSetAside: (reason) => { refused.reason = reason; } });
           if (refused.reason) { failed.push(run.name); continue; }
         }
@@ -243,7 +247,7 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
   const count = runs.filter((r) => picked.has(r.id)).length;
   return (
     <Dialog open={open} onClose={onClose} dismissible={!busy} title="Mark sent labels as printed?" className="max-w-lg">
-      <p className="text-sm text-zinc-300">The office printer reported these labels as sent. Check they came out of the printer first.</p>
+      <p className="text-sm text-zinc-300">The office printer reported these labels as sent. Check they came out of the printer first.{runs.some((r) => r.status === 'cancelled') ? ' Cancelled runs stay cancelled; only their count changes.' : ''}</p>
       <ul className="max-h-80 space-y-1 overflow-y-auto">
         {runs.map((run) => {
           const plan = run.office?.markable;
@@ -253,7 +257,7 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
                 <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={picked.has(run.id)} disabled={busy}
                   onChange={(e) => setPicked((current) => { const next = new Set(current); if (e.target.checked) next.add(run.id); else next.delete(run.id); return next; })} />
                 <span className="min-w-0">
-                  <span className="block font-medium text-zinc-100">{run.name}</span>
+                  <span className="block font-medium text-zinc-100">{run.name}{run.status === 'cancelled' ? <span className="font-normal text-zinc-400"> · cancelled</span> : null}</span>
                   <span className="block text-zinc-400">{plan ? spanWords(plan.ranges) : ''}{plan && plan.through > (run.printedCount || 0) ? ` · progress moves to ${plan.through.toLocaleString()} of ${run.totalLabels.toLocaleString()}` : ''}</span>
                 </span>
               </label>
@@ -339,18 +343,6 @@ export default function RunsPage() {
   // The shared printer is paused or stopped: queued labels read as waiting, not on their way.
   const [printerHeld, setPrinterHeld] = useState(false);
   const [holdRun, setHoldRun] = useState<{ runId: string; runName: string } | null>(null);
-  // The printer this device last chose on a run page; the run page starts on it.
-  const [officeDefault, setOfficeDefault] = useState(false);
-  useEffect(() => {
-    let saved: string | null = null;
-    try { saved = localStorage.getItem('lw:last-transport'); } catch { saved = null; }
-    if (saved === 'office') { setOfficeDefault(true); return; }
-    if (saved === 'webusb' && isWebUsbSupported()) return;
-    // Like the run page: a running Dazzle app comes first, then the office printer.
-    let live = true;
-    void isDazzleRunning().then((dz) => { if (live) setOfficeDefault(!dz); });
-    return () => { live = false; };
-  }, []);
   const onPrinterHeld = useCallback((held: boolean, by?: { runId: string; runName: string } | null) => {
     setPrinterHeld(held);
     setHoldRun((prev) => (prev?.runId === by?.runId && prev?.runName === by?.runName ? prev : by ?? null));
@@ -428,7 +420,7 @@ export default function RunsPage() {
     const q = search.trim().toLowerCase();
     const matches = (r: Run) => {
       // The same five words as the rows and the run page.
-      if (statusFilter !== 'all' && runDisplayStatus(r, rowOffice(r as ListRun, printerHeld, holdRun, officeDefault)).bucket !== statusFilter) return false;
+      if (statusFilter !== 'all' && runDisplayStatus(r, rowOffice(r as ListRun, printerHeld, holdRun)).bucket !== statusFilter) return false;
       if (templateFilter !== 'all' && r.templateId !== templateFilter) return false;
       if (q) {
         const hay = [
@@ -451,10 +443,11 @@ export default function RunsPage() {
       history: history.filter(matches),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, pinned, history, search, statusFilter, templateFilter, templates, formats, printerHeld, holdRun, officeDefault]);
+  }, [active, pinned, history, search, statusFilter, templateFilter, templates, formats, printerHeld, holdRun]);
 
   // Runs whose sent office labels nobody counted yet (for the bulk action).
-  const markableRuns = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.markable?.ranges.length ?? 0) > 0 && (r.office?.onTheWay ?? 0) === 0), [active]);
+  // Cancelled runs too: labels that printed after "Cancel run, let them print" still need counting.
+  const markableRuns = useMemo(() => (runs as ListRun[]).filter((r) => (r.office?.markable?.ranges.length ?? 0) > 0 && (r.office?.onTheWay ?? 0) === 0 && (r.office?.failed ?? 0) === 0 && (ACTIVE_STATUSES.includes(r.status) || r.status === 'cancelled')), [runs]);
   // Runs with sent labels that aren't offered because a part needs someone first.
   // Also runs with labels still on their way: they're offered once the office is done with them.
   const bulkLeftOut = useMemo(() => (active as ListRun[]).filter((r) => (r.office?.sent ?? 0) > 0 && !markableRuns.includes(r) && ((r.office?.failed ?? 0) > 0 || (r.office?.onTheWay ?? 0) > 0)), [active, markableRuns]);
@@ -482,7 +475,6 @@ export default function RunsPage() {
                 onTogglePin={() => void togglePin(r.id)}
                 printerHeld={printerHeld}
                 holdRun={holdRun}
-                officeDefault={officeDefault}
               />
             </li>
           ))}
@@ -626,7 +618,7 @@ export default function RunsPage() {
             <section>
               <div className="flex items-baseline justify-between mb-3">
                 <h2 className="section-title">Saved presets</h2>
-                <span className="text-sm text-zinc-400">Tap one to start a run</span>
+                <span className="text-sm text-zinc-400">Choose one to start a run</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {presets.map((p) => (
@@ -645,7 +637,7 @@ export default function RunsPage() {
             <section>
               <div className="flex items-baseline justify-between mb-3">
                 <h2 className="section-title">Saved presets</h2>
-                <span className="text-sm text-zinc-400">Tap one to start a run</span>
+                <span className="text-sm text-zinc-400">Choose one to start a run</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {presets.map((p) => (
@@ -664,11 +656,17 @@ export default function RunsPage() {
           {/* History / filterable list */}
           {runs.length > 0 && (
             <section>
-              <div className="flex items-baseline gap-3 mb-3">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h2 className="section-title">Finished and cancelled</h2>
                 <span className="text-sm text-zinc-400 tabular-nums">
                   {filteredRuns.history.length}{filteredRuns.history.length !== history.length ? ` of ${history.length}` : ''}
                 </span>
+                {/* With no unfinished runs, the bulk action lives here (cancelled runs with sent labels). */}
+                {markableRuns.length > 0 && filteredRuns.active.length === 0 && (
+                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm text-zinc-300 max-sm:-ml-2 max-sm:basis-full max-sm:justify-start sm:ml-auto">
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Mark sent labels as printed…
+                  </button>
+                )}
               </div>
               {renderRunCollection(
                 filteredRuns.history,
@@ -818,20 +816,17 @@ function RunRow({
   onTogglePin,
   printerHeld = false,
   holdRun = null,
-  officeDefault = false,
 }: {
   run: ListRun;
   printerHeld?: boolean;
   /** Another run whose part stops the shared printer. */
   holdRun?: { runId: string; runName: string } | null;
-  /** This device prints to the office printer by default, as the run page does. */
-  officeDefault?: boolean;
   templateName: string;
   formatName: string;
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
-  const office = rowOffice(run, printerHeld, holdRun, officeDefault);
+  const office = rowOffice(run, printerHeld, holdRun);
   const { setRunStatus, createPrintEvent } = useRunStore();
   const display = runDisplayStatus(run, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
@@ -851,11 +846,8 @@ function RunRow({
   // only what is true.
   const cancelRun = async () => {
     const mayHaveOffice = !!run.office;
+    // Unreadable office queue: the stop is still offered (it reads the queue again first).
     const jobs = mayHaveOffice ? await readOfficeJobs(run.id) : [];
-    if (jobs === null) {
-      void alertDialog('Open the run to cancel it', 'The office queue for this run couldn’t be read just now, so it isn’t clear which labels are still at the office. Open the run to cancel it there, or try again in a moment.');
-      return;
-    }
     const choice = await askCancelRun({ title: `Cancel “${run.name}”?`, jobs, total: run.totalLabels });
     if (!choice) return;
     try {
@@ -866,7 +858,7 @@ function RunRow({
       if (choice === 'stop') {
         const result = await stopWaitingAtOffice(run.id, jobs);
         stoppedJobIds = result.stoppedJobIds;
-        if (result.jobs) after = result.jobs;
+        after = result.jobs ?? after;
         problem = stopProblem(result);
       }
       // Labels printed by scanning are never called "not printed".
@@ -882,9 +874,9 @@ function RunRow({
           historyRead = true;
         }
       } catch { /* below: nothing is called "not printed" without the history */ }
-      const events = cancelEvents({ printedCount: printed, end: run.totalLabels, jobs: after, stoppedJobIds, scanned, confirmed, output: run.office ? 'office-pi' : 'roll-zpl', printerName: null });
+      const events = cancelEvents({ printedCount: printed, end: run.totalLabels, jobs: after ?? [], stoppedJobIds, scanned, confirmed, output: run.office ? 'office-pi' : 'roll-zpl', printerName: null });
       // Without the history, scanned labels can't be told apart: name only what was stopped.
-      for (const event of events) if (historyRead || event.message !== 'Run cancelled') await createPrintEvent(run.id, event);
+      for (const event of events) if ((historyRead && after) || event.message !== 'Run cancelled') await createPrintEvent(run.id, event);
       if (problem) void alertDialog('Some labels may still print', problem);
       else toast('Run cancelled');
     } catch (error) { void alertDialog('The run wasn’t cancelled', friendlyError(error, 'Try again in a moment.')); }
@@ -904,6 +896,9 @@ function RunRow({
             <p className={`mt-0.5 text-xs ${failed.kind === 'did-not-print' || (!failed.kind && failed.didNotPrint) ? 'text-red-400' : 'text-amber-300'}`}>
               {officeProblemWords(failed).sentence}{office ? moreNeedAttention(office, failed) : ''}
             </p>
+          )}
+          {run.status === 'cancelled' && (office?.unchecked ?? 0) > 0 && (
+            <p className="mt-0.5 text-xs text-amber-300">{office!.unchecked!.toLocaleString()} sent — check they came out</p>
           )}
           {!failed && partsLeft.length > 0 && unfinished && (
             <p className="mt-0.5 text-xs text-amber-300">{partsLeft.length === 1 ? 'The last part wasn’t' : `${partsLeft.length} parts weren’t`} sent yet. Open this run to send {partsLeft.length === 1 ? 'it' : 'them'}.</p>

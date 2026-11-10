@@ -387,7 +387,9 @@ async function renderNative(template, format, values) {
     const panel = read('src/components/runs/OfficePiPrinter.tsx');
     assert.doesNotMatch(panel, /Send anyway|layoutWarnings/, 'the office panel has no second, different ask');
     const checks = read('src/components/runs/RunBarcodeCheck.tsx');
-    assert.match(checks, /stops=\{check\.verdict\.stops\}/, 'the run page shows the same barcode warning, with no tick when nothing can print');
+    // Round 8: the run page draws the shared sentences and "Why?" itself, so each tick can name the exact labels sent.
+    assert.match(checks, /const canTick = !readOnly && !check\.verdict\.stops;/, 'the run page shows the same barcode warning, with no tick when nothing can print');
+    assert.match(checks, /barcodePlainSentence\(item\)/);
     const warning = read('src/components/checks/BarcodeWarning.tsx');
     assert.match(warning, /const canTick = tickable && !stops && !!onTick;/, 'a problem that stops printing never gets a "Print anyway" tick');
   }

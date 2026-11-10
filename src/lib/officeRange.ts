@@ -234,6 +234,9 @@ export function officeMarkPlan(printedCount: number, jobs: ReadonlyArray<OfficeJ
  * resumes a run that is still printing.
  */
 export function statusAfterMarkPrinted(runStatus: string | null | undefined, through: number, total: number): 'completed' | 'paused' | null {
+  // A cancelled run stays cancelled: labels that printed after "Cancel run,
+  // let them print" are counted as progress only.
+  if (runStatus === 'cancelled') return null;
   if (through >= total) return 'completed';
   return runStatus === 'printing' ? null : 'paused';
 }

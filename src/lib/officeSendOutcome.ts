@@ -16,6 +16,8 @@
  *              idempotency key) is kept for a safe "Send again".
  * - other:     something on this device failed before anything was sent.
  */
+import { isNetworkError } from './userMessages';
+
 export type OfficeFailureKind = 'refused' | 'uncertain' | 'other';
 
 /** Plain refusal reasons the UI can react to. */
@@ -48,12 +50,12 @@ export function officeFailureKind(status: number | undefined): OfficeFailureKind
 
 /** Why a send is still "not sure", in words, for the saved-request box. */
 export function uncertainSendWords(status: number | undefined, code?: string): { cause: 'signed-out' | 'no-access' | 'address' | 'busy' | 'no-answer'; message: string } {
-  if (status === 401) return { cause: 'signed-out', message: 'You’re signed out. Sign in again, come back to this run, then tap “Send again”.' };
-  if (status === 403 && code === 'origin_not_allowed') return { cause: 'address', message: 'This page was opened at an address the server doesn’t accept. Open Label Wrangler at its usual address, then tap “Send again”.' };
-  if (status === 403) return { cause: 'no-access', message: 'Your account can’t send to the office printer right now. Ask your admin for print access, then tap “Send again”.' };
-  if (status === 429) return { cause: 'busy', message: 'The server is busy. Wait a moment, then tap “Send again”.' };
-  if (status !== undefined && status >= 500) return { cause: 'no-answer', message: 'The server had a problem. Tap “Send again”. It’s the same request, so it won’t print twice.' };
-  return { cause: 'no-answer', message: 'The connection dropped before the server answered. Tap “Send again”. It’s the same request, so it won’t print twice.' };
+  if (status === 401) return { cause: 'signed-out', message: 'You’re signed out. Sign in again, come back to this run, then press “Send again”.' };
+  if (status === 403 && code === 'origin_not_allowed') return { cause: 'address', message: 'This page was opened at an address the server doesn’t accept. Open Label Wrangler at its usual address, then press “Send again”.' };
+  if (status === 403) return { cause: 'no-access', message: 'Your account can’t send to the office printer right now. Ask your admin for print access, then press “Send again”.' };
+  if (status === 429) return { cause: 'busy', message: 'The server is busy. Wait a moment, then press “Send again”.' };
+  if (status !== undefined && status >= 500) return { cause: 'no-answer', message: 'The server had a problem. Press “Send again”. It’s the same request, so it won’t print twice.' };
+  return { cause: 'no-answer', message: 'The connection dropped before the server answered. Press “Send again”. It’s the same request, so it won’t print twice.' };
 }
 
 const REFUSALS: Array<[RegExp, OfficeRefusalReason, string]> = [
@@ -217,7 +219,7 @@ export function officeStatusLine(
 export function queuedNotice(range: string, one: boolean, status: { paused: boolean; stopped: boolean }): string {
   const verb = one ? 'is' : 'are';
   if (status.stopped) return `${range} ${verb} queued. The office printer is stopped for a check, so ${one ? 'it prints' : 'they print'} once that’s done.`;
-  if (status.paused) return `${range} ${verb} queued. The printer is paused, so nothing prints until someone taps Resume.`;
+  if (status.paused) return `${range} ${verb} queued. The printer is paused, so nothing prints until someone presses Resume.`;
   return `${range} ${verb} queued for the office printer. You can leave this page; the office keeps going.`;
 }
 
@@ -264,10 +266,27 @@ export function plainJobReason(reason: string | null | undefined): string {
  * "Try again" reuses its key.
  */
 export function controlFailure(status: number | undefined, code?: string, resend = false): { keep: boolean; message: string } {
-  if (status === 401) return { keep: resend, message: resend ? 'You’re signed out. Sign in again, then tap “Try again”. It’s the same request, so it won’t happen twice.' : 'You’re signed out. Sign in again, then pause or resume the printer.' };
+  if (status === 401) return { keep: resend, message: resend ? 'You’re signed out. Sign in again, then press “Try again”. It’s the same request, so it won’t happen twice.' : 'You’re signed out. Sign in again, then pause or resume the printer.' };
   if (status === 403) return { keep: resend, message: 'Your account can’t pause or resume the office printer. Ask your admin.' };
   if (status === 409 && code === 'control_pending') return { keep: false, message: 'Another pause or resume is still on its way to the printer. Wait for it, then try again.' };
   if (status === 409 && code === 'worker_offline') return { keep: false, message: 'The office computer isn’t reporting right now, so the printer can’t be paused or resumed. Try again once it reports in.' };
   if (status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429) return { keep: false, message: 'The printer didn’t take that request. Check its status above, then try again.' };
-  return { keep: true, message: 'We’re not sure the printer got that. Tap “Try again”. It’s the same request, so it won’t happen twice.' };
+  return { keep: true, message: 'We’re not sure the printer got that. Press “Try again”. It’s the same request, so it won’t happen twice.' };
+}
+
+/**
+ * A label-drawing failure that isn't the design's fault (the drawing service
+ * didn't answer, no internet): plain words and a next step instead of
+ * "Labels 1–8: Bitmap rendering failed". Null when the message names a
+ * problem in the design itself, which keeps its own words.
+ */
+export function drawFailureWords(error: unknown, span: { from: number; to: number }): string | null {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (/Lane \d+, [^:]+: /.test(message) || /32 MiB|too much printer data/i.test(message)) return null;
+  const detail = message.replace(/^Labels? [\d,]+(?:–[\d,]+)?: /, '');
+  const down = isNetworkError(error)
+    || /^(Bitmap (rendering|proof) failed|Render failed|Incomplete bitmap proof( response)?|Internal Server Error|Failed to fetch|Load failed|NetworkError.*|Service unavailable|Bad gateway|Gateway time-?out)\.?$/i.test(detail.trim());
+  if (!down) return null;
+  const words = span.from === span.to ? `label ${span.from.toLocaleString('en-US')}` : `labels ${span.from.toLocaleString('en-US')}–${span.to.toLocaleString('en-US')}`;
+  return `Couldn’t draw ${words}. Check the connection and try again.`;
 }

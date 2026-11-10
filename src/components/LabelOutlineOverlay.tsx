@@ -30,6 +30,7 @@ export function LabelOutlineOverlay({ format }: { format: LabelFormat }) {
   const labelPillRadius = Math.min(labelW, labelH) * 0.08;
 
   return (
+    <>
     <svg
       className="absolute inset-0 pointer-events-none"
       viewBox={`0 0 ${linerW} ${labelH}`}
@@ -55,23 +56,21 @@ export function LabelOutlineOverlay({ format }: { format: LabelFormat }) {
               rx={labelPillRadius}
               ry={labelPillRadius}
             />
-            {across > 1 && (
-              <text
-                x={x + labelW / 2}
-                y={stroke * 4}
-                fontSize={labelH * 0.12}
-                fill="#d97706"
-                fillOpacity={0.7}
-                textAnchor="middle"
-                dominantBaseline="hanging"
-                style={{ fontFamily: 'ui-sans-serif, system-ui' }}
-              >
-                L{lane + 1}
-              </text>
-            )}
           </g>
         );
       })}
     </svg>
+    {/* Lane names in page text (12px), not scaled with the label: readable on small labels too. */}
+    {across > 1 && Array.from({ length: across }).map((_, lane) => (
+      <span
+        key={lane}
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1.5 -translate-x-1/2 text-xs font-medium leading-none text-amber-600"
+        style={{ left: `${((effectiveSideM + lane * (labelW + gap) + labelW / 2) / linerW) * 100}%` }}
+      >
+        L{lane + 1}
+      </span>
+    ))}
+    </>
   );
 }

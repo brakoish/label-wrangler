@@ -1,6 +1,6 @@
 'use client';
 
-import { canLeaveLocalPrint, setLocalPrintRunning } from '@/lib/printNavigation';
+import { canLeaveLocalPrint, officeSeriesActive, setLocalPrintRunning, stopOfficeSeries } from '@/lib/printNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, SquareDashed, Pencil, PenTool, Copy, ScanBarcode, Download, FileText, FileCode2, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -10,8 +10,8 @@ import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
-import { askCancelRun, cancelEvents, stopProblem, stopWaitingAtOffice } from './officeCancel';
-import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeWaitingSpans, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
+import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from './officeCancel';
+import { extendThrough, parseLabelList, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeWaitingSpans, skippedLabels, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
 import { RunProgress } from './RunProgress';
 import { printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
@@ -20,7 +20,9 @@ import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck } from './RunBarcodeCheck';
-import { barcodeItemTicked, barcodeTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
+import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
+import { drawFailureWords } from '@/lib/officeSendOutcome';
+import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { labelListWords, scannedLabelNumbers, scannedSkipPlan, type LabelSpan } from '@/lib/scannedLabels';
 import { plainPrinterProblem } from '@/lib/printerWords';
 import { fieldDisplayName } from '@/lib/fieldDisplayName';
@@ -167,6 +169,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const [showReprint, setShowReprint] = useState(false);
   const [reprintFromDraft, setReprintFromDraft] = useState('1');
   const [reprintToDraft, setReprintToDraft] = useState('1');
+  // The one "which labels?" box, typed like the office printer's ("5–8").
+  const [reprintText, setReprintText] = useState('1');
+  const [reprintTextError, setReprintTextError] = useState('');
   const [reprinting, setReprinting] = useState<{ from: number; to: number; done: number; kind?: 'reprint' | 'only' } | null>(null);
   const reprintQueue = useRef<RunQueueHandle | null>(null);
   const [stopAt, setStopAt] = useState(0); // 0 = print all; >0 = stop after this physical label
@@ -269,6 +274,26 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     .map((event) => ({ from: event.rangeFrom, to: event.rangeTo })), [eventsForRun, rewoundAt]);
   // Labels printed one by one in scan mode (print history, any device).
   const scannedLabels = useMemo(() => scannedLabelNumbers(eventsForRun, run?.totalLabels ?? Infinity, rewoundAt), [eventsForRun, run?.totalLabels, rewoundAt]);
+  // Labels printed here with "Print only 5–8" (progress unchanged), still ahead of
+  // the progress: starting the run asks before printing them a second time.
+  const printedOutOfOrder = useMemo(() => {
+    const out = new Set<number>();
+    for (const event of eventsForRun) {
+      if (event.eventType !== 'sent' || event.output !== 'roll-zpl' || !/^Printed out of order/.test(event.message || '')) continue;
+      if (Date.parse(event.createdAt) <= rewoundAt) continue;
+      for (let n = Math.max(1, event.rangeFrom); n <= Math.min(run?.totalLabels ?? 0, event.rangeTo); n++) out.add(n);
+    }
+    return [...out];
+  }, [eventsForRun, rewoundAt, run?.totalLabels]);
+  // The same labels as stretches, for progress: a scanned label counts as printed (display only).
+  const scannedSpans = useMemo<OfficeSpan[]>(() => {
+    const out: OfficeSpan[] = [];
+    for (const n of [...scannedLabels].sort((a, b) => a - b)) {
+      const last = out[out.length - 1];
+      if (last && n <= last.to + 1) last.to = Math.max(last.to, n); else out.push({ from: n, to: n });
+    }
+    return out;
+  }, [scannedLabels]);
 
   // The office printer's work on this run, for display only. Office sends
   // never move the run's progress: "sent to the printer" isn't proof that a
@@ -286,9 +311,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const stationHeld = useOfficeHeld(transport !== 'office' && office.loaded && office.summary.onTheWay > 0);
   const officeHeld = transport === 'office' ? panelHeld : stationHeld;
   const officeHeldBy = transport === 'office' ? panelHold.by : null;
-  const officeSummary = office.loaded && office.jobs.length > 0
-    ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld }
-    : officeHeldBy ? { heldBy: officeHeldBy, sent: 0, onTheWay: 0, failed: 0 } : null;
+  // What the office panel says (a send it isn't sure arrived, a refused send,
+  // a paused printer), so the header and the panel never disagree.
+  const [panelState, setPanelState] = useState<{ unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean }>({ unsure: null, refused: null, paused: false });
+  const onPanelState = useCallback((next: { unsure: OfficeSpan | null; refused: OfficeSpan | null; paused: boolean }) => {
+    setPanelState((prev) => (prev.paused === next.paused && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to ? prev : next));
+  }, []);
+  const panel = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false };
+  // The labels the office panel's main button sends next (for "Print anyway" words).
+  const [officeSend, setOfficeSend] = useState<OfficeSpan | null>(null);
+  const onOfficeRange = useCallback((span: OfficeSpan | null) => {
+    setOfficeSend((prev) => (prev?.from === span?.from && prev?.to === span?.to ? prev : span));
+  }, []);
   // Every stretch the office reported sent and nobody counted yet.
   const officeMark = useMemo(() => {
     // Each job carries its send's time, for every send of the run (not only
@@ -296,6 +330,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const jobs = rewoundAt ? office.jobs.filter((job) => !!job.requestAt && Date.parse(job.requestAt) > rewoundAt) : office.jobs;
     return officeMarkPlan(printedCount, jobs, officeConfirmed, total);
   }, [office.jobs, officeConfirmed, printedCount, total, rewoundAt]);
+  const uncheckedLabels = officeMark.ranges.reduce((n, r) => n + r.to - r.from + 1, 0);
+  const officeSummary = (office.loaded && office.jobs.length > 0) || officeHeldBy || panel.unsure || panel.refused || panel.paused
+    ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld,
+      unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused }
+    : null;
+  // Labels at or sent to the office printer that nobody counted yet: the lighter part of the progress bar.
+  const sentSpans = useMemo<OfficeSpan[]>(() => [...officeMark.ranges, ...(office.loaded ? officeWaitingSpans(office.jobs, total) : [])], [officeMark.ranges, office.loaded, office.jobs, total]);
   const allWithOffice = !!officeSummary && printedCount < total && firstUnsentLabel(office.jobs, total, printedCount) === null;
   // Print history follows the office: every move re-reads it.
   const officeSignature = office.signature;
@@ -312,6 +353,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, run?.totalLabels, run?.dataSource, template, format],
   );
+  // Text the thermal printer can't print ("·", accents): named on every view of the run, done runs included.
+  const characterWarning = useMemo(() => {
+    if (!run || !template) return null;
+    const result = checkRunPrinterCharacters(template, format, { sourceData: run.sourceData ?? [], fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField });
+    if (!result.issues.length) return null;
+    const fromSheet = (field: string) => run.fieldMappings?.[field]?.mode === 'column' || (!!run.mappedField && run.mappedField === field);
+    const items = result.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fromSheet(issue.field)));
+    return { heading: `${result.badLabels.toLocaleString()} label${result.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`, items, more: result.issues.length - items.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, template, format]);
   const [goAhead, setGoAhead] = useState<PrintGoAhead>({});
   useEffect(() => { setGoAhead(readPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, runId)); }, [runId]);
   const chooseGoAhead = (part: keyof PrintGoAhead, key: string | false) => setGoAhead((current) => {
@@ -337,8 +388,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     return explicit;
   });
   const checksOk = printCheckAllows(printCheck, { ...goAhead, barcode: barcodeOk ? printCheck.blockingKey : undefined });
+  // The labels the next print or send covers: the office panel's range, else the From/To boxes.
+  const tickSend = transport === 'office' && !isSheetFormat ? officeSend : rangeValid ? { from: selectedFrom, to: selectedThrough } : null;
   const checksReason = checksOk ? '' : printCheck.blocking.length && (printCheck.verdict.stops || !barcodeOk)
-    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : barcodeWaitWords(false, printCheck.blocking.length, barcodeTickLabel(printCheck.blocking[0])))
+    ? (printCheck.verdict.stops ? printCheck.verdict.waitReason : barcodeWaitWords(false, printCheck.blocking.length, barcodeSendTickLabel(printCheck.blocking[0], tickSend, total)))
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
   // Open the preview at the next label to print, once per run.
@@ -721,15 +774,20 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // Labels printed one by one in scan mode would come out twice: skipping
     // them is the primary button, and they still count as printed.
     let pieces: LabelSpan[] | null = null;
-    const scanned = scannedSkipPlan(selectedFrom, selectedThrough, scannedLabels);
+    // Labels printed out of order here ("Print only 5–8") are asked about the same way.
+    const outOfOrder = printedOutOfOrder.filter((n) => n > printedCount);
+    const scanned = scannedSkipPlan(selectedFrom, selectedThrough, [...new Set([...scannedLabels, ...outOfOrder])].sort((a, b) => a - b));
     if (scanned.skipped.length) {
       const words = labelListWords(scanned.skipped);
       const one = scanned.skipped.length === 1;
+      const byScan = scanned.skipped.every((n) => scannedLabels.includes(n));
+      const byOnly = scanned.skipped.every((n) => outOfOrder.includes(n));
+      const how = byScan ? 'already printed by scanning' : byOnly ? `already printed with “Print only”` : 'already printed';
       const choice = await choiceDialog({
-        title: `${words.charAt(0).toUpperCase()}${words.slice(1)} ${one ? 'was' : 'were'} already printed by scanning`,
+        title: `${words.charAt(0).toUpperCase()}${words.slice(1)} ${one ? 'was' : 'were'} ${how}`,
         body: scanned.keep.length
           ? `Printing labels ${selectedFrom}–${selectedThrough} prints ${one ? 'it' : 'them'} a second time. Skipping leaves ${one ? 'it' : 'them'} out; ${one ? 'it still counts' : 'they still count'} as printed.`
-          : `Every label from ${selectedFrom} to ${selectedThrough} was printed by scanning. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
+          : `Every label from ${selectedFrom} to ${selectedThrough} was ${byScan ? 'printed by scanning' : 'already printed'}. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
         confirmLabel: scanned.keep.length ? `Skip ${one ? 'it' : 'them'}` : 'Don’t print',
         altLabel: 'Print them again',
       });
@@ -783,7 +841,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         labelsToSend = all; feedEnds = ends;
       } else labelsToSend = await generateLabelsForRunWithImages(run, template, format, printRange, { signal: controller.signal });
     }
-    catch (error) { if (controller.signal.aborted) return; setStatus('error'); setErrorMsg(error instanceof Error ? error.message : 'Render failed'); await setRunStatus(run.id, 'paused', startCount); return; }
+    catch (error) { if (controller.signal.aborted) return; setStatus('error'); setErrorMsg(drawFailureWords(error, printRange) ?? (error instanceof Error ? error.message : 'Render failed')); await setRunStatus(run.id, 'paused', startCount); return; }
     if (!mounted.current || controller.signal.aborted) return;
     const handle = startPrintQueue(sender, {
       labels: labelsToSend,
@@ -853,36 +911,49 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   const requestCancel = async () => {
+    // A "Send all in parts" going on here stops first, so no part is sent
+    // after the run is cancelled.
+    if (officeSeriesActive()) {
+      const stop = await confirmDialog({ title: 'Stop sending parts first?', body: 'Parts are still going to the office printer. Sending stops after the part on its way now, then you can choose what happens to the run.', confirmLabel: 'Stop sending', cancelLabel: 'Keep sending' });
+      if (!stop) return;
+      await stopOfficeSeries();
+    }
     // Labels still waiting at the office can be stopped with the run, or left
     // to print: the person chooses, and the history says what really happened.
-    const jobs = office.loaded ? office.jobs : [];
+    // Read fresh, so a page that just opened (or a slow connection) still
+    // offers the stop; an account that can't see the office has nothing there.
+    const fresh = run ? await readOfficeJobs(run.id) : null;
+    const denied = office.failed?.status === 401 || office.failed?.status === 403;
+    const jobs = fresh ?? (denied ? [] : null);
     const choice = await askCancelRun({ title: 'Cancel this run?', jobs, total, after: 'You can start a new run from the same data with Re-run.' });
-    if (choice) await handleCancel(choice === 'stop');
+    if (choice) await handleCancel(choice === 'stop', jobs);
   };
 
-  const handleCancel = async (stopAtOffice = false) => {
+  const handleCancel = async (stopAtOffice = false, known: OfficeJobBrief[] | null = office.loaded ? office.jobs : null) => {
     preparation.current?.abort();
     queueRef.current?.cancel();
     setStatus('cancelled');
     if (run) {
       await setRunStatus(run.id, 'cancelled', printedCount);
-      let jobs: OfficeJobBrief[] = office.loaded ? office.jobs : [];
+      let jobs: OfficeJobBrief[] | null = known;
       let stoppedJobIds = new Set<string>();
       if (stopAtOffice) {
         const result = await stopWaitingAtOffice(run.id, jobs);
         stoppedJobIds = result.stoppedJobIds;
-        if (result.jobs) jobs = result.jobs;
+        jobs = result.jobs ?? jobs;
         const problem = stopProblem(result);
         if (problem) setErrorMsg(problem);
         void office.refresh().catch(() => { /* shown by the panel */ });
       }
       const end = stopAt > 0 ? Math.min(stopAt, total) : total;
       const events = cancelEvents({
-        printedCount, end, jobs, stoppedJobIds, scanned: scannedLabels, confirmed: officeConfirmed,
+        printedCount, end, jobs: jobs ?? [], stoppedJobIds, scanned: scannedLabels, confirmed: officeConfirmed,
         output: isSheetFormat ? 'sheet-pdf' : transport === 'office' ? 'office-pi' : 'roll-zpl',
         printerName: transport === 'dazzle' ? dazzleSelected : transport === 'office' ? 'Office printer' : usbPrinter?.productName ?? null,
       });
-      for (const event of events) await createPrintEvent(run.id, event);
+      // Without the office queue, labels still at the office can't be told
+      // apart: the history names only what was stopped, never "not printed".
+      for (const event of events) if (jobs || event.message !== 'Run cancelled') await createPrintEvent(run.id, event);
     }
   };
 
@@ -890,10 +961,23 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const reprintTo = Number(reprintToDraft);
   const reprintValid = Number.isInteger(reprintFrom) && Number.isInteger(reprintTo) && reprintFrom >= 1 && reprintTo >= reprintFrom && reprintTo <= total;
   const reprintCount = reprintValid ? reprintTo - reprintFrom + 1 : 0;
-  const openReprint = (from: number, to: number) => {
+  const setReprintSpan = (from: number, to: number) => {
     setReprintFromDraft(String(from));
     setReprintToDraft(String(to));
+    setReprintText(from === to ? String(from) : `${from}–${to}`);
+    setReprintTextError('');
+  };
+  const openReprint = (from: number, to: number) => {
+    setReprintSpan(from, to);
     setShowReprint(true);
+  };
+  const typeReprint = (text: string) => {
+    setReprintText(text);
+    const parsed = parseLabelList(text, total);
+    const one = !parsed.error && parsed.spans.length === 1 ? parsed.spans[0] : null;
+    setReprintFromDraft(one ? String(one.from) : '');
+    setReprintToDraft(one ? String(one.to) : '');
+    setReprintTextError(parsed.error || (parsed.spans.length > 1 ? 'Type one stretch, like 5–8. Print the others after.' : ''));
   };
 
   // Reprint exactly From..To (e.g. a jammed strip). This is a separate job:
@@ -925,7 +1009,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const finish = () => { reprintQueue.current = null; if (mounted.current) { setReprinting(null); setLocalPrintRunning(false); } };
     let labelsToSend: string[];
     try { labelsToSend = await generateLabelsForRunWithImages(run, template, format, range, { signal: controller.signal }); }
-    catch (error) { finish(); if (!controller.signal.aborted) setErrorMsg(friendlyRenderError(friendlyError(error, 'Could not prepare the labels.'), template.elements, across)); return; }
+    catch (error) { finish(); if (!controller.signal.aborted) setErrorMsg(drawFailureWords(error, range) ?? friendlyRenderError(friendlyError(error, 'Could not prepare the labels.'), template.elements, across)); return; }
     if (!mounted.current || controller.signal.aborted) { finish(); return; }
     reprintQueue.current = startPrintQueue(makeSender(controller), {
       labels: labelsToSend,
@@ -1327,7 +1411,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const pickerOpen = !isSheetFormat && (showTransportPicker || !transport);
   const runFinished = printedCount >= total && total > 0;
   // Every label counted as printed, wherever it sits (5–10 marked reads as 6, not 0).
-  const printedSpanList = printedSpans(printedCount, officeConfirmed, total);
+  // Labels printed one by one by scanning count too, wherever they sit.
+  const printedSpanList = printedSpans(printedCount, [...officeConfirmed, ...scannedSpans], total);
   const printedLabels = printedSpanList.reduce((n, s) => n + s.to - s.from + 1, 0);
   const toGo = stillToGo(printedSpanList, total);
   const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
@@ -1343,16 +1428,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
   // With an office part that failed, its fix comes before the barcode list (phones see it first).
   const officeFixFirst = !isSheetFormat && transport === 'office' && (officeSummary?.failed ?? 0) > 0;
+  const designHref = `/designer?id=${template.id}${printCheck.barcodeElementIds[0] ? `&select=${encodeURIComponent(printCheck.barcodeElementIds[0])}` : ''}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`;
   const checkList = (
     <RunBarcodeCheck
+      send={tickSend}
+      total={total}
+      characters={characterWarning}
       check={printCheck}
       ticks={barcodeTicks}
       wizardGoAhead={wizardBarcodeGoAhead}
       onTick={tickBarcode}
       layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
-      designHref={`/designer?id=${template.id}${printCheck.barcodeElementIds[0] ? `&select=${encodeURIComponent(printCheck.barcodeElementIds[0])}` : ''}&returnTo=${encodeURIComponent(`/runs/${run.id}`)}`}
+      designHref={designHref}
     />
+  );
+  // A finished or cancelled run still says what was wrong with its design (no ticks).
+  const calmCheckList = (
+    <RunBarcodeCheck readOnly total={total} characters={characterWarning} check={printCheck} ticks={[]} wizardGoAhead={false}
+      onTick={() => {}} layoutGoAhead={false} onLayoutGoAhead={() => {}} designHref={designHref} />
   );
   const sentLine = officeSentLine(officeSummary, total);
   // Scan mode is for printing here, one label per scan: kept out of the way
@@ -1419,15 +1513,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100 break-words">{run.name}</h1>
-            <p className="mt-1 text-sm">
-              <span className="inline-flex items-center gap-1.5 font-medium text-zinc-100">
-                <span aria-hidden="true" className={`size-2 rounded-full ${
-                  display.tone === 'done' ? 'bg-emerald-400' :
-                  display.tone === 'active' ? 'bg-amber-400' :
-                  display.tone === 'attention' ? 'bg-red-400' :
-                  display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
-                  display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
-                }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap inline-flex gap-1.5 ${display.tone === 'attention' ? 'text-red-400' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300">· {display.detail}</span>}</span></span>
+            {/* The dot sits on the first line; a long detail wraps under the words, not under the dot. */}
+            <p className="mt-1 flex items-start gap-1.5 text-sm font-medium text-zinc-100">
+              <span aria-hidden="true" className={`status-dot mt-1.5 size-2 shrink-0 rounded-full ${
+                display.tone === 'done' ? 'bg-emerald-400' :
+                display.tone === 'active' ? 'bg-amber-400' :
+                display.tone === 'attention' ? 'bg-red-400' :
+                display.tone === 'check' ? 'bg-amber-300' :
+                display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
+                display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
+              }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap min-w-0 ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300"> · {display.detail}</span>}</span>
             </p>
             {/* Facts as separate items that wrap whole, never a run-on line of dots. */}
             <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-zinc-400" aria-label="About this run">
@@ -1452,7 +1547,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {calm ? (
             <div className="space-y-4 reveal">
               <div className="space-y-2">
-                <RunProgress printedCount={printedCount} total={total} confirmed={officeConfirmed} tone={runFinished ? 'done' : 'muted'} />
+                <RunProgress printedCount={printedCount} total={total} confirmed={[...officeConfirmed, ...scannedSpans]} tone={runFinished ? 'done' : 'muted'} />
                 <p role="status" className={`text-sm ${runFinished ? 'flex items-center gap-2 font-medium text-emerald-400' : 'text-zinc-300'}`}>
                   {runFinished
                     ? <><CheckCircle2 className="h-4 w-4" aria-hidden="true" /> All {total.toLocaleString()} labels printed</>
@@ -1465,6 +1560,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <RotateCcw className="h-4 w-4" aria-hidden="true" /> Print some labels again…
                 </button>
               </div>
+              {calmCheckList}
             </div>
           ) : <>
           <div className="space-y-3">
@@ -1587,7 +1683,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!calm && !officeFixFirst && checkList}
 
           <div className="space-y-2">
-            <RunProgress printedCount={printedCount} total={total} confirmed={officeConfirmed} tone={runFinished ? 'done' : 'active'} animate />
+            <RunProgress printedCount={printedCount} total={total} confirmed={[...officeConfirmed, ...scannedSpans]} sent={sentSpans} tone={runFinished ? 'done' : 'active'} animate />
             {/* What the office printer has done: shown, never counted as printed.
                 With the office printer chosen, its panel says it once. */}
             {transport !== 'office' && sentLine && <p className="text-sm text-zinc-400 tabular-nums">{sentLine}</p>}
@@ -1701,17 +1797,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             ) : (
               <fieldset className="space-y-3">
                 <legend className="mb-2 text-sm font-semibold text-zinc-100">Print some labels again</legend>
-                <div className="grid grid-cols-2 gap-2 text-xs font-medium text-zinc-400">
-                  <label>From label
-                    <input type="number" inputMode="numeric" min={1} max={total} value={reprintFromDraft} onChange={(e) => setReprintFromDraft(e.target.value)} className="field mt-1 w-full tabular-nums" />
-                  </label>
-                  <label>To label
-                    <input type="number" inputMode="numeric" min={reprintFrom || 1} max={total} value={reprintToDraft} onChange={(e) => setReprintToDraft(e.target.value)} className="field mt-1 w-full tabular-nums" />
-                  </label>
+                <div className="space-y-1">
+                  <label htmlFor="reprint-labels" className="block text-sm text-zinc-300">Which labels?</label>
+                  <input id="reprint-labels" inputMode="text" autoComplete="off" placeholder="For example 5–8" value={reprintText} onChange={(e) => typeReprint(e.target.value)} className="field w-full tabular-nums" aria-describedby="reprint-labels-help" />
+                  <p id="reprint-labels-help" className="text-sm text-zinc-400">A dash means every label in between.</p>
                 </div>
                 {reprintValid
                   ? <p className="text-sm text-zinc-400">{reprintCount === 1 ? '1 label' : `${reprintCount.toLocaleString()} labels`}. Progress won&apos;t change.</p>
-                  : <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total}, with &ldquo;To&rdquo; at or after &ldquo;From&rdquo;.</p>}
+                  : reprintText.trim() !== '' && <p role="alert" className="text-sm text-amber-300">{reprintTextError || `Use label numbers from 1 to ${total.toLocaleString()}.`}</p>}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -1721,7 +1814,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   >
                     <Printer className="w-4 h-4" aria-hidden="true" /> {isSheetFormat ? 'Open these labels to print' : `Print ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`} again`}
                   </button>
-                  <button type="button" onClick={() => setReprintToDraft(String(total))} className="btn btn-ghost btn-sm" disabled={reprintToDraft === String(total)}>To the end</button>
+                  <button type="button" onClick={() => setReprintSpan(reprintValid ? reprintFrom : 1, total)} className="btn btn-ghost btn-sm" disabled={reprintToDraft === String(total)}>To the end</button>
                   <button type="button" onClick={() => setShowReprint(false)} className="btn btn-ghost btn-sm">Cancel</button>
                 </div>
                 {!isSheetFormat && reprintValid && reprintFrom <= printedCount && (
@@ -1733,7 +1826,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
           {officeFixFirst && checkList}
           </>}
         </section>
@@ -1780,11 +1873,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   type="button"
                   onClick={() => setShowOutlines((s) => !s)}
                   aria-pressed={showOutlines}
-                  aria-label="Show label outlines"
                   title={showOutlines ? 'Hide label outlines' : 'Show label outlines'}
-                  className={`btn btn-ghost btn-icon btn-sm ${showOutlines ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-400'}`}
+                  className={`btn btn-ghost btn-sm ${showOutlines ? 'text-amber-400 bg-amber-500/10' : 'text-zinc-400'}`}
                 >
-                  <SquareDashed className="w-4 h-4" aria-hidden="true" />
+                  <SquareDashed className="w-4 h-4" aria-hidden="true" />Outlines
                 </button>
               {total > 0 && (
                 <div className="flex items-center gap-1 text-sm">

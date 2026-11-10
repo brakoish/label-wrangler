@@ -124,7 +124,8 @@ assert.ok(!/list|above|below/i.test(barcodeWaitWords(false, 3)), 'never points t
 
 // Wizard, run page and designer draw the same warning and name the same fix.
 assert.match(read('src/app/runs/new/page.tsx'), /<BarcodeWarning/);
-assert.match(read('src/components/runs/RunBarcodeCheck.tsx'), /<BarcodeWarning/);
+// The run page uses the shared sentence and "Why?" (its ticks name the labels each send covers).
+assert.match(read('src/components/runs/RunBarcodeCheck.tsx'), /import \{ FixInDesignerLink, WhyToggle \} from '@\/components\/checks\/BarcodeWarning';/);
 assert.match(read('src/components/designer/DesignNotice.tsx'), /barcodePlainSentence/);
 assert.match(read('src/app/designer/page.tsx'), /barcodeAutoFix\(/);
 

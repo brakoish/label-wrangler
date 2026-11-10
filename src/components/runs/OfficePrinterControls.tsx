@@ -60,12 +60,12 @@ export function OfficePrinterControls({attention=false,stopped=false,showStatus=
   let payload:{action:string;idempotencyKey:string};
   try{payload=saved?JSON.parse(saved):{action,idempotencyKey:crypto.randomUUID()};}catch{clearSaved(userId);payload={action,idempotencyKey:crypto.randomUUID()};}
   const resend=!!saved;
-  if(saved && payload.action!==action){setError(`An earlier “${payload.action==='pause'?'Pause':'Resume'}” hasn’t been confirmed yet. Tap “Try again” to finish it first.`);setCanRetry(true);return;}
+  if(saved && payload.action!==action){setError(`An earlier “${payload.action==='pause'?'Pause':'Resume'}” hasn’t been confirmed yet. Press “Try again” to finish it first.`);setCanRetry(true);return;}
   // Saved before the request, so a lost answer is retried with the same key.
   try{localStorage.setItem(key,JSON.stringify(payload));}catch{setError('This device can’t save the request, so it wasn’t sent. Check that the browser allows saving site data.');return;}
   let r:Response;
   try{r=await fetch('/api/office/controls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}
-  catch{setError('The printer didn’t get the request. Check your connection, then tap “Try again”. It’s the same request, so it won’t happen twice.');setCanRetry(true);return;}
+  catch{setError('The printer didn’t get the request. Check your connection, then press “Try again”. It’s the same request, so it won’t happen twice.');setCanRetry(true);return;}
   if(!r.ok){
    // A definite refusal clears the saved request; anything unsure keeps it
    // so "Try again" reuses the same key. A resend keeps it when signed out
@@ -79,7 +79,7 @@ export function OfficePrinterControls({attention=false,stopped=false,showStatus=
  }finally{sending.current=false;setBusy(false);}};
  const requestPause=async()=>{
   // Pausing is reversible, so it is not drawn as a destructive act.
-  const ok=await confirmDialog({title:'Pause the office printer?',body:'It pauses for everyone once the label printing now finishes. Waiting labels stay in line until someone taps Resume.',confirmLabel:'Pause printer'});
+  const ok=await confirmDialog({title:'Pause the office printer?',body:'Printing stops for everyone after the current label. Labels still waiting stay in line until someone presses Resume.',confirmLabel:'Pause printer'});
   if(ok)void send('pause');
  };
  useEffect(()=>{if(readSaved(userId))setCanRetry(true);},[userId]);
