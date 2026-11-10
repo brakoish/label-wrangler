@@ -648,7 +648,7 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Product Label"
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30"
+              className="field w-full"
               data-autofocus
             />
           </div>
@@ -661,7 +661,7 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this design for?"
               rows={3}
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30 resize-none"
+              className="field w-full resize-none"
             />
           </div>
 
@@ -669,14 +669,14 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-medium hover:bg-zinc-700 transition-colors"
+              className="btn btn-secondary flex-1"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim()}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed "
+              className="btn btn-primary flex-1"
             >
               Save
             </button>
@@ -725,7 +725,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Product Label"
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30"
+              className="field w-full"
               data-autofocus
             />
           </div>
@@ -738,7 +738,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this design for?"
               rows={3}
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30 resize-none"
+              className="field w-full resize-none"
             />
           </div>
 
@@ -774,14 +774,14 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-medium hover:bg-zinc-700 transition-colors"
+              className="btn btn-secondary flex-1"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || !formatId}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed "
+              className="btn btn-primary flex-1"
             >
               Create
             </button>
@@ -848,7 +848,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:border-amber-500/30"
+              className="field w-full"
               data-autofocus
             />
           </div>
@@ -893,14 +893,14 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-medium hover:bg-zinc-700 transition-colors"
+              className="btn btn-secondary flex-1"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim() || !formatId}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed "
+              className="btn btn-primary flex-1"
             >
               Duplicate
             </button>

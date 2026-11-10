@@ -184,26 +184,26 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
         onChange={(event) => setItemName(event.target.value)}
         placeholder="Item name"
         aria-label="Item name"
-        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
+        className="field"
       />
       <input
         value={tag}
         onChange={(event) => setTag(event.target.value)}
         placeholder="Package tag"
         aria-label="Package tag"
-        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
+        className="field"
       />
       <input
         value={batch}
         onChange={(event) => setBatch(event.target.value)}
         placeholder="Batch"
         aria-label="Batch"
-        className="h-11 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
+        className="field"
       />
       <button
         type="submit"
         disabled={!canAdd}
-        className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+        className="btn btn-primary disabled:bg-zinc-800 disabled:text-zinc-500"
       >
         <Plus className="h-4 w-4" />
         Add
@@ -450,7 +450,7 @@ export default function NabisPage() {
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search item name or tag"
                   aria-label="Search packages by item name or tag"
-                  className="h-12 w-full rounded-lg border border-zinc-800 bg-zinc-950 pl-10 pr-10 text-sm text-white focus:border-amber-500/30"
+                  className="field w-full pl-10 pr-10"
                 />
                 {query && (
                   <button
@@ -532,7 +532,7 @@ export default function NabisPage() {
                   type="button"
                   disabled={!canPrint}
                   onClick={() => window.print()}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                  className="btn btn-primary disabled:bg-zinc-800 disabled:text-zinc-500"
                 >
                   <Printer className="h-4 w-4" />
                   Print
@@ -556,7 +556,7 @@ export default function NabisPage() {
                     <input
                       value={label[field]}
                       onChange={(event) => setLabelField(field, event.target.value)}
-                      className="h-11 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white focus:border-amber-500/30"
+                      className="field w-full"
                     />
                   </label>
                 ))}

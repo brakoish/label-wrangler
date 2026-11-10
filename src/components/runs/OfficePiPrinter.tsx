@@ -25,7 +25,7 @@ const holdReasons:Record<string,string>={
   control_stale:'Waiting for office: the office computer has not reported the printer status recently, so new labels are held until it does.',
 };
 const labels:Record<string,string>={queued:'Waiting to be sent',claimed:'Picked up by the office',submitted:'In the office print queue',sent_to_printer:'Sent to printer',rejected:'Not printed — see reason',needs_review:'Check the printer before retrying',cancelled:'Cancelled before sending',resolved:'Checked by someone at the office'};
-const inputClass='w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300 focus:border-amber-500/30';
+const inputClass='field tabular-nums';
 /** Server wording -> plain words, without changing what the server checks. */
 function officeMessage(error:unknown){
   return friendlyError(error,'The office printer request failed.')
@@ -167,7 +167,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :`Send ${sendCount === 1 ? '1 label' : `${sendCount.toLocaleString()} labels`} to office printer`;
   const onPrimary=()=>{ if(!pending && !proofCurrent) void prepareProof(); else void submit(); };
   const connection=<div className="space-y-3">
-    <label className="block text-xs text-zinc-400">Office printer<select className={inputClass+' mt-1'} value={selected} onChange={e=>setSelected(e.target.value)}>
+    <label className="block text-xs font-medium text-zinc-400">Office printer<select className={inputClass+' mt-1'} value={selected} onChange={e=>setSelected(e.target.value)}>
       {!printers.length && <option value="">No office printer is set up for your account</option>}
       {printers.map(p=><option key={p.id} value={`${p.station_id}/${p.id}`}>{p.name}</option>)}
     </select></label>
@@ -178,53 +178,53 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       {printer.online && printer.dispatch_enabled && !printer.needs_review && printer.dispatch_hold_reason && holdReasons[printer.dispatch_hold_reason] && <p className="text-amber-400">{holdReasons[printer.dispatch_hold_reason]}</p>}
     </div>}
     <OfficePrinterControls />
-    {printer && <details className="text-xs text-zinc-500"><summary className="cursor-pointer hover:text-zinc-300">Connection details</summary><p className="mt-2">Last contact: {printer.last_seen?new Date(printer.last_seen).toLocaleString():'not set up yet'} · {printer.dpi} DPI</p></details>}
+    {printer && <details className="text-xs text-zinc-500"><summary className="cursor-pointer py-1 hover:text-zinc-300">Connection details</summary><p className="mt-2">Last contact: {printer.last_seen?new Date(printer.last_seen).toLocaleString():'not set up yet'} · {printer.dpi} DPI</p></details>}
   </div>;
   return <div className="space-y-4">
     {connectionTarget && createPortal(connection,connectionTarget)}
     <div className="flex items-center justify-between gap-2">
-      <h2 className="text-xs text-zinc-500 font-semibold">Progress</h2>
-      <span className="text-xs font-semibold text-zinc-100 tabular-nums">Sent to office printer: {delivered.toLocaleString()} of {total.toLocaleString()} · {pct}%</span>
+      <h2 className="section-title">Progress</h2>
+      <span className="text-sm font-medium text-zinc-100 tabular-nums">Sent to office printer: {delivered.toLocaleString()} of {total.toLocaleString()} · {pct}%</span>
     </div>
-    <div className="h-3 rounded-full bg-zinc-900 overflow-hidden"><div className="h-full bg-amber-500 transition-colors" style={{width:`${pct}%`}} /></div>
-    {pending && <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300 space-y-1">
+    <div className="h-2 rounded-full bg-zinc-800 overflow-hidden"><div className="h-full rounded-full bg-amber-500 transition-[width] duration-300 ease-in-out" style={{width:`${pct}%`}} /></div>
+    {pending && <div role="status" className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-300 space-y-1">
       {errorKind==='rejected' && error
         ? <><p className="font-semibold">The office printer didn&apos;t accept labels {pending.from}–{pending.to}.</p><p>{error}</p><p>Nothing new was queued. Check the queue below, then start over.</p></>
         : <><p className="font-semibold">We&apos;re not sure the office got labels {pending.from}–{pending.to}.</p><p>Tap &ldquo;Check again&rdquo; — it won&apos;t print twice.</p></>}
-      <button type="button" onClick={()=>void startOver()} disabled={busy} className={errorKind==='rejected'&&error?'mt-1 min-h-10 rounded-md bg-amber-500 px-3 text-xs font-semibold text-black hover:bg-amber-400 disabled:opacity-40':'text-amber-300 underline disabled:opacity-40'}>Start over{errorKind==='rejected'&&error?'':' (doesn’t cancel anything already queued)'}</button>
+      <button type="button" onClick={()=>void startOver()} disabled={busy} className={errorKind==='rejected'&&error?'mt-1 btn btn-primary btn-sm':'min-h-control-sm text-left text-amber-300 underline underline-offset-2 disabled:opacity-40'}>Start over{errorKind==='rejected'&&error?'':' (doesn’t cancel anything already queued)'}</button>
     </div>}
     <div className="grid grid-cols-3 gap-2">
-      <label className="text-xs text-zinc-400">From label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>
-      <label className="text-xs text-zinc-400">Stop after label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={to} onChange={e=>{rangeEdited.current=true;setTo(e.target.value);}} /></label>
-      <label className="text-xs text-zinc-400">How many<input type="number" inputMode="numeric" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending || busy} className={inputClass+' mt-1'} value={Math.max(0,Number(to)-Number(from)+1)} onChange={e=>{rangeEdited.current=true;setTo(String(Math.min(total,Number(from)+Math.max(1,Number(e.target.value))-1)));}} /></label>
+      <label className="text-xs font-medium text-zinc-400">From label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>
+      <label className="text-xs font-medium text-zinc-400">Stop after label<input className={inputClass+' mt-1'} inputMode="numeric" disabled={!!pending || busy} value={to} onChange={e=>{rangeEdited.current=true;setTo(e.target.value);}} /></label>
+      <label className="text-xs font-medium text-zinc-400">How many<input type="number" inputMode="numeric" min={1} max={Math.max(1,total-Number(from)+1)} disabled={!!pending || busy} className={inputClass+' mt-1'} value={Math.max(0,Number(to)-Number(from)+1)} onChange={e=>{rangeEdited.current=true;setTo(String(Math.min(total,Number(from)+Math.max(1,Number(e.target.value))-1)));}} /></label>
     </div>
-    {!pending && !rangeValid && <p role="alert" className="text-xs text-amber-400">Enter label numbers from 1 to {total}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
-    {reprintOf && <div className="space-y-2 rounded border border-amber-500/30 p-2 text-xs"><p>Reprint: these labels are printed again and recorded as a reprint in the history.</p><button type="button" className="min-h-9 rounded-md border border-zinc-700 px-3 text-zinc-200 hover:border-zinc-500" onClick={()=>{setReprintOf('');}}>Stop reprinting</button></div>}
-    {!printAllowed && <p className="text-xs text-amber-400">Sending is off until every label has a value (see the list above).</p>}
-    {waitingOnQueue && <p role="status" className="text-xs text-zinc-400">Some of these labels are already on their way to the office printer. When they&apos;re sent, use Reprint if you need them again.</p>}
-    <button type="button" disabled={disabled} onClick={onPrimary} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40">{busy?<Loader2 className="w-4 h-4 animate-spin" />:<PrinterIcon className="w-4 h-4" />}{primaryLabel}</button>
-    {error && !(pending && errorKind==='rejected') && <p role="alert" className="text-xs text-red-400">{error}</p>}
-    {notice && <p role="status" className="text-xs text-emerald-400">{notice}</p>}
-    {bitmap && !pending && <div className="space-y-2 rounded-lg border border-zinc-800 p-3 text-xs" aria-labelledby={`${uid}-check`}>
+    {!pending && !rangeValid && <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
+    {reprintOf && <div className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-300"><p>Reprint: these labels are printed again and recorded as a reprint in the history.</p><button type="button" className="btn btn-secondary btn-sm" onClick={()=>{setReprintOf('');}}>Stop reprinting</button></div>}
+    {!printAllowed && <p className="text-sm text-amber-300">Sending is off until every label has a value (see the list above).</p>}
+    {waitingOnQueue && <p role="status" className="text-sm text-zinc-400">Some of these labels are already on their way to the office printer. When they&apos;re sent, use Reprint if you need them again.</p>}
+    <button type="button" disabled={disabled} onClick={onPrimary} className="btn btn-primary w-full">{busy?<Loader2 className="w-4 h-4 animate-spin" />:<PrinterIcon className="w-4 h-4" />}{primaryLabel}</button>
+    {error && !(pending && errorKind==='rejected') && <p role="alert" className="text-sm text-red-400">{error}</p>}
+    {notice && <p role="status" className="text-sm text-emerald-400 animate-enter">{notice}</p>}
+    {bitmap && !pending && <div className="space-y-2 rounded-lg bg-zinc-950 p-3 text-xs" aria-labelledby={`${uid}-check`}>
       <p id={`${uid}-check`} className="font-semibold text-zinc-300">Label check{rangeValid?` (${fromNumber}–${toNumber})`:''}</p>
       {preparationProgress && <div role="status" className="space-y-1">
         <p className="text-zinc-300">Checked {preparationProgress.completed.toLocaleString()} of {preparationProgress.total.toLocaleString()} labels…</p>
         <progress className="w-full" max={preparationProgress.total} value={preparationProgress.completed} aria-label="Checking labels" />
         <p className="text-zinc-500">Nothing has been sent to the printer yet.</p>
-        <button type="button" onClick={()=>preparationController.current?.abort()} className="min-h-9 rounded-md border border-zinc-700 px-3 text-zinc-300">Stop checking</button>
+        <button type="button" onClick={()=>preparationController.current?.abort()} className="btn btn-secondary btn-sm">Stop checking</button>
       </div>}
       {!preparationProgress && proofCurrent && proof && <div className="space-y-2">
         <p className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{proof.feeds.length === 1 ? '1 label' : `${proof.feeds.length.toLocaleString()} labels`} checked — every label renders.</p>
-        {proofImage ? <img src={proofImage} alt={`Checked label ${fromNumber+proofIndex}`} className="w-full bg-white" style={{imageRendering:'pixelated'}} /> : <p className="text-zinc-500 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Drawing preview…</p>}
+        {proofImage ? <img src={proofImage} alt={`Checked label ${fromNumber+proofIndex}`} className="w-full rounded bg-white" style={{imageRendering:'pixelated'}} /> : <p className="text-zinc-500 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Drawing preview…</p>}
         <label className="flex items-center gap-2 text-zinc-400">Preview label #<input type="number" min={1} max={proof.feeds.length} value={proofIndex+1} onChange={e=>setProofIndex(Math.max(0,Math.min(proof.feeds.length-1,Number(e.target.value)-1)))} className={inputClass+' w-20'} /><span>of {proof.feeds.length}</span></label>
       </div>}
       {!preparationProgress && !proofCurrent && <p className="text-zinc-400">We draw every label first. If any label is missing a value or doesn&apos;t fit, nothing is sent.</p>}
     </div>}
     <p className="text-xs text-zinc-500">{queued>0?`${queued.toLocaleString()} label${queued===1?'':'s'} waiting to be sent. `:''}&ldquo;Sent&rdquo; means the office printer received them — it doesn&apos;t prove they came out.</p>
-    <div className="pt-3 border-t border-zinc-800/60 space-y-2">
-      <button type="button" disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} aria-expanded={showReprint} className="w-full flex min-h-10 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><Hash className="w-3.5 h-3.5" />Reprint an earlier print…</button>
-      <button type="button" disabled={busy || !!pending || !reprintRequests.length || allJobs.some(j=>j.review || ['queued','claimed','submitted','needs_review'].includes(j.state))} onClick={()=>{rangeEdited.current=true;setReprintOf(reprintRequests[0].id);setFrom('1');setTo(String(total));setShowReprint(false);}} className="w-full flex min-h-10 items-center justify-center gap-1.5 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-amber-400 border border-zinc-800 disabled:opacity-40"><RotateCcw className="w-3.5 h-3.5" />Reprint all</button>
-      {showReprint && <label className="block text-xs text-zinc-400">Which print?
+    <div className="pt-1 space-y-2">
+      <button type="button" disabled={busy || !!pending} onClick={()=>setShowReprint(value=>!value)} aria-expanded={showReprint} className="btn btn-secondary btn-sm w-full"><Hash className="w-4 h-4" />Reprint an earlier print…</button>
+      <button type="button" disabled={busy || !!pending || !reprintRequests.length || allJobs.some(j=>j.review || ['queued','claimed','submitted','needs_review'].includes(j.state))} onClick={()=>{rangeEdited.current=true;setReprintOf(reprintRequests[0].id);setFrom('1');setTo(String(total));setShowReprint(false);}} className="btn btn-ghost btn-sm w-full"><RotateCcw className="w-4 h-4" />Reprint all</button>
+      {showReprint && <label className="block text-xs font-medium text-zinc-400">Which print?
         <select className={inputClass+' mt-1'} value={reprintOf} onChange={e=>{const request=requests.find(r=>r.id===e.target.value);rangeEdited.current=true;setReprintOf(e.target.value);if(request){setFrom(String(request.range_from));setTo(String(request.range_to));}}}>
           <option value="">Choose a finished print</option>
           {reprintRequests.map(r=><option key={r.id} value={r.id}>Labels {r.range_from}–{r.range_to}{r.created_at?` · ${formatWhen(r.created_at)}`:''}{r.username?` · ${r.username}`:''}</option>)}
@@ -232,10 +232,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         {!reprintRequests.length && <p className="mt-1">Nothing has finished printing yet. Check the queue below for work still on its way.</p>}
       </label>}
     </div>
-    <details className="border-t border-zinc-800/60 pt-3">
-      <summary className="cursor-pointer text-xs text-zinc-400">Queue details <span className="text-zinc-500">· {queued} waiting · {sent} sent</span></summary>
+    <details className="pt-1">
+      <summary className="cursor-pointer py-1 text-xs text-zinc-400 hover:text-zinc-200">Queue details <span className="text-zinc-500">· {queued} waiting · {sent} sent</span></summary>
     <div className="max-h-96 overflow-y-auto space-y-3 mt-3">
-      {requests.map(r=><div key={r.id} className="rounded border border-zinc-800 p-2 space-y-2 text-xs">
+      {requests.map(r=><div key={r.id} className="rounded-lg bg-zinc-950 p-3 space-y-2 text-xs">
         <p className="font-medium">Labels {r.range_from}–{r.range_to} · {r.username}{r.reprint_of?' · reprint':''}</p>
         {r.created_at && <p className="text-zinc-500">{formatWhen(r.created_at)}</p>}
         <details><summary className="cursor-pointer text-zinc-400">{r.jobs.length} part{r.jobs.length===1?'':'s'} · {r.jobs.filter(j=>j.state==='sent_to_printer').length} sent</summary>
@@ -255,8 +255,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         <textarea className={inputClass+' mt-1 text-sm'} rows={3} value={reviewReason} onChange={e=>setReviewReason(e.target.value)} />
       </label>
       <div className="flex gap-2">
-        <button type="button" disabled={busy || !checked || reviewReason.trim().length<3} className="min-h-10 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black disabled:opacity-40" onClick={()=>void act(async()=>{if(!review)return;await api('/api/office/review',{method:'POST',body:JSON.stringify({jobId:review.id,pendingCupsResolved:checked,reason:reviewReason})});setReview(null);setNotice('Saved. Nothing was reprinted.');})}>Save what happened</button>
-        <button type="button" className="min-h-10 rounded-lg border border-zinc-800 px-4 text-sm text-zinc-300" onClick={()=>setReview(null)}>Cancel</button>
+        <button type="button" disabled={busy || !checked || reviewReason.trim().length<3} className="btn btn-primary" onClick={()=>void act(async()=>{if(!review)return;await api('/api/office/review',{method:'POST',body:JSON.stringify({jobId:review.id,pendingCupsResolved:checked,reason:reviewReason})});setReview(null);setNotice('Saved. Nothing was reprinted.');})}>Save what happened</button>
+        <button type="button" className="btn btn-secondary" onClick={()=>setReview(null)}>Cancel</button>
       </div>
     </Dialog>
   </div>;

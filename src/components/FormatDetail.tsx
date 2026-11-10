@@ -79,7 +79,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   <input
                     value={d('name') as string}
                     onChange={(e) => setD('name', e.target.value)}
-                    className="text-2xl font-bold text-white bg-zinc-900/50 border border-zinc-700 rounded-lg px-3 py-1 focus:border-amber-500/30"
+                    className="field field-sm text-2xl font-bold"
                   />
                 ) : (
                   <h2 className="text-2xl font-bold text-white">{format.name}</h2>
@@ -89,7 +89,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     value={(d('description') as string) || ''}
                     onChange={(e) => setD('description', e.target.value)}
                     placeholder="Description (optional)"
-                    className="text-zinc-400 mt-1 bg-zinc-900/50 border border-zinc-700 rounded-lg px-3 py-1 text-sm w-full focus:border-amber-500/30"
+                    className="field field-sm mt-1 w-full"
                   />
                 ) : (
                   format.description && <p className="text-zinc-400 mt-1">{format.description}</p>
@@ -120,7 +120,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   </button>
                   <button
                     onClick={()=>void saveEdit()} disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-black bg-amber-500 hover:bg-amber-400 rounded-xl transition-colors "
+                    className="btn btn-primary"
                   >
                     <Check className="w-4 h-4" />
                     Save
@@ -156,9 +156,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
           <SpecCard label="Label Size" editing={editing}>
             {editing ? (
               <div className="flex items-center gap-1">
-                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                <input type="number" value={d('width') as number} onChange={(e) => setD('width', parseFloat(e.target.value))} step="0.01" className="field field-sm w-16 text-xl font-bold" />
                 <span className="text-lg text-zinc-400">×</span>
-                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                <input type="number" value={d('height') as number} onChange={(e) => setD('height', parseFloat(e.target.value))} step="0.01" className="field field-sm w-16 text-xl font-bold" />
                 <span className="text-lg text-zinc-400">&quot;</span>
               </div>
             ) : (
@@ -171,7 +171,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Resolution" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <select value={d('dpi') as number || 203} onChange={(e) => setD('dpi', parseInt(e.target.value))} className="text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30">
+                    <select value={d('dpi') as number || 203} onChange={(e) => setD('dpi', parseInt(e.target.value))} className="field field-sm text-xl font-bold">
                       <option value="203">203</option>
                       <option value="300">300</option>
                     </select>
@@ -184,7 +184,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Across" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="w-16 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                    <input type="number" value={d('labelsAcross') as number || 1} onChange={(e) => setD('labelsAcross', parseInt(e.target.value))} min="1" className="field field-sm w-16 text-xl font-bold" />
                     <span className="text-lg text-zinc-400">labels</span>
                   </div>
                 ) : (
@@ -207,9 +207,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
               <SpecCard label="Grid" editing={editing}>
                 {editing ? (
                   <div className="flex items-center gap-1">
-                    <input type="number" value={d('columns') as number || 1} onChange={(e) => setD('columns', parseInt(e.target.value))} min="1" className="w-12 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                    <input type="number" value={d('columns') as number || 1} onChange={(e) => setD('columns', parseInt(e.target.value))} min="1" className="field field-sm w-12 text-xl font-bold" />
                     <span className="text-lg text-zinc-400">×</span>
-                    <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="w-12 text-xl font-bold text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                    <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="field field-sm w-12 text-xl font-bold" />
                   </div>
                 ) : (
                   <div className="text-2xl font-bold text-white">{format.columns} × {format.rows}</div>
@@ -277,9 +277,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                 <DetailRow label="Sheet size" editing={editing}>
                   {editing ? (
                     <div className="flex items-center gap-1">
-                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="w-14 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                      <input type="number" value={d('sheetWidth') as number} onChange={(e) => setD('sheetWidth', parseFloat(e.target.value))} step="0.01" className="field field-sm w-14" />
                       <span className="text-zinc-500">×</span>
-                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="w-14 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30" />
+                      <input type="number" value={d('sheetHeight') as number} onChange={(e) => setD('sheetHeight', parseFloat(e.target.value))} step="0.01" className="field field-sm w-14" />
                       <span className="text-zinc-500">&quot;</span>
                     </div>
                   ) : (
@@ -357,7 +357,7 @@ function EditNum({ value, onChange }: { value: number; onChange: (v: number) => 
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         step="0.001"
-        className="w-20 text-sm text-white bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 focus:border-amber-500/30 text-right"
+        className="field field-sm w-20 text-right"
       />
       <span className="text-zinc-500">&quot;</span>
     </div>

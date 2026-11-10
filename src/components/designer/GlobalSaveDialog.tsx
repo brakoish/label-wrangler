@@ -35,7 +35,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Compliance Header, Footer Block"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:border-amber-500/30 placeholder:text-zinc-500"
+              className="field w-full placeholder:text-zinc-500"
             />
           </div>
           <div>
@@ -46,7 +46,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional note about what this contains"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:border-amber-500/30 placeholder:text-zinc-500"
+              className="field w-full placeholder:text-zinc-500"
             />
           </div>
         </div>
@@ -69,7 +69,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               }
             }}
             disabled={!name.trim()}
-            className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="btn btn-primary flex-1"
           >
             Save for reuse
           </button>

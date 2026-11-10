@@ -139,7 +139,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                   }}
                   aria-label="Search Manifest package"
                   placeholder="Search Manifest package"
-                  className="h-7 w-full rounded-lg border border-zinc-800/50 bg-zinc-900/60 pl-7 pr-7 text-xs text-zinc-100 transition-colors placeholder-zinc-500 focus:border-amber-500/30"
+                  className="field field-sm w-full pl-7 pr-7 text-xs"
                 />
                 {manifestSearch && (
                   <button
@@ -235,7 +235,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                 value={testData[field.fieldName] ?? ''}
                 onChange={(e) => onTestDataChange(field.fieldName, e.target.value)}
                 placeholder={field.defaultValue || `Enter ${field.fieldName}...`}
-                className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2.5 h-7 focus:border-amber-500/30 placeholder-zinc-500 transition-colors"
+                className="field field-sm w-full text-xs"
               />
             </div>
           ))}

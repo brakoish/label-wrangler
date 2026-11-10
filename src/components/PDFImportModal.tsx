@@ -187,7 +187,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               <p className="text-sm text-zinc-500 mb-6">{error}</p>
               <button
                 onClick={resetForm}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors"
+                className="btn btn-secondary"
               >
                 Try Again
               </button>

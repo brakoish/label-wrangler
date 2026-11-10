@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
@@ -72,38 +72,60 @@ export function Dialog({ open, onClose, title, description, children, className 
     };
   }, [open, initialFocus]);
 
-  if (!open || typeof document === 'undefined') return null;
+  // Keep the panel mounted for its short exit animation, showing what it
+  // showed while open (callers often clear the data that fills it on close).
+  const [present, setPresent] = useState(open);
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [shown, setShown] = useState({ title, description, children });
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setPresent(true);
+  }
+  if (open && (shown.title !== title || shown.description !== description || shown.children !== children)) {
+    setShown({ title, description, children });
+  }
+  const closing = present && !open;
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(() => setPresent(false), 200);
+    return () => clearTimeout(timer);
+  }, [closing]);
+
+  if (!present || typeof document === 'undefined') return null;
+  const view = open ? { title, description, children } : shown;
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onMouseDown={(event) => { if (event.target === event.currentTarget && dismissible) onClose(); }}
+      className="dialog-backdrop fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3 sm:p-4 bg-black/70"
+      data-closing={closing ? '' : undefined}
+      onAnimationEnd={(event) => { if (closing && event.target === event.currentTarget) setPresent(false); }}
+      onMouseDown={(event) => { if (event.target === event.currentTarget && dismissible && open) onClose(); }}
     >
       <div
         ref={panelRef}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
+        aria-describedby={view.description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`w-full ${className} max-h-[calc(100vh-2rem)] overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl p-6 space-y-5 `}
+        className={`dialog-panel w-full ${className} max-h-[calc(100dvh-1.5rem)] overflow-y-auto bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl shadow-black/50 p-5 sm:p-6 space-y-5`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold text-zinc-100">{title}</h2>
-            {description && <p id={descriptionId} className="mt-1 text-sm text-zinc-400">{description}</p>}
+            <h2 id={titleId} className="text-lg font-semibold text-zinc-50">{view.title}</h2>
+            {view.description && <p id={descriptionId} className="mt-1 text-sm text-zinc-400">{view.description}</p>}
           </div>
           {!hideClose && (
             <button
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="-mr-2 -mt-2 h-10 w-10 shrink-0 grid place-items-center rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+              className="btn btn-ghost btn-icon -mr-2 -mt-2 shrink-0 text-zinc-400"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
-        {children}
+        {view.children}
       </div>
     </div>,
     document.body,

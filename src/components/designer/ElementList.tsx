@@ -53,7 +53,7 @@ export function ElementList({
       <div className="p-3 space-y-1">
         <button
           onClick={onAddElement}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-black text-sm font-semibold rounded-xl hover:bg-amber-400 transition-colors "
+          className="btn btn-primary w-full"
         >
           <Plus className="w-4 h-4" />
           Add Element
@@ -62,7 +62,7 @@ export function ElementList({
         {onInsertGlobal && (
           <button
             onClick={onInsertGlobal}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm font-medium rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-colors"
+            className="btn btn-secondary w-full border border-zinc-700 hover:border-zinc-600"
           >
             <Globe className="w-4 h-4" />
             Insert reusable element

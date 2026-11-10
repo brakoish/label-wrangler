@@ -28,7 +28,7 @@ export function OfficePrinterControls(){
  const statusWord=!data?'Checking…':!fresh?'Office not reporting':paused===null?'Status unknown':paused?'Paused':'Ready';
  const body=<>
   <p className="text-xs leading-relaxed text-zinc-500">Pauses or resumes the office printer for everyone. It can take a few seconds.</p>
-  <div className="flex gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className="flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md border border-zinc-800 px-2 text-xs font-medium text-zinc-300 hover:text-amber-400 hover:border-amber-500/30 disabled:opacity-40">{action==='pause'?<Pause className="h-3.5 w-3.5" />:<Play className="h-3.5 w-3.5" />}{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>
+  <div className="flex gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className="btn btn-secondary btn-sm flex-1">{action==='pause'?<Pause className="h-4 w-4 animate-icon" />:<Play className="h-4 w-4 animate-icon" />}{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>
   {data && !data.canControl && <p className="text-xs text-zinc-500">Your account can&apos;t pause or resume this printer.</p>}
   {data?.canControl && !fresh && <p className="text-xs text-zinc-500">Pause and Resume come back when the office computer reports in.</p>}
   {pending && <p role="status" className="text-xs text-amber-400">Waiting for the printer to confirm…</p>}
@@ -39,9 +39,9 @@ export function OfficePrinterControls(){
  // Keep it out of the way while the printer is running normally; show it
  // open when it is paused, waiting, or something needs attention.
  const needsAttention=paused!==false || !!pending || !!error || (!!last?.result && last.result.state!=='succeeded');
- return <div className="border-t border-zinc-800/60 pt-3 space-y-2 text-xs">
+ return <div className="pt-1 space-y-2 text-xs">
   {needsAttention
     ? <><div className="flex items-center justify-between text-xs"><span className="text-zinc-400 font-medium">Office printer controls</span>{status}</div>{body}</>
-    : <details><summary className="flex cursor-pointer items-center justify-between text-xs text-zinc-400"><span>Pause or resume the office printer</span>{status}</summary><div className="mt-2 space-y-2">{body}</div></details>}
+    : <details><summary className="flex cursor-pointer items-center justify-between py-1 text-xs text-zinc-400 hover:text-zinc-200"><span>Pause or resume the office printer</span>{status}</summary><div className="mt-2 space-y-2">{body}</div></details>}
  </div>;
 }

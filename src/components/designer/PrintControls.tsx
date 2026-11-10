@@ -445,14 +445,14 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                 const next = parseInt(e.target.value, 10);
                 setLabelQty(Number.isFinite(next) ? Math.max(1, Math.min(9999, next)) : 1);
               }}
-              className="w-16 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-100 text-center focus:border-amber-500/30"
+              className="field field-sm w-16 text-xs text-center"
             />
           </label>
           <button
             onClick={handlePrintLabel}
             disabled={!!printing}
             title={`Send ${labelQty} label${labelQty === 1 ? '' : 's'} to the printer`}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-black bg-amber-500 hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary btn-sm"
           >
             {printing === 'label' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
             Print{labelQty > 1 && <span className="text-amber-300">×{labelQty}</span>}
@@ -536,7 +536,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                     <button
                       onClick={() => handleApplyAdjustments(false)}
                       disabled={!canPrint || !!printing}
-                      className="flex-1 py-1.5 rounded text-xs font-medium bg-zinc-800 text-zinc-200 hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                      className="btn btn-secondary btn-sm flex-1"
                       title="Send current values to the printer now (temporary, resets on power cycle)"
                     >
                       Apply
@@ -544,7 +544,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                     <button
                       onClick={() => handleApplyAdjustments(true)}
                       disabled={!canPrint || !!printing}
-                      className="flex-1 py-1.5 rounded text-xs font-medium bg-amber-500 text-black hover:bg-amber-400 transition-colors disabled:opacity-40"
+                      className="btn btn-primary btn-sm flex-1"
                       title="Send values + save persistently (~^JUS stores in printer memory)"
                     >
                       Apply & Save
@@ -614,7 +614,7 @@ function NumberRow({
             const v = parseFloat(e.target.value);
             if (!isNaN(v)) onChange(v);
           }}
-          className="w-14 h-6 rounded bg-zinc-950 border border-zinc-800 text-zinc-100 text-xs text-center focus:border-amber-500/30"
+          className="field field-sm w-14 h-6 text-xs text-center"
         />
         <button
           onClick={() => onChange(Math.min(max ?? Infinity, value + (step ?? 1)))}

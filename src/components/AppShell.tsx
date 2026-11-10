@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { LogOut } from 'lucide-react';
 import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 
@@ -24,11 +25,17 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   useRegisterShell();
   const banners = useShellBanners();
 
+  const navItems: Array<{ href: string; label: string; active: boolean }> = [
+    { href: '/runs', label: 'Runs', active: isRuns },
+    { href: '/nabis', label: 'Nabis', active: isNabis },
+    { href: '/designer', label: 'Designs', active: isDesigner },
+    { href: '/formats', label: 'Label sizes', active: isFormats },
+  ];
+
   return (
-    <div className="h-screen flex flex-col bg-zinc-950">
-      {/* Shared Header — tighter padding + smaller logo on mobile so the
-          nav tabs and any headerAction fit without wrapping below. */}
-      <header className="bg-zinc-900 sticky top-0 z-40" onClickCapture={event => {
+    <div className="h-dvh flex flex-col bg-zinc-950">
+      {/* One 56px bar on every screen size: logo, nav, sign out. */}
+      <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950" onClickCapture={event => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         const link = (event.target as HTMLElement).closest('a[href]');
         if (!link) return;
@@ -38,83 +45,43 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
         const href = link.getAttribute('href')!;
         void (beforeLeave ? beforeLeave() : Promise.resolve(true)).then(ready => { if (ready) router.push(href); });
       }}>
-        <div className="max-w-[1600px] mx-auto px-3 sm:px-6 min-h-14 sm:min-h-16 flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-0">
-          <div className="flex items-center justify-between gap-2 sm:gap-3 min-w-0">
-            <Link href="/runs">
-              <img
-                src="/logo.png"
-                alt="Label Wrangler"
-                className="w-10 h-10 sm:w-14 sm:h-14 transition-transform duration-300 cursor-pointer"
-                style={{ filter: 'brightness(0) invert(1)' }}
-              />
-            </Link>
-            <div className="min-w-0">
-              {/* Hide the wordmark below sm so the logo + nav don't collide. */}
-              <h1 className="hidden sm:block text-xl font-bold truncate">
-                <span className="gradient-text">Label</span>
-                <span className="text-white">Wrangler</span>
-              </h1>
-            </div>
-          </div>
+        <div className="max-w-[1600px] mx-auto h-14 px-2 sm:px-6 flex items-center gap-1 sm:gap-6">
+          <Link href="/runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 sm:p-0">
+            <img
+              src="/logo.png"
+              alt="Label Wrangler"
+              className="w-8 h-8 sm:w-9 sm:h-9"
+              style={{ filter: 'brightness(0) invert(1)' }}
+            />
+            {/* Wordmark from sm up; on phones the logo alone leaves room for the nav. */}
+            <h1 className="hidden sm:block text-base font-semibold text-zinc-100 whitespace-nowrap">Label Wrangler</h1>
+          </Link>
 
-          <div className="flex min-w-0 items-center gap-3">
-            {/* Nav tabs — Runs is the primary surface. */}
-            <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50 sm:flex-none">
+          <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
+            {navItems.map(item => (
               <Link
-                href="/runs"
-                aria-current={isRuns ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  isRuns
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
+                key={item.href}
+                href={item.href}
+                aria-current={item.active ? 'page' : undefined}
+                className={`shrink-0 inline-flex h-control-sm items-center rounded-lg px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                  item.active
+                    ? 'bg-zinc-800 text-zinc-50'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
                 }`}
               >
-                Runs
+                {item.label}
               </Link>
-              <Link
-                href="/nabis"
-                aria-current={isNabis ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  isNabis
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                Nabis
-              </Link>
-              <Link
-                href="/designer"
-                aria-current={isDesigner ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  isDesigner
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                Designs
-              </Link>
-              <Link
-                href="/formats"
-                aria-current={isFormats ? 'page' : undefined}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  isFormats
-                    ? 'bg-zinc-800 text-white shadow-sm'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                Label sizes
-              </Link>
-            </nav>
+            ))}
+          </nav>
 
-            <button type="button" className="shrink-0 min-h-9 text-xs text-zinc-500 hover:text-zinc-200" onClick={async()=>{
-              if (!canLeaveLocalPrint()) return;
-              if (beforeLeave && !await beforeLeave()) return;
-              const result=await fetch('/api/office/session',{method:'DELETE'});
-              if(result.ok)window.location.assign('/login');
-            }}>Sign out</button>
-            {/* Page-specific action button */}
-            {headerAction && <div className="shrink-0">{headerAction}</div>}
-          </div>
+          <button type="button" className="btn btn-ghost btn-sm shrink-0 max-sm:size-control-sm max-sm:px-0" onClick={async()=>{
+            if (!canLeaveLocalPrint()) return;
+            if (beforeLeave && !await beforeLeave()) return;
+            const result=await fetch('/api/office/session',{method:'DELETE'});
+            if(result.ok)window.location.assign('/login');
+          }}><LogOut className="w-4 h-4 sm:hidden" aria-hidden="true" /><span className="max-sm:sr-only">Sign out</span></button>
+          {/* Page-specific action button */}
+          {headerAction && <div className="shrink-0">{headerAction}</div>}
         </div>
       </header>
 
@@ -122,11 +89,6 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
       {/* Page content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {children}
-      </div>
-
-      {/* Footer */}
-      <div className="h-8 flex items-center justify-center border-t border-zinc-800/30">
-        <p className="text-xs text-zinc-500">Label Wrangler v1.0</p>
       </div>
     </div>
   );

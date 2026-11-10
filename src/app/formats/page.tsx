@@ -65,7 +65,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 text-black text-sm font-semibold rounded-xl hover:bg-amber-400 transition-colors "
+              className="btn btn-primary w-full"
             >
               <PlusIcon className="w-4 h-4" />
               New label size
@@ -92,7 +92,7 @@ export default function Home() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 aria-label="Search label sizes"
                 placeholder="Search label sizes…"
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                className="field w-full pl-10 pr-4"
               />
             </div>
 

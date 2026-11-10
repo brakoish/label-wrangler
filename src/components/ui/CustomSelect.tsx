@@ -38,7 +38,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   // Portal-positioned menu coords so the dropdown escapes parent stacking
-  // contexts (our .glass cards use backdrop-filter which clips absolute children).
+  // contexts and overflow-hidden panels.
   const [menuRect, setMenuRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const selected = options.find((o) => o.value === value);
@@ -144,7 +144,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   };
 
   // Render the dropdown menu into document.body so it isn't clipped by
-  // parent stacking contexts (e.g. our .glass cards that use backdrop-filter).
+  // parent stacking contexts and overflow-hidden panels.
   const renderPortalMenu = (content: React.ReactNode, minWidth?: number) => {
     if (!open || !menuRect || typeof window === 'undefined') return null;
     return createPortal(
@@ -159,7 +159,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
           zIndex: 1000,
         }}
       >
-        <div style={{ maxHeight: menuRect.maxHeight }} className="overflow-y-auto">
+        <div style={{ maxHeight: menuRect.maxHeight }} className="overflow-y-auto popover-enter rounded-lg">
           {content}
         </div>
       </div>,
@@ -169,7 +169,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
 
   if (compact) {
     const menu = (
-      <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 border border-zinc-700/50 rounded-xl shadow-xl shadow-black/40 backdrop-blur-xl overflow-hidden">
+      <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl shadow-black/40 overflow-hidden">
         {options.map((option, index) => (
           <div
             key={option.value}
@@ -179,14 +179,14 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => setActive(index)}
             onClick={() => choose(index)}
-            className={`w-full flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-xs transition-colors ${
+            className={`w-full flex cursor-pointer items-center gap-2 px-2.5 min-h-control-sm text-xs ${
               option.value === value
-                ? 'bg-amber-500/10 text-amber-400'
-                : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
-            } ${index === active ? 'ring-1 ring-inset ring-amber-500/30' : ''}`}
+                ? 'text-amber-300'
+                : 'text-zinc-300'
+            } ${index === active ? 'bg-zinc-800 text-zinc-50' : ''}`}
           >
             <span className="truncate flex-1 text-left">{option.label}</span>
-            {option.value === value && <Check className="w-3 h-3 text-amber-400 flex-shrink-0" />}
+            {option.value === value && <Check className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
           </div>
         ))}
       </div>
@@ -198,10 +198,10 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
           type="button"
           {...triggerA11y}
           onClick={() => setOpen(!open)}
-          className="w-full flex items-center justify-between bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 h-7 hover:border-zinc-700 focus:border-amber-500/30 transition-colors"
+          className="field field-sm flex items-center justify-between text-left text-xs"
         >
           <span className="truncate">{selected?.label || placeholder}</span>
-          <ChevronDown className={`w-3 h-3 text-zinc-500 flex-shrink-0 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 flex-shrink-0 ml-1 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         </button>
         {renderPortalMenu(menu, 140)}
       </div>
@@ -209,7 +209,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
   }
 
   const fullMenu = (
-    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1.5 bg-zinc-900 border border-zinc-700/50 rounded-xl shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden">
+    <div id={listId} role="listbox" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy} className="py-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl shadow-black/40 overflow-hidden">
       {options.map((option, index) => (
         <div
           key={option.value}
@@ -219,11 +219,11 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
           onMouseDown={(e) => e.preventDefault()}
           onMouseEnter={() => setActive(index)}
           onClick={() => choose(index)}
-          className={`w-full flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+          className={`w-full flex cursor-pointer items-center gap-3 px-3 py-2 min-h-control text-sm ${
             option.value === value
-              ? 'bg-amber-500/10 text-amber-400'
-              : 'text-zinc-300 hover:bg-zinc-800/80 hover:text-zinc-100'
-          } ${index === active ? 'ring-1 ring-inset ring-amber-500/30' : ''}`}
+              ? 'text-amber-300'
+              : 'text-zinc-300'
+          } ${index === active ? 'bg-zinc-800 text-zinc-50' : ''}`}
         >
           {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
           <div className="flex-1 text-left truncate">
@@ -245,7 +245,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
         type="button"
         {...triggerA11y}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 px-4 py-3 hover:border-zinc-700 focus:border-amber-500/30 transition-colors"
+        className="field flex items-center justify-between py-1.5 text-left"
       >
         <div className="flex items-center gap-3 truncate">
           {selected?.icon}
@@ -256,7 +256,7 @@ export function CustomSelect({ value, options, onChange, placeholder = 'Select..
             )}
           </div>
         </div>
-        <ChevronDown className={`w-4 h-4 text-zinc-500 flex-shrink-0 ml-2 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-zinc-400 flex-shrink-0 ml-2 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
       {renderPortalMenu(fullMenu)}
     </div>

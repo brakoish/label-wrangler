@@ -255,7 +255,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={type === 'thermal' ? 'e.g., 2" × 1" Thermal' : 'e.g., Avery 5160'}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                className="field w-full"
               />
             </div>
             <div>
@@ -267,7 +267,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g., Standard shipping label"
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                className="field w-full"
               />
             </div>
           </div>
@@ -305,7 +305,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 min="0.1"
                 value={width}
                 onChange={(e) => setWidth(e.target.value)}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                className="field w-full"
               />
             </div>
             <div>
@@ -318,7 +318,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 min="0.1"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                className="field w-full"
               />
             </div>
           </div>
@@ -347,7 +347,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   max="10"
                   value={labelsAcross}
                   onChange={(e) => setLabelsAcross(parseInt(e.target.value) || 1)}
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                  className="field w-full"
                 />
               </div>
             </div>
@@ -365,7 +365,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     value={horizontalGapThermal}
                     onChange={(e) => setHorizontalGapThermal(e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
                 <div>
@@ -378,7 +378,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     value={sideMarginThermal}
                     onChange={(e) => setSideMarginThermal(e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
               </div>
@@ -395,7 +395,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   value={labelGap}
                   onChange={(e) => setLabelGap(e.target.value)}
                   placeholder="0.125"
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                  className="field w-full"
                 />
               </div>
               <div>
@@ -408,7 +408,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   value={linerWidth}
                   onChange={(e) => setLinerWidth(e.target.value)}
                   placeholder="Auto"
-                  className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                  className="field w-full"
                 />
               </div>
             </div>
@@ -428,7 +428,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="1"
                     value={columns}
                     onChange={(e) => setColumns(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
                 <div>
@@ -440,7 +440,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="1"
                     value={rows}
                     onChange={(e) => setRows(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
               </div>
@@ -456,7 +456,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={topMargin}
                     onChange={(e) => setTopMargin(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
                 <div>
@@ -469,7 +469,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={sideMargin}
                     onChange={(e) => setSideMargin(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
               </div>
@@ -485,7 +485,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={horizontalGap}
                     onChange={(e) => setHorizontalGap(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
                 <div>
@@ -498,7 +498,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                     min="0"
                     value={verticalGap}
                     onChange={(e) => setVerticalGap(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 focus:border-amber-500/30 focus:bg-zinc-900 transition-colors"
+                    className="field w-full"
                   />
                 </div>
               </div>
@@ -516,7 +516,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-black text-sm font-semibold rounded-xl hover:bg-amber-400 transition-colors "
+              className="btn btn-primary"
             >
               <PlusIcon className="w-4 h-4" />
               Add label size

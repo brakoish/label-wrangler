@@ -258,7 +258,7 @@ function TextProps({ element, onUpdate, format, bitmap }: { element: TextElement
         onChange={(e) => onUpdate(element.isStatic ? { content: e.target.value } : { defaultValue: e.target.value })}
         placeholder={element.isStatic ? 'Type the text' : 'Sample text for the preview'}
         rows={3}
-        className="w-full bg-zinc-900/60 border border-zinc-800/50 rounded-lg text-xs text-zinc-100 px-2 py-1.5 focus:border-amber-500/30 resize-y min-h-[28px] placeholder-zinc-500"
+        className="field field-sm w-full text-xs resize-y min-h-[28px]"
       />
       <div className="grid grid-cols-2 gap-1">
         <CompactInput label="Pt" value={element.fontSize} onChange={(v) => onUpdate({ fontSize: v })} step={1} labelRight />

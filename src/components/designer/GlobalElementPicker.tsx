@@ -37,7 +37,7 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search reusable elements"
               placeholder="Search reusable elements…"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg text-sm text-zinc-200 pl-9 pr-3 py-2 focus:border-amber-500/30 placeholder:text-zinc-500"
+              className="field w-full pl-9 pr-3 placeholder:text-zinc-500"
             />
           </div>
         )}
