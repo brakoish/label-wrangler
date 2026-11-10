@@ -1,5 +1,5 @@
 'use client';
-import { Pause, Play } from 'lucide-react';
+import { Loader2, Pause, Play } from 'lucide-react';
 import { useCallback,useEffect,useState,useRef } from 'react';
 import { confirmDialog } from '@/components/ui/feedback';
 import { friendlyError } from '@/lib/userMessages';
@@ -25,23 +25,18 @@ export function OfficePrinterControls(){
  const disabled=busy || !!pending || !data?.canControl || !fresh;
  const actions=paused===true?['resume']:paused===false?['pause']:['pause','resume'];
  const last=data?.controls[0];
- const statusWord=!data?'Checking…':!fresh?'Office not reporting':paused===null?'Status unknown':paused?'Paused':'Ready';
- const body=<>
-  <p className="text-xs leading-relaxed text-zinc-500">Pauses or resumes the office printer for everyone. It can take a few seconds.</p>
-  <div className="flex gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className="btn btn-secondary btn-sm flex-1">{action==='pause'?<Pause className="h-4 w-4 animate-icon" />:<Play className="h-4 w-4 animate-icon" />}{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>
-  {data && !data.canControl && <p className="text-xs text-zinc-500">Your account can&apos;t pause or resume this printer.</p>}
-  {data?.canControl && !fresh && <p className="text-xs text-zinc-500">Pause and Resume come back when the office computer reports in.</p>}
-  {pending && <p role="status" className="text-xs text-amber-400">Waiting for the printer to confirm…</p>}
-  {last?.result && last.result.state!=='succeeded' && <p role="status" className="text-xs text-amber-400">The last {last.action==='pause'?'Pause':'Resume'} {resultWords[last.result.state] ?? 'didn’t finish'}. Check the status above before trying again.</p>}
-  {error && <div role="alert" className="space-y-1 text-red-400"><p>{error}</p>{(()=>{try{return localStorage.getItem(key);}catch{return null;}})() && <button type="button" onClick={()=>{const saved=localStorage.getItem(key);if(saved)void send(JSON.parse(saved).action);}} className="underline">Try again</button>}</div>}
- </>;
- const status=<span className={fresh && paused===false?'text-emerald-400':'text-amber-400'}>{statusWord}</span>;
- // Keep it out of the way while the printer is running normally; show it
- // open when it is paused, waiting, or something needs attention.
- const needsAttention=paused!==false || !!pending || !!error || (!!last?.result && last.result.state!=='succeeded');
- return <div className="pt-1 space-y-2 text-xs">
-  {needsAttention
-    ? <><div className="flex items-center justify-between text-xs"><span className="text-zinc-400 font-medium">Office printer controls</span>{status}</div>{body}</>
-    : <details><summary className="flex cursor-pointer items-center justify-between py-1 text-xs text-zinc-400 hover:text-zinc-200"><span>Pause or resume the office printer</span>{status}</summary><div className="mt-2 space-y-2">{body}</div></details>}
+ const statusWord=!data?'Checking the printer…':pending?'Waiting for the printer to confirm…':!fresh?'Office computer not reporting':paused===null?'Printer status unknown':paused?'Printer paused':'Printing normally';
+ const tone=!data||pending?'text-zinc-400':fresh && paused===false?'text-emerald-400':'text-amber-300';
+ const dot=!data||pending?'bg-zinc-500':fresh && paused===false?'bg-emerald-400':'bg-amber-300';
+ // One row: the printer's state in words, and one button that changes it.
+ return <div className="space-y-2 text-sm">
+  <div className="flex min-h-control items-center justify-between gap-3">
+   <p role="status" className={`flex min-w-0 items-center gap-2 ${tone}`}><span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${dot}`} />{statusWord}</p>
+   {data?.canControl && <div className="flex shrink-0 gap-2">{actions.map(action=><button type="button" key={action} disabled={disabled} onClick={()=>action==='pause'?void requestPause():void send(action)} className="btn btn-secondary btn-sm">{busy?<Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />:action==='pause'?<Pause className="h-4 w-4 animate-icon" aria-hidden="true" />:<Play className="h-4 w-4 animate-icon" aria-hidden="true" />}{action==='pause'?'Pause printer':'Resume printer'}</button>)}</div>}
+  </div>
+  {data && !data.canControl && <p className="text-zinc-400">Your account can&apos;t pause or resume this printer.</p>}
+  {data?.canControl && !fresh && <p className="text-zinc-400">Pause and Resume work again once the office computer reports in.</p>}
+  {last?.result && last.result.state!=='succeeded' && !pending && <p role="status" className="text-amber-300">The last {last.action==='pause'?'Pause':'Resume'} {resultWords[last.result.state] ?? 'didn’t finish'}. Check the status before trying again.</p>}
+  {error && <div role="alert" className="space-y-1 text-red-400"><p>{error}</p>{(()=>{try{return localStorage.getItem(key);}catch{return null;}})() && <button type="button" onClick={()=>{const saved=localStorage.getItem(key);if(saved)void send(JSON.parse(saved).action);}} className="btn btn-ghost btn-sm -ml-2 text-red-400">Try again</button>}</div>}
  </div>;
 }

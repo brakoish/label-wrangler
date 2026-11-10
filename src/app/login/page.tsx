@@ -2,12 +2,14 @@
 import { useEffect, useState } from 'react';
 import { isNetworkError, OFFLINE_MESSAGE } from '@/lib/userMessages';
 import { safeNextPath } from '@/lib/safeRedirect';
+import { PageTitle } from '@/components/PageTitle';
 
 function nextPath(){
   return safeNextPath(new URLSearchParams(window.location.search).get('next'), window.location.origin);
 }
 export default function LoginPage(){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+  const [missing,setMissing]=useState<{username?:boolean;password?:boolean}>({});
   useEffect(()=>{
     const controller=new AbortController();
     // Older Strict cookies may be absent on an external navigation but are
@@ -18,9 +20,14 @@ export default function LoginPage(){
       .catch(()=>{}); // Leave the normal login form available on failure.
     return ()=>controller.abort();
   },[]);
-  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><form className="card w-full max-w-sm p-6 space-y-4" onSubmit={async(e)=>{
-    e.preventDefault();setBusy(true);setError('');
+  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><PageTitle title="Sign in" /><form noValidate className="card w-full max-w-sm p-6 space-y-4" onSubmit={async(e)=>{
+    e.preventDefault();
     const form=new FormData(e.currentTarget);
+    // Say what is missing in the page's own words, next to the field.
+    const empty={username:!String(form.get('username') ?? '').trim(),password:!String(form.get('password') ?? '')};
+    setMissing(empty);
+    if(empty.username||empty.password){(e.currentTarget.elements.namedItem(empty.username?'username':'password') as HTMLInputElement|null)?.focus();return;}
+    setBusy(true);setError('');
     try{
       const username=String(form.get('username') ?? '').trim();
       const response=await fetch('/api/office/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password:form.get('password'),staySignedIn:form.get('staySignedIn')==='on'})});
@@ -36,12 +43,14 @@ export default function LoginPage(){
     <h1 className="text-xl font-semibold text-zinc-50">Label Wrangler</h1>
     <p className="-mt-2 text-sm text-zinc-400">Sign in with your office account.</p>
     <label htmlFor="login-username" className="field-label">Username</label>
-    <input id="login-username" required name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="field -mt-2.5 text-base" />
+    <input id="login-username" required name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-invalid={missing.username||undefined} aria-describedby={missing.username?'login-username-missing':undefined} onInput={()=>missing.username&&setMissing(m=>({...m,username:false}))} className="field -mt-2.5 text-base" />
+    {missing.username && <p id="login-username-missing" className="-mt-2.5 text-sm text-red-400">Enter your username.</p>}
     <label htmlFor="login-password" className="field-label">Password</label>
-    <input id="login-password" required name="password" type="password" autoComplete="current-password" className="field -mt-2.5 text-base" />
+    <input id="login-password" required name="password" type="password" autoComplete="current-password" aria-invalid={missing.password||undefined} aria-describedby={missing.password?'login-password-missing':undefined} onInput={()=>missing.password&&setMissing(m=>({...m,password:false}))} className="field -mt-2.5 text-base" />
+    {missing.password && <p id="login-password-missing" className="-mt-2.5 text-sm text-red-400">Enter your password.</p>}
     <label className="flex min-h-control-sm items-center gap-2 text-sm text-zinc-300"><input name="staySignedIn" type="checkbox" className="size-4 accent-amber-500" />Stay signed in for 30 days</label>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <button disabled={busy} className="btn btn-primary w-full">{busy?'Signing in…':'Sign in'}</button>
-    <p className="text-xs text-zinc-500">Forgot your password? Ask Will to reset your password.</p>
+    <p className="text-sm text-zinc-400">Forgot your password? Ask your admin to reset it.</p>
   </form></main>;
 }

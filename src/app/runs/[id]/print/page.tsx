@@ -1,10 +1,12 @@
 'use client';
 
 import { use, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRunStore } from '@/lib/runStore';
 import { buildSheetPrintHtml } from '@/lib/sheetPrint';
+import { restyleSheetPrintToolbar } from '@/lib/sheetPrintChrome';
+import { PageTitle } from '@/components/PageTitle';
 import { blankCheckAllowsPrinting, checkRunData, describeBlankSummary, hasBlankChoice, rememberBlankChoice, type RunDataCheck } from '@/lib/runDataCheck';
 import { BlankValueCheck } from '@/components/runs/BlankValueCheck';
 import { friendlyError } from '@/lib/userMessages';
@@ -50,7 +52,7 @@ export default function SheetRunPrintPage({
     if (!run || !run.designSnapshot || (run.totalLabels > 0 && run.sourceData.length === 0)) return;
 
     if (!run || !template || !format) {
-      setError('Could not find this run, template, or label format.');
+      setError('We couldn’t find this run’s design or label size.');
       return;
     }
 
@@ -75,12 +77,12 @@ export default function SheetRunPrintPage({
     void buildSheetPrintHtml(run, template, format, range)
       .then((html) => {
         document.open();
-        document.write(html);
+        document.write(restyleSheetPrintToolbar(html, run.id));
         document.close();
       })
       .catch((err) => {
         wroteDocument.current = false;
-        setError(friendlyError(err, 'The print page could not be prepared.'));
+        setError(friendlyError(err, 'The print page couldn’t be prepared.'));
       });
   }, [confirmedSignature, format, hydrated, range, run, template]);
 
@@ -105,13 +107,10 @@ export default function SheetRunPrintPage({
   if (error) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
-        <div className="max-w-md rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-red-400">
-            <AlertCircle className="w-4 h-4" />
-            Can&apos;t print yet
-          </div>
-          <p className="mt-2 text-sm text-zinc-300">{error}</p>
-          <a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-secondary mt-3">Back to the run</a>
+        <div role="alert" className="max-w-md space-y-3 text-center">
+          <h1 className="text-lg font-semibold">Can&apos;t print yet</h1>
+          <p className="text-sm text-zinc-400">{error}</p>
+          <a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-secondary">Back to the run</a>
         </div>
       </main>
     );
@@ -134,9 +133,10 @@ export default function SheetRunPrintPage({
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
-      <div className="grid gap-2 text-center text-sm">
+      <PageTitle title="Print sheet labels" />
+      <div role="status" className="grid gap-2 text-center text-sm">
         <Loader2 className="w-5 h-5 animate-spin justify-self-center text-zinc-400" aria-hidden="true" />
-        <div className="font-medium text-zinc-100">Preparing the print page…</div>
+        <h1 className="font-medium text-zinc-100">Preparing the print page…</h1>
         <div className="text-zinc-400">{run?.name || 'Loading run'}</div>
       </div>
     </main>

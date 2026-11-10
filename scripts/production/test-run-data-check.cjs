@@ -65,6 +65,10 @@ assert.equal(hasBlankChoice({ getItem() { throw new Error('blocked'); } }, 'run-
 
 // User-facing messages: no internal IDs, plain network/server copy.
 assert.equal(friendlyError(new TypeError('Failed to fetch')), OFFLINE_MESSAGE);
+// Server trouble is not 'check your internet', and raw server text never shows.
+assert.equal(friendlyError(new Error('Failed to fetch runs')), 'Can’t reach the label database right now. Try again in a minute.');
+assert.equal(friendlyError(new Error('Database unavailable (simulated 503)')), 'Can’t reach the label database right now. Try again in a minute.');
+assert.equal(friendlyError(new Error('Failed to update run')), 'Label Wrangler couldn’t save that just now. Try again in a minute.');
 assert.equal(friendlyError(new Error('Office printing request failed. No automatic retry was created.')), 'Label Wrangler is having trouble right now. Try again in a minute.');
 assert.equal(stripInternalIds('Queued labels 1–20. Request 7f1c2a9e.'), 'Queued labels 1–20.');
 assert.equal(friendlyRenderError('Lane 1, 087b8c70-1234-4abc-8def-0123456789ab: Image is missing', [{ id: '087b8c70-1234-4abc-8def-0123456789ab', type: 'image' }]), 'The picture box has no picture yet — choose a file or delete the box.');

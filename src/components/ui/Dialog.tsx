@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { isTopDialogLayer, pushDialogLayer, removeDialogLayer } from './dialogStack';
+import { originFromTrigger, usePresence } from './usePresence';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -76,32 +77,30 @@ export function Dialog({ open, onClose, title, description, children, className 
     };
   }, [open, initialFocus]);
 
-  // Keep the panel mounted for its short exit animation, showing what it
-  // showed while open (callers often clear the data that fills it on close).
-  const [present, setPresent] = useState(open);
-  const [prevOpen, setPrevOpen] = useState(open);
+  // Keep the panel mounted for its short exit, showing what it showed while
+  // open (callers often clear the data that fills it on close). Reopening
+  // during the exit turns the transition around instead of restarting it.
+  const { present, state } = usePresence(open, 160);
   const [shown, setShown] = useState({ title, description, children });
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (open) setPresent(true);
-  }
   if (open && (shown.title !== title || shown.description !== description || shown.children !== children)) {
     setShown({ title, description, children });
   }
-  const closing = present && !open;
-  useEffect(() => {
-    if (!closing) return;
-    const timer = setTimeout(() => setPresent(false), 200);
-    return () => clearTimeout(timer);
-  }, [closing]);
+  // Grow out of (and shrink back into) whatever opened the dialog.
+  // Runs before focus moves into the panel, so activeElement is the opener.
+  const [origin, setOrigin] = useState<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    const trigger = active && active !== document.body && !panelRef.current?.contains(active) ? active : null;
+    setOrigin(originFromTrigger(trigger, panelRef.current));
+  }, [open]);
 
   if (!present || typeof document === 'undefined') return null;
   const view = open ? { title, description, children } : shown;
   return createPortal(
     <div
       className="dialog-backdrop fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-3 sm:p-4 bg-black/70"
-      data-closing={closing ? '' : undefined}
-      onAnimationEnd={(event) => { if (closing && event.target === event.currentTarget) setPresent(false); }}
+      data-state={state}
       onMouseDown={(event) => { if (event.target === event.currentTarget && dismissible && open) onClose(); }}
     >
       <div
@@ -111,7 +110,8 @@ export function Dialog({ open, onClose, title, description, children, className 
         aria-labelledby={titleId}
         aria-describedby={view.description ? descriptionId : undefined}
         tabIndex={-1}
-        className={`dialog-panel w-full ${className} max-h-[calc(100dvh-1.5rem)] overflow-y-auto bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl shadow-black/50 p-5 sm:p-6 space-y-5`}
+        style={origin ? { ['--origin' as string]: origin } : undefined}
+        className={`dialog-panel w-full ${className} max-h-[calc(100dvh-1.5rem)] overflow-y-auto bg-zinc-900 rounded-xl shadow-2xl shadow-black/50 ring-1 ring-zinc-800 p-5 sm:p-6 space-y-5`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
