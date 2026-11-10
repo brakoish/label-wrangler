@@ -1,7 +1,15 @@
 import type { RunStatus } from './types';
 
 /** What the office printer has done for a run (display only; never progress). */
-export interface RunOfficeSummary { sent: number; onTheWay: number; failed: number }
+export interface RunOfficeSummary {
+  sent: number; onTheWay: number;
+  /** Parts that didn't print, need a check, or need printing again. */
+  failed: number;
+  /** Labels in those parts. */
+  failedLabels?: number;
+  /** The first such part: did-not-print and needs-check stop the shared printer; print-again doesn't. */
+  firstFailed?: { kind?: 'did-not-print' | 'needs-check' | 'print-again' } | null;
+}
 
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'paused' | 'cancelled' | 'idle';
 
@@ -16,7 +24,9 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   const total = run.totalLabels;
   if (run.status === 'cancelled') return { label: 'Cancelled', tone: 'cancelled' };
   if (total > 0 && printed >= total) return { label: 'Done', tone: 'done' };
-  if (office && office.failed > 0) return { label: 'Office print needs a check', tone: 'attention' };
+  if (office && office.failed > 0) return office.firstFailed?.kind === 'print-again'
+    ? { label: 'Labels to print again', tone: 'attention' }
+    : { label: 'Office print needs a check', tone: 'attention' };
   if (office && office.onTheWay > 0) return { label: 'Sending to office printer', tone: 'active' };
   if (run.status === 'printing') return { label: 'Printing', tone: 'active' };
   if (run.status === 'completed') return { label: 'Done', tone: 'done' };
