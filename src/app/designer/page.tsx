@@ -40,6 +40,10 @@ type NewTemplateElement = TemplateElement extends infer T
 
 type ThermalEditorOrientation = 'printer' | 'upright';
 
+function designLabel(name?: string) {
+  return name ? `‘${name}’` : 'this design';
+}
+
 function DesignerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -322,10 +326,18 @@ function DesignerContent() {
     fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
     return () => { active = false; };
   }, []);
+  // A design link that can't open says so, instead of quietly showing the list.
+  const [openState, setOpenState] = useState<{ id: string; status: 'opening' | 'failed' } | null>(null);
+  const openDesign = useCallback(async (id: string) => {
+    setOpenState({ id, status: 'opening' });
+    await useTemplateStore.getState().fetchTemplate(id);
+    const opened = useTemplateStore.getState().getTemplateById(id);
+    setOpenState(opened && !opened.summaryOnly ? null : { id, status: 'failed' });
+  }, []);
   useEffect(() => {
-    if (templateId) void useTemplateStore.getState().fetchTemplate(templateId);
+    if (templateId) void openDesign(templateId);
     try { setRecovery(templateId ? readDrafts(templateId) : []); } catch { setSaveError('Draft recovery storage is unavailable. Keep this tab open until changes save.'); }
-  }, [templateId]);
+  }, [templateId, openDesign]);
   const recoverCopy = async (draft: LabelTemplate) => {
     try {
       const created = await addTemplate({ name:draft.name+' (recovered)', description:draft.description, formatId:draft.formatId, elements:draft.elements, thermalRenderMode:draft.thermalRenderMode });
@@ -360,6 +372,11 @@ function DesignerContent() {
         {/* Template List */}
         <div className="flex-1 overflow-auto">
           <TemplateList
+            notice={templateId && openState?.id === templateId ? (
+              openState.status === 'opening'
+                ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
+                : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="text-amber-400 hover:underline">Try again</button></p>
+            ) : null}
             templates={templates}
             onSelectTemplate={(id) => {
               selectTemplate(id);
@@ -647,7 +664,7 @@ function DesignerContent() {
 
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
-      <PageTitle title="Designer" />
+      <PageTitle title={`${currentTemplate.name} · Designer`} />
       {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">{friendlyError(saveError, 'Your changes were not saved.')} <button type="button" className="underline" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button className="underline" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button className="underline ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
@@ -722,15 +739,17 @@ function DesignerContent() {
                 Designs
               </a>
             )}
-            <span className={`text-zinc-600 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
-            <button
-              onClick={() => setRenameSource(currentTemplate)}
-              className="group flex min-h-control-sm min-w-0 max-w-[min(100%,24rem)] items-center gap-1.5 rounded-md text-zinc-100 font-semibold transition-colors"
-              title="Rename template"
-            >
-              <span className="truncate">{currentTemplate.name}</span>
-              <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-200" aria-hidden="true" />
-            </button>
+            <span className={`text-zinc-500 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
+            <h1 className="min-w-0 max-w-[min(100%,24rem)] text-sm font-semibold text-zinc-100">
+              <button
+                onClick={() => setRenameSource(currentTemplate)}
+                className="group flex min-h-control-sm min-w-0 max-w-full items-center gap-1.5 rounded-md transition-colors"
+                title="Rename design"
+              >
+                <span className="truncate">{currentTemplate.name}</span>
+                <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-100" aria-hidden="true" />
+              </button>
+            </h1>
             {compatibleFormats.length > 1 && (
               <div className="w-44 shrink-0 max-sm:hidden">
                 <CustomSelect
@@ -739,7 +758,7 @@ function DesignerContent() {
                   options={compatibleFormats.map((format) => ({
                     value: format.id,
                     label: format.name,
-                    sublabel: `${format.width}" × ${format.height}"`,
+                    sublabel: format.name.includes(`${format.width}"`) ? undefined : `${format.width}" × ${format.height}"`,
                   }))}
                 />
               </div>

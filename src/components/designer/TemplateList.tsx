@@ -1,19 +1,17 @@
 'use client';
 
-import { useState, useEffect, useId, useMemo, useRef } from 'react';
-import QRCode from 'qrcode';
+import { useState, useEffect, useId, useMemo, useRef, type ReactNode } from 'react';
 import { loadTemplatePreview } from '@/lib/templatePreviewLoader';
 import Link from 'next/link';
-import JsBarcode from 'jsbarcode';
 import { Plus, Archive, RotateCcw, Copy, Pencil } from 'lucide-react';
-import { BarcodeElement, ImageElement, LabelFormat, LabelTemplate, LineElement, QRElement, RectangleElement, TemplateElement, TextElement } from '@/lib/types';
+import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import { useFormatStore } from '@/lib/store';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { getBitmapProof } from '@/lib/thermal/client';
-import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
-import { barcodeViewBox } from '@/lib/barcodeViewBox';
+import { renderSheetLabelSvg } from '@/lib/sheetPrint';
+import { designSampleValues } from '@/lib/sampleValues';
 import { Dialog } from '@/components/ui/Dialog';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { confirmDialog } from '@/components/ui/feedback';
@@ -28,6 +26,8 @@ interface TemplateListProps {
   onDuplicateTemplate?: (template: LabelTemplate) => void;
   onRenameTemplate?: (template: LabelTemplate) => void;
   onNewTemplate: () => void;
+  /** Shown above the list, e.g. when a design link couldn't open. */
+  notice?: ReactNode;
 }
 
 export function TemplateList({
@@ -38,6 +38,7 @@ export function TemplateList({
   onDuplicateTemplate,
   onRenameTemplate,
   onNewTemplate,
+  notice,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
   const listHydrated = useTemplateStore((state) => state.hydrated);
@@ -66,13 +67,14 @@ export function TemplateList({
 
   return (
     <div className="max-w-[1600px] mx-auto w-full p-4 sm:p-6 lg:p-8">
+      {notice}
       <div className="mb-5 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-zinc-50">Designs</h1>
+        <h1 className="text-2xl font-semibold text-zinc-100">Designs</h1>
         <button type="button" onClick={onNewTemplate} className="btn btn-primary">
           <Plus className="size-4" aria-hidden="true" /> New design
         </button>
       </div>
-      <div className="mb-5 flex flex-wrap items-center gap-2">
+      {templates.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2">
       <div className="segmented w-full sm:w-auto" role="group" aria-label="Show">
         <SegmentedIndicator index={showArchived ? 1 : 0} count={2} />
         <button type="button" onClick={() => setShowArchived(false)} aria-pressed={!showArchived}>Active ({templates.filter((t) => !t.archivedAt).length})</button>
@@ -88,7 +90,7 @@ export function TemplateList({
           />
         </div>
         {isFiltered && <button onClick={() => { setQuery(''); setFormatFilter(''); }} className="btn btn-ghost">Clear filters</button>}
-      </div>
+      </div>}
       {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
       {!listHydrated && templates.length === 0 ? (
         <div role="status" aria-label="Loading designs" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -97,24 +99,17 @@ export function TemplateList({
         </div>
       ) : listError && templates.length === 0 ? (
         <div role="alert" className="py-16 text-center space-y-3">
-          <h3 className="text-zinc-200 font-semibold text-lg">We couldn&apos;t load your designs</h3>
-          <p className="text-zinc-500 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
+          <h2 className="text-zinc-100 font-semibold text-lg">We couldn’t load your designs</h2>
+          <p className="text-zinc-400 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
           <button type="button" disabled={listLoading} onClick={() => void useTemplateStore.getState().fetchTemplates()} className="btn btn-primary">{listLoading ? 'Trying again…' : 'Try again'}</button>
         </div>
       ) : visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
           <div className="text-center max-w-sm">
-            <h3 className="text-zinc-200 font-semibold text-lg">{isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}</h3>
+            <h2 className="text-zinc-100 font-semibold text-lg">{isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}</h2>
             <p className="text-zinc-400 text-sm mt-1">
               {isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
             </p>
-            <button
-              type="button"
-              onClick={onNewTemplate}
-              className="btn btn-secondary mt-4"
-            >
-              New design
-            </button>
           </div>
         </div>
       ) : (
@@ -139,29 +134,6 @@ export function TemplateList({
       )}
     </div>
   );
-}
-
-function sampleDataForTemplate(template: LabelTemplate) {
-  const values: Record<string, string> = {};
-  for (const element of template.elements) {
-    if (element.isStatic || !element.fieldName || values[element.fieldName]) continue;
-    values[element.fieldName] = element.defaultValue || element.fieldName;
-  }
-  return values;
-}
-
-function resolveElementContent(element: TemplateElement, testData?: Record<string, string>): string {
-  if (element.isStatic) {
-    if ('content' in element) return element.content || '';
-    return '';
-  }
-
-  const value = (element.fieldName && testData?.[element.fieldName])
-    || element.defaultValue
-    || element.fieldName
-    || '';
-
-  return `${element.prefix || ''}${value}${element.suffix || ''}`;
 }
 
 function labelViewBox(format: LabelFormat) {
@@ -204,18 +176,26 @@ function CardPreview({ template, format }: { template: LabelTemplate; format?: L
   </div>;
 }
 
-// Mini label preview — renders the actual template instead of a gray skeleton.
+// Mini label preview: the label drawn by the same code that prints it, with
+// the design's sample values (never field keys).
 function MiniPreview({ template, format }: { template: LabelTemplate; format?: LabelFormat }) {
   const [thermalUrl, setThermalUrl] = useState<string | null>(null);
+  const [sheetSvg, setSheetSvg] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [draftWarning, setDraftWarning] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const sampleData = useMemo(() => sampleDataForTemplate(template), [template]);
+  const sampleData = useMemo(() => designSampleValues(template.elements), [template]);
 
   useEffect(() => {
     let active = true;
-    setThermalUrl(null); setPreviewError(''); setDraftWarning('');
-    if (!format || format.type !== 'thermal') return () => { active = false; };
+    setThermalUrl(null); setSheetSvg(null); setPreviewError(''); setDraftWarning('');
+    if (!format) return () => { active = false; };
+    if (format.type !== 'thermal') {
+      renderSheetLabelSvg(template.elements, format, sampleData)
+        .then((svg) => { if (active) setSheetSvg(svg); })
+        .catch(() => { if (active) setPreviewError('The preview could not be drawn.'); });
+      return () => { active = false; };
+    }
 
     const preview = template.thermalRenderMode === 'bitmap-v1'
       ? getBitmapProof(template, format, sampleData, true).then(result => {
@@ -225,7 +205,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
       : generateZPLWithImages(template, format, sampleData).then(zpl => renderZplToDataUrl(zpl, format));
     preview
       .then((url) => { if (active) setThermalUrl(url); })
-      .catch(error => { if (active) setPreviewError(error instanceof Error ? error.message : 'Preview unavailable'); });
+      .catch(() => { if (active) setPreviewError('The preview could not be drawn.'); });
 
     return () => { active = false; };
   }, [format, sampleData, template, attempt]);
@@ -234,248 +214,35 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
 
   if (format.type === 'thermal' && thermalUrl) {
     return (
-      <div className="relative w-full h-full flex items-center justify-center rounded-lg bg-zinc-950">
+      <div className="relative w-full h-full flex items-center justify-center">
         <img
           src={thermalUrl}
           alt={`${template.name} preview`}
           className="max-w-full max-h-full object-contain"
           style={{ imageRendering: 'pixelated' }}
         />
-        {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-zinc-950 px-1 text-xs text-amber-300">Draft · needs attention</span>}
+        {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-zinc-950 px-1 text-xs text-amber-300">Needs a fix</span>}
       </div>
     );
   }
 
-  if (previewError) return <div className="text-xs text-zinc-400 p-3"><p role="status">Preview unavailable: {previewError}</p><button className="btn btn-secondary btn-sm mt-2" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1); }}>Retry preview</button></div>;
-  if (template.thermalRenderMode === 'bitmap-v1') return <p role="status" className="text-xs text-zinc-500 p-3">Loading bitmap preview…</p>;
-  const { vbW, vbH } = labelViewBox(format);
-
-  const pad = Math.min(vbW, vbH) * 0.08;
-  const totalW = vbW + pad * 2;
-  const totalH = vbH + pad * 2;
-
-  return (
-    <svg
-      viewBox={`${-pad} ${-pad} ${totalW} ${totalH}`}
-      className="w-full h-full"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      {/* Background */}
-      <rect x={-pad} y={-pad} width={totalW} height={totalH} fill="#18181b" rx={pad * 0.4} />
-      {/* Label surface */}
-      <rect x={0} y={0} width={vbW} height={vbH} fill="#ffffff" stroke="#3f3f46" strokeWidth={Math.min(vbW, vbH) * 0.006} rx={Math.min(vbW, vbH) * 0.01} />
-      <MiniPreviewElements template={template} format={format} testData={sampleData} vbW={vbW} />
-    </svg>
-  );
-}
-
-function MiniPreviewElements({ template, format, testData, vbW }: { template: LabelTemplate; format: LabelFormat; testData: Record<string, string>; vbW: number }) {
-  return (
-    <>
-      {[...template.elements].sort((a, b) => a.zIndex - b.zIndex).map((element) => (
-        <MiniPreviewElement key={element.id} element={element} format={format} testData={testData} vbW={vbW} />
-      ))}
-    </>
-  );
-}
-
-function MiniPreviewElement({ element, format, testData, vbW }: { element: TemplateElement; format: LabelFormat; testData: Record<string, string>; vbW: number }) {
-  const transform = `translate(${element.x} ${element.y}) rotate(${element.rotation || 0})`;
-
-  switch (element.type) {
-    case 'text':
-      return <MiniText element={element as TextElement} format={format} testData={testData} transform={transform} />;
-    case 'qr':
-      return <MiniQr element={element as QRElement} testData={testData} transform={transform} />;
-    case 'barcode':
-      return <MiniBarcode element={element as BarcodeElement} testData={testData} transform={transform} />;
-    case 'rectangle':
-      return <MiniRectangle element={element as RectangleElement} format={format} transform={transform} />;
-    case 'line':
-      return <MiniLine element={element as LineElement} format={format} transform={transform} />;
-    case 'image':
-      return <MiniImage element={element as ImageElement} transform={transform} vbW={vbW} />;
-    default:
-      return null;
-  }
-}
-
-function MiniText({ element, format, testData, transform }: { element: TextElement; format: LabelFormat; testData: Record<string, string>; transform: string }) {
-  const content = resolveElementContent(element, testData);
-  if (!content) return null;
-
-  const dpi = format.dpi || 203;
-  const thermalLayout = format.type === 'thermal' && element.autoFit === true
-    ? layoutThermalText({
-        content,
-        width: element.width,
-        height: element.height,
-        fontSize: element.fontSize,
-        dpi,
-        lineHeight: element.lineHeight,
-        charWidth: element.charWidth,
-        autoFit: element.autoFit,
-        minFontSize: element.minFontSize,
-      })
-    : null;
-  const fontSize = thermalLayout?.fontHeight ?? (format.type === 'thermal' ? element.fontSize * (dpi / 72) : element.fontSize / 72);
-  const lineHeight = thermalLayout?.lineAdvance ?? fontSize * (element.lineHeight || 1.2);
-  const maxChars = Math.max(1, Math.floor(element.width / Math.max(1, fontSize * (element.charWidth ?? 0.5))));
-  const visibleLines = thermalLayout?.visibleLines ?? wrapThermalText(content, maxChars).slice(0, Math.max(1, Math.floor(element.height / lineHeight)));
-
-  let x = 0;
-  let anchor: 'start' | 'middle' | 'end' = 'start';
-  if (element.textAlign === 'center') {
-    x = element.width / 2;
-    anchor = 'middle';
-  } else if (element.textAlign === 'right') {
-    x = element.width;
-    anchor = 'end';
-  }
-
-  return (
-    <text
-      transform={transform}
-      fontSize={fontSize}
-      fontFamily={element.fontFamily}
-      fontWeight={element.fontWeight}
-      fill={format.type === 'thermal' ? '#000000' : element.color || '#111827'}
-      textAnchor={anchor}
-    >
-      {visibleLines.map((line, index) => (
-        <tspan key={`${element.id}-${index}`} x={x} y={fontSize * 0.85 + index * lineHeight}>
-          {line}
-        </tspan>
-      ))}
-    </text>
-  );
-}
-
-function MiniQr({ element, testData, transform }: { element: QRElement; testData: Record<string, string>; transform: string }) {
-  const [dataUrl, setDataUrl] = useState('');
-  const content = resolveElementContent(element, testData) || 'QR';
-
-  useEffect(() => {
-    let active = true;
-    QRCode.toDataURL(content, {
-      errorCorrectionLevel: element.errorCorrection,
-      width: 128,
-      margin: 0,
-      color: { dark: '#000000', light: '#ffffff' },
-    })
-      .then((url: string) => { if (active) setDataUrl(url); })
-      .catch(() => { if (active) setDataUrl(''); });
-    return () => { active = false; };
-  }, [content, element.errorCorrection]);
-
-  if (!dataUrl) return <rect transform={transform} x={0} y={0} width={element.width} height={element.height} fill="#d4d4d8" />;
-
-  return (
-    <image
-      transform={transform}
-      x={0}
-      y={0}
-      width={element.width}
-      height={element.height}
-      href={dataUrl}
-      preserveAspectRatio="xMidYMid meet"
-    />
-  );
-}
-
-function MiniBarcode({ element, testData, transform }: { element: BarcodeElement; testData: Record<string, string>; transform: string }) {
-  const [barcodeData, setBarcodeData] = useState<{ svg: string; viewBox: string } | null>(null);
-  const clipId = useId().replace(/:/g, '');
-  const content = resolveElementContent(element, testData) || '123456789';
-
-  useEffect(() => {
-    try {
-      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      JsBarcode(tempSvg, content, {
-        format: element.barcodeFormat,
-        width: 2,
-        height: 80,
-        displayValue: element.showText,
-        margin: 0,
-        fontSize: 14,
-      });
-      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height')) });
-    } catch {
-      setBarcodeData(null);
-    }
-  }, [content, element.barcodeFormat, element.showText]);
-
-  if (!barcodeData) return <rect transform={transform} x={0} y={0} width={element.width} height={element.height} fill="#d4d4d8" />;
-
-  return (
-    <g transform={transform}>
-      <clipPath id={clipId}>
-        <rect x={0} y={0} width={element.width} height={element.height} />
-      </clipPath>
-      <svg
-        x={0}
-        y={0}
-        width={element.width}
-        height={element.height}
-        viewBox={barcodeData.viewBox}
-        preserveAspectRatio="xMidYMid meet"
-        clipPath={`url(#${clipId})`}
-      >
-        <g dangerouslySetInnerHTML={{ __html: barcodeData.svg }} />
+  if (previewError) return <div className="text-xs text-zinc-400 p-3"><p role="status">{previewError}</p><button className="btn btn-secondary btn-sm mt-2" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1); }}>Try again</button></div>;
+  if (format.type !== 'thermal' && sheetSvg) {
+    const { vbW, vbH } = labelViewBox(format);
+    return (
+      <svg viewBox={`0 0 ${vbW} ${vbH}`} className="max-h-full max-w-full" style={{ aspectRatio: `${vbW} / ${vbH}` }} role="img" aria-label={`${template.name} preview`}>
+        <rect x={0} y={0} width={vbW} height={vbH} fill="#ffffff" />
+        <g dangerouslySetInnerHTML={{ __html: sheetBody(sheetSvg) }} />
       </svg>
-    </g>
-  );
+    );
+  }
+  return <p role="status" className="text-xs text-zinc-500 p-3">Loading preview…</p>;
 }
 
-function MiniRectangle({ element, format, transform }: { element: RectangleElement; format: LabelFormat; transform: string }) {
-  const dpi = format.dpi || 203;
-  const strokeWidth = format.type === 'thermal' ? Math.max(1, element.strokeWidth * (dpi / 72)) : element.strokeWidth / 72;
-  return (
-    <rect
-      transform={transform}
-      x={0}
-      y={0}
-      width={element.width}
-      height={element.height}
-      fill={element.fillColor || 'none'}
-      stroke={format.type === 'thermal' ? '#000000' : element.strokeColor || '#111827'}
-      strokeWidth={strokeWidth}
-      rx={element.borderRadius}
-    />
-  );
-}
-
-function MiniLine({ element, format, transform }: { element: LineElement; format: LabelFormat; transform: string }) {
-  const dpi = format.dpi || 203;
-  const strokeWidth = format.type === 'thermal' ? Math.max(1, element.strokeWidth * (dpi / 72)) : element.strokeWidth / 72;
-  return (
-    <line
-      transform={transform}
-      x1={0}
-      y1={0}
-      x2={element.width}
-      y2={element.height}
-      stroke={format.type === 'thermal' ? '#000000' : element.color || '#111827'}
-      strokeWidth={strokeWidth}
-      strokeDasharray={element.lineStyle === 'dotted' ? `0 ${strokeWidth * 3}` : element.lineStyle === 'dashed' ? `${strokeWidth * 4} ${strokeWidth * 2}` : undefined}
-      strokeLinecap={element.lineStyle === 'dashed' ? 'butt' : 'round'}
-    />
-  );
-}
-
-function MiniImage({ element, transform, vbW }: { element: ImageElement; transform: string; vbW: number }) {
-  if (!element.src) return <rect transform={transform} x={0} y={0} width={element.width} height={element.height} fill="#3f3f46" rx={vbW * 0.005} />;
-  return (
-    <image
-      transform={transform}
-      x={0}
-      y={0}
-      width={element.width}
-      height={element.height}
-      href={element.src}
-      preserveAspectRatio={element.objectFit === 'fill' ? 'none' : element.objectFit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'}
-    />
-  );
+function sheetBody(svg: string): string {
+  const start = svg.indexOf('>', svg.indexOf('<svg'));
+  const end = svg.lastIndexOf('</svg>');
+  return start === -1 || end <= start ? svg : svg.slice(start + 1, end);
 }
 
 function TemplateCard({
@@ -561,7 +328,7 @@ function TemplateCard({
         </div>
 
         <p className="truncate text-xs text-zinc-400">
-          {format ? `${formatName} · ${format.width}" × ${format.height}"` : formatName}
+          {format && !formatName.includes(`${format.width}"`) ? `${formatName} · ${format.width}" × ${format.height}"` : formatName}
         </p>
         <p className="mt-0.5 truncate text-xs text-zinc-500">
           {partCount} {partCount === 1 ? 'item' : 'items'}
