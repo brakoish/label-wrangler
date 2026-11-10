@@ -284,7 +284,11 @@ export default function RunsPage() {
             <div role="alert" className="py-10 text-center space-y-3">
               <h2 className="text-base font-semibold text-zinc-100">We couldn&apos;t load your runs</h2>
               <p className="text-sm text-zinc-400">{friendlyError(runsError, 'Check your connection, then try again.')}</p>
-              <button type="button" disabled={runsLoading} onClick={() => void useRunStore.getState().loadAll()} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>
+              <button type="button" disabled={runsLoading} onClick={() => {
+                void useRunStore.getState().loadAll();
+                if (useTemplateStore.getState().error) void useTemplateStore.getState().fetchTemplates();
+                if (useFormatStore.getState().error) void useFormatStore.getState().fetchFormats();
+              }} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>
             </div>
           )}
           {/* Empty state: only once loading has finished and there really are no runs. */}

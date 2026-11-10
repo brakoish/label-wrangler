@@ -17,8 +17,12 @@ export const OFFLINE_MESSAGE = "Couldn't reach Label Wrangler — check your int
 export function isNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return error.name === 'TypeError' && /fetch|network|load failed/i.test(error.message)
-    || /^(Failed to fetch|NetworkError|Load failed)/i.test(error.message);
+    || /^(Failed to fetch\s*$|NetworkError|Load failed)/i.test(error.message);
 }
+
+/** Server-side trouble (database down, 5xx), in words a person can act on. */
+export const SERVER_TROUBLE_MESSAGE = 'Can’t reach the label database right now. Try again in a minute.';
+export const SAVE_TROUBLE_MESSAGE = 'Label Wrangler couldn’t save that just now. Try again in a minute.';
 
 /** Remove internal IDs and tidy leftover punctuation. */
 export function stripInternalIds(message: string): string {
@@ -38,6 +42,8 @@ export function friendlyError(error: unknown, fallback = 'Something went wrong. 
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   if (!message) return fallback;
   if (/^Office printing request failed/i.test(message) || /^Internal Server Error$/i.test(message)) return 'Label Wrangler is having trouble right now. Try again in a minute.';
+  if (/database (unavailable|error)|simulated 5\d\d|service unavailable|bad gateway|gateway time-?out|^Failed to (fetch|load) \w/i.test(message)) return SERVER_TROUBLE_MESSAGE;
+  if (/^Failed to (update|create|delete|archive|save) \w/i.test(message)) return SAVE_TROUBLE_MESSAGE;
   return stripInternalIds(message) || fallback;
 }
 
