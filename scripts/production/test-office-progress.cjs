@@ -147,6 +147,12 @@ for (const status of [400, 404, 409, 413]) assert.equal(O.officeFailureKind(stat
 for (const status of [401, 403, 408, 429, 500, 502, 503, undefined]) assert.equal(O.officeFailureKind(status), 'uncertain', `${status} keeps the saved request`);
 assert.equal(O.keepPendingAfter('refused'), false, 'a refused request is not offered for resend');
 assert.equal(O.keepPendingAfter('uncertain'), true, 'an unknown outcome keeps the same request and key');
+assert.equal(O.sendKeepsRequest(403, undefined, false), false, 'a first try refused for print access queued nothing');
+assert.equal(O.sendKeepsRequest(401, undefined, false), false, 'a first try while signed out queued nothing');
+assert.equal(O.sendKeepsRequest(403, undefined, true), true, 'a resend refused for access keeps the request: an earlier try may have arrived');
+assert.equal(O.sendKeepsRequest(403, 'origin_not_allowed', false), true, 'the wrong address keeps the request and its own words');
+assert.equal(O.sendKeepsRequest(undefined, undefined, false), true, 'no answer keeps the request');
+assert.equal(O.sendKeepsRequest(409, undefined, true), false, 'a definite refusal clears it');
 assert.equal(O.uncertainSendWords(401).cause, 'signed-out');
 assert.equal(O.uncertainSendWords(403, 'origin_not_allowed').cause, 'address');
 assert.equal(O.uncertainSendWords(403).cause, 'no-access');

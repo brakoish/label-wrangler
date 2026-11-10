@@ -12,7 +12,7 @@ import { Fold, FoldToggle } from '@/components/ui/Fold';
 import { confirmDialog } from '@/components/ui/feedback';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
 import { capAfterSizeError, firstUnsentLabel, isValidOfficeRange, officeProofKey, officeSendCap, officeSendParts, officeSendPlan, officeWaitingSpans, readPartsPlan, remainingParts, spanWords, suggestOfficeRange, OFFICE_BITMAP_LABELS_PER_SEND, OFFICE_MAX_LABELS, type OfficeDeliverySummary, type OfficeFailedPart, type OfficePartsPlan, type OfficeSendPlan, type OfficeSpan } from '@/lib/officeRange';
-import { keepPendingAfter, officeFailureKind, officeStatusLine, plainJobReason, plainOfficeRefusal, queuedNotice, readPendingMeta, readRefusal, refusalNeedsSomeoneElse, refusalStillApplies, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
+import { officeFailureKind, officeStatusLine, plainJobReason, plainOfficeRefusal, queuedNotice, readPendingMeta, readRefusal, refusalNeedsSomeoneElse, refusalStillApplies, sendKeepsRequest, uncertainSendWords, type OfficeRefusalRecord, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import type { OfficeJobBrief, OfficeRequest } from './useOfficeRequests';
 interface Printer { station_id:string; id:string; name:string; dpi:number; max_width_dots:number; last_seen:string|null; online:boolean; available:boolean; dispatch_enabled:boolean; paired_at:string|null; needs_review:boolean; dispatch_hold_reason?:string|null; review_holds?:OfficeReviewHold[] }
 /** HTTP error that remembers its status, so a definite refusal reads differently from "not sure it arrived". */
@@ -301,11 +301,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       }catch(err){
         // A definite refusal (400/404/409/413) means nothing new was queued,
         // so the saved request is cleared and never offered for resend.
-        // Anything else (offline, timeout, 5xx, signed out, no access, busy)
-        // might mean an earlier try arrived, so the same request is kept and
-        // "Send again" reuses its idempotency key.
+        // Anything else (offline, timeout, 5xx, busy, or signed out / no
+        // access on a resend) might mean an earlier try arrived, so the same
+        // request is kept and "Send again" reuses its idempotency key.
         const code=err instanceof OfficeRequestError?err.status:undefined;
-        if(!keepPendingAfter(officeFailureKind(code))){
+        if(!sendKeepsRequest(code,err instanceof OfficeRequestError?err.code:undefined,!!saved)){
           try{localStorage.removeItem(storageKey);localStorage.removeItem(metaKey);}catch{/* nothing saved */}setPending(null);
           const plain=plainOfficeRefusal(err instanceof Error?err.message:'',code);
           const record:OfficeRefusalRecord={from:payload.from,to:payload.to,reason:plain.reason,message:plain.message,at:new Date().toISOString()};

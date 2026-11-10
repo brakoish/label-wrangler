@@ -835,7 +835,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const n = reprintFrom;
     const ok = await confirmDialog({
       title: `Go back to label ${n} and continue?`,
-      body: `The run's progress goes back to ${n - 1} of ${total}, and the next Start prints labels ${n} to ${total} (${total - n + 1} labels). To print only a few labels again, use "Reprint ${reprintCount} labels" instead.`,
+      body: `The run's progress goes back to ${n - 1} of ${total}, and the next Start prints labels ${n} to ${total} (${total - n + 1} labels). To print only a few labels again, use “Print ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`} again” instead.`,
       confirmLabel: `Go back to label ${n}`,
     });
     if (!ok) return;
@@ -1531,7 +1531,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                     disabled={!reprintValid || !blanksOk || (!isSheetFormat && transport === 'office')}
                     className="btn btn-primary btn-sm"
                   >
-                    <Printer className="w-4 h-4" aria-hidden="true" /> {isSheetFormat ? 'Open these labels to print' : `Reprint ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`}`}
+                    <Printer className="w-4 h-4" aria-hidden="true" /> {isSheetFormat ? 'Open these labels to print' : `Print ${reprintCount === 1 ? '1 label' : `${reprintCount} labels`} again`}
                   </button>
                   <button type="button" onClick={() => setReprintToDraft(String(total))} className="btn btn-ghost btn-sm" disabled={reprintToDraft === String(total)}>To the end</button>
                   <button type="button" onClick={() => setShowReprint(false)} className="btn btn-ghost btn-sm">Cancel</button>

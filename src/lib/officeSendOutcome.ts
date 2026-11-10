@@ -105,6 +105,17 @@ export function keepPendingAfter(kind: OfficeFailureKind): boolean {
   return kind !== 'refused';
 }
 
+/**
+ * Whether a failed send keeps its saved request for "Send again". A first try
+ * refused as signed out or without print access queued nothing (the server
+ * checks the account first), so it is a plain refusal. A resend keeps the
+ * request on those answers too, because an earlier try may have arrived.
+ */
+export function sendKeepsRequest(status: number | undefined, code: string | undefined, resend: boolean): boolean {
+  if (!resend && (status === 401 || (status === 403 && code !== 'origin_not_allowed'))) return false;
+  return keepPendingAfter(officeFailureKind(status));
+}
+
 /** How long a remembered refusal is shown before live status takes over again. */
 export const REFUSAL_TTL_MS = 30 * 60 * 1000;
 
