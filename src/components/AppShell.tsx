@@ -59,6 +59,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
             <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 py-1 bg-zinc-900/50 rounded-xl border border-zinc-800/50 sm:flex-none">
               <Link
                 href="/runs"
+                aria-current={isRuns ? 'page' : undefined}
                 className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isRuns
                     ? 'bg-zinc-800 text-white shadow-sm'
@@ -69,6 +70,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               </Link>
               <Link
                 href="/nabis"
+                aria-current={isNabis ? 'page' : undefined}
                 className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isNabis
                     ? 'bg-zinc-800 text-white shadow-sm'
@@ -79,27 +81,29 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               </Link>
               <Link
                 href="/designer"
+                aria-current={isDesigner ? 'page' : undefined}
                 className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isDesigner
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Designer
+                Designs
               </Link>
               <Link
                 href="/formats"
+                aria-current={isFormats ? 'page' : undefined}
                 className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   isFormats
                     ? 'bg-zinc-800 text-white shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Formats
+                Label sizes
               </Link>
             </nav>
 
-            <button className="shrink-0 text-xs text-zinc-500 hover:text-zinc-200" onClick={async()=>{
+            <button type="button" className="shrink-0 min-h-9 text-xs text-zinc-500 hover:text-zinc-200" onClick={async()=>{
               if (!canLeaveLocalPrint()) return;
               if (beforeLeave && !await beforeLeave()) return;
               const result=await fetch('/api/office/session',{method:'DELETE'});

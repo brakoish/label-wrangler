@@ -121,6 +121,6 @@ try{
  console.log('PASS failed-save header navigation retains editor and retry');
  await button('Try saving again');await waitFor('document.body.innerText.includes("All changes saved")');
  await evaluate(`Array.from(document.querySelectorAll('a[href="/designer"]')).find(a=>!a.closest('header')).click()`);
- await waitFor(`!location.search.includes('id=') && !!document.querySelector('[aria-label="Search templates"]')`);
+ await waitFor(`!location.search.includes('id=') && !!document.querySelector('[aria-label="Search designs"]')`);
  console.log('PASS exact Templates breadcrumb returns to the library after recovery');
 } finally {if(socket)socket.close();chrome.kill('SIGTERM');await fetch(base+'/api/office/session',{method:'DELETE',headers:{Origin:new URL(base).origin,Cookie:cookie}});}

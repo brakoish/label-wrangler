@@ -14,6 +14,10 @@ import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
 import { barcodeViewBox } from '@/lib/barcodeViewBox';
+import { Dialog } from '@/components/ui/Dialog';
+import { confirmDialog } from '@/components/ui/feedback';
+import { useTemplateStore } from '@/lib/templateStore';
+import { friendlyError } from '@/lib/userMessages';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -35,6 +39,9 @@ export function TemplateList({
   onNewTemplate,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
+  const listHydrated = useTemplateStore((state) => state.hydrated);
+  const listLoading = useTemplateStore((state) => state.loading);
+  const listError = useTemplateStore((state) => state.error);
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState('');
   const [formatFilter, setFormatFilter] = useState('');
@@ -50,7 +57,7 @@ export function TemplateList({
     try {
       await (template.archivedAt ? onRestoreTemplate(template.id) : onDeleteTemplate(template.id));
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to update template. Please try again.');
+      setError(friendlyError(error, 'That design could not be updated. Try again.'));
     } finally {
       setPendingId(null);
     }
@@ -59,33 +66,45 @@ export function TemplateList({
   return (
     <div className="max-w-[1600px] mx-auto w-full p-8">
       <div className="flex gap-3 mb-6">
-        <button onClick={() => setShowArchived(false)} aria-pressed={!showArchived} className={!showArchived ? 'text-amber-400' : 'text-zinc-400'}>Active ({templates.filter((t) => !t.archivedAt).length})</button>
-        <button onClick={() => setShowArchived(true)} aria-pressed={showArchived} className={showArchived ? 'text-amber-400' : 'text-zinc-400'}>Archived ({templates.filter((t) => t.archivedAt).length})</button>
+        <button type="button" onClick={() => setShowArchived(false)} aria-pressed={!showArchived} className={!showArchived ? 'text-amber-400' : 'text-zinc-400'}>Active ({templates.filter((t) => !t.archivedAt).length})</button>
+        <button type="button" onClick={() => setShowArchived(true)} aria-pressed={showArchived} className={showArchived ? 'text-amber-400' : 'text-zinc-400'}>Archived ({templates.filter((t) => t.archivedAt).length})</button>
       </div>
       <div className="flex flex-wrap gap-3 mb-6">
-        <input type="search" aria-label="Search templates" placeholder="Search templates…" value={query} onChange={e => setQuery(e.target.value)} className="rounded-lg bg-zinc-900 border border-zinc-700 p-2 text-sm text-zinc-200" />
-        <select aria-label="Filter label format" value={formatFilter} onChange={e => setFormatFilter(e.target.value)} className="rounded-lg bg-zinc-900 border border-zinc-700 p-2 text-sm text-zinc-200">
-          <option value="">All label sizes / formats</option>
+        <input type="search" aria-label="Search designs" placeholder="Search designs…" value={query} onChange={e => setQuery(e.target.value)} className="rounded-lg bg-zinc-900 border border-zinc-700 p-2 text-sm text-zinc-200" />
+        <select aria-label="Filter by label size" value={formatFilter} onChange={e => setFormatFilter(e.target.value)} className="rounded-lg bg-zinc-900 border border-zinc-700 p-2 text-sm text-zinc-200">
+          <option value="">All label sizes</option>
           {formats.map(f => <option key={f.id} value={f.id}>{f.name} · {f.width} × {f.height} in · {f.type}</option>)}
         </select>
         {isFiltered && <button onClick={() => { setQuery(''); setFormatFilter(''); }} className="text-sm text-amber-400">Clear filters</button>}
       </div>
       {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
-      {visibleTemplates.length === 0 ? (
+      {!listHydrated && templates.length === 0 ? (
+        <div role="status" aria-label="Loading designs" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {[0, 1, 2].map((i) => <div key={i} className="min-h-[240px] rounded-2xl border border-zinc-800 bg-zinc-900/40 animate-pulse" />)}
+          <span className="sr-only">Loading designs…</span>
+        </div>
+      ) : listError && templates.length === 0 ? (
+        <div role="alert" className="py-16 text-center space-y-3">
+          <h3 className="text-zinc-200 font-semibold text-lg">We couldn&apos;t load your designs</h3>
+          <p className="text-zinc-500 text-sm">{friendlyError(listError, 'Something went wrong.')}</p>
+          <button type="button" disabled={listLoading} onClick={() => void useTemplateStore.getState().fetchTemplates()} className="min-h-10 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black disabled:opacity-40">{listLoading ? 'Trying again…' : 'Try again'}</button>
+        </div>
+      ) : visibleTemplates.length === 0 ? (
         <div className="flex items-center justify-center py-24">
           <div className="text-center max-w-sm">
             <div className="w-20 h-20 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-800">
               <FileText className="w-10 h-10 text-zinc-600" />
             </div>
-            <h3 className="text-zinc-300 font-semibold text-lg">{isFiltered ? 'No matching templates' : showArchived ? 'No archived templates' : 'No active templates'}</h3>
+            <h3 className="text-zinc-300 font-semibold text-lg">{isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}</h3>
             <p className="text-zinc-500 text-sm mt-2">
-              {isFiltered ? 'Try another name or label format, or clear the filters.' : showArchived ? 'Archived templates will appear here. Saved runs keep working.' : 'Create a template or restore one from Archived.'}
+              {isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design to get started.'}
             </p>
             <button
+              type="button"
               onClick={onNewTemplate}
-              className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium"
+              className="mt-4 min-h-10 text-amber-400 hover:text-amber-300 text-sm font-medium"
             >
-              New Template
+              New design
             </button>
           </div>
         </div>
@@ -99,7 +118,7 @@ export function TemplateList({
             <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-amber-500/30 group-hover:bg-amber-500/5 flex items-center justify-center transition-all">
               <Plus className="w-6 h-6" />
             </div>
-            <span className="text-sm font-medium">New Template</span>
+            <span className="text-sm font-medium">New design</span>
           </button>
 
           {visibleTemplates.map((template) => {
@@ -520,7 +539,7 @@ function TemplateCard({
                   onRename();
                 }}
                 className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-600 hover:text-amber-400 transition-colors"
-                title="Rename template"
+                title="Rename design"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
@@ -532,7 +551,7 @@ function TemplateCard({
                   onDuplicate();
                 }}
                 className="p-1 rounded-lg hover:bg-amber-500/10 text-zinc-600 hover:text-amber-400 transition-colors"
-                title="Duplicate to another format"
+                title="Duplicate (optionally to another label size)"
               >
                 <Copy className="w-3.5 h-3.5" />
               </button>
@@ -540,13 +559,12 @@ function TemplateCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (template.archivedAt || confirm(`Archive template "${template.name}"? It will leave the active list. Existing runs are preserved, and you can restore it later.`)) {
-                  onDelete();
-                }
+                if (template.archivedAt) { onDelete(); return; }
+                void confirmDialog({ title: `Archive “${template.name}”?`, body: 'It leaves the active list. Runs that used it keep working, and you can restore it from Archived.', confirmLabel: 'Archive' }).then((ok) => { if (ok) onDelete(); });
               }}
               className="p-1 rounded-lg hover:bg-red-600/20 text-zinc-600 hover:text-red-400 transition-colors"
               disabled={pending}
-              title={template.archivedAt ? "Restore template" : "Archive template"}
+              title={template.archivedAt ? "Restore design" : "Archive design"}
               aria-label={`${template.archivedAt ? "Restore" : "Archive"} ${template.name}`}
             >
               {template.archivedAt ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
@@ -599,6 +617,7 @@ interface RenameTemplateDialogProps {
 
 export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: RenameTemplateDialogProps) {
   const [name, setName] = useState('');
+  const fieldId = useId();
   const [description, setDescription] = useState('');
 
   useEffect(() => {
@@ -617,29 +636,30 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="glass rounded-2xl p-6 max-w-md w-full border border-zinc-800">
-        <h3 className="text-xl font-semibold text-zinc-100 mb-6 gradient-text">Rename Template</h3>
+    <Dialog open onClose={onClose} title="Rename design">
+      <div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">Template Name</label>
+            <label htmlFor={`${fieldId}-name`} className="text-sm text-zinc-400 block mb-2">Design name</label>
             <input
+              id={`${fieldId}-name`}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Product Label"
               className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
-              autoFocus
+              data-autofocus
             />
           </div>
 
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">Description (optional)</label>
+            <label htmlFor={`${fieldId}-description`} className="text-sm text-zinc-400 block mb-2">Description (optional)</label>
             <textarea
+              id={`${fieldId}-description`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe this template..."
+              placeholder="What is this design for?"
               rows={3}
               className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50 resize-none"
             />
@@ -663,7 +683,7 @@ export function RenameTemplateDialog({ isOpen, source, onClose, onSave }: Rename
           </div>
         </form>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -675,6 +695,7 @@ interface NewTemplateDialogProps {
 
 export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDialogProps) {
   const [name, setName] = useState('');
+  const fieldId = useId();
   const [description, setDescription] = useState('');
   const [formatId, setFormatId] = useState('');
   const [renderMode, setRenderMode] = useState<'native-v1' | 'bitmap-v1'>('bitmap-v1');
@@ -692,45 +713,47 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="glass rounded-2xl p-6 max-w-md w-full border border-zinc-800">
-        <h3 className="text-xl font-semibold text-zinc-100 mb-6 gradient-text">New Template</h3>
+    <Dialog open onClose={onClose} title="New design">
+      <div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">Template Name</label>
+            <label htmlFor={`${fieldId}-name`} className="text-sm text-zinc-400 block mb-2">Design name</label>
             <input
+              id={`${fieldId}-name`}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Product Label"
               className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
-              autoFocus
+              data-autofocus
             />
           </div>
 
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">Description (optional)</label>
+            <label htmlFor={`${fieldId}-description`} className="text-sm text-zinc-400 block mb-2">Description (optional)</label>
             <textarea
+              id={`${fieldId}-description`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe this template..."
+              placeholder="What is this design for?"
               rows={3}
               className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50 resize-none"
             />
           </div>
 
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">Label Format</label>
+            <label id={`${fieldId}-size`} className="text-sm text-zinc-400 block mb-2">Label size</label>
             {formats.length === 0 ? (
               <p className="text-sm text-zinc-500 py-2">
-                No formats yet — <Link href="/formats" className="text-amber-400 hover:text-amber-300">create a format</Link> first
+                No label sizes yet — <Link href="/formats" className="text-amber-400 hover:text-amber-300">add a label size</Link> first
               </p>
             ) : (
               <CustomSelect
                 value={formatId}
                 onChange={setFormatId}
-                placeholder="Select a format..."
+                aria-labelledby={`${fieldId}-size`}
+                placeholder="Choose a label size…"
                 options={formats.map((format) => ({
                   value: format.id,
                   label: format.name,
@@ -740,10 +763,10 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
             )}
           </div>
 
-          {formats.find(f => f.id === formatId)?.type === 'thermal' && <label className="block text-sm text-zinc-400">Thermal rendering
-            <select aria-label="Thermal rendering" className="block w-full mt-2 bg-zinc-900 rounded p-2" value={renderMode} onChange={e => setRenderMode(e.target.value as 'native-v1' | 'bitmap-v1')}>
-              <option value="bitmap-v1">Exact bitmap · editable fonts · connection required</option>
-              <option value="native-v1">Native · legacy printer fonts</option>
+          {formats.find(f => f.id === formatId)?.type === 'thermal' && <label className="block text-sm text-zinc-400">How it prints
+            <select className="block w-full mt-2 bg-zinc-900 rounded p-2" value={renderMode} onChange={e => setRenderMode(e.target.value as 'native-v1' | 'bitmap-v1')}>
+              <option value="bitmap-v1">Exact picture (recommended) · any font · needs internet to print</option>
+              <option value="native-v1">Printer fonts (older designs)</option>
             </select>
           </label>}
 
@@ -765,7 +788,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
           </div>
         </form>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -783,6 +806,7 @@ interface DuplicateTemplateDialogProps {
  */
 export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: DuplicateTemplateDialogProps) {
   const [name, setName] = useState('');
+  const fieldId = useId();
   const [formatId, setFormatId] = useState('');
   const [scale, setScale] = useState(true);
   const { formats } = useFormatStore();
@@ -809,9 +833,8 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="glass rounded-2xl p-6 max-w-md w-full border border-zinc-800">
-        <h3 className="text-xl font-semibold text-zinc-100 mb-1 gradient-text">Duplicate Template</h3>
+    <Dialog open onClose={onClose} title="Duplicate design">
+      <div>
         <p className="text-xs text-zinc-500 mb-6">
           Creating a copy of <span className="text-zinc-300">{source.name}</span>
           {sourceFormat && <span> ({sourceFormat.width}&quot; × {sourceFormat.height}&quot;)</span>}
@@ -819,25 +842,27 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">New Template Name</label>
+            <label htmlFor={`${fieldId}-name`} className="text-sm text-zinc-400 block mb-2">Name for the copy</label>
             <input
+              id={`${fieldId}-name`}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 px-3 py-2.5 focus:outline-none focus:border-amber-500/50"
-              autoFocus
+              data-autofocus
             />
           </div>
 
           <div>
-            <label className="text-sm text-zinc-400 block mb-2">Target Format</label>
+            <label id={`${fieldId}-size`} className="text-sm text-zinc-400 block mb-2">Label size for the copy</label>
             {formats.length === 0 ? (
-              <p className="text-sm text-zinc-500 py-2">No formats available.</p>
+              <p className="text-sm text-zinc-500 py-2">No label sizes yet.</p>
             ) : (
               <CustomSelect
                 value={formatId}
                 onChange={setFormatId}
-                placeholder="Select a format..."
+                aria-labelledby={`${fieldId}-size`}
+                placeholder="Choose a label size…"
                 options={formats.map((format) => ({
                   value: format.id,
                   label: format.name,
@@ -856,9 +881,9 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
                 className="mt-0.5 accent-amber-500"
               />
               <div className="flex-1">
-                <div className="text-sm font-medium text-zinc-200">Scale elements proportionally</div>
+                <div className="text-sm font-medium text-zinc-200">Resize everything to fit the new size</div>
                 <div className="text-xs text-zinc-500 mt-0.5">
-                  Resize text, positions, and QR codes to fit the new label dimensions. Uncheck to keep exact coordinates.
+                  Text, positions and QR codes are resized to the new label. Untick to keep everything exactly where it is.
                 </div>
               </div>
             </label>
@@ -882,6 +907,6 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
           </div>
         </form>
       </div>
-    </div>
+    </Dialog>
   );
 }

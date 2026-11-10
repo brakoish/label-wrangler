@@ -188,7 +188,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <span className="text-lg text-zinc-400">labels</span>
                   </div>
                 ) : (
-                  <div className="text-2xl font-bold text-white">{format.labelsAcross || 1} <span className="text-lg text-zinc-400">labels</span></div>
+                  <div className="text-2xl font-bold text-white">{format.labelsAcross || 1} <span className="text-lg text-zinc-400">{(format.labelsAcross || 1) === 1 ? 'label' : 'labels'}</span></div>
                 )}
               </SpecCard>
             </>
@@ -201,7 +201,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <span className="text-lg text-zinc-400">labels</span>
                   </div>
                 ) : (
-                  <div className="text-2xl font-bold text-white">{format.labelsPerSheet} <span className="text-lg text-zinc-400">labels</span></div>
+                  <div className="text-2xl font-bold text-white">{format.labelsPerSheet} <span className="text-lg text-zinc-400">{format.labelsPerSheet === 1 ? 'label' : 'labels'}</span></div>
                 )}
               </SpecCard>
               <SpecCard label="Grid" editing={editing}>

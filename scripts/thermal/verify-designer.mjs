@@ -127,16 +127,16 @@ try{
  await send('Page.reload');await waitFor(`!!document.querySelector('[data-layer-id="text"]')`);
  assert.equal(await evaluate('window.fixture.formatId'),'large-format');assert.equal(await evaluate('window.fixture.elements.find(e=>e.id==="text").locked'),true);
  // Library search AND size filter, including archive and clear/no-result recovery.
- await send('Page.navigate',{url:base+'/designer'});await waitFor(`!!document.querySelector('[aria-label="Search templates"]') && document.body.innerText.includes("Other sheet template")`);
- await setInput('[aria-label="Search templates"]','SYNTHETIC');
+ await send('Page.navigate',{url:base+'/designer'});await waitFor(`!!document.querySelector('[aria-label="Search designs"]') && document.body.innerText.includes("Other sheet template")`);
+ await setInput('[aria-label="Search designs"]','SYNTHETIC');
  await waitFor('!document.body.innerText.includes("Other sheet template")');
- await setInput('[aria-label="Filter label format"]','sheet-format');await waitFor('document.body.innerText.includes("No matching templates")');
+ await setInput('[aria-label="Filter by label size"]','sheet-format');await waitFor('document.body.innerText.includes("No matching designs")');
  await button('Clear filters');await waitFor('document.body.innerText.includes("Other sheet template")');
- await setInput('[aria-label="Filter label format"]','sheet-format');
+ await setInput('[aria-label="Filter by label size"]','sheet-format');
  await waitFor('!document.body.innerText.includes("Synthetic bitmap verification")');
  await button('Clear filters');
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('Archived (')).click()");
- await setInput('[aria-label="Search templates"]','archived');await waitFor('document.body.innerText.includes("Archived test template")');
+ await setInput('[aria-label="Search designs"]','archived');await waitFor('document.body.innerText.includes("Archived test template")');
  assert.equal(await evaluate('document.body.innerText.includes("Other sheet template")'),false);
  // Duplicating a selected group keeps spacing and internal stacking intact.
  await send('Page.navigate',{url:base+'/designer?id=thermal-ui-test'});

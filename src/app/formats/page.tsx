@@ -9,6 +9,8 @@ import { AddFormatModal } from '@/components/AddFormatModal';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { PlusIcon } from '../icons';
+import { alertDialog, confirmDialog } from '@/components/ui/feedback';
+import { friendlyError } from '@/lib/userMessages';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,6 +22,9 @@ export default function Home() {
   const selectFormat = useFormatStore((s) => s.selectFormat);
   const deleteFormat = useFormatStore((s) => s.deleteFormat);
   const updateFormat = useFormatStore((s) => s.updateFormat);
+  const hydrated = useFormatStore((s) => s.hydrated);
+  const loading = useFormatStore((s) => s.loading);
+  const loadError = useFormatStore((s) => s.error);
 
   const selectedFormat = useMemo(() => {
     return formats.find((f) => f.id === selectedFormatId);
@@ -49,7 +54,7 @@ export default function Home() {
 
   return (
     <AppShell>
-      <PageTitle title="Formats" />
+      <PageTitle title="Label sizes" />
       {/* Main content */}
       <div className="flex-1 flex flex-col xl:flex-row overflow-auto xl:overflow-hidden max-w-[1600px] mx-auto w-full">
         {/* Left sidebar */}
@@ -58,11 +63,12 @@ export default function Home() {
           <div className="p-4 space-y-4">
             {/* New Format button */}
             <button
+              type="button"
               onClick={() => setIsAddModalOpen(true)}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-sm font-semibold rounded-xl hover:from-amber-400 hover:to-amber-500 transition-all shadow-lg shadow-amber-500/20"
             >
               <PlusIcon className="w-4 h-4" />
-              New Format
+              New label size
             </button>
 
             {/* Search */}
@@ -84,7 +90,8 @@ export default function Home() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search formats..."
+                aria-label="Search label sizes"
+                placeholder="Search label sizes…"
                 className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500/50 focus:bg-zinc-900 transition-all"
               />
             </div>
@@ -126,7 +133,18 @@ export default function Home() {
 
           {/* Format list */}
           <div className="flex-1 overflow-auto px-4 pb-4 space-y-2">
-            {filteredFormats.length === 0 ? (
+            {!hydrated && formats.length === 0 ? (
+              <div role="status" aria-label="Loading label sizes" className="space-y-2">
+                {[0, 1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl border border-zinc-800 bg-zinc-900/40 animate-pulse" />)}
+                <span className="sr-only">Loading label sizes…</span>
+              </div>
+            ) : loadError && formats.length === 0 ? (
+              <div role="alert" className="text-center py-12 space-y-3">
+                <p className="text-zinc-200 text-sm font-medium">We couldn&apos;t load your label sizes</p>
+                <p className="text-zinc-500 text-xs">{friendlyError(loadError, 'Something went wrong.')}</p>
+                <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="min-h-10 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black disabled:opacity-40">{loading ? 'Trying again…' : 'Try again'}</button>
+              </div>
+            ) : filteredFormats.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800/50">
                   <svg className="w-8 h-8 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -136,20 +154,20 @@ export default function Home() {
                 </div>
                 <p className="text-zinc-400 text-sm font-medium">
                   {searchQuery || activeTab !== 'all'
-                    ? 'No formats match your filters'
-                    : 'No label formats yet'}
+                    ? 'No label sizes match'
+                    : 'No label sizes yet'}
                 </p>
                 <p className="text-zinc-600 text-xs mt-1">
                   {searchQuery || activeTab !== 'all'
                     ? 'Try adjusting your search or filter'
-                    : 'Add your first label format to get started'}
+                    : 'Add the size of the labels you print on to get started'}
                 </p>
                 {!searchQuery && activeTab === 'all' && (
                   <button
                     onClick={() => setIsAddModalOpen(true)}
                     className="mt-4 text-amber-400 hover:text-amber-300 text-sm font-medium"
                   >
-                    Create first format
+                    Add your first label size
                   </button>
                 )}
               </div>
@@ -171,10 +189,10 @@ export default function Home() {
           {selectedFormat ? (
             <FormatDetail
               format={selectedFormat}
-              onDelete={() => {
-                if (confirm(`Delete "${selectedFormat.name}"?`)) {
-                  void deleteFormat(selectedFormat.id).catch(error=>{ if ((error as ApiError).status === 409) alert((error as Error).message); else useFormatStore.setState({error:(error as Error).message}); });
-                }
+              onDelete={async () => {
+                const ok = await confirmDialog({ title: `Delete “${selectedFormat.name}”?`, body: 'This can’t be undone. A label size that a design or run still uses can’t be deleted.', confirmLabel: 'Delete', danger: true });
+                if (!ok) return;
+                void deleteFormat(selectedFormat.id).catch(error=>{ if ((error as ApiError).status === 409) void alertDialog('This label size is still in use', friendlyError(error)); else useFormatStore.setState({error:friendlyError(error)}); });
               }}
               onUpdate={updateFormat}
             />
@@ -196,9 +214,9 @@ export default function Home() {
                     />
                   </svg>
                 </div>
-                <h3 className="text-zinc-300 font-semibold text-lg">Select a format</h3>
+                <h3 className="text-zinc-300 font-semibold text-lg">Pick a label size</h3>
                 <p className="text-zinc-500 text-sm mt-2">
-                  Choose a label format from the list to view its specs and preview
+                  Choose one from the list to see its measurements and a preview.
                 </p>
               </div>
             </div>

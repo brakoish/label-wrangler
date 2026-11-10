@@ -64,7 +64,7 @@ export function FormatCard({ format, isSelected, onClick }: FormatCardProps) {
             {isThermal ? (
               <span className="text-xs text-zinc-500">{format.dpi || 203} DPI</span>
             ) : (
-              <span className="text-xs text-zinc-500">{format.labelsPerSheet} labels</span>
+              <span className="text-xs text-zinc-500">{format.labelsPerSheet} {format.labelsPerSheet === 1 ? 'label' : 'labels'}</span>
             )}
           </div>
         </div>
