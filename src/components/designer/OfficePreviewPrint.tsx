@@ -92,23 +92,23 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
     finally { inFlight.current = false; setBusy(false); }
   };
 
-  return <div className="text-xs">
-    <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="min-h-9 px-2 py-1 rounded border border-zinc-700 text-amber-400 inline-flex items-center gap-1"><Printer className="w-3 h-3" />Test print at the office</button>
-    {open && <div className="mt-2 p-3 rounded-lg border border-zinc-700 bg-zinc-950 space-y-2 max-w-md">
+  return <div className="text-sm">
+    <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} className="btn btn-secondary btn-sm"><Printer className="size-4" />Test print at the office</button>
+    {open && <div className="popover-enter card mt-2 max-w-md space-y-3 p-4">
       <p className="text-zinc-400">Prints this design with its sample text on the office printer. It shows up in Runs as a test print.</p>
       <label className="block text-zinc-400">Office printer
-        <select disabled={busy || !!pending} value={pending?.printerId ?? selected} onChange={e => setSelected(e.target.value)} className="block w-full mt-1 bg-zinc-900 rounded p-2">
+        <select disabled={busy || !!pending} value={pending?.printerId ?? selected} onChange={e => setSelected(e.target.value)} className="field mt-1.5">
           {!printers.length && <option value="">No office printer is set up for your account</option>}
           {printers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
       {printer && <p className="text-zinc-400">{printer.online ? 'Office printer connected' : 'Office is offline — this waits until it reconnects'}{printer.needs_review ? ' · Someone needs to check the printer first' : ''}{!printer.dispatch_enabled ? ' · Printing is not switched on for this printer yet' : ''}</p>}
       <label className="block text-zinc-400">How many test labels (1–25)
-        <input type="number" min={1} max={25} value={pending?.quantity ?? quantity} disabled={busy || !!pending} onChange={e => setQuantity(Number(e.target.value))} className="ml-2 w-16 rounded bg-zinc-900 p-1" />
+        <input type="number" min={1} max={25} value={pending?.quantity ?? quantity} disabled={busy || !!pending} onChange={e => setQuantity(Number(e.target.value))} className="field ml-2 w-20" />
       </label>
       {bitmap && !pending && <div className="space-y-1">{proofs?.key === proofKey ? proofs.results.map((r, i) => <img key={i} src={r.proof} alt={`Test label ${i + 1} as it will print`} className="w-full bg-white" style={{ imageRendering: 'pixelated' }} />) : <p role="status" className="text-zinc-500">Drawing the label exactly as it will print…</p>}</div>}
       {pending && <p role="status" className="text-amber-400">We&apos;re not sure the office got your last test print. &ldquo;Check again&rdquo; resends that same print (not later edits) and won&apos;t print it twice.</p>}
-      <button type="button" disabled={busy || !canPrint || !printer?.dispatch_enabled || (bitmap && !pending && proofs?.key !== proofKey) || (!pending && (printer.needs_review || !Number.isInteger(quantity) || quantity < 1 || quantity > 25))} onClick={() => void submit()} className="rounded bg-amber-500 text-black px-3 py-2 font-semibold disabled:opacity-40">{busy ? 'Sending…' : pending ? 'Check again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
+      <button type="button" disabled={busy || !canPrint || !printer?.dispatch_enabled || (bitmap && !pending && proofs?.key !== proofKey) || (!pending && (printer.needs_review || !Number.isInteger(quantity) || quantity < 1 || quantity > 25))} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy ? 'Sending…' : pending ? 'Check again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`}</button>
       {error && <p role="alert" className="text-red-400">{error}</p>}
       {pending && !busy && <p className="text-zinc-400"><Link href="/runs" className="underline">Check Runs</Link> first, or <button type="button" className="underline" onClick={async () => {
         const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first — the office may already have this test print. Starting over does not cancel anything already sent.', confirmLabel: 'Start over' });
