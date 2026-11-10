@@ -498,6 +498,8 @@ function NewRunContent() {
   const [csvFileName, setCsvFileName] = useState('');
   // Where the headings were found, and the file, so the person can say
   // "my headings are in row 3" and read it again.
+  // The header-row box shows itself only when detection needed help; otherwise it waits behind a quiet question.
+  const [headerRowAsked, setHeaderRowAsked] = useState(false);
   const [fileInfo, setFileInfo] = useState<{ headerRow: number; titleSkipped: boolean; sheetName?: string; sheetCount?: number } | null>(null);
   const lastFile = useRef<File | null>(null);
   useEffect(() => () => setSpreadsheetHeaderRow(1), []);
@@ -1495,8 +1497,11 @@ function NewRunContent() {
                         {fileInfo && (fileInfo.sheetCount ?? 1) > 1 && <p>Only the first sheet is read. Move the labels’ sheet first in Excel to use another one.</p>}
                         {/* Where the column names are: only asked when they weren't
                             in row 1 or some parts found no column. */}
-                        {fileInfo && lastFile.current && (fileInfo.titleSkipped || fileInfo.headerRow !== 1 || unmatchedShown.length > 0) && (
-                          <label className="flex flex-wrap items-center gap-2">
+                        {fileInfo && lastFile.current && !fileInfo.titleSkipped && fileInfo.headerRow === 1 && unmatchedShown.length > 0 && !headerRowAsked && (
+                          <button type="button" onClick={() => setHeaderRowAsked(true)} className="inline-flex min-h-control-sm items-center text-zinc-400 underline-offset-2 hover:text-zinc-100 hover:underline">Column names aren’t in row 1?</button>
+                        )}
+                        {fileInfo && lastFile.current && (fileInfo.titleSkipped || fileInfo.headerRow !== 1 || (unmatchedShown.length > 0 && headerRowAsked)) && (
+                          <label className="fold-reveal flex flex-wrap items-center gap-2">
                             {fileInfo.titleSkipped ? <span>The rows above row {fileInfo.headerRow} looked like a title, so they were skipped.</span> : null}
                             <span>The column names are in row</span>
                             <input

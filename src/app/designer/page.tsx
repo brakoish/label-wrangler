@@ -883,7 +883,7 @@ function DesignerContent() {
             onGestureCancel={cancelGesture}
             testData={previewValues}
             layoutProblems={canvasProblems}
-            noticeAction={canExactCopy ? <button type="button" className="btn btn-secondary btn-sm press" onClick={() => setExactCopyRequest((n) => n + 1)}>Make an exact-print copy</button> : null}
+            noticeAction={canExactCopy ? <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => setExactCopyRequest((n) => n + 1)}>Make an exact-print copy</button> : null}
           />
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (

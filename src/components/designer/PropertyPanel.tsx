@@ -78,7 +78,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
   if (!element) {
     return (
       <div className={`${PANEL} min-h-20 lg:min-h-0`}>
-        <div className="p-4 space-y-2 text-sm text-zinc-400"><h2 className="text-sm font-semibold text-zinc-100">Nothing selected</h2><p>Click an item to change it, or double-click text to type. Arrow keys move the selected item; Shift-click picks several.</p></div>
+        <p className="p-4 text-sm text-zinc-400">Pick an item on the label to change it.</p>
       </div>
     );
   }

@@ -284,9 +284,9 @@ function TemplateCard({
 
       {/* Info area */}
       <div className="p-3 pl-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-start justify-between gap-2">
           <h3 className="min-w-0 flex-1 text-sm font-semibold text-zinc-100">
-            <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} className="flex min-h-control-sm max-w-full items-center truncate rounded-sm text-left">
+            <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(); }} title={template.name} className="min-h-control-sm max-w-full rounded-sm py-1.5 text-left break-words line-clamp-2">
               {template.name}
             </button>
           </h3>
@@ -338,7 +338,7 @@ function TemplateCard({
         </p>
         <p className="mt-0.5 truncate text-xs text-zinc-500">
           {partCount} {partCount === 1 ? 'item' : 'items'}
-          {dynamicCount > 0 && <> · {dynamicCount === partCount ? (dynamicCount === 1 ? 'it changes' : 'all change') : `${dynamicCount} change`} per label</>}
+          {dynamicCount > 0 && <> · {dynamicCount === partCount ? (dynamicCount === 1 ? 'changes per label' : 'all change per label') : `${dynamicCount} of them change per label`}</>}
           {' · '}{new Date(template.updatedAt).toLocaleDateString()}
         </p>
       </div>

@@ -652,3 +652,26 @@ textarea:focus-visible {
   }
 }
 /* end area A r4 */
+
+/* area A r5 */
+/* Masked reveal: a fold's new content wipes down from its top edge instead
+   of fading in place (clip-path, 200ms ease-out, no overshoot). */
+.fold-reveal {
+  animation: fold-reveal 200ms var(--ease-out) both;
+}
+@keyframes fold-reveal {
+  from { clip-path: inset(0 0 100% 0); opacity: 0.4; }
+  to { clip-path: inset(0 0 0 0); opacity: 1; }
+}
+/* A staggered item that also presses: once its entrance is over it lets go
+   of transform, so the 0.97 press scale shows. */
+.stagger > .press { animation-fill-mode: backwards; }
+/* The designer's selected layer: one highlight that slides between rows. */
+.layer-highlight {
+  transition: transform 200ms var(--ease-in-out), height 200ms var(--ease-in-out), opacity 120ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fold-reveal { animation: none; }
+  .layer-highlight { transition: none; }
+}
+/* end area A r5 */

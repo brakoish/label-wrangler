@@ -35,7 +35,7 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
               onAddElement(type);
               onClose();
             }}
-            className="flex min-h-control flex-col items-start gap-2 rounded-lg bg-zinc-800 p-3 text-left transition-[background-color,transform] duration-150 ease-out hover:bg-zinc-700 active:scale-[0.97] group"
+            className="press flex min-h-control flex-col items-start gap-2 rounded-lg bg-zinc-800 p-3 text-left hover:bg-zinc-700 group"
           >
             <Icon className="size-5 text-zinc-300 group-hover:text-zinc-100" aria-hidden="true" />
             <span>

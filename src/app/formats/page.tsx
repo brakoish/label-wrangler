@@ -56,7 +56,9 @@ export default function Home() {
 
   // Below the wide layout the list and the detail are separate views.
   const [phoneView, setPhoneView] = useState<'list' | 'detail'>('list');
-  const openFormat = (id: string) => { selectFormat(id); setPhoneView('detail'); };
+  // The list's entrance plays once: coming back from a size's detail on a phone shouldn't replay it.
+  const [listShown, setListShown] = useState(false);
+  const openFormat = (id: string) => { selectFormat(id); setPhoneView('detail'); setListShown(true); };
 
   // On a wide screen, show the first size instead of an empty "pick one" pane.
   useEffect(() => {
@@ -105,7 +107,7 @@ export default function Home() {
             </div>
           )}
 
-          <div className="flex-1 xl:overflow-auto pb-6 space-y-1 stagger">
+          <div className={`flex-1 xl:overflow-auto pb-6 space-y-1 ${listShown ? '' : 'stagger'}`}>
             {!hydrated && formats.length === 0 ? (
               <div role="status" aria-label="Loading label sizes" className="space-y-2">
                 {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 rounded-lg bg-zinc-900 animate-pulse" />)}
