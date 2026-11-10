@@ -38,6 +38,7 @@ import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
 import { runBarcodeFixes } from '@/lib/runBarcodeFix';
 import { labelsWords, missingDetailFields, missingDetailsWords, rowMissingDetails, runMissingDetails } from '@/lib/nabisDetails';
 import { leaveFieldsOff } from '@/lib/runLeaveOff';
+import { cleanHiddenCharacters, labelsWithBadCharacters } from '@/lib/runCharacterRows';
 import { blankPreviewItems, type PreviewBlankBox } from '@/lib/runPreviewBlanks';
 import type { BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
@@ -720,7 +721,9 @@ function NewRunContent() {
     const plainFields = new Set([...Object.keys(codeTypes), ...plainNumberFields]);
     return applyPlainNumbers({ rows: sourceData, plainRows: csvPlainRows, mappings: fieldMappings, plainFields, currencyFields: new Set(plainNumberFields) });
   }, [inputMode, sourceData, fieldMappings, codeTypes, plainNumberFields, csvPlainRows]);
-  const allDataRows = plainData.rows;
+  // Tabs and invisible characters in the cells never print: taken out, and said so.
+  const hiddenClean = useMemo(() => (inputMode === 'manual' ? { rows: plainData.rows, fixes: [] } : cleanHiddenCharacters(plainData.rows, plainData.mappings)), [inputMode, plainData]);
+  const allDataRows = hiddenClean.rows;
   const dataMappings = plainData.mappings;
 
   // The run's data as the checks see it (hidden fields included: they would
@@ -752,11 +755,18 @@ function NewRunContent() {
   const skipRows = blankChoiceNow === 'skip' && !!skippable;
   const leaveBlank = blankChoiceNow === 'blank' && blankCheck.canLeaveBlank;
   // The rows the run is made from: every row, or every row but the blank ones.
+  // Labels whose spreadsheet values can't print (é in a barcode, an emoji in
+  // the printer's font): they can be left out too, like blank rows.
+  const charBadIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, (field) => allCheckData.fieldMappings[field]?.mode === 'column')), [inputMode, checkTemplate, format, allCheckData]);
+  const charBadKey = charBadIndexes.join(',');
+  const charSkippable = charBadIndexes.length > 0 && charBadIndexes.length < allDataRows.length;
+  const [charSkipKey, setCharSkipKey] = useState('');
+  const skipChars = charSkippable && charSkipKey === charBadKey;
   const keptRows = useMemo(() => {
-    if (!skipRows || !skippable) return null;
-    const skip = new Set(skippable);
+    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...(skipChars ? charBadIndexes : [])]);
+    if (!skip.size) return null;
     return allDataRows.map((_, index) => index).filter((index) => !skip.has(index));
-  }, [skipRows, skippable, allDataRows]);
+  }, [skipRows, skippable, skipChars, charBadIndexes, allDataRows]);
   const dataRows = useMemo(() => (keptRows ? keptRows.map((index) => allDataRows[index]) : allDataRows), [keptRows, allDataRows]);
   // Row numbers in every message stay the ones in the file.
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
@@ -1003,7 +1013,11 @@ function NewRunContent() {
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
   const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
-  const charactersOk = characterCheck.issues.length === 0;
+  // Going ahead anyway takes an explicit tick (those characters print as
+  // junk); the bytes sent to the printer don't change either way.
+  const characterKey = characterCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.chars.join('')}`).join('\n');
+  const [characterGoAheadKey, setCharacterGoAheadKey] = useState('');
+  const charactersOk = characterCheck.issues.length === 0 || characterGoAheadKey === characterKey;
 
   // Items that cover each other or run off the label, on any label (a
   // barcode that doesn't print whole is named once, in the barcode list).
@@ -1063,10 +1077,10 @@ function NewRunContent() {
       : `${blankHeading(blankCheck)}: choose what to do above.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.'
+    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (charSkippable ? 'A barcode value can’t print. Leave those labels out, or fix those rows in your spreadsheet.' : 'A barcode value can’t print. Fix those rows in your spreadsheet, then use “Choose another file”.')
       : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
         : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
-    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
+    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. Fix them, leave those labels out, or tick “Print anyway” above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
     !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, manifestSelectedRows.length)}. Search again, or tick ${nabisGapFields.length ? `to leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off` : 'to print without them'}.`,
   ].filter((reason): reason is string => !!reason);
@@ -1385,6 +1399,13 @@ function NewRunContent() {
         />
       </div>
     </div>
+  ) : null;
+
+  // "Leave those 3 labels out and print the other 17", as blank rows get.
+  const leaveOutButton = charSkippable ? (
+    <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => setCharSkipKey(charBadKey)}>
+      Leave {charBadIndexes.length === 1 ? 'that label' : `those ${charBadIndexes.length.toLocaleString()} labels`} out and print the other {(allDataRows.length - charBadIndexes.length).toLocaleString()}
+    </button>
   ) : null;
 
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
@@ -2018,10 +2039,24 @@ function NewRunContent() {
                         {inputMode === 'csv' ? (skippable.length === 1 ? 'Row' : 'Rows') : (skippable.length === 1 ? 'Label' : 'Labels')} {(() => { const shown = skippable.slice(0, 5).map((i) => String(inputMode === 'csv' ? i + 1 + (fileInfo?.headerRow ?? 1) : i + 1)); return skippable.length > 5 ? `${shown.join(', ')} and ${(skippable.length - 5).toLocaleString()} more` : andList(shown); })()} {skippable.length === 1 ? 'is' : 'are'} left out, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}, numbered from 1 again.{inputMode === 'csv' ? ' Each label shows its spreadsheet row.' : ''}
                       </p>
                     )}
+                    {hiddenClean.fixes.length > 0 && (
+                      <p role="status" className="flex items-start gap-1.5 text-sm text-zinc-400">
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                        <span>{hiddenClean.fixes.length === 1
+                          ? `Removed a hidden ${hiddenClean.fixes[0].tab ? 'tab' : 'character'} from label ${hiddenClean.fixes[0].label}’s ${friendlyFieldName(hiddenClean.fixes[0].field)}.`
+                          : `Removed hidden tabs or characters from ${hiddenClean.fixes.length.toLocaleString()} values (${labelsWords(Array.from(new Set(hiddenClean.fixes.map((fix) => fix.label))), allDataRows.length)}).`}</span>
+                      </p>
+                    )}
+                    {skipChars && (
+                      <p className="text-sm text-zinc-400">
+                        {labelsWords(charBadIndexes.map((index) => index + 1), allDataRows.length).replace(/^l/, 'L')} {charBadIndexes.length === 1 ? 'is' : 'are'} left out because of characters that can’t print, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}.{' '}
+                        <button type="button" className="link" onClick={() => setCharSkipKey('')}>Undo</button>
+                      </p>
+                    )}
                     <BarcodeWarning
                       items={barcodeItems}
                       stops={barcodeWords.stops}
-                      stopWords={stopFixWords(barcodeWords.fixIn)}
+                      stopWords={barcodeWords.fixIn === 'data' && charSkippable ? 'Nothing can print until those rows are fixed or left out.' : stopFixWords(barcodeWords.fixIn)}
                       isTicked={barcodeItemTicked}
                       onTick={tickBarcodeItem}
                       fix={<>
@@ -2034,6 +2069,7 @@ function NewRunContent() {
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
                         )}
+                        {barcodeWords.fixIn !== 'design' && charSkippable && !skipChars && barcodeCheck.issues.some((issue) => issue.kind === 'characters') && leaveOutButton}
 
                       </>}
                     />
@@ -2072,9 +2108,14 @@ function NewRunContent() {
                       heading={`${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`}
                       items={characterItems}
                       more={characterCheck.issues.length - characterItems.length}
-                      actions={lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) ? (
-                        <span className="text-zinc-400">Fix them in your spreadsheet, then use “Choose another file” at the top.</span>
-                      ) : undefined}
+                      actions={<>
+                        {charSkippable && !skipChars && characterCheck.issues.some((issue) => issue.label > 0) && leaveOutButton}
+                        {characterCheck.issues.some((issue) => !issue.label) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}
+                        {lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) && <span className="text-zinc-400">Or fix them in your spreadsheet, then use “Choose another file” at the top.</span>}
+                      </>}
+                      confirmLabel="Print anyway: those characters come out as junk"
+                      confirmed={characterGoAheadKey === characterKey}
+                      onConfirmedChange={(value) => setCharacterGoAheadKey(value ? characterKey : '')}
                     />
                     <ProblemList
                       heading="Some items overlap or run off the label"

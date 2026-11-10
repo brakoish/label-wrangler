@@ -87,4 +87,28 @@ const template = {
   const plain = blankPreviewItems({ elements: [text('Note')] }, [{ Note: '' }], ['Note']);
   assert.deepEqual(plain.emptyFields, [], 'text with no sample prints as it is, so it stays');
   console.log('PASS review picture leaves out the design sample for parts with no value');
+
+  // Odd characters: hidden tabs go automatically; é and emoji rows can be left out.
+  const { cleanHiddenCharacters, labelsWithBadCharacters, withoutHiddenCharacters } = require('../../src/lib/runCharacterRows.ts');
+  assert.equal(withoutHiddenCharacters('SKU-10\t'), 'SKU-10');
+  assert.equal(withoutHiddenCharacters('A\u200bB\uFEFF'), 'AB');
+  assert.equal(withoutHiddenCharacters('two\nlines'), 'two\nlines', 'line breaks are kept');
+  const oddRows = [{ sku: 'ABC1', name: 'Café' }, { sku: 'ABC2\t', name: 'Plain' }, { sku: 'ABÉ3', name: 'Plain' }, { sku: 'ABC4', name: 'Joy 😀' }, { sku: ' ABC5 ', name: 'Plain' }];
+  const oddMap = { SKU: { mode: 'column', csvColumn: 'sku' }, Name: { mode: 'column', csvColumn: 'name' } };
+  const cleaned = cleanHiddenCharacters(oddRows, oddMap);
+  assert.deepEqual(cleaned.fixes, [{ label: 2, field: 'SKU', tab: true }]);
+  assert.equal(cleaned.rows[1].sku, 'ABC2');
+  assert.equal(cleaned.rows[0], oddRows[0], 'untouched rows stay the same');
+  assert.equal(cleaned.rows[4].sku, ' ABC5 ', 'a cell without hidden characters is never trimmed');
+  assert.equal(cleanHiddenCharacters(oddRows, {}).rows, oddRows);
+  const oddDesign = { thermalRenderMode: 'native-v1', elements: [
+    { id: 'b', type: 'barcode', isStatic: false, fieldName: 'SKU', barcodeFormat: 'CODE128', x: 10, y: 10, width: 300, height: 60, rotation: 0, zIndex: 1, showText: false },
+    text('Name'),
+  ] };
+  const thermal = { type: 'thermal', width: 3, height: 1, dpi: 203 };
+  const bad = labelsWithBadCharacters(oddDesign, thermal, { sourceData: cleaned.rows, fieldMappings: oddMap }, () => true);
+  assert.deepEqual(bad, [0, 2, 3], 'é in a barcode, and é or an emoji in the printer font');
+  assert.deepEqual(labelsWithBadCharacters({ ...oddDesign, thermalRenderMode: 'bitmap-v1' }, thermal, { sourceData: cleaned.rows, fieldMappings: oddMap }, () => true), [2], 'an exact picture draws é in text; only the barcode can’t');
+  assert.deepEqual(labelsWithBadCharacters(oddDesign, thermal, { sourceData: cleaned.rows, fieldMappings: oddMap }, () => false), [], 'only values from the rows can be left out');
+  console.log('PASS odd characters: hidden tabs taken out, rows that can’t print can be left out');
 })().catch((error) => { console.error(error); process.exit(1); });
