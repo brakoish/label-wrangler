@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback, useId } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight } from 'lucide-react';
+import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight, RotateCcw } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { IconSwap } from '@/components/motion/IconSwap';
@@ -36,6 +36,7 @@ import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow, setSpreadshe
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
 import { checkRunBarcodes, describeBarcodeGroups } from '@/lib/barcodeCheck';
 import { runBarcodeFixes } from '@/lib/runBarcodeFix';
+import { labelsWords, missingDetailsWords, rowMissingDetails, runMissingDetails } from '@/lib/nabisDetails';
 import type { BarcodeAutoFix } from '@/lib/barcodeAutoFix';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
@@ -735,15 +736,17 @@ function NewRunContent() {
   const labelCount = inputMode === 'manual' ? Math.max(1, manualQty) : dataRows.length;
 
   const manifestPackageSummaries = useMemo(() => {
-    const packages = new Map<string, { row: ManifestRow; labelRows: number }>();
+    const packages = new Map<string, { row: ManifestRow; labelRows: number; missing: boolean }>();
     for (const row of manifestRows) {
       const key = manifestPackageKey(row);
+      const missing = rowMissingDetails(row).length > 0;
       const existing = packages.get(key);
       if (existing) {
         existing.labelRows += 1;
+        existing.missing ||= missing;
         continue;
       }
-      packages.set(key, { row, labelRows: 1 });
+      packages.set(key, { row, labelRows: 1, missing });
     }
     return Array.from(packages.values());
   }, [manifestRows]);
@@ -972,8 +975,17 @@ function NewRunContent() {
   const [layoutConfirmedKey, setLayoutConfirmedKey] = useState('');
   const layoutOk = !layoutIssues.length || layoutConfirmedKey === layoutKey;
 
+  // A Nabis search cut short by its time limit leaves rows without their
+  // retail IDs or lab potency: Start waits until the person searches again
+  // or ticks that these labels print without them (named).
+  const nabisGap = useMemo(() => (inputMode === 'manifest' ? runMissingDetails(dataRows, dataMappings) : { labels: [], missing: [], signature: '' }), [inputMode, dataRows, dataMappings]);
+  const [nabisGapOkKey, setNabisGapOkKey] = useState('');
+  const nabisOk = !nabisGap.labels.length || nabisGapOkKey === nabisGap.signature;
+  const nabisGapWhat = missingDetailsWords(nabisGap.missing);
+
   const canCreate =
     !imageBusy &&
+    nabisOk &&
     name.trim().length > 0 &&
     !!template &&
     !!format &&
@@ -1016,6 +1028,7 @@ function NewRunContent() {
     !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? 'A barcode value can’t print. Fix those rows in your spreadsheet, then choose the file again.' : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
     !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. See the list above.`,
     !layoutOk && 'Items overlap: tick “I checked the preview” above, or fix the design.',
+    !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, labelCount)}. Search again, or tick to print without them.`,
   ].filter((reason): reason is string => !!reason);
   const previewReason = setupReason || !format || checkReasons.length ? null
     : format.type === 'thermal' && previewState.status === 'error'
@@ -1679,7 +1692,7 @@ function NewRunContent() {
                           </span>
                         </div>
                         <div className="max-h-64 overflow-auto rounded-lg bg-zinc-950">
-                        {manifestPackageSummaries.map(({ row, labelRows }) => {
+                        {manifestPackageSummaries.map(({ row, labelRows, missing }) => {
                           const key = manifestPackageKey(row);
                           const isSelected = key === selectedManifestPackageKey;
                           return (
@@ -1701,6 +1714,7 @@ function NewRunContent() {
                               <span className="min-w-0">
                                 <span className="block truncate text-zinc-100" title={row.itemName}>{row.itemName || 'No item name'}</span>
                                 <span className="block truncate tabular-nums text-zinc-400" title={row.tag}>{row.tag || 'No tag'}</span>
+                                {missing && <span className="block text-amber-300">Some details didn’t arrive</span>}
                               </span>
                               <span className="min-w-0 truncate text-zinc-400" title={row.lotNumber || row.batch}>
                                 {row.lotNumber || row.batch ? `Lot ${row.lotNumber || row.batch}` : 'No lot'}
@@ -1903,6 +1917,23 @@ function NewRunContent() {
                     )}
                   </div>
                   <div className="space-y-4">
+                    {nabisGap.labels.length > 0 && (
+                      <div role="alert" className="space-y-1 text-sm">
+                        <p className="flex items-start gap-1.5 text-zinc-100">
+                          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
+                          <span>Nabis didn’t send the {nabisGapWhat} in time, so {labelsWords(nabisGap.labels, labelCount)} would print without {nabisGap.missing.length > 1 || nabisGap.missing[0] === 'retailIds' ? 'them' : 'it'}.</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-4 pl-5.5">
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={isSearchingManifest || manifestSearch.trim().length < 2} onClick={() => void handleManifestSearch()}>
+                            <RotateCcw className="size-4" aria-hidden="true" /> {isSearchingManifest ? 'Searching' : 'Search again'}
+                          </button>
+                          <label className="press flex min-h-11 w-fit cursor-pointer items-center gap-3 text-zinc-100">
+                            <input type="checkbox" className="size-5 shrink-0 accent-amber-500" checked={nabisGapOkKey === nabisGap.signature} onChange={(e) => setNabisGapOkKey(e.target.checked ? nabisGap.signature : '')} />
+                            <span>Print {nabisGap.labels.length === 1 ? 'it' : 'them'} without the {nabisGapWhat}</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
                     {hasData && template && (
                       <BlankSummary
                         check={blankCheck}

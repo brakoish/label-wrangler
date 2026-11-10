@@ -35,6 +35,7 @@ for(const file of [
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',
+ 'scripts/test-nabis-details-missing.cjs',
  'scripts/thermal/test-conversion-fit.cjs',
 ]) {
  const result=spawnSync(process.execPath,[file],{stdio:'inherit',env:{...process.env,UV_THREADPOOL_SIZE:'2',VIPS_CONCURRENCY:'1'}});
