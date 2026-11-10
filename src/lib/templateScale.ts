@@ -44,7 +44,6 @@ export function duplicateElementsForFormat(
   if (!scale) {
     // Literal deep copy; fresh id + zIndex per element.
     return source.elements.map((el, i) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, zIndex: _z, ...rest } = el;
       return { ...rest, id: freshId(i), zIndex: i } as TemplateElement;
     });
@@ -57,7 +56,6 @@ export function duplicateElementsForFormat(
   const physicalRatio = Math.min(targetFormat.width / sourceFormat.width, targetFormat.height / sourceFormat.height);
 
   return source.elements.map((el, i) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _id, zIndex: _z, ...rest } = el;
     const base: TemplateElement = {
       ...(rest as ElementWithoutIdentity),

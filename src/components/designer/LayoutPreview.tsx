@@ -294,7 +294,7 @@ function SheetLabelCell({
   return <g dangerouslySetInnerHTML={{ __html: svgBody }} />;
 }
 
-function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabelOffset, thermalRenderMode }: LayoutPreviewProps) {
+function SheetLayout({ format, elements, testData, testDataByLabel, selectedLabelOffset }: LayoutPreviewProps) {
   const { vbW: contentW, vbH: contentH } = getLabelViewBox(format);
   const cols = format.columns || 1;
   const rows = format.rows || 1;

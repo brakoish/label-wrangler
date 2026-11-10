@@ -26,6 +26,8 @@ const eslintConfig = defineConfig([
       // assets where next/image is not appropriate.
       "@next/next/no-img-element": "off",
       "jsx-a11y/alt-text": "off",
+      // `const { secret: _secret, ...rest } = obj` is how fields are left out.
+      "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
     },
   },
 ]);
