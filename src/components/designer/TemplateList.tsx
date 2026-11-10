@@ -621,7 +621,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
                 className="mt-0.5 accent-amber-500"
               />
               <div className="flex-1">
-                <div className="text-sm font-medium text-zinc-200">Resize everything to fit the new size</div>
+                <div className="text-sm font-medium text-zinc-100">Resize everything to fit the new size</div>
                 <div className="text-sm text-zinc-400 mt-0.5">
                   Text, positions and QR codes are resized to the new label. Untick to keep everything exactly where it is.
                 </div>

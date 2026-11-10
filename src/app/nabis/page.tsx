@@ -430,7 +430,7 @@ export default function NabisPage() {
       <div className="flex-1 overflow-auto">
         <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 sm:px-8">
           <div className="lg:col-span-2">
-            <h1 className="text-2xl font-semibold text-zinc-50">Nabis labels</h1>
+            <h1 className="text-2xl font-semibold text-zinc-100">Nabis labels</h1>
             <p className="mt-1 text-sm text-zinc-400">Print Nabis case labels from a Metrc package.</p>
           </div>
           <section className="min-h-0 space-y-4">
@@ -486,7 +486,7 @@ export default function NabisPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold text-zinc-50">{pkg.itemName}</p>
+                        <p className="break-words text-sm font-semibold text-zinc-100">{pkg.itemName}</p>
                         <p className="mt-1 break-all text-xs tabular-nums text-zinc-400">{pkg.tag}</p>
                       </div>
                       {active ? <Check className="h-5 w-5 shrink-0 text-amber-400 animate-icon" aria-hidden="true" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-500" aria-hidden="true" />}

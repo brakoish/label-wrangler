@@ -86,7 +86,7 @@ export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, show
       </ul>
       {note && <p className="pl-5.5 text-zinc-400">{note}</p>}
       {check.canLeaveBlank && (
-        <label htmlFor={checkboxId} className="ml-5.5 flex min-h-control-sm items-start gap-2 text-zinc-200">
+        <label htmlFor={checkboxId} className="ml-5.5 flex min-h-control-sm items-start gap-2 text-zinc-100">
           <input id={checkboxId} type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />
           <span>Print {check.blankLabels === 1 ? 'that label' : `those ${check.blankLabels.toLocaleString()} labels`} with the field left blank</span>
         </label>
@@ -121,7 +121,7 @@ export function ProblemList({ heading, items, more, confirmLabel, confirmed, onC
         {!!more && more > 0 && <li>and {more.toLocaleString()} more</li>}
       </ul>
       {confirmLabel && onConfirmedChange && (
-        <label htmlFor={checkboxId} className="ml-5.5 flex min-h-control-sm items-start gap-2 text-zinc-200">
+        <label htmlFor={checkboxId} className="ml-5.5 flex min-h-control-sm items-start gap-2 text-zinc-100">
           <input id={checkboxId} type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={!!confirmed} onChange={(e) => onConfirmedChange(e.target.checked)} />
           <span>{confirmLabel}</span>
         </label>

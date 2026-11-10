@@ -856,6 +856,14 @@ function NewRunContent() {
     setDraftOffer(null);
     draftDecided.current = true;
   };
+  // Starting a new run while the kept one is offered means "start fresh":
+  // keep the new work, not the old draft, if the page reloads.
+  useEffect(() => {
+    if (formDirty && draftOffer && !draftDecided.current) {
+      draftDecided.current = true;
+      setDraftOffer(null);
+    }
+  }, [formDirty, draftOffer]);
   useEffect(() => {
     if (!formDirty || !draftDecided.current) return;
     const timer = setTimeout(() => saveRunDraft({
@@ -863,7 +871,7 @@ function NewRunContent() {
       csvHeaders, csvRows: csvRows.length <= 5000 ? csvRows : [], csvFileName, manualQty, savedAt: Date.now(),
     }), 400);
     return () => clearTimeout(timer);
-  }, [formDirty, name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField, csvHeaders, csvRows, csvFileName, manualQty]);
+  }, [formDirty, draftOffer, name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField, csvHeaders, csvRows, csvFileName, manualQty]);
 
   // A new run is named after its design and today's date until the person
   // types a name of their own.
@@ -1021,7 +1029,7 @@ function NewRunContent() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto w-full px-4 py-6 sm:px-8 space-y-5 pb-48 sm:pb-28">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <h1 className="text-2xl font-semibold text-zinc-50">New print run</h1>
+            <h1 className="text-2xl font-semibold text-zinc-100">New print run</h1>
             <ol className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Progress">
               {workflowSteps.map((step, index) => {
                 const current = index === currentStep;
@@ -1037,7 +1045,7 @@ function NewRunContent() {
 
           {draftOffer && (
             <section role="status" className="card p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-zinc-200">We kept your unfinished run{draftOffer.name.trim() ? <> “{draftOffer.name.trim()}”</> : ''}.</p>
+              <p className="text-sm text-zinc-100">We kept your unfinished run{draftOffer.name.trim() ? <> “{draftOffer.name.trim()}”</> : ''}.</p>
               <div className="flex gap-2">
                 <button type="button" className="btn btn-primary btn-sm" onClick={() => restoreDraft(draftOffer)}>Continue</button>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => { clearRunDraft(); setDraftOffer(null); draftDecided.current = true; }}>Start fresh</button>
@@ -1049,7 +1057,7 @@ function NewRunContent() {
           <section className="card p-4 sm:p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor={`${formId}-name`} className="field-label mb-1.5">Run name</label>
+                <div className="mb-1 flex min-h-control-sm items-center"><label htmlFor={`${formId}-name`} className="field-label">Run name</label></div>
                 <input
                   id={`${formId}-name`}
                   type="text"
@@ -1462,7 +1470,7 @@ function NewRunContent() {
                                   Every label gets the same {friendlyFieldName(field)}{risk.value ? ` (${risk.value})` : ''}, but your {sheetWord} has {risk.everyRowDiffers ? `a different one on each row` : `${risk.distinct.toLocaleString()} different values`} in “{risk.column}”.{risk.scannable ? ' Each product usually needs its own barcode.' : ''}
                                 </p>
                                 {risk.field === sameRisks[sameRisks.length - 1].field && (
-                                  <label className="flex min-h-control-sm items-start gap-2 text-zinc-200">
+                                  <label className="flex min-h-control-sm items-start gap-2 text-zinc-100">
                                     <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={sameConfirmedKey === sameRiskKey} onChange={(e) => setSameConfirmedKey(e.target.checked ? sameRiskKey : '')} />
                                     <span>Yes, print the same {sameRisks.map((r) => friendlyFieldName(r.field)).join(' and ')} on every label</span>
                                   </label>
@@ -1616,8 +1624,8 @@ function NewRunContent() {
                   </button>
                 </div>
               </details>
-              <div className="fixed inset-x-0 bottom-0 z-30 bg-zinc-950 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-1px_0_var(--color-zinc-800)]">
-                <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+              <div className="fixed inset-x-0 bottom-0 z-30 bg-zinc-950 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-0">
+                <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:px-8">
                   <div className="min-w-0 max-sm:hidden">
                     <p className="truncate text-sm font-semibold text-zinc-100">
                       {name.trim() || 'Untitled run'}

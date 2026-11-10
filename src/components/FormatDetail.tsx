@@ -64,7 +64,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     className="field text-lg font-semibold"
                   />
                 ) : (
-                  <h2 className="text-xl font-semibold text-zinc-50">{format.name}</h2>
+                  <h2 className="text-xl font-semibold text-zinc-100">{format.name}</h2>
                 )}
                 {editing ? (
                   <input
@@ -134,7 +134,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                 <span className="text-base font-normal text-zinc-400">&quot;</span>
               </div>
             ) : (
-              <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{formatDimensions(format.width, format.height)}</div>
+              <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{formatDimensions(format.width, format.height)}</div>
             )}
           </SpecCard>
 
@@ -149,7 +149,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     ))}
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.dpi || 203}</div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.dpi || 203}</div>
                 )}
               </SpecCard>
               <SpecCard label="Labels across the roll" editing={editing}>
@@ -159,7 +159,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <span className="text-base font-normal text-zinc-400">labels</span>
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.labelsAcross || 1} <span className="text-base font-normal text-zinc-400">{(format.labelsAcross || 1) === 1 ? 'label' : 'labels'}</span></div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.labelsAcross || 1} <span className="text-base font-normal text-zinc-400">{(format.labelsAcross || 1) === 1 ? 'label' : 'labels'}</span></div>
                 )}
               </SpecCard>
             </>
@@ -172,7 +172,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <span className="text-base font-normal text-zinc-400">labels</span>
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.labelsPerSheet} <span className="text-base font-normal text-zinc-400">{format.labelsPerSheet === 1 ? 'label' : 'labels'}</span></div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.labelsPerSheet} <span className="text-base font-normal text-zinc-400">{format.labelsPerSheet === 1 ? 'label' : 'labels'}</span></div>
                 )}
               </SpecCard>
               <SpecCard label="Grid" editing={editing}>
@@ -183,7 +183,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                     <input type="number" value={d('rows') as number || 1} onChange={(e) => setD('rows', parseInt(e.target.value))} min="1" className="field field-sm w-12 text-lg font-semibold" />
                   </div>
                 ) : (
-                  <div className="text-2xl font-semibold text-zinc-50 tabular-nums">{format.columns} × {format.rows}</div>
+                  <div className="text-2xl font-semibold text-zinc-100 tabular-nums">{format.columns} × {format.rows}</div>
                 )}
               </SpecCard>
             </>
@@ -200,7 +200,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   {editing ? (
                     <EditNum value={d('labelGap') as number || 0} onChange={(v) => setD('labelGap', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.labelGap || 0}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.labelGap || 0}&quot;</span>
                   )}
                 </DetailRow>
                 {(d('labelsAcross') as number || 1) > 1 && (
@@ -209,14 +209,14 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                       {editing ? (
                         <EditNum value={d('horizontalGapThermal') as number || 0} onChange={(v) => setD('horizontalGapThermal', v)} />
                       ) : (
-                        <span className="text-zinc-200 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
+                        <span className="text-zinc-100 font-medium">{format.horizontalGapThermal || 0}&quot;</span>
                       )}
                     </DetailRow>
                     <DetailRow label="Side margin" hint="Backing paper left of the first label" editing={editing}>
                       {editing ? (
                         <EditNum value={d('sideMarginThermal') as number || 0} onChange={(v) => setD('sideMarginThermal', v)} />
                       ) : (
-                        <span className="text-zinc-200 font-medium">{format.sideMarginThermal || 0}&quot;</span>
+                        <span className="text-zinc-100 font-medium">{format.sideMarginThermal || 0}&quot;</span>
                       )}
                     </DetailRow>
                   </>
@@ -225,7 +225,7 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   {editing ? (
                     <EditNum value={d('linerWidth') as number || 0} onChange={(v) => setD('linerWidth', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.linerWidth ? `${format.linerWidth}"` : 'Auto'}</span>
+                    <span className="text-zinc-100 font-medium">{format.linerWidth ? `${format.linerWidth}"` : 'Auto'}</span>
                   )}
                 </DetailRow>
               </div>
@@ -254,35 +254,35 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                       <span className="text-zinc-500">&quot;</span>
                     </div>
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.sheetWidth}&quot; × {format.sheetHeight}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.sheetWidth}&quot; × {format.sheetHeight}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Top margin" editing={editing}>
                   {editing ? (
                     <EditNum value={d('topMargin') as number} onChange={(v) => setD('topMargin', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.topMargin}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.topMargin}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Side margin" editing={editing}>
                   {editing ? (
                     <EditNum value={d('sideMargin') as number} onChange={(v) => setD('sideMargin', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.sideMargin}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.sideMargin}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Gap across" editing={editing}>
                   {editing ? (
                     <EditNum value={d('horizontalGap') as number} onChange={(v) => setD('horizontalGap', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.horizontalGap}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.horizontalGap}&quot;</span>
                   )}
                 </DetailRow>
                 <DetailRow label="Gap down" editing={editing}>
                   {editing ? (
                     <EditNum value={d('verticalGap') as number} onChange={(v) => setD('verticalGap', v)} />
                   ) : (
-                    <span className="text-zinc-200 font-medium">{format.verticalGap}&quot;</span>
+                    <span className="text-zinc-100 font-medium">{format.verticalGap}&quot;</span>
                   )}
                 </DetailRow>
               </div>

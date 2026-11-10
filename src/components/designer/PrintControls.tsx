@@ -382,7 +382,7 @@ export function PrintControls({ format, template, testData, proofReady = true }:
                         setSelectedDazzlePrinter(p.name);
                         setDazzlePickerOpen(false);
                       }}
-                      className={`flex w-full min-h-control-sm items-center rounded-md text-left px-2.5 text-sm hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-300' : 'text-zinc-200'}`}
+                      className={`flex w-full min-h-control-sm items-center rounded-md text-left px-2.5 text-sm hover:bg-zinc-800 transition-colors ${selectedDazzlePrinter === p.name ? 'text-amber-300' : 'text-zinc-100'}`}
                     >
                       {p.name} {p.is_default && <span className="text-zinc-500">(default)</span>}
                     </button>

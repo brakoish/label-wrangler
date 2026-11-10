@@ -72,7 +72,7 @@ export default function Home() {
       <PageTitle title="Label sizes" />
       <div className="flex-1 flex flex-col min-h-0 max-w-[1600px] mx-auto w-full">
         <div className={`flex items-center justify-between gap-3 px-4 pt-6 pb-4 sm:px-8 ${phoneView === 'detail' && selectedFormat ? 'max-xl:hidden' : ''}`}>
-          <h1 className="text-2xl font-semibold text-zinc-50">Label sizes</h1>
+          <h1 className="text-2xl font-semibold text-zinc-100">Label sizes</h1>
           <button type="button" onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
             <PlusIcon className="w-4 h-4" />
             New label size
@@ -113,13 +113,13 @@ export default function Home() {
               </div>
             ) : loadError && formats.length === 0 ? (
               <div role="alert" className="py-12 space-y-3">
-                <p className="text-zinc-200 text-sm font-medium">We couldn&apos;t load your label sizes</p>
+                <p className="text-zinc-100 text-sm font-medium">We couldn&apos;t load your label sizes</p>
                 <p className="text-zinc-400 text-sm">{friendlyError(loadError, 'Something went wrong.')}</p>
                 <button type="button" disabled={loading} onClick={() => void useFormatStore.getState().fetchFormats()} className="btn btn-primary">{loading ? 'Trying again…' : 'Try again'}</button>
               </div>
             ) : filteredFormats.length === 0 ? (
               <div className="py-12">
-                <p className="text-zinc-200 text-sm font-medium">{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</p>
+                <p className="text-zinc-100 text-sm font-medium">{hasFormats ? 'No label sizes match' : 'No label sizes yet'}</p>
                 <p className="text-zinc-400 text-sm mt-1">{hasFormats ? 'Try another name, or show all types.' : 'Add the size of label you print on.'}</p>
               </div>
             ) : (
