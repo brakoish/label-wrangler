@@ -122,7 +122,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             <label key={field.fieldName} className="block">
               <span className="mb-1 block text-sm font-medium text-zinc-300">{friendlyFieldName(field.fieldName)}</span>
               <span className="flex items-center gap-1.5">
-                {field.prefix.trim() && <span className="shrink-0 text-sm text-zinc-500" aria-hidden="true">{field.prefix.trim()}</span>}
+                {field.prefix.trim() && <span className="shrink-0 text-sm text-zinc-400" aria-hidden="true">{field.prefix.trim()}</span>}
                 <input
                   type="text"
                   value={testData[field.fieldName] ?? ''}
@@ -130,7 +130,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                   placeholder={samples[field.fieldName] || ''}
                   className="field field-sm min-w-0 flex-1"
                 />
-                {field.suffix.trim() && <span className="shrink-0 text-sm text-zinc-500" aria-hidden="true">{field.suffix.trim()}</span>}
+                {field.suffix.trim() && <span className="shrink-0 text-sm text-zinc-400" aria-hidden="true">{field.suffix.trim()}</span>}
               </span>
             </label>
           ))}
@@ -139,7 +139,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             <p className="text-sm text-zinc-400">Or fill them from a Nabis package</p>
             <div className="flex gap-1">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
                 <input
                   type="text"
                   value={manifestSearch}
@@ -164,7 +164,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       setManifestError(null);
                       setHasSearchedManifest(false);
                     }}
-                    className="absolute right-0.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                    className="absolute right-0.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300"
                     aria-label="Clear Nabis search"
                   >
                     <X className="h-3 w-3" />
@@ -209,17 +209,17 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
                       type="button"
                       onClick={() => selectManifestPackage(key)}
                       className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
-                        isSelected ? 'bg-amber-500/10 text-amber-300' : 'text-zinc-500 hover:bg-zinc-800'
+                        isSelected ? 'bg-amber-500/10 text-amber-300' : 'text-zinc-400 hover:bg-zinc-800'
                       }`}
                     >
-                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-500'}>
+                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-400'}>
                         {isSelected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-zinc-300" title={row.itemName}>{row.itemName || '(no item)'}</span>
-                        <span className="block truncate tabular-nums text-zinc-500" title={row.tag}>{row.tag || '(no tag)'}</span>
+                        <span className="block truncate tabular-nums text-zinc-400" title={row.tag}>{row.tag || '(no tag)'}</span>
                       </span>
-                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-500'}>{labelRows}</span>
+                      <span className={isSelected ? 'text-amber-300' : 'text-zinc-400'}>{labelRows}</span>
                     </button>
                   );
                 })}
@@ -227,7 +227,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
             )}
 
             {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
-              <p className="text-xs text-zinc-500">No Nabis packages found.</p>
+              <p className="text-xs text-zinc-400">No Nabis packages found.</p>
             )}
           </div>
 

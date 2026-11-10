@@ -825,7 +825,7 @@ function DesignerContent() {
                 Designs
               </a>
             )}
-            <span className={`text-zinc-500 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
+            <span className={`text-zinc-400 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
             <h1 className="min-w-0 max-w-[min(100%,24rem)] text-sm font-semibold text-zinc-100">
               <button
                 onClick={() => setRenameSource(currentTemplate)}
@@ -833,7 +833,7 @@ function DesignerContent() {
                 title="Rename design"
               >
                 <span className="truncate">{currentTemplate.name}</span>
-                <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-500 group-hover:text-zinc-100" aria-hidden="true" />
+                <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-400 group-hover:text-zinc-100" aria-hidden="true" />
               </button>
             </h1>
             {compatibleFormats.length > 1 && (

@@ -35,7 +35,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Compliance Header, Footer Block"
-              className="field w-full placeholder:text-zinc-500"
+              className="field w-full placeholder:text-zinc-400"
             />
           </div>
           <div>
@@ -46,7 +46,7 @@ export function GlobalSaveDialog({ isOpen, elements, onClose, onSave }: GlobalSa
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional note about what this contains"
-              className="field w-full placeholder:text-zinc-500"
+              className="field w-full placeholder:text-zinc-400"
             />
           </div>
         </div>

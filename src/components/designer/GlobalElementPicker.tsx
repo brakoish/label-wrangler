@@ -30,14 +30,14 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
 
         {globals.length > 4 && (
           <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search reusable elements"
               placeholder="Search reusable elements…"
-              className="field w-full pl-9 pr-3 placeholder:text-zinc-500"
+              className="field w-full pl-9 pr-3 placeholder:text-zinc-400"
             />
           </div>
         )}
@@ -51,7 +51,7 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
               </p>
               {!search && (
                 <p className="text-zinc-400 text-sm mt-1">
-                  Select objects on a design, then choose “Save selection for reuse” under Layers.
+                  Pick items on a design, then choose “Save selected for reuse” in the items list.
                 </p>
               )}
             </div>
@@ -67,7 +67,7 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
                     {g.description && (
                       <div className="text-sm text-zinc-400 mb-1">{g.description}</div>
                     )}
-                    <div className="text-xs text-zinc-500">
+                    <div className="text-xs text-zinc-400">
                       {g.elements.length} object{g.elements.length !== 1 ? 's' : ''}
                     </div>
                   </div>

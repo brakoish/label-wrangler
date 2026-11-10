@@ -273,7 +273,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             </div>
             <div>
               <label htmlFor={`${uid}-3`} className="field-label mb-1.5">
-                Description <span className="font-normal text-zinc-500">(optional)</span>
+                Description <span className="font-normal text-zinc-400">(optional)</span>
               </label>
               <input id={`${uid}-3`}
                 type="text"
@@ -303,7 +303,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor={`${uid}-4`} className="field-label mb-1.5">
-                Width <span className="font-normal text-zinc-500">(inches)</span>
+                Width <span className="font-normal text-zinc-400">(inches)</span>
               </label>
               <input id={`${uid}-4`}
                 type="text"
@@ -316,7 +316,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             </div>
             <div>
               <label htmlFor={`${uid}-5`} className="field-label mb-1.5">
-                Height <span className="font-normal text-zinc-500">(inches)</span>
+                Height <span className="font-normal text-zinc-400">(inches)</span>
               </label>
               <input id={`${uid}-5`}
                 type="text"
@@ -342,7 +342,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   onChange={(v) => setDpi(parseInt(v))}
                   options={COMMON_DPI_VALUES.map((d) => ({ value: d.toString(), label: String(d) }))}
                 />
-                <p className="mt-1 text-xs text-zinc-500">On the printer&rsquo;s sticker, usually 203.</p>
+                <p className="mt-1 text-xs text-zinc-400">On the printer&rsquo;s sticker, usually 203.</p>
               </div>
               <div>
                 <label htmlFor={`${uid}-7`} className="field-label mb-1.5">
@@ -394,7 +394,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor={`${uid}-10`} className="field-label mb-1.5">
-                  Label gap <span className="font-normal text-zinc-500">(inches)</span>
+                  Label gap <span className="font-normal text-zinc-400">(inches)</span>
                 </label>
                 <input id={`${uid}-10`}
                   type="text"
@@ -404,11 +404,11 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   placeholder="0.125"
                   className="field w-full"
                 />
-                <p className="mt-1 text-xs text-zinc-500">Space between labels on the roll.</p>
+                <p className="mt-1 text-xs text-zinc-400">Space between labels on the roll.</p>
               </div>
               <div>
                 <label htmlFor={`${uid}-11`} className="field-label mb-1.5">
-                  Backing width <span className="font-normal text-zinc-500">(optional)</span>
+                  Backing width <span className="font-normal text-zinc-400">(optional)</span>
                 </label>
                 <input id={`${uid}-11`}
                   type="text"
@@ -418,7 +418,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                   placeholder="Auto"
                   className="field w-full"
                 />
-                <p className="mt-1 text-xs text-zinc-500">Width of the paper the labels sit on. Auto suits most rolls.</p>
+                <p className="mt-1 text-xs text-zinc-400">Width of the paper the labels sit on. Auto suits most rolls.</p>
               </div>
             </div>
             </>
@@ -457,7 +457,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor={`${uid}-14`} className="field-label mb-1.5">
-                    Top margin <span className="font-normal text-zinc-500">(in)</span>
+                    Top margin <span className="font-normal text-zinc-400">(in)</span>
                   </label>
                   <input id={`${uid}-14`}
                     type="text"
@@ -470,7 +470,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 </div>
                 <div>
                   <label htmlFor={`${uid}-15`} className="field-label mb-1.5">
-                    Side margin <span className="font-normal text-zinc-500">(in)</span>
+                    Side margin <span className="font-normal text-zinc-400">(in)</span>
                   </label>
                   <input id={`${uid}-15`}
                     type="text"
@@ -486,7 +486,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor={`${uid}-16`} className="field-label mb-1.5">
-                    Horizontal gap <span className="font-normal text-zinc-500">(in)</span>
+                    Horizontal gap <span className="font-normal text-zinc-400">(in)</span>
                   </label>
                   <input id={`${uid}-16`}
                     type="text"
@@ -499,7 +499,7 @@ export function AddFormatModal({ isOpen, onClose }: AddFormatModalProps) {
                 </div>
                 <div>
                   <label htmlFor={`${uid}-17`} className="field-label mb-1.5">
-                    Vertical gap <span className="font-normal text-zinc-500">(in)</span>
+                    Vertical gap <span className="font-normal text-zinc-400">(in)</span>
                   </label>
                   <input id={`${uid}-17`}
                     type="text"
@@ -631,7 +631,7 @@ function SheetPreview({
         <div className="text-sm text-zinc-400">
           {columns} × {rows} = <span className="text-zinc-100 font-medium">{totalLabels}</span>{' '}labels per sheet
         </div>
-        <div className="text-xs text-zinc-500">
+        <div className="text-xs text-zinc-400">
           {labelWidth}&quot; × {labelHeight}&quot; labels · {topMargin.toFixed(2)}&quot; top, {sideMargin.toFixed(2)}&quot; side
           {(horizontalGap > 0 || verticalGap > 0) && ` · ${horizontalGap.toFixed(2)}" h-gap, ${verticalGap.toFixed(2)}" v-gap`}
         </div>

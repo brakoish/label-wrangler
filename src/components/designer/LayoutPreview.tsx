@@ -436,7 +436,7 @@ function RollLayout({ format, elements, testData }: LayoutPreviewProps) {
             })
           )}
         </svg>
-      <figcaption className="text-center text-xs text-zinc-500">{across} across on a {linerW.toFixed(2)}&quot; liner</figcaption>
+      <figcaption className="text-center text-xs text-zinc-400">{across} across on a {linerW.toFixed(2)}&quot; liner</figcaption>
     </figure>
   );
 }

@@ -162,10 +162,10 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
               <h3 className="text-lg font-semibold text-zinc-100 mb-2">
                 Drop your label sheet PDF
               </h3>
-              <p className="text-sm text-zinc-500 mb-4">
+              <p className="text-sm text-zinc-400 mb-4">
                 or click to browse
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-zinc-400">
                 Supports PDF templates with visible label outlines
               </p>
             </div>
@@ -180,7 +180,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
             <div className="py-8 text-center">
               <XIcon className="w-8 h-8 mx-auto mb-3 text-red-400" />
               <h3 className="text-lg font-semibold text-red-400 mb-2">Failed to parse PDF</h3>
-              <p className="text-sm text-zinc-500 mb-6">{error}</p>
+              <p className="text-sm text-zinc-400 mb-6">{error}</p>
               <button
                 onClick={resetForm}
                 className="btn btn-secondary"
@@ -199,7 +199,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                 </div>
                 <div>
                   <h3 className="font-semibold text-zinc-100">Format detected</h3>
-                  <p className="text-sm text-zinc-500">
+                  <p className="text-sm text-zinc-400">
                     Confidence: <span className={`
                       ${parseResult.spec.confidence === 'high' ? 'text-emerald-400' : ''}
                       ${parseResult.spec.confidence === 'medium' ? 'text-amber-300' : ''}
@@ -255,7 +255,7 @@ export function PDFImportModal({ isOpen, onClose }: PDFImportModalProps) {
                 </div>
                 <div>
                   <label className="field-label mb-1.5">
-                    Description <span className="font-normal text-zinc-500">(optional)</span>
+                    Description <span className="font-normal text-zinc-400">(optional)</span>
                   </label>
                   <input
                     type="text"

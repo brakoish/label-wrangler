@@ -171,7 +171,7 @@ function ElementItem({
       data-layer-id={element.id}
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
       role="group"
-      aria-label={`${typeLabel} layer ${label}`}
+      aria-label={`${typeLabel}: ${label}`}
       className={`group/layer relative flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
         slidingHighlight
           ? ''
@@ -181,16 +181,16 @@ function ElementItem({
       }`}
     >
       {/* Type icon */}
-      <div className={`size-7 flex items-center justify-center flex-shrink-0 ${isSelected ? 'text-zinc-100' : 'text-zinc-500'}`}>
+      <div className={`size-7 flex items-center justify-center flex-shrink-0 ${isSelected ? 'text-zinc-100' : 'text-zinc-400'}`}>
         {icon}
       </div>
 
       {/* Label */}
       <div className="flex-1 min-w-0">
-        <button aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
-        {(label !== typeLabel || !element.isStatic) && <p className="text-xs text-zinc-500">{label !== typeLabel ? typeLabel : ''}{!element.isStatic ? `${label !== typeLabel ? ', c' : 'C'}hanges per label` : ''}</p>}
+        <button aria-pressed={isSelected} aria-label={`Select ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
+        {(label !== typeLabel || !element.isStatic) && <p className="text-xs text-zinc-400">{label !== typeLabel ? typeLabel : ''}{!element.isStatic ? `${label !== typeLabel ? ', c' : 'C'}hanges per label` : ''}</p>}
       </div>
-      {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} layer ${label}`} title={element.locked ? 'Unlock layer' : 'Lock layer'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
+      {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} ${label}`} title={element.locked ? 'Unlock' : 'Lock in place'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 
       {/* Actions: one quiet menu per layer, shown on the selected row and on hover. */}
       <div onClick={(e) => e.stopPropagation()} className={isSelected ? 'flex items-center' : 'flex items-center opacity-0 transition-opacity duration-150 group-hover/layer:opacity-100 focus-within:opacity-100 max-lg:opacity-100'}>

@@ -252,9 +252,9 @@ export function FormatDetail({ format, onDelete, onUpdate }: FormatDetailProps) 
                   {editing ? (
                     <div className="flex items-center gap-1">
                       <SizeInput what="The sheet width" min={1} max={20} value={d('sheetWidth') as number} onChange={(v) => setD('sheetWidth', v)} />
-                      <span className="text-zinc-500">×</span>
+                      <span className="text-zinc-400">×</span>
                       <SizeInput what="The sheet height" min={1} max={30} value={d('sheetHeight') as number} onChange={(v) => setD('sheetHeight', v)} />
-                      <span className="text-zinc-500">&quot;</span>
+                      <span className="text-zinc-400">&quot;</span>
                     </div>
                   ) : (
                     <span className="text-zinc-100 font-medium">{format.sheetWidth}&quot; × {format.sheetHeight}&quot;</span>
@@ -311,7 +311,7 @@ function SpecCard({ label, hint, children }: { label: string; hint?: string; edi
     <div>
       <div className="text-sm text-zinc-400 mb-1">{label}</div>
       {children}
-      {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-zinc-400">{hint}</p>}
     </div>
   );
 }
@@ -321,7 +321,7 @@ function DetailRow({ label, hint, editing, children }: { label: string; hint?: s
     <div className={`flex justify-between items-center gap-3 ${editing ? 'py-1' : 'py-1.5'}`}>
       <span className="min-w-0">
         <span className="block text-zinc-400">{label}</span>
-        {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
+        {hint && <span className="block text-xs text-zinc-400">{hint}</span>}
       </span>
       {children}
     </div>
@@ -332,7 +332,7 @@ function EditNum({ value, onChange, emptyLabel, what }: { value: number; onChang
   return (
     <div className="flex items-start gap-1">
       <SizeInput what={what} min={emptyLabel ? 0.1 : 0} max={20} value={value} onChange={onChange} emptyLabel={emptyLabel} className="field w-24 text-right" />
-      <span className="pt-2 text-zinc-500">&quot;</span>
+      <span className="pt-2 text-zinc-400">&quot;</span>
     </div>
   );
 }

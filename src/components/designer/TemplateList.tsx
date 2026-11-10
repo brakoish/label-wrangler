@@ -460,7 +460,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
           <div>
             <label id={`${fieldId}-size`} className="field-label mb-1.5">Label size</label>
             {formats.length === 0 ? (
-              <p className="text-sm text-zinc-500 py-2">
+              <p className="text-sm text-zinc-400 py-2">
                 No label sizes yet — <Link href="/formats" className="link">add a label size</Link>{' '}first
               </p>
             ) : (
@@ -579,7 +579,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
           <div>
             <label id={`${fieldId}-size`} className="field-label mb-1.5">Label size for the copy</label>
             {formats.length === 0 ? (
-              <p className="text-sm text-zinc-500 py-2">No label sizes yet.</p>
+              <p className="text-sm text-zinc-400 py-2">No label sizes yet.</p>
             ) : (
               <CustomSelect
                 value={formatId}

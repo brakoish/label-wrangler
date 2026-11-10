@@ -1181,7 +1181,7 @@ function NewRunContent() {
     } catch (error) {
       console.error('Error creating run:', error);
       setCreateRunError(isNetworkError(error)
-        ? "Couldn't reach Label Wrangler — check your internet and press Start run again. Nothing was printed and your data is still here."
+        ? 'Couldn’t reach Label Wrangler. Check your internet and press Start run again. Nothing was printed and your data is still here.'
         : friendlyError(error, 'Could not start this run. Nothing was printed and your data is still here.'));
       return null;
     } finally {
@@ -1296,7 +1296,7 @@ function NewRunContent() {
               {workflowSteps.map((step, index) => {
                 const current = index === currentStep;
                 return (
-                  <li key={step.label} className={`flex min-w-0 items-center gap-1.5 text-sm ${current ? 'text-zinc-100' : step.done ? 'text-zinc-300' : 'text-zinc-500'}`} aria-current={current ? 'step' : undefined}>
+                  <li key={step.label} className={`flex min-w-0 items-center gap-1.5 text-sm ${current ? 'text-zinc-100' : step.done ? 'text-zinc-300' : 'text-zinc-400'}`} aria-current={current ? 'step' : undefined}>
                     <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-full border-2 ${step.done ? 'border-amber-500 bg-amber-500' : current ? 'border-amber-500' : 'border-zinc-600'}`} />
                     <span className="truncate font-medium">{step.label}<span className="sr-only">{step.done ? ' (done)' : current ? ' (current step)' : ' (not done yet)'}</span></span>
                   </li>
@@ -1392,7 +1392,7 @@ function NewRunContent() {
             <section className="card card-flat p-4 sm:p-5 space-y-3">
               <h2 className="text-base font-semibold text-zinc-100">Some parts have no name</h2>
               <p className="text-sm text-zinc-300">
-                {unnamedDynamic.length === 1 ? '1 part of this design changes per label but has' : `${unnamedDynamic.length} parts of this design change per label but have`} no name, so {unnamedDynamic.length === 1 ? 'it' : 'they'} can&apos;t be filled. Naming them saves the design.
+                {unnamedDynamic.length === 1 ? '1 part of this design changes per label but has' : `${unnamedDynamic.length} parts of this design change per label but have`} no name, so {unnamedDynamic.length === 1 ? 'it' : 'they'} can’t be filled. Naming them saves the design.
               </p>
               <button
                 onClick={() => void nameUnnamedFields()}
@@ -1655,7 +1655,7 @@ function NewRunContent() {
                                 isSelected ? 'bg-amber-500/10' : 'hover:bg-zinc-900'
                               }`}
                             >
-                              <span className={`mt-0.5 ${isSelected ? 'text-amber-300' : 'text-zinc-500'}`}>
+                              <span className={`mt-0.5 ${isSelected ? 'text-amber-300' : 'text-zinc-400'}`}>
                                 {isSelected ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <Circle className="size-4" aria-hidden="true" />}
                               </span>
                               <span className="min-w-0">
@@ -1843,7 +1843,7 @@ function NewRunContent() {
                         </button>
                       </div>
                     ) : (
-                      <span className="text-sm text-zinc-400">Showing the design&apos;s sample text</span>
+                      <span className="text-sm text-zinc-400">Showing the design’s sample text</span>
                     )}
                   </div>
                   <div className="flex justify-center">
