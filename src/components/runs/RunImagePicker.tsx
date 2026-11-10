@@ -55,7 +55,7 @@ export function RunImagePicker({ template, selections, onChange, onBusyChange }:
     {librarySlot && <div className="rounded-lg border border-zinc-700 p-3 space-y-2">
       <div className="flex justify-between"><h3 className="text-xs text-zinc-300">Images from saved blocks</h3><button type="button" className="text-xs text-zinc-400" onClick={() => setLibrarySlot(null)}>Close</button></div>
       <div className="flex flex-wrap gap-2">{savedImages.map(image => <button key={image.id} type="button" disabled={busy} className="w-24 rounded border border-zinc-700 p-1 text-xs text-zinc-300 hover:border-amber-500" onClick={() => { try { const next = { ...selections, [librarySlot]: image.src }; validateRunImages(next); onChange(next); setLibrarySlot(null); setError(''); } catch (e) { setError(e instanceof Error ? e.message : 'Unsupported saved image'); } }}><img src={image.src} alt={image.name} className="h-16 w-full object-contain bg-white" /><span>{image.name}</span></button>)}</div>
-      {!loading && !savedImages.length && <p className="text-xs text-zinc-500">No images in loaded saved blocks. Upload an image, or save an image as a Global in the designer.</p>}
+      {!loading && !savedImages.length && <p className="text-xs text-zinc-500">No images in loaded saved blocks. Upload an image, or save one as a reusable element in the designer.</p>}
       {libraryError && <p role="alert" className="text-xs text-red-400">{libraryError}</p>}
       {(hasMore || libraryError) && <button type="button" disabled={loading} className="text-xs text-amber-400" onClick={() => void fetchGlobals(hasMore)}>Load saved blocks</button>}
       {loading && <p role="status" className="text-xs text-zinc-500">Loading saved blocks…</p>}

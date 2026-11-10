@@ -1,6 +1,7 @@
 'use client';
 
-import { Type, QrCode, Barcode, Minus, Square, Image, X, Globe } from 'lucide-react';
+import { Type, QrCode, Barcode, Minus, Square, Image, Globe } from 'lucide-react';
+import { Dialog } from '@/components/ui/Dialog';
 import { ElementType } from '@/lib/types';
 
 interface AddElementMenuProps {
@@ -53,22 +54,14 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="glass rounded-2xl p-6 max-w-2xl w-full border border-zinc-800">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-semibold text-zinc-100 gradient-text">Add Element</h3>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Dialog open={isOpen} onClose={onClose} title="Add to your label" className="max-w-2xl">
+      <div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {elementTypes.map(({ type, icon: Icon, label, description }) => (
             <button
               key={type}
+              type="button"
               onClick={() => {
                 onAddElement(type);
                 onClose();
@@ -89,6 +82,7 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
         </div>
 
         <button
+          type="button"
           onClick={() => { onClose(); onInsertGlobal(); }}
           className="w-full mt-3 flex items-center justify-center gap-2 p-4 rounded-xl bg-amber-500/10 border border-amber-600/30 hover:bg-amber-500/20 hover:border-amber-600/50 transition-all text-left group"
         >
@@ -96,11 +90,11 @@ export function AddElementMenu({ isOpen, onClose, onAddElement, onInsertGlobal }
             <Globe className="w-5 h-5 text-amber-400" />
           </div>
           <div>
-            <div className="font-medium text-amber-400 text-sm">Insert Global Element</div>
-            <div className="text-xs text-amber-500/60">Browse your saved design blocks</div>
+            <div className="font-medium text-amber-400 text-sm">Insert a reusable element</div>
+            <div className="text-xs text-amber-500/60">Pieces you saved to use on any design</div>
           </div>
         </button>
       </div>
-    </div>
+    </Dialog>
   );
 }
