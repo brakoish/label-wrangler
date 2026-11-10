@@ -29,14 +29,19 @@ export interface MenuItem {
 export function Menu({ items, label = 'More', showLabel = true, className = '', align = 'end' }: { items: MenuItem[]; label?: string; showLabel?: boolean; className?: string; align?: 'start' | 'end' }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const { present, state } = usePresence(open, 130);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuId = useId();
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number; up: boolean; sheet?: boolean } | null>(null);
   // Drag distance of the phone sheet (down closes it; up stretches a little, then stops).
   const [drag, setDrag] = useState<number | null>(null);
   const dragStart = useRef<number | null>(null);
+  // The last few pointer positions while dragging, for the speed at release.
+  const dragTrail = useRef<Array<{ y: number; t: number }>>([]);
+  // Let go mid-drag: how long the sheet takes to slide the rest of the way out.
+  const [flingMs, setFlingMs] = useState<number | null>(null);
+  // The phone sheet leaves in 190ms (or its fling time); the popover in 130ms.
+  const { present, state } = usePresence(open, pos?.sheet ? (flingMs ?? 190) : 130);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
   const enabled = items.map((item, index) => (item.disabled ? -1 : index)).filter((index) => index >= 0);
 
   useLayoutEffect(() => {
@@ -83,7 +88,7 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
   }, [open, active, pos]);
 
   const close = (focusTrigger = true) => { setOpen(false); if (focusTrigger) triggerRef.current?.focus(); };
-  const openMenu = () => { setActive(enabled[0] ?? 0); setOpen(true); };
+  const openMenu = () => { setActive(enabled[0] ?? 0); setFlingMs(null); setOpen(true); };
   const move = (step: number) => {
     if (!enabled.length) return;
     const at = enabled.indexOf(active);
@@ -105,12 +110,30 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
 
   // Rubber band: past the top the sheet follows a fraction of the finger, never far.
   const sheetOffset = drag === null ? 0 : drag >= 0 ? drag : -Math.min(16, Math.sqrt(-drag) * 2);
-  const onSheetDown = (event: React.PointerEvent) => { dragStart.current = event.clientY; setDrag(0); (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId); };
-  const onSheetMove = (event: React.PointerEvent) => { if (dragStart.current !== null) setDrag(event.clientY - dragStart.current); };
+  const onSheetDown = (event: React.PointerEvent) => {
+    dragStart.current = event.clientY; setDrag(0);
+    dragTrail.current = [{ y: event.clientY, t: event.timeStamp }];
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  };
+  const onSheetMove = (event: React.PointerEvent) => {
+    if (dragStart.current === null) return;
+    setDrag(event.clientY - dragStart.current);
+    dragTrail.current = [...dragTrail.current.filter((p) => event.timeStamp - p.t < 100), { y: event.clientY, t: event.timeStamp }];
+  };
   const onSheetUp = () => {
     const moved = drag ?? 0;
-    dragStart.current = null; setDrag(null);
-    if (moved > 72) close();
+    const trail = dragTrail.current;
+    const first = trail[0], last = trail[trail.length - 1];
+    // Speed over the last 100ms, in px per ms (positive is downwards).
+    const speed = first && last && last.t > first.t ? (last.y - first.y) / (last.t - first.t) : 0;
+    dragStart.current = null; dragTrail.current = []; setDrag(null);
+    // A long drag or a quick flick down closes it. It carries on from where
+    // the finger let go at about the finger's speed, instead of stopping.
+    if (moved > 72 || (moved > 16 && speed > 0.5)) {
+      const left = Math.max(0, (menuRef.current?.offsetHeight ?? 320) - moved);
+      setFlingMs(Math.round(Math.min(240, Math.max(120, left / Math.max(speed, 1.2)))));
+      close();
+    }
   };
 
   const itemClass = (item: MenuItem) => `press flex w-full min-h-control items-center gap-2.5 rounded-md px-3 text-left text-sm outline-none focus-visible:bg-zinc-800 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500 ${item.danger ? 'text-red-400' : 'text-zinc-300 hover:text-zinc-100'}`;
@@ -147,10 +170,12 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
           tabIndex={-1}
           data-state={state}
           data-dragging={drag !== null ? '' : undefined}
+          data-flung={flingMs !== null ? '' : undefined}
           onKeyDown={onMenuKey}
           style={pos.sheet ? {
             position: 'fixed', zIndex: 1000, left: 0, right: 0, bottom: 0,
             ['--sheet-y' as string]: `${sheetOffset}px`,
+            ...(flingMs !== null ? { ['--fling-ms' as string]: `${flingMs}ms` } : {}),
           } : {
             position: 'fixed',
             zIndex: 1000,

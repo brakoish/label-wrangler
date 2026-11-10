@@ -309,17 +309,17 @@ textarea:focus-visible {
     font-weight: 500;
     color: var(--color-zinc-400);
     white-space: nowrap;
-    transition: color 150ms var(--ease-out);
   }
   .segmented > button:hover,
   .segmented > a:hover {
     color: var(--color-zinc-100);
   }
   .segmented > [aria-pressed="true"],
+  .segmented > [aria-checked="true"],
   .segmented > [aria-selected="true"],
   .segmented > [aria-current="page"],
   .segmented > [data-active="true"] {
-    color: var(--color-zinc-50);
+    color: var(--color-zinc-100);
   }
   /* Dense variant for narrow panels: smaller text, labels may wrap. */
   .segmented-xs > button {
@@ -399,7 +399,7 @@ textarea:focus-visible {
 
 }
 
-/* area B ------------------------------------------------------------------
+/* Layers ----------------------------------------------------------------------
  * Layers that come and go (dialogs, menus, select lists, toasts) use CSS
  * transitions, not keyframes: closing part-way through and reopening turns
  * around from where it is instead of restarting from zero. Entrances use
@@ -481,9 +481,8 @@ textarea:focus-visible {
   .pop-layer[data-state="open"] { opacity: 0; transform: scale(0.95); }
   .toast-layer[data-state="open"] { opacity: 0; transform: translateY(4px); }
 }
-/* end area B */
 
-/* area B r3 ----------------------------------------------------------------
+/* Folds, press feedback and text greys ----------------------------------------
  * Fold-out sections, press feedback and text greys for the run pages, the
  * nav and shared menus. Folds open with ease-out (200ms) and close about 20%
  * faster with ease-in (160ms); reduced motion turns both off (see below).
@@ -516,23 +515,13 @@ textarea:focus-visible {
     transition-timing-function: var(--ease-out);
   }
   /* One press scale everywhere: buttons (.btn), menu items, chips, segments. */
-  .press,
-  .segmented > button,
-  .segmented > a {
+  .press {
     transition: transform 120ms var(--ease-out), color 150ms var(--ease-out), background-color 150ms var(--ease-out);
   }
-  .press:active:not(:disabled),
-  .segmented > button:active:not(:disabled),
-  .segmented > a:active {
+  .press:active:not(:disabled) {
     transform: scale(0.97);
   }
   .section-title {
-    color: var(--color-zinc-100);
-  }
-  .segmented > [aria-pressed="true"],
-  .segmented > [aria-selected="true"],
-  .segmented > [aria-current="page"],
-  .segmented > [data-active="true"] {
     color: var(--color-zinc-100);
   }
   /* A card without its outline: the surface alone separates it. */
@@ -541,13 +530,10 @@ textarea:focus-visible {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .press:active:not(:disabled),
-  .segmented > button:active:not(:disabled),
-  .segmented > a:active {
+  .press:active:not(:disabled) {
     transform: none;
   }
 }
-/* end area B r3 */
 
 /* One page container ---------------------------------------------------
  * Every page (Runs, a run, New run, Designs, Scan, Label sizes, Nabis) sits
@@ -566,7 +552,6 @@ textarea:focus-visible {
   @media (min-width: 640px) { .page-container { padding: 1.5rem 2rem; } }
   @media (min-width: 1024px) { .page-container { padding-block: 2rem; } }
 }
-/* end page container */
 
 /* Motion off for anyone who asks for less of it — spinners included. */
 @media (prefers-reduced-motion: reduce) {
@@ -585,7 +570,6 @@ textarea:focus-visible {
   }
 }
 
-/* area A r3 */
 /* Fold-out sections (<details>) open and close instead of snapping:
    ease-out in 200ms, out 160ms (about 20% shorter). Browsers without
    ::details-content simply snap, as before. */
@@ -626,9 +610,7 @@ textarea:focus-visible {
   [role="menuitem"]:active,
   [data-layer-id]:active { transform: none; }
 }
-/* end area A r3 */
 
-/* area A r4 */
 /* "Where the values come from" on a narrow phone: two rows of two, so
    "Spreadsheet" and "Manifest" never run together. */
 @media (max-width: 26.24rem) {
@@ -651,9 +633,7 @@ textarea:focus-visible {
     font-size: var(--text-xs);
   }
 }
-/* end area A r4 */
 
-/* area A r5 */
 /* Masked reveal: a fold's new content wipes down from its top edge instead
    of fading in place (clip-path, 200ms ease-out, no overshoot). */
 .fold-reveal {
@@ -674,14 +654,13 @@ textarea:focus-visible {
   .fold-reveal { animation: none; }
   .layer-highlight { transition: none; }
 }
-/* end area A r5 */
 
-/* area B r5 -----------------------------------------------------------------
- * Run page and Runs list motion, with the existing easing tokens:
+/* Run page and Runs list motion ------------------------------------------------
+ * With the existing easing tokens:
  * - .reveal: a masked reveal (clip-path) for a line that appears in place,
  *   like a problem with its fix or a "what to do now" note.
  * - .status-swap: the run's status word crossfades and settles when it changes.
- * - .run-row: list rows press in slightly, like buttons.
+ * - .run-row: list rows press to 0.97, like every other pressable thing.
  * No bounce; reduced motion gets none of it.
  */
 @layer components {
@@ -689,7 +668,7 @@ textarea:focus-visible {
     .reveal { animation: lw-reveal 240ms var(--ease-out) both; }
     .status-swap { animation: lw-status-swap 200ms var(--ease-out) both; }
     .run-row { transition: background-color 150ms var(--ease-out), transform 120ms var(--ease-out); }
-    .run-row:active:has(> a:active) { transform: scale(0.99); }
+    .run-row:active:has(> a:active) { transform: scale(0.97); }
   }
 }
 @keyframes lw-reveal {
@@ -699,20 +678,21 @@ textarea:focus-visible {
 @keyframes lw-status-swap {
   from { opacity: 0; transform: translateY(-2px); filter: blur(1px); }
 }
-/* end area B r5 */
 
-/* area A r6 */
-/* One inline link style: amber text, underlined on hover; inside a sentence
-   (p, li) it is always underlined, so it never relies on colour alone. */
-.link {
-  color: var(--color-amber-400);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  border-radius: var(--radius-sm);
-  transition: color 150ms var(--ease-out);
+/* The one inline link style: amber and always underlined, so it never relies
+   on colour alone. */
+@layer components {
+  .link {
+    color: var(--color-amber-400);
+    font-weight: 500;
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    border-radius: var(--radius-sm);
+    transition: color 150ms var(--ease-out);
+  }
+  .link:hover { color: var(--color-amber-300); }
 }
-.link:hover { color: var(--color-amber-300); text-decoration-line: underline; }
-p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
 
 /* One dialog footer: right-aligned, primary last; stacked full-width on
    narrow phones (primary on top). */
@@ -725,13 +705,9 @@ p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
 /* Segmented controls and filter bars: the surface alone, no outline. */
 .segmented { border-color: transparent; }
 
-/* Icon crossfade: see .icon-swap in the area B r6 block (one rule set for both components). */
-/* end area A r6 */
-
-/* area B r6 -----------------------------------------------------------------
+/* Shared motion: links, icons, arcs, the phone sheet, the nav ------------------
  * Run page, office panel, Runs list, scan page and shell, with the existing
  * easing tokens. No bounce anywhere; reduced motion turns all of it off.
- * - .link: the one inline link style (amber, always underlined in text).
  * - .icon-swap: icons crossfade with a blur instead of jumping.
  * - .arc-in: a new problem or note travels in on a short arc (x eases out,
  *   y eases in, so the path curves) instead of a straight slide.
@@ -741,9 +717,6 @@ p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
  * - .status-dot, .progress-seg: colour and size changes ease in place.
  */
 @layer components {
-  .link { color: var(--color-amber-400); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
-  .link:hover { color: var(--color-amber-300); text-decoration-thickness: 2px; }
-
   .icon-swap { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; }
   .icon-swap > span { grid-area: 1 / 1; display: inline-flex; opacity: 0; filter: blur(2px); transform: scale(0.8); }
   .icon-swap > span[data-active] { opacity: 1; filter: none; transform: none; }
@@ -756,11 +729,13 @@ p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
   @media (prefers-reduced-motion: no-preference) {
     .icon-swap > span { transition: opacity 180ms var(--ease-out), filter 180ms var(--ease-out), transform 180ms var(--ease-out); }
     .arc-in { animation: lw-arc-x 280ms var(--ease-out) both, lw-arc-y 280ms var(--ease-in) both; }
-    .menu-sheet { transition: transform 260ms var(--ease-out); }
-    .menu-sheet[data-state="closed"] { transition: transform 200ms var(--ease-in); }
+    .menu-sheet { transition: transform 240ms var(--ease-out); }
+    .menu-sheet[data-state="closed"] { transition: transform 190ms var(--ease-in); }
+    /* Let go after a drag down: it keeps moving at the finger's speed (Menu.tsx sets the time). */
+    .menu-sheet[data-flung][data-state="closed"] { transition: transform var(--fling-ms, 190ms) var(--ease-out); }
     .menu-sheet[data-dragging] { transition: none; }
-    .menu-sheet-scrim { transition: opacity 260ms var(--ease-out); }
-    .menu-sheet-scrim[data-state="closed"] { transition-duration: 200ms; transition-timing-function: var(--ease-in); }
+    .menu-sheet-scrim { transition: opacity 240ms var(--ease-out); }
+    .menu-sheet-scrim[data-state="closed"] { transition-duration: 190ms; transition-timing-function: var(--ease-in); }
     .nav-indicator { transition: transform 240ms var(--ease-in-out), width 240ms var(--ease-in-out); }
     .status-dot { transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out); }
   }
@@ -775,20 +750,14 @@ p .link, li .link, p.link-in-text a { text-decoration-line: underline; }
   .icon-swap > span, .menu-sheet, .menu-sheet-scrim, .nav-indicator, .status-dot, .progress-seg { transition: none !important; }
   .arc-in { animation: none !important; }
 }
-/* end area B r6 */
 
-/* area B r7 -----------------------------------------------------------------
- * - .run-row presses to 0.97, like every other pressable thing.
- * - On touch screens an inline text action (.link) gets a hit area at least
- *   44px tall from an invisible box around it, so no text moves.
+/* Touch targets -----------------------------------------------------------------
+ * On touch screens an inline text action (.link) gets a hit area at least
+ * 44px tall from an invisible box around it, so no text moves.
  */
 @layer components {
-  @media (prefers-reduced-motion: no-preference) {
-    .run-row:active:has(> a:active) { transform: scale(0.97); }
-  }
   @media (pointer: coarse) {
     .link { position: relative; }
     .link::after { content: ""; position: absolute; inset: -12px -6px; }
   }
 }
-/* end area B r7 */
