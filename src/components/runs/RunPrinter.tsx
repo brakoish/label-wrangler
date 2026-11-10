@@ -1478,11 +1478,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       designHref={designHref}
     />
   );
-  // A finished or cancelled run still says what was wrong with its design (no ticks).
-  const calmCheckList = (
-    <RunBarcodeCheck readOnly total={total} characters={characterWarning} check={printCheck} ticks={[]} wizardGoAhead={false}
-      onTick={() => {}} layoutGoAhead={false} onLayoutGoAhead={() => {}} designHref={designHref} />
-  );
+  // A finished or cancelled run doesn't lead with its design's problems: one
+  // calm note below, and the full list (with its ticks) once someone prints again.
+  const calmProblems = printCheck.blocking.length + printCheck.tight.length + printCheck.layout.length + (characterWarning?.items.length ?? 0) > 0;
+  const calmCheckList = calmProblems
+    ? <p className="text-sm text-zinc-400">This design has some barcode or layout problems. They’re listed if you print again.</p>
+    : null;
   const sentLine = officeSentLine(officeSummary, total);
   // Print history, with what the office queue knows and the office's own
   // history lines don't say: a send that was a reprint reads "Reprinted …",
