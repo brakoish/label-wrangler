@@ -233,6 +233,8 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
           title: 'This barcode may not scan',
           body: `${valueProblems.join(' ')} Print it anyway?`,
           confirmLabel: 'Print anyway',
+          // The scanner's trailing Enter, or the next scan, must not confirm it.
+          focusCancel: true,
         });
         if (!ok) throw new Error('Nothing was printed.');
       }

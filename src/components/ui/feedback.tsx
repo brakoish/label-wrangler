@@ -24,6 +24,11 @@ export interface ConfirmOptions {
    * the dialog picks neither, so the primary button can be the safe choice.
    */
   altLabel?: string;
+  /**
+   * Start with Cancel focused, for a dialog that can open in the middle of
+   * typing or scanning (a scanner's trailing Enter must not confirm it).
+   */
+  focusCancel?: boolean;
 }
 type Outcome = 'confirm' | 'alt' | 'dismiss';
 type Toast = { id: number; message: string; tone: 'success' | 'error' | 'info'; closing?: boolean };
@@ -102,13 +107,13 @@ export function FeedbackHost() {
             {confirm.altLabel}
           </button>
         ) : !confirm?.acknowledgeOnly && (
-          <button type="button" onClick={() => settle('dismiss')} className="btn btn-secondary">
+          <button type="button" data-autofocus={confirm?.focusCancel ? true : undefined} onClick={() => settle('dismiss')} className="btn btn-secondary">
             {confirm?.cancelLabel ?? 'Cancel'}
           </button>
         )}
         <button
           type="button"
-          data-autofocus={confirm?.danger ? undefined : true}
+          data-autofocus={confirm?.danger || (confirm?.focusCancel && !confirm?.acknowledgeOnly) ? undefined : true}
           onClick={() => settle('confirm')}
           className={`btn ${confirm?.danger ? 'btn-danger' : 'btn-primary'}`}
         >
