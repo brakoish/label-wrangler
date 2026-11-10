@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { isNetworkError, OFFLINE_MESSAGE } from '@/lib/userMessages';
+import { safeNextPath } from '@/lib/safeRedirect';
 
 function nextPath(){
-  const next=new URLSearchParams(window.location.search).get('next') || '/runs';
-  return next.startsWith('/') && !next.startsWith('//') && !next.includes('\\') ? next : '/runs';
+  return safeNextPath(new URLSearchParams(window.location.search).get('next'), window.location.origin);
 }
 export default function LoginPage(){
   const [error,setError]=useState('');const [busy,setBusy]=useState(false);

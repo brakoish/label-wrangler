@@ -7,6 +7,7 @@ for(const file of [
  'scripts/production/test-permissions.cjs',
  'scripts/production/test-delete-conflicts.cjs',
  'scripts/production/test-login-throttle.cjs',
+ 'scripts/production/test-safe-redirect.cjs',
  'scripts/production/test-template-list.cjs',
  'scripts/production/test-image-upload.cjs',
  'scripts/production/test-office-status.cjs',
