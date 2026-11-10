@@ -33,7 +33,7 @@ interface RunStore {
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   /** `onSetAside` is called with a plain reason when the server permanently
    * refused this update (it was set aside, not saved). */
-  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; onSetAside?: (reason: string) => void }) => Promise<Run | null>;
+  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; expectedPrintedCount?: number; onSetAside?: (reason: string) => void }) => Promise<Run | null>;
   /** Resolves to a plain-language message when the server refuses (the item is kept). */
   deleteRun: (id: string) => Promise<string | null>;
   /** Toggle the pinned state of a run. Server stamps pinnedAt. */
@@ -136,9 +136,12 @@ export const useRunStore = create<RunStore>((set, get) => ({
     if (typeof printedCount === 'number') body.printedCount = printedCount;
     if (options?.resetProgress && typeof printedCount === 'number') {
       body.resetProgress = true;
-      // If this rewind only reaches the server later, it is not applied over
-      // progress another device made in the meantime.
-      const seen = get().runs.find((r) => r.id === id)?.printedCount;
+      // The server applies the rewind only if progress is still what this
+      // device saw when someone tapped it (compare-and-set), so a late
+      // rewind never erases progress another device made in the meantime.
+      // The caller passes the count on its screen; the store's copy is the
+      // fallback (local printing doesn't always write the store).
+      const seen = typeof options.expectedPrintedCount === 'number' ? options.expectedPrintedCount : get().runs.find((r) => r.id === id)?.printedCount;
       if (typeof seen === 'number') body.expectedPrintedCount = seen;
     }
     if (status === 'completed') body.completedAt = new Date().toISOString();

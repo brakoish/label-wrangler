@@ -85,12 +85,12 @@ function elements(value: unknown) {
 const fields = {
   template: ['name','description','formatId','elements','thermalRenderMode','archivedAt','expectedUpdatedAt'],
   format: ['name','description','type','width','height','dpi','labelsAcross','linerWidth','horizontalGapThermal','sideMarginThermal','labelGap','sheetWidth','sheetHeight','columns','rows','labelsPerSheet','topMargin','sideMargin','horizontalGap','verticalGap'],
-  run: ['imageSelections','name','templateId','presetId','staticValues','fieldMappings','dataSource','sourceData','mappedField','status','totalLabels','printedCount','notes','completedAt','pinnedAt','pinned','progressOnly','resetProgress'],
+  run: ['imageSelections','name','templateId','presetId','staticValues','fieldMappings','dataSource','sourceData','mappedField','status','totalLabels','printedCount','notes','completedAt','pinnedAt','pinned','progressOnly','resetProgress','expectedPrintedCount'],
   preset: ['name','templateId','staticDefaults','fieldMappings','mappedField','csvColumn','touch'],
   global: ['name','description','elements'],
 } as const;
 export type Entity = keyof typeof fields;
-type Shapes = { template: LabelTemplate & { expectedUpdatedAt?: string }; format: LabelFormat; run: Run & { imageSelections?: RunImageSelections; pinned?: boolean; progressOnly?: boolean; resetProgress?: boolean }; preset: RunPreset & { touch?: boolean }; global: GlobalElement };
+type Shapes = { template: LabelTemplate & { expectedUpdatedAt?: string }; format: LabelFormat; run: Run & { imageSelections?: RunImageSelections; pinned?: boolean; progressOnly?: boolean; resetProgress?: boolean; expectedPrintedCount?: number }; preset: RunPreset & { touch?: boolean }; global: GlobalElement };
 export async function validatedBody<E extends Entity>(req: Request, entity: E, create = false): Promise<Shapes[E]> {
   return validate(await body(req, 4_000_000), entity, create) as unknown as Shapes[E];
 }
@@ -125,7 +125,7 @@ export function validate(data: Data, entity: Entity, create = false): Data {
     if (!Array.isArray(data.sourceData) || data.sourceData.length > 100000) invalid('source rows');
     for (const row of data.sourceData) { if(typeof row==='string') text(row,'row',20000); else strings(row,'row'); }
   }
-  for (const k of ['totalLabels','printedCount']) if (data[k] !== undefined) number(data[k],k,0,100000,true);
+  for (const k of ['totalLabels','printedCount','expectedPrintedCount']) if (data[k] !== undefined) number(data[k],k,0,100000,true);
   if (data.status !== undefined && !['draft','queued','printing','paused','completed','cancelled'].includes(String(data.status))) invalid('run status');
   if (data.dataSource !== undefined && !['paste','csv','manual','manifest'].includes(String(data.dataSource))) invalid('data source');
   for (const k of ['pinned','touch','progressOnly','resetProgress']) if (data[k] !== undefined && typeof data[k] !== 'boolean') invalid(k);

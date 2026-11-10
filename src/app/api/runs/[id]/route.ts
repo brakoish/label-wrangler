@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runs, runPrintEvents, officeRequests } from "@/lib/db/schema";
 import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
-import { eq, sql, getTableColumns } from "drizzle-orm";
+import { and, eq, sql, getTableColumns } from "drizzle-orm";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -20,7 +20,7 @@ async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-const PROGRESS_FIELDS = new Set(['printedCount', 'status', 'completedAt', 'progressOnly', 'resetProgress']);
+const PROGRESS_FIELDS = new Set(['printedCount', 'status', 'completedAt', 'progressOnly', 'resetProgress', 'expectedPrintedCount']);
 
 async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -34,6 +34,7 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     if (body.printedCount !== undefined && Number(body.printedCount) > total) throw new OfficeError('Progress exceeds run length');
     if (body.totalLabels !== undefined && body.totalLabels !== total) throw new OfficeError('Label count must match source rows');
     if (body.templateId !== undefined) throw new OfficeError('Create a new run to change its design');
+    if (body.expectedPrintedCount !== undefined && body.resetProgress !== true) throw new OfficeError('expectedPrintedCount only goes with resetProgress');
     const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     // Only copy known fields.
     for (const k of ['name', 'staticValues', 'fieldMappings', 'sourceData', 'mappedField', 'status',
@@ -56,7 +57,17 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     // resetProgress:true to move the resume position backwards.
     if (body.printedCount !== undefined && body.resetProgress !== true) updates.printedCount = sql`greatest(${runs.printedCount}, ${Number(body.printedCount)})`;
     const { sourceData: _source, designSnapshot: _design, ...summary } = getTableColumns(runs);
-    const [updated] = await db.update(runs).set(updates).where(eq(runs.id, id)).returning(summary);
+    // A rewind can say which progress it saw (expectedPrintedCount). It then
+    // applies only if the stored count still matches, in the same statement,
+    // so a "go back" that arrives late never erases progress another device
+    // made in the meantime. Without it, the update behaves as before.
+    const guarded = body.resetProgress === true && typeof body.expectedPrintedCount === 'number';
+    const where = guarded ? and(eq(runs.id, id), eq(runs.printedCount, Number(body.expectedPrintedCount))) : eq(runs.id, id);
+    const [updated] = await db.update(runs).set(updates).where(where).returning(summary);
+    if (!updated && guarded) {
+      const [now] = await db.select({ printedCount: runs.printedCount }).from(runs).where(eq(runs.id, id));
+      if (now) return NextResponse.json({ error: `This run’s progress changed on another device (now ${Number(now.printedCount).toLocaleString('en-US')} printed), so going back wasn’t applied.`, code: 'progress_changed', printedCount: Number(now.printedCount) }, { status: 409 });
+    }
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ ...updated, ...(body.sourceData ? {sourceData:body.sourceData} : {}) });
   } catch (error) {

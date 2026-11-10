@@ -35,15 +35,16 @@ export interface RunPatch {
   /** Explicit rewind of the resume position. Without it the server keeps the
    * highest printedCount it has seen. */
   resetProgress?: boolean;
-  /** Client-only, never sent: the progress this device saw when it asked to
-   * rewind. A rewind that reaches the server late is not applied over
-   * progress another device made since. */
+  /** With resetProgress: the progress this device saw when someone asked to
+   * go back. The server applies the rewind only if its stored count still
+   * matches (compare-and-set), so a rewind that arrives late never erases
+   * progress another device made since; otherwise it answers 409 and the
+   * rewind is set aside with a plain notice. */
   expectedPrintedCount?: number;
 }
 export interface QueuedRunPatch extends RunPatch { runId: string }
 type PrintEventData = Omit<RunPrintEvent,'id'|'runId'|'createdAt'>;
-/** late: an earlier attempt to send it failed, so it is going out after the fact. */
-type Operation = { id: string; createdAt: number; patch: QueuedRunPatch; event?: PrintEventData; late?: boolean };
+type Operation = { id: string; createdAt: number; patch: QueuedRunPatch; event?: PrintEventData };
 const syncedEvents = new Map<string,RunPrintEvent>();
 let flushing: Promise<{ flushed: number; remaining: number }> | null = null;
 let lastError = '';
@@ -69,12 +70,9 @@ function plainReason(status: number | null): string {
     : 'This saved update could not be read.';
 }
 /** Words for a rewind that was not applied (see RunPatch.expectedPrintedCount). */
-export function rewindDroppedMessage(goBackTo: number, serverPrinted: number): string {
-  return `A “go back to label ${goBackTo + 1}” saved on this device while offline wasn’t applied, because this run’s progress changed on another device since (now ${serverPrinted.toLocaleString()} printed). Check the run, then go back again if you still need to.`;
-}
-function markLate(op: Operation) {
-  if (op.late) return;
-  try { window.localStorage.setItem(PREFIX + op.id, JSON.stringify({ ...op, late: true })); } catch { /* still pending; only the late check is skipped */ }
+export function rewindDroppedMessage(goBackTo: number, serverPrinted: number | null): string {
+  const now = serverPrinted === null ? '' : ` (now ${serverPrinted.toLocaleString('en-US')} printed)`;
+  return `“Go back to label ${goBackTo + 1}” wasn’t applied, because this run’s progress changed on another device since${now}. Check the run, then go back again if you still need to.`;
 }
 function deadLetter(key: string, entry: Omit<DeadLetter,'deadAt'>) {
   const storage = window.localStorage;
@@ -153,10 +151,10 @@ export function pendingPatchCount(runId?: string): number {
   }
   catch { return 1; }
 }
-async function serverError(response: Response): Promise<{ message: string; code: string }> {
+async function serverError(response: Response): Promise<{ message: string; code: string; printedCount?: number }> {
   try {
     const data = await response.json();
-    return { message: typeof data?.error === 'string' ? data.error : '', code: typeof data?.code === 'string' ? data.code : '' };
+    return { message: typeof data?.error === 'string' ? data.error : '', code: typeof data?.code === 'string' ? data.code : '', ...(Number.isInteger(data?.printedCount) ? { printedCount: data.printedCount } : {}) };
   } catch { return { message: '', code: '' }; }
 }
 export const ORIGIN_REFUSED_MESSAGE = 'Print progress can\u2019t be saved from this web address. Open Label Wrangler at its usual address; your progress is kept on this device until then.';
@@ -176,29 +174,11 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
       for (let i = 0; i < 1000; i++) {
         const op = entries().find(candidate => !blocked.has(candidate.patch.runId));
         if (!op) break;
-        const { runId, expectedPrintedCount, ...patch } = op.patch;
+        const { runId, ...patch } = op.patch;
+        // expectedPrintedCount only ever travels with a rewind.
+        if (!patch.resetProgress) delete patch.expectedPrintedCount;
         attemptedOps.add(op.id);
         if (attemptedOps.size > 512) attemptedOps.delete(attemptedOps.values().next().value!);
-        // A rewind that failed to send earlier only goes through if nobody
-        // moved this run's progress since this device asked for it.
-        if (op.late && patch.resetProgress && typeof expectedPrintedCount === 'number' && !op.event) {
-          let current: Response;
-          try { current = await fetch(`/api/runs/${runId}`, { cache: 'no-store', signal: AbortSignal.timeout(15000) }); }
-          catch { blocked.add(runId); pendingError = 'Progress sync pending. Keep this browser data.'; continue; }
-          if (current.ok) {
-            const server = await current.json().catch(() => null) as { printedCount?: number } | null;
-            const serverPrinted = typeof server?.printedCount === 'number' ? server.printedCount : null;
-            if (serverPrinted !== null && serverPrinted !== expectedPrintedCount) {
-              const message = rewindDroppedMessage(patch.printedCount ?? 0, serverPrinted);
-              deadLetter(PREFIX + op.id, { id: op.id, runId, kind: 'rewind-dropped', status: null, message, op });
-              syncedRuns.delete(runId);
-              setAsideOps.set(op.id, message);
-              if (setAsideOps.size > 128) setAsideOps.delete(setAsideOps.keys().next().value!);
-              announce(pendingError);
-              continue;
-            }
-          } else if (current.status !== 404 && current.status !== 410) { blocked.add(runId); pendingError = current.status === 401 ? 'Sign in again to sync saved print progress.' : 'Progress sync pending. Keep this browser data.'; continue; }
-        }
         let response: Response;
         try {
           response = await fetch(`/api/runs/${runId}${op.event ? '/print-events' : ''}`, {
@@ -207,16 +187,27 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
             signal: AbortSignal.timeout(15000),
           });
         } catch {
-          blocked.add(runId); markLate(op);
+          blocked.add(runId);
           pendingError = 'Progress sync pending. You seem to be offline; it sends when the connection is back.';
           continue;
         }
         if (!response.ok) {
           const refused = await serverError(response);
+          // A guarded rewind the server didn't apply because progress moved
+          // on another device since: set aside, with plain words.
+          if (response.status === 409 && refused.code === 'progress_changed' && patch.resetProgress && !op.event) {
+            const message = rewindDroppedMessage(patch.printedCount ?? 0, refused.printedCount ?? null);
+            deadLetter(PREFIX + op.id, { id: op.id, runId, kind: 'rewind-dropped', status: 409, message, op });
+            syncedRuns.delete(runId);
+            setAsideOps.set(op.id, message);
+            if (setAsideOps.size > 128) setAsideOps.delete(setAsideOps.keys().next().value!);
+            announce(pendingError);
+            continue;
+          }
           if (response.status === 403 && refused.code === ORIGIN_NOT_ALLOWED) {
             // Not a permission problem: the app was opened at an address the
             // server doesn't accept. Keep the update and block this run.
-            blocked.add(runId); markLate(op);
+            blocked.add(runId);
             pendingError = ORIGIN_REFUSED_MESSAGE;
             continue;
           }
@@ -232,7 +223,7 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
             announce(pendingError);
             continue;
           }
-          blocked.add(runId); markLate(op);
+          blocked.add(runId);
           pendingError = response.status === 401 ? 'Sign in again to sync saved print progress.' : `Print progress is saved on this device but not synced (${response.status}). Retry when the connection is restored.`;
           continue;
         }
