@@ -13,6 +13,7 @@ import type {
   TextElement,
 } from './types';
 import { previewLabelValues } from './runBuilder';
+import { barcodeViewBox } from './barcodeViewBox';
 
 interface SheetPrintOptions {
   from?: number;
@@ -556,9 +557,8 @@ function renderBarcode(element: BarcodeElement, values: Record<string, string>, 
       margin: 0,
       fontSize: 14,
     });
-    const w = tempSvg.getAttribute('width') || '200';
-    const h = tempSvg.getAttribute('height') || '100';
-    return `<svg x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" viewBox="0 0 ${escapeAttr(w)} ${escapeAttr(h)}" preserveAspectRatio="xMidYMid meet"${rotation}>${tempSvg.innerHTML}</svg>`;
+    const viewBox = barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height'));
+    return `<svg x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet"${rotation}>${tempSvg.innerHTML}</svg>`;
   } catch {
     return '';
   }

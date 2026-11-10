@@ -9,6 +9,7 @@ import { nearestSnap, resizeArtwork, artworkBounds } from '@/lib/thermal/editorG
 import { generateZPL, snapZplQrSize } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
+import { barcodeViewBox } from '@/lib/barcodeViewBox';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -1126,7 +1127,7 @@ function BarcodeElementRenderer({ element, transform, testData }: { element: Bar
     try {
       const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       document.body.appendChild(tempSvg);
-
+      try {
       JsBarcode(tempSvg, content, {
         format: element.barcodeFormat,
         width: 2,
@@ -1137,13 +1138,13 @@ function BarcodeElementRenderer({ element, transform, testData }: { element: Bar
       });
 
       // Get the rendered dimensions from JsBarcode's width/height attributes
-      const w = tempSvg.getAttribute('width') || '200';
-      const h = tempSvg.getAttribute('height') || '100';
-      const viewBox = `0 0 ${w} ${h}`;
+      const viewBox = barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height'));
       const svgContent = tempSvg.innerHTML;
-
-      document.body.removeChild(tempSvg);
       setBarcodeData({ svg: svgContent, viewBox });
+      } finally {
+        // Also on a JsBarcode error (e.g. a partial EAN13), so nodes don't leak.
+        tempSvg.remove();
+      }
     } catch {
       setBarcodeData(null);
     }

@@ -13,6 +13,7 @@ import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
+import { barcodeViewBox } from '@/lib/barcodeViewBox';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -380,9 +381,7 @@ function MiniBarcode({ element, testData, transform }: { element: BarcodeElement
         margin: 0,
         fontSize: 14,
       });
-      const w = tempSvg.getAttribute('width') || '200';
-      const h = tempSvg.getAttribute('height') || '100';
-      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: `0 0 ${w} ${h}` });
+      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height')) });
     } catch {
       setBarcodeData(null);
     }

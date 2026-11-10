@@ -9,6 +9,7 @@ import { generateZPL } from '@/lib/zplGenerator';
 import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { renderSheetLabelSvg } from '@/lib/sheetPrint';
 import { layoutThermalText, wrapThermalText } from '@/lib/thermalTextLayout';
+import { barcodeViewBox } from '@/lib/barcodeViewBox';
 
 interface LayoutPreviewProps {
   format: LabelFormat;
@@ -223,9 +224,7 @@ function MiniBarcode({ element, testData, vbW }: { element: BarcodeElement; test
         margin: 0,
         fontSize: 14,
       });
-      const w = tempSvg.getAttribute('width') || '200';
-      const h = tempSvg.getAttribute('height') || '100';
-      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: `0 0 ${w} ${h}` });
+      setBarcodeData({ svg: tempSvg.innerHTML, viewBox: barcodeViewBox(tempSvg.getAttribute('width'), tempSvg.getAttribute('height')) });
     } catch {
       setBarcodeData(null);
     }
