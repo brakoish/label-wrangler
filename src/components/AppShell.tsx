@@ -179,7 +179,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
                 key={item.href}
                 href={item.href}
                 aria-current={item.active ? 'page' : undefined}
-                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg focus-visible:outline-offset-[-2px] px-2 max-[339px]:px-1.5 min-[400px]:px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
+                className={`press relative shrink-0 inline-flex h-control-sm items-center rounded-lg focus-inset px-2 max-[339px]:px-1.5 min-[400px]:px-2.5 sm:px-3 text-sm font-medium whitespace-nowrap ${
                   item.active
                     ? `${indicator ? '' : 'bg-zinc-800 '}text-zinc-100`
                     : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
