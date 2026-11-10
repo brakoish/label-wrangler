@@ -135,6 +135,19 @@ export function barcodeHasDetails(item: string): boolean {
 }
 
 /**
+ * What "Why?" adds under the plain sentence: only what the sentence didn't
+ * already say (the measurements, the fix), never the same sentence again.
+ * A value the barcode can't hold also says what it can hold.
+ */
+export function barcodeWhyText(item: string): string {
+  const text = item.trim().replace(/\s+/g, ' ');
+  const plain = barcodePlainSentence(item).trim().replace(/\s+/g, ' ');
+  let rest = text.startsWith(plain) ? text.slice(plain.length).trim() : text;
+  if (/characters a barcode can't hold/.test(plain)) rest = `This barcode holds plain letters, numbers and everyday symbols only.${rest ? ` ${rest}` : ''}`;
+  return rest;
+}
+
+/**
  * Why the Start or Print button waits, in one line that points at what is
  * on the page (never "the list above"): the run waits for a fix, or for a
  * tick on each "Print anyway".

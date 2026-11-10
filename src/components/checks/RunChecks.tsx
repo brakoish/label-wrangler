@@ -83,7 +83,7 @@ export function BlankSummary({ check, mode, leaveBlank, onLeaveBlankChange, show
     return (
       <p className="flex items-center gap-1.5 text-sm text-emerald-400">
         <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-        All {check.checkedLabels.toLocaleString()} labels have a value in every field
+        {check.checkedLabels === 1 ? 'Every field has a value' : `All ${check.checkedLabels.toLocaleString()} labels have a value in every field`}
       </p>
     );
   }

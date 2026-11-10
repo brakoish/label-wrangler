@@ -54,3 +54,29 @@ export function readRunDraft(store: Store | null = storage(), now = Date.now()):
 export function clearRunDraft(store: Store | null = storage()) {
   try { store?.removeItem(KEY); } catch { /* nothing to clear */ }
 }
+
+const SOURCE_KEY = 'lw:new-run-source';
+type RunSource = RunDraft['inputMode'];
+const SOURCES: ReadonlyArray<RunSource> = ['manual', 'paste', 'csv', 'manifest'];
+
+function localStore(): Store | null {
+  try { return typeof window === 'undefined' ? null : window.localStorage; } catch { return null; }
+}
+
+/**
+ * Where a new run's values come from when nothing else says: the choice the
+ * person used for their last run, else a spreadsheet (what most runs use).
+ */
+export function lastRunSource(store: Store | null = localStore()): RunSource {
+  try {
+    const saved = store?.getItem(SOURCE_KEY);
+    return SOURCES.includes(saved as RunSource) ? saved as RunSource : 'csv';
+  } catch {
+    return 'csv';
+  }
+}
+
+/** Remember the source of a run that was started, for the next new run. */
+export function rememberRunSource(source: RunSource, store: Store | null = localStore()) {
+  try { store?.setItem(SOURCE_KEY, source); } catch { /* blocked: the next run starts on a spreadsheet */ }
+}

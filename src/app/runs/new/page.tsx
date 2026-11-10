@@ -16,7 +16,7 @@ import { useRunStore } from '@/lib/runStore';
 import { parseCsv, detectUrlColumn, type ParsedCsv } from '@/lib/csv';
 import { dynamicFieldsForTemplate, staticFlippableElements } from '@/lib/runBuilder';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
-import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
+import { blankLabelDataUrl, isNothingToDrawError, renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
@@ -45,7 +45,7 @@ import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks
 import { checkRunPrinterCharacters, describePrinterCharacterIssue } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
-import { clearRunDraft, readRunDraft, saveRunDraft, type RunDraft } from '@/lib/runDraft';
+import { clearRunDraft, lastRunSource, readRunDraft, rememberRunSource, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 /** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
 function runFixWords(before: TemplateElement, after: TemplateElement, ahead = false): string {
@@ -286,7 +286,7 @@ function NewRunContent() {
   useEffect(() => { staticValuesRef.current = staticValues; }, [staticValues]);
   const [fieldMappings, setFieldMappings] = useState<Record<string, FieldMapping>>({});
   const [hiddenRunFields, setHiddenRunFields] = useState<string[]>([]);
-  const [inputMode, setInputMode] = useState<RunInputMode>('manual');
+  const [inputMode, setInputMode] = useState<RunInputMode>('csv');
   const [pasteText, setPasteText] = useState('');
   const [pasteField, setPasteField] = useState<string | null>(null);
   // Type mode marks an empty field only after it was left empty, not on arrival.
@@ -340,9 +340,15 @@ function NewRunContent() {
   }, [deepLinkTemplateId, duplicateFrom, presetId, templates]);
 
   useEffect(() => {
-    if (presetId || duplicateFrom) return;
+    // A preset or a re-run starts as it always has (Type, unless the copied
+    // run says otherwise below).
+    if (presetId || duplicateFrom) { setInputMode('manual'); return; }
     if (sourceParam === 'manifest' || sourceParam === 'csv' || sourceParam === 'paste' || sourceParam === 'manual') {
       setInputMode(sourceParam);
+    } else {
+      // No link asked for one: start where the last run started (a
+      // spreadsheet the first time). A kept draft or a preset sets its own.
+      setInputMode(lastRunSource());
     }
   }, [duplicateFrom, presetId, sourceParam]);
 
@@ -878,17 +884,22 @@ function NewRunContent() {
     const shown = format?.type === 'sheet' ? (sheetPreviewValues ?? [previewValues]) : Array.isArray(previewLanes) ? previewLanes : [previewLanes];
     return blankPreviewItems(base, shown, dynamicFields);
   }, [previewTemplate, visibleTemplate, inputMode, labelCount, format, sheetPreviewValues, previewValues, previewLanes, dynamicFields]);
-  const previewInput = useMemo(() => ({ template: previewBlanks.template, format, values: previewLanes }), [previewBlanks.template, format, previewLanes]);
+  const previewInput = useMemo(() => ({ template: previewBlanks.template, format, values: previewLanes, blanked: previewBlanks.emptyFields.length > 0 }), [previewBlanks.template, previewBlanks.emptyFields.length, format, previewLanes]);
   const [previewResult, setPreviewResult] = useState<{ input: typeof previewInput; state: RunPreviewState } | null>(null);
   const previewState: RunPreviewState = previewResult?.input === previewInput
     ? previewResult.state
     : { status: 'loading' };
   useEffect(() => {
     if (!previewInput.template || !previewInput.format || previewInput.format.type !== 'thermal') return;
-    const { template, format, values } = previewInput;
+    const { template, format, values, blanked } = previewInput;
     return prepareRunPreview(
       () => generateZPLWithImages(template, format, values),
-      (zpl) => renderZplToDataUrl(zpl, format),
+      // Nothing typed yet: every part is left out of the picture, so draw the
+      // plain label with its striped empty parts, not the renderer's refusal.
+      (zpl) => renderZplToDataUrl(zpl, format).catch((error) => {
+        if (blanked && isNothingToDrawError(error)) return blankLabelDataUrl(format);
+        throw error;
+      }),
       (state) => setPreviewResult({ input: previewInput, state }),
     );
   }, [previewInput]);
@@ -1037,6 +1048,33 @@ function NewRunContent() {
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
   const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
+
+  // The review picture opens on the first label with a problem (label 12,
+  // say), not on label 1, so the person sees what the message is about. It
+  // jumps once per problem, then the pager is theirs again.
+  const firstProblemIndex = useMemo(() => {
+    if (inputMode === 'manual' || labelCount <= 1) return null;
+    const inRun: number[] = [];
+    for (const issue of [...barcodeCheck.issues, ...characterCheck.issues]) if (issue.label > 0) inRun.push(issue.label - 1);
+    // Blank rows are numbered over the whole file; left-out rows aren't shown.
+    for (const issue of blankCheck.issues) {
+      if (issue.kind !== 'empty-rows' || issue.count >= allDataRows.length) continue;
+      for (const row of issue.rows) {
+        const index = keptRows ? keptRows.indexOf(row - 1) : row - 1;
+        if (index >= 0) inRun.push(index);
+      }
+    }
+    if (!inRun.length) for (const warning of barcodeCheck.warnings) if (warning.label > 0) inRun.push(warning.label - 1);
+    const first = inRun.filter((index) => index < labelCount).sort((a, b) => a - b)[0];
+    return first === undefined ? null : first;
+  }, [inputMode, labelCount, barcodeCheck, characterCheck, blankCheck, allDataRows.length, keptRows]);
+  const jumpedTo = useRef<number | null>(null);
+  useEffect(() => {
+    if (firstProblemIndex === null) { jumpedTo.current = null; return; }
+    if (jumpedTo.current === firstProblemIndex) return;
+    jumpedTo.current = firstProblemIndex;
+    setPreviewIndex(firstProblemIndex);
+  }, [firstProblemIndex]);
   // Going ahead anyway takes an explicit tick (those characters print as
   // junk); the bytes sent to the printer don't change either way.
   const characterKey = characterCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.chars.join('')}`).join('\n');
@@ -1312,6 +1350,7 @@ function NewRunContent() {
       });
       if (presetId) void updatePreset(presetId, { touch: true });
       clearRunDraft();
+      rememberRunSource(inputMode);
       if (blankCheck.issues.length && leaveBlank) rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, run.id, blankCheck.signature);
       // The go-ahead given here carries to the run page, for the same problems.
       if ((barcodeGoAhead && barcodeWords.carriesOver) || (layoutIssues.length && layoutOk)) {
@@ -1408,9 +1447,18 @@ function NewRunContent() {
   const currentStep = workflowSteps.findIndex((s) => !s.done);
   const tightGroups = describeBarcodeGroups(barcodeCheck.warnings, barcodeCheck.checkedLabels, fieldIsFromSheet, 3, barcodeCheck.fitCounts);
   const characterItems = characterCheck.issues.slice(0, 5).map((issue) => describePrinterCharacterIssue(issue, fieldIsFromSheet(issue.field)));
-  const previewMessage = previewState.status === 'error' && checkTemplate
-    ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
-    : '';
+  // Type mode before anything is typed: one calm next step, not a list of
+  // empty fields (they are only marked once someone leaves one empty).
+  const manualUntyped = inputMode === 'manual' && dynamicFields.length > 0 && dynamicFields.every((f) => !(staticValues[f] ?? '').trim());
+  // A label whose barcode value has characters a barcode can't hold can't be
+  // drawn at all: say that in plain words (the problem and its fixes are
+  // listed under the picture), not the renderer's own error.
+  const shownBadBarcode = previewState.status === 'error' && barcodeCheck.issues.some((issue) => issue.kind !== 'too-long' && issue.kind !== 'tight' && issue.label > feedStart && issue.label <= feedStart + across);
+  const previewMessage = shownBadBarcode
+    ? `The barcode on ${across > 1 ? 'these labels' : 'this label'} can’t be drawn: its value has characters a barcode can’t hold.`
+    : previewState.status === 'error' && checkTemplate
+      ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
+      : '';
   const sheetWord = inputMode === 'manifest' ? 'Nabis data' : 'spreadsheet';
   // A workbook with several sheets: pick the labels' sheet here (no reordering in Excel).
   const sheetNames = fileInfo?.sheetNames ?? [];
@@ -1443,7 +1491,10 @@ function NewRunContent() {
       <div className="flex-1 overflow-auto">
         <div className="page-container space-y-5" style={{ paddingBottom: footerHeight + 24 }}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <h1 className="text-2xl font-semibold text-zinc-100">New run</h1>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-zinc-100">New run</h1>
+              <p className="mt-1 text-sm text-zinc-400">Pick a design, add your values, then check the labels and print.</p>
+            </div>
             <ol className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Progress">
               {workflowSteps.map((step, index) => {
                 const current = index === currentStep;
@@ -1529,7 +1580,8 @@ function NewRunContent() {
                       return {
                         value: t.id,
                         label: t.name,
-                        sublabel: f ? `${f.name} — ${f.width}" × ${f.height}"` : '',
+                        // The size once: many label size names already say it.
+                        sublabel: f ? (f.name.includes(`${f.width}" × ${f.height}"`) || f.name.includes(`${f.width}"×${f.height}"`) ? f.name : `${f.name} — ${f.width}" × ${f.height}"`) : '',
                       };
                     })}
                   />
@@ -2022,10 +2074,12 @@ function NewRunContent() {
                         selectedLabelOffset={selectedSheetLabelOffset}
                       />
                     ) : (
-                      <LocalZplPreview state={previewState} message={previewMessage} format={format} blanks={previewBlanks.boxes} />
+                      <LocalZplPreview state={previewState} message={previewMessage} hint={shownBadBarcode ? '' : undefined} format={format} blanks={previewBlanks.boxes} />
                     )}
                   </div>
-                  {previewBlanks.emptyFields.length > 0 && (
+                  {manualUntyped ? (
+                    <p className="text-center text-sm text-zinc-400">Type the values above to see them on the label.</p>
+                  ) : previewBlanks.emptyFields.length > 0 && (
                     <p className="text-center text-sm text-zinc-400">
                       {andList(previewBlanks.emptyFields.map((field) => friendlyFieldName(field)))} {previewBlanks.emptyFields.length === 1 ? 'has' : 'have'} no value on {across > 1 || format.type === 'sheet' ? 'these labels' : 'this label'}, so {previewBlanks.emptyFields.length === 1 ? 'it’s' : 'they’re'} shown empty{previewBlanks.boxes.length ? ' (striped)' : ''}.
                     </p>
@@ -2048,7 +2102,7 @@ function NewRunContent() {
                         </div>
                       </div>
                     )}
-                    {hasData && template && !nabisCoversBlanks && (
+                    {hasData && template && !nabisCoversBlanks && !manualUntyped && (
                       <BlankSummary
                         check={blankCheck}
                         mode={inputMode}
@@ -2227,12 +2281,12 @@ function NewRunContent() {
 
 // Inline ZPL preview via zpl-renderer-js WASM: exactly what the printer
 // makes, so label edges are off unless asked for (rolls with 2+ across).
-function LocalZplPreview({ state, message, format, blanks = [] }: { state: RunPreviewState; message?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; blanks?: ReadonlyArray<PreviewBlankBox> }) {
+function LocalZplPreview({ state, message, hint = 'Fix the value or the design, then check again.', format, blanks = [] }: { state: RunPreviewState; message?: string; hint?: string; format: { width: number; height: number; dpi?: number; type: string; labelsAcross?: number; horizontalGapThermal?: number; sideMarginThermal?: number; linerWidth?: number }; blanks?: ReadonlyArray<PreviewBlankBox> }) {
   const [showEdges, setShowEdges] = useState(false);
   // Big labels (4" × 6") shrink to fit the page; "Zoom in" shows them at
   // print size so small text can be checked, scrolling inside the frame.
   const [zoomed, setZoomed] = useState(false);
-  if (state.status === 'error') return <p role="alert" className="text-sm text-red-400">{message || state.message} Fix the value or the design, then check again.</p>;
+  if (state.status === 'error') return <p role="alert" className="text-sm text-red-400">{message || state.message}{hint ? ` ${hint}` : ''}</p>;
   if (state.status === 'loading') return <p role="status" className="text-sm text-zinc-400">Drawing the label…</p>;
   if (state.status === 'empty') return <p className="text-sm text-zinc-400">Nothing would print. Check the design and data.</p>;
   const across = (format.labelsAcross ?? 1) > 1;
