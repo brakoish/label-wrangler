@@ -181,17 +181,32 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
     if (saving.current) return;
     saving.current = true;
     setBusy(true); setProblem('');
-    let done = 0; const failed: string[] = [];
+    let done = 0; const failed: string[] = []; const changed: string[] = [];
+    // The list can be a few seconds old: each run is read again just before it
+    // is written, so a run another device started printing (or cancelled,
+    // or finished) since is never paused or changed from here.
+    const norm = (r: { status: string; printedCount?: number | null; totalLabels: number }) => (r.status === 'completed' && (r.printedCount || 0) < r.totalLabels ? 'paused' : r.status);
     for (const run of runs.filter((r) => picked.has(r.id))) {
       const plan = run.office?.markable;
       if (!plan?.ranges.length) continue;
-      const printed = run.printedCount || 0;
+      let fresh: Run;
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(run.id)}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(String(response.status));
+        fresh = await response.json() as Run;
+      } catch { failed.push(run.name); continue; }
+      if (norm(fresh) !== norm(run) || fresh.totalLabels !== run.totalLabels) {
+        changed.push(run.name);
+        setPicked((current) => { const next = new Set(current); next.delete(run.id); return next; });
+        continue;
+      }
+      const printed = fresh.printedCount || 0;
       const through = Math.max(printed, plan.through);
       const refused = { reason: '' };
       try {
         if (through > printed) {
           // Never "paused" under a device that is printing this run: progress only.
-          await recordPrinted(run.id, through, statusAfterMarkPrinted(run.status, through, run.totalLabels), { onSetAside: (reason) => { refused.reason = reason; } });
+          await recordPrinted(run.id, through, statusAfterMarkPrinted(fresh.status, through, fresh.totalLabels), { onSetAside: (reason) => { refused.reason = reason; } });
           if (refused.reason) { failed.push(run.name); continue; }
         }
         for (const r of plan.ranges) {
@@ -204,7 +219,10 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
     }
     saving.current = false;
     setBusy(false);
-    if (failed.length) { setProblem(`${done ? `${done === 1 ? '1 run was' : `${done} runs were`} marked printed. ` : ''}${failed.length === 1 ? `“${failed[0]}” didn’t` : `${failed.length} runs didn’t`} save. Try again in a moment.`); return; }
+    const doneWords = done ? `${done === 1 ? '1 run was' : `${done} runs were`} marked printed. ` : '';
+    const changedWords = changed.length ? `${changed.length === 1 ? `“${changed[0]}” changed` : `${changed.length} runs changed`} on another device, so ${changed.length === 1 ? 'it wasn’t' : 'they weren’t'} marked. Open ${changed.length === 1 ? 'it' : 'them'} to check. ` : '';
+    const failedWords = failed.length ? `${failed.length === 1 ? `“${failed[0]}” didn’t` : `${failed.length} runs didn’t`} save. Try again in a moment.` : '';
+    if (failed.length || changed.length) { setProblem(`${doneWords}${changedWords}${failedWords}`.trim()); return; }
     onClose();
     toast(`${done === 1 ? '1 run' : `${done} runs`} marked printed`);
   };
@@ -232,7 +250,11 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
       {leftOut.length > 0 && <ul className="space-y-1 text-sm text-zinc-400">
         {leftOut.map((run) => {
           const first = run.office?.firstFailed;
-          const why = first ? `${officeProblemWords(first).action.replace(/\.$/, '')} first` : (run.office?.failed ?? 0) > 0 ? 'part of it needs a check first' : 'some of its labels are still on their way to the office printer';
+          const labels = first ? (first.from === first.to ? `label ${first.from.toLocaleString()}` : `labels ${first.from.toLocaleString()}–${first.to.toLocaleString()}`) : '';
+          const one = !!first && first.from === first.to;
+          const why = first
+            ? (first.kind === 'needs-check' || (!first.kind && !first.didNotPrint) ? `${labels} need${one ? 's' : ''} a check first` : `${labels} need${one ? 's' : ''} printing again first`)
+            : (run.office?.failed ?? 0) > 0 ? 'part of it needs a check first' : 'some of its labels are still on their way to the office printer';
           return <li key={run.id}>“{run.name}” isn’t included: {why}.</li>;
         })}
       </ul>}
