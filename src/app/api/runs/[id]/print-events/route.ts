@@ -62,4 +62,4 @@ async function handlePOST(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export const GET = withOfficeAuth(handleGET);
 
-export const POST = withOfficeAuth(handlePOST);
+export const POST = withOfficeAuth(handlePOST, 'print-or-edit');

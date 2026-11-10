@@ -3,6 +3,7 @@ for(const file of [
  'scripts/production/test-reliability.cjs',
  'scripts/production/test-outbox.cjs',
  'scripts/production/test-run-progress.cjs',
+ 'scripts/production/test-permissions.cjs',
  'scripts/production/test-run-images.cjs',
  'scripts/production/test-run-preview.cjs',
  'scripts/production/test-template-previews.cjs',

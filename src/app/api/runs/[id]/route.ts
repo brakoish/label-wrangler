@@ -1,7 +1,7 @@
 import { loadRunWithDesign } from '@/lib/runDesign.server';
 import { validatedBody, OfficeError } from '@/lib/validation';
 import { randomUUID } from 'node:crypto';
-import { withOfficeAuth } from "@/lib/office/guard";
+import { withOfficeAuth, officeUserFor } from "@/lib/office/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { runs } from "@/lib/db/schema";
@@ -20,10 +20,14 @@ async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
+const PROGRESS_FIELDS = new Set(['printedCount', 'status', 'completedAt', 'progressOnly', 'resetProgress']);
+
 async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const body = await validatedBody(req, 'run', false);
+    // Recording print progress is printing work; anything else edits the run.
+    if (Object.keys(body).some(key => !PROGRESS_FIELDS.has(key)) && !officeUserFor(req)?.can_edit) throw new OfficeError('Your account does not have permission', 403);
     const [current] = await db.select({totalLabels:runs.totalLabels,printedCount:runs.printedCount}).from(runs).where(eq(runs.id,id));
     if (!current) throw new OfficeError('Run not found',404);
     const total = Array.isArray(body.sourceData) ? body.sourceData.length : current.totalLabels;
@@ -76,6 +80,6 @@ async function handleDELETE(_req: NextRequest, { params }: { params: Promise<{ i
 
 export const GET = withOfficeAuth(handleGET);
 
-export const PUT = withOfficeAuth(handlePUT);
+export const PUT = withOfficeAuth(handlePUT, 'print-or-edit');
 
 export const DELETE = withOfficeAuth(handleDELETE);

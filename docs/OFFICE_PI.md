@@ -10,7 +10,7 @@ Only `office-zebra-pi` / `black-zebra` is configured. The printer is `Black Zebr
 
 ## Authentication and authorization
 
-This installation has one shared office library. Individual enabled office accounts may read that library. Editing and printing are separate explicit account permissions; printing also requires a station/printer ACL entry. Every existing library API is protected, including mutations, so anonymous callers cannot alter the templates or run data used by the trusted print generator. Page proxy redirects are only optimistic; actual session validation occurs in API handlers.
+This installation has one shared office library. Individual enabled office accounts may read that library. Editing and printing are separate explicit account permissions; printing also requires a station/printer ACL entry. Recording a run's print progress and print history needs either permission; creating, renaming, re-sourcing or deleting runs and changing templates, formats, presets or saved blocks needs edit. Every existing library API is protected, including mutations, so anonymous callers cannot alter the templates or run data used by the trusted print generator. Page proxy redirects are only optimistic; actual session validation occurs in API handlers.
 
 Passwords use salted scrypt verifiers. Random sessions are hashed in the database, expire after 12 hours, and use Secure/HttpOnly/SameSite=Strict cookies in production. Mutating browser requests require an exact Origin match to `OFFICE_APP_ORIGIN` (defaults to the production alias). Login attempts are throttled durably per username. There is no public account registration.
 
