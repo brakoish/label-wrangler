@@ -38,26 +38,26 @@ export function RunImagePicker({ template, selections, onChange, onBusyChange }:
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not load image.'); }
     finally { if (mounted.current) { setBusy(false); onBusyChange(false); } }
   }
-  return <section className="rounded-xl border border-zinc-800 p-4 space-y-3">
-    <h2 className="text-sm font-medium text-zinc-200">Run images</h2>
-    <p className="text-xs text-zinc-500">Choose once per slot for every label in this run. Leave unchanged to use the template default. Choices are saved with the run, not the preset. PNG, JPEG or WebP; 1 MB each, 16 megapixels max.</p>
+  return <section className="card p-4 sm:p-5 space-y-3">
+    <h2 className="text-base font-semibold text-zinc-100">Run images</h2>
+    <p className="text-sm text-zinc-400">Choose once per slot for every label in this run. Leave unchanged to use the template default. Choices are saved with the run, not the preset. PNG, JPEG or WebP; 1 MB each, 16 megapixels max.</p>
     {slots.map((slot, index) => <div key={slot.id} className="flex items-center gap-3">
-      <img src={selections[slot.id] ?? slot.src} alt={'Image slot ' + (index + 1) + ' preview'} className="w-20 h-20 bg-white rounded border border-zinc-700" style={{ objectFit: slot.objectFit }} />
-      <div className="min-w-0 space-y-1">
-        <p className="text-xs text-zinc-300">{slot.fieldName || ('Image slot ' + (index + 1))}</p>
+      <img src={selections[slot.id] ?? slot.src} alt={'Image slot ' + (index + 1) + ' preview'} className="size-20 shrink-0 bg-white rounded-md" style={{ objectFit: slot.objectFit }} />
+      <div className="min-w-0 flex flex-wrap items-center gap-x-1 gap-y-1">
+        <p className="w-full text-sm font-medium text-zinc-200">{slot.fieldName || ('Image slot ' + (index + 1))}</p>
         <input ref={node => { inputs.current[slot.id] = node; }} type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} className="hidden" aria-label={'Choose image for ' + (slot.fieldName || ('slot ' + (index + 1)))} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(slot.id, file); }} />
-        <button type="button" disabled={busy} className="btn btn-secondary btn-sm block border border-zinc-600" onClick={() => inputs.current[slot.id]?.click()}>{Object.hasOwn(selections, slot.id) ? 'Replace image' : 'Choose image'}</button>
-        <button type="button" disabled={busy} className="block text-xs text-amber-400" onClick={() => { setLibrarySlot(slot.id); if (!hydrated) void fetchGlobals(); }}>Choose from saved blocks</button>
-        <p className="text-xs text-zinc-500">{Object.hasOwn(selections, slot.id) ? 'Selected for this run' : 'Using template image'}</p>
-        <button type="button" disabled={busy || !Object.hasOwn(selections, slot.id)} className="text-xs text-amber-400 disabled:opacity-40" onClick={() => { const next = { ...selections }; delete next[slot.id]; onChange(next); setError(''); }}>Reset to template image</button>
+        <button type="button" disabled={busy} className="btn btn-secondary btn-sm" onClick={() => inputs.current[slot.id]?.click()}>{Object.hasOwn(selections, slot.id) ? 'Replace image' : 'Choose image'}</button>
+        <button type="button" disabled={busy} className="btn btn-ghost btn-sm" onClick={() => { setLibrarySlot(slot.id); if (!hydrated) void fetchGlobals(); }}>Choose from saved blocks</button>
+        <p className="w-full text-xs text-zinc-500">{Object.hasOwn(selections, slot.id) ? 'Selected for this run' : 'Using template image'}</p>
+        <button type="button" disabled={busy || !Object.hasOwn(selections, slot.id)} className="btn btn-ghost btn-sm" onClick={() => { const next = { ...selections }; delete next[slot.id]; onChange(next); setError(''); }}>Reset to template image</button>
       </div>
     </div>)}
-    {librarySlot && <div className="rounded-lg border border-zinc-700 p-3 space-y-2">
-      <div className="flex justify-between"><h3 className="text-xs text-zinc-300">Images from saved blocks</h3><button type="button" className="text-xs text-zinc-400" onClick={() => setLibrarySlot(null)}>Close</button></div>
-      <div className="flex flex-wrap gap-2">{savedImages.map(image => <button key={image.id} type="button" disabled={busy} className="w-24 rounded border border-zinc-700 p-1 text-xs text-zinc-300 hover:border-amber-500" onClick={() => { try { const next = { ...selections, [librarySlot]: image.src }; validateRunImages(next); onChange(next); setLibrarySlot(null); setError(''); } catch (e) { setError(e instanceof Error ? e.message : 'Unsupported saved image'); } }}><img src={image.src} alt={image.name} className="h-16 w-full object-contain bg-white" /><span>{image.name}</span></button>)}</div>
+    {librarySlot && <div className="rounded-lg bg-zinc-950 p-3 space-y-2">
+      <div className="flex justify-between"><h3 className="section-title">Images from saved blocks</h3><button type="button" className="btn btn-ghost btn-sm -mr-2" onClick={() => setLibrarySlot(null)}>Close</button></div>
+      <div className="flex flex-wrap gap-2">{savedImages.map(image => <button key={image.id} type="button" disabled={busy} className="w-24 rounded-md border border-zinc-800 p-1 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:border-amber-500" onClick={() => { try { const next = { ...selections, [librarySlot]: image.src }; validateRunImages(next); onChange(next); setLibrarySlot(null); setError(''); } catch (e) { setError(e instanceof Error ? e.message : 'Unsupported saved image'); } }}><img src={image.src} alt={image.name} className="h-16 w-full object-contain bg-white" /><span>{image.name}</span></button>)}</div>
       {!loading && !savedImages.length && <p className="text-xs text-zinc-500">No images in loaded saved blocks. Upload an image, or save one as a reusable element in the designer.</p>}
       {libraryError && <p role="alert" className="text-xs text-red-400">{libraryError}</p>}
-      {(hasMore || libraryError) && <button type="button" disabled={loading} className="text-xs text-amber-400" onClick={() => void fetchGlobals(hasMore)}>Load saved blocks</button>}
+      {(hasMore || libraryError) && <button type="button" disabled={loading} className="btn btn-secondary btn-sm" onClick={() => void fetchGlobals(hasMore)}>Load saved blocks</button>}
       {loading && <p role="status" className="text-xs text-zinc-500">Loading saved blocks…</p>}
     </div>}
     {busy && <p role="status" className="text-xs text-zinc-400">Loading image…</p>}

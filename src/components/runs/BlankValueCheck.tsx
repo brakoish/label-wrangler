@@ -24,8 +24,8 @@ export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhe
   if (!check.issues.length) {
     if (!showWhenOk || check.checkedLabels === 0) return null;
     return (
-      <p className="flex items-center gap-1.5 text-xs text-emerald-400">
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+      <p className="flex items-center gap-1.5 text-sm text-emerald-400">
+        <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
         {describeBlankSummary(check)}
       </p>
     );
@@ -33,7 +33,7 @@ export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhe
   const lines = check.issues.slice(0, MAX_LINES).map((issue) => describeBlankIssue(issue, check.checkedLabels));
   const hiddenCount = check.issues.length - lines.length;
   return (
-    <div role="alert" className={`rounded-lg border border-amber-500/30 bg-amber-500/10 ${compact ? 'p-2.5' : 'p-3'} space-y-2 text-xs text-amber-300`}>
+    <div role="alert" className={`rounded-lg border border-amber-500/30 bg-amber-500/10 ${compact ? 'p-2.5' : 'p-3'} space-y-2 text-sm text-amber-200`}>
       <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-300">
         <AlertCircle className="h-4 w-4 shrink-0" />
         {describeBlankSummary(check)}
@@ -42,10 +42,10 @@ export function BlankValueCheck({ check, leaveBlank, onLeaveBlankChange, showWhe
         {lines.map((line) => <li key={line}>{line}</li>)}
         {hiddenCount > 0 && <li>…and {hiddenCount} more field{hiddenCount === 1 ? '' : 's'}.</li>}
       </ul>
-      <p className="text-amber-300">{remedy ?? blankRemedy(check)}</p>
+      <p className="text-amber-200">{remedy ?? blankRemedy(check)}</p>
       {check.canLeaveBlank && (
-        <label htmlFor={checkboxId} className="flex items-start gap-2 rounded-md bg-zinc-950/40 p-2 text-amber-300">
-          <input id={checkboxId} type="checkbox" className="mt-0.5 accent-amber-500" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />
+        <label htmlFor={checkboxId} className="flex items-start gap-2 rounded-md bg-zinc-950 p-2.5 text-zinc-200">
+          <input id={checkboxId} type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={leaveBlank} onChange={(e) => onLeaveBlankChange(e.target.checked)} />
           <span>Print {check.blankLabels === 1 ? 'this label' : `these ${check.blankLabels.toLocaleString()} labels`} with {check.issues.length === 1 ? 'that field' : 'those fields'} left blank.</span>
         </label>
       )}

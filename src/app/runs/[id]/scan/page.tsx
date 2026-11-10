@@ -199,8 +199,8 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             <h1 className="text-lg font-semibold text-zinc-100">{loadError.status === 404 ? 'We couldn\u2019t find that run' : 'We couldn\u2019t load that run'}</h1>
             <p className="text-sm text-zinc-400">{loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}</p>
             <div className="flex justify-center gap-2">
-              {loadError.status !== 404 && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="min-h-10 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-black">Try again</button>}
-              <Link href="/runs" className="min-h-10 inline-flex items-center rounded-lg border border-zinc-700 px-4 text-sm text-zinc-200">Back to runs</Link>
+              {loadError.status !== 404 && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="btn btn-primary" data-x="text-black">Try again</button>}
+              <Link href="/runs" className="btn btn-secondary">Back to runs</Link>
             </div>
           </div>
         </div>
@@ -236,26 +236,26 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
   return (
     <AppShell>
       <PageTitle title={`Scan \u00b7 ${run.name}`} />
-      <div className={`flex-1 flex flex-col items-center justify-center p-8 transition-colors ${
+      <div className={`flex-1 flex flex-col items-center justify-start sm:justify-center p-4 sm:p-8 transition-colors duration-300 ${
         flash === 'ok' ? 'bg-emerald-500/10' : flash === 'error' ? 'bg-red-500/10' : ''
       }`}>
         <div className="w-full max-w-xl">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between gap-3 mb-5">
             <Link
               href={`/runs/${run.id}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+              className="btn btn-ghost btn-sm -ml-3 shrink-0"
             >
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to run
+              <ArrowLeft className="size-4" aria-hidden="true" /> Back to run
             </Link>
-            <div className="text-xs text-zinc-500 truncate">
+            <div className="min-w-0 text-xs text-zinc-400 truncate">
               {run.name} · {template.name} · {format.name}
             </div>
           </div>
 
           {/* Transport status strip */}
-          <section className="mb-6 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 flex items-center gap-3">
-            <ScanBarcode className={`w-5 h-5 ${canPrint ? 'text-amber-400' : 'text-zinc-500'}`} />
-            <div className="flex-1 text-xs">
+          <section className="card mb-5 p-3 sm:p-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <ScanBarcode className={`w-5 h-5 shrink-0 ${canPrint ? 'text-emerald-400' : 'text-zinc-500'}`} aria-hidden="true" />
+            <div className="min-w-0 flex-1 text-sm">
               {transport === 'dazzle' && dazzlePrinters.length > 0 && (
                 <span className="text-zinc-400">Printing on this computer (Dazzle app) → <span className="text-zinc-200">{dazzleSelected}</span></span>
               )}
@@ -277,17 +277,17 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                         if ((err as Error).name !== 'NotFoundError') setTransportError('Couldn\u2019t connect to the USB printer. Check the cable, then try again.');
                       }
                     }}
-                    className="flex min-h-10 items-center gap-1.5 text-amber-400 hover:text-amber-300"
+                    className="btn btn-secondary btn-sm"
                   >
-                    <Plug className="w-3.5 h-3.5" /> Connect USB printer
+                    <Plug className="size-4" aria-hidden="true" /> Connect USB printer
                   </button>
                 )
               )}
               {!transport && <span className="text-red-400">{transportError || 'No printer available'}</span>}
             </div>
             {targetField && (
-              <span className="text-xs text-zinc-500">
-                Each scan fills: <span className="text-amber-400 font-mono">{targetField}</span>
+              <span className="text-sm text-zinc-400">
+                Each scan fills <span className="font-medium text-zinc-100">{targetField}</span>
               </span>
             )}
           </section>
@@ -298,15 +298,15 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
             className="mb-4"
           >
             {blankCheck && blankCheck.issues.length > 0 && <div className="mb-3"><BlankValueCheck check={blankCheck} leaveBlank={leaveBlank} onLeaveBlankChange={setLeaveBlank} showWhenOk={false} compact remedy={`Each scan only fills ${targetField}. To scan with this design, open it and set the other field${blankCheck.issues.length === 1 ? '' : 's'} to "Same on every label", or print this run from the run page instead.`} /></div>}
-            <label htmlFor="scan-input" className="text-xs text-zinc-500 font-semibold mb-2 block">
+            <label htmlFor="scan-input" className="field-label mb-1.5">
               Scan or type, then press Enter
             </label>
-            <div className={`relative rounded-xl border-2 transition-colors ${
+            <div className={`relative rounded-xl border-2 transition-colors duration-200 ${
               flash === 'ok'
-                ? 'border-emerald-500/30'
+                ? 'border-emerald-500'
                 : flash === 'error'
-                  ? 'border-red-500/30'
-                  : 'border-amber-500/30'
+                  ? 'border-red-500'
+                  : 'border-zinc-700 focus-within:border-amber-500'
             }`}>
               <input
                 ref={inputRef}
@@ -317,11 +317,12 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 placeholder={canPrint ? 'Waiting for a scan…' : !blanksOk ? 'Fill the missing values first' : 'Connect a printer first'}
                 autoFocus
                 disabled={!canPrint || busy}
-                className="w-full bg-zinc-950 rounded-xl text-2xl font-mono text-zinc-100 px-5 py-5 pr-16 disabled:opacity-40"
+                className="w-full bg-zinc-950 rounded-[10px] text-xl sm:text-2xl font-mono text-zinc-100 px-4 py-4 sm:px-5 sm:py-5 pr-14 placeholder:font-sans placeholder:text-zinc-500 focus-visible:outline-0 disabled:opacity-50"
               />
-              <div className="absolute right-5 top-1/2 -translate-y-1/2">
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 sm:right-5">
+                <span key={busy ? 'busy' : flash ?? 'idle'} className={`block ${flash === 'ok' && !busy ? 'animate-success' : 'animate-icon'}`}>
                 {busy ? (
-                  <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
+                  <Loader2 className="w-6 h-6 text-zinc-400 animate-spin" />
                 ) : flash === 'ok' ? (
                   <CheckCircle2 className="w-6 h-6 text-emerald-400" />
                 ) : flash === 'error' ? (
@@ -329,11 +330,12 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
                 ) : (
                   <ScanBarcode className="w-6 h-6 text-zinc-500" />
                 )}
+                </span>
               </div>
             </div>
             {!targetField && (
-              <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5" />
+              <p className="mt-2 text-sm text-red-400 flex items-start gap-1.5">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
                 Nothing on this design changes per label, so there&apos;s nowhere for a scan to go. Open the design and set one part to &ldquo;Changes per label&rdquo;.
               </p>
             )}
@@ -341,21 +343,21 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
 
           {/* History \u2014 newest first, 10 entries. */}
           {history.length > 0 && (
-            <section className="mt-6 space-y-1.5">
-              <h3 className="text-xs text-zinc-500 font-semibold mb-2">Recent scans</h3>
+            <section className="mt-6 space-y-1 stagger">
+              <h3 className="section-title mb-2">Recent scans</h3>
               {history.map((h) => (
                 <div
                   key={h.id}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
                     h.status === 'ok'
-                      ? 'bg-emerald-500/10 border border-emerald-500/30 text-zinc-300'
-                      : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                      ? 'bg-zinc-900 text-zinc-200'
+                      : 'bg-red-500/10 text-red-300'
                   }`}
                 >
                   {h.status === 'ok'
-                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    : <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
-                  <span className="flex-1 truncate">{h.value}</span>
+                    ? <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
+                    : <AlertCircle className="size-4 text-red-400 shrink-0" />}
+                  <span className="flex-1 truncate font-mono text-xs">{h.value}</span>
                   {h.message && <span className="text-xs text-red-400 truncate max-w-[180px]">{h.message}</span>}
                   <span className="text-xs text-zinc-500 tabular-nums shrink-0">
                     {new Date(h.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}

@@ -82,7 +82,7 @@ export default function SheetRunPrintPage({
         <div role="alert" className="max-w-md text-center space-y-3">
           <h1 className="text-lg font-semibold">{loadError.status === 404 ? 'We couldn\u2019t find that run' : 'We couldn\u2019t load that run'}</h1>
           <p className="text-sm text-zinc-400">{loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}</p>
-          <Link href="/runs" className="inline-flex min-h-10 items-center rounded-lg border border-zinc-700 px-4 text-sm">Back to runs</Link>
+          <Link href="/runs" className="btn btn-secondary">Back to runs</Link>
         </div>
       </main>
     );
@@ -97,7 +97,7 @@ export default function SheetRunPrintPage({
             Can&apos;t print yet
           </div>
           <p className="mt-2 text-sm text-zinc-300">{error}</p>
-          <a href={`/runs/${encodeURIComponent(id)}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-zinc-700 px-4 text-sm text-zinc-100">Back to the run</a>
+          <a href={`/runs/${encodeURIComponent(id)}`} className="btn btn-secondary mt-3">Back to the run</a>
         </div>
       </main>
     );
@@ -106,9 +106,9 @@ export default function SheetRunPrintPage({
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 grid place-items-center p-6">
       <div className="grid gap-2 text-center text-sm">
-        <Loader2 className="w-5 h-5 animate-spin justify-self-center text-amber-400" />
-        <div className="font-semibold text-amber-400">Preparing the print page…</div>
-        <div className="text-zinc-500">{run?.name || 'Loading run'}</div>
+        <Loader2 className="w-5 h-5 animate-spin justify-self-center text-zinc-400" aria-hidden="true" />
+        <div className="font-medium text-zinc-100">Preparing the print page…</div>
+        <div className="text-zinc-400">{run?.name || 'Loading run'}</div>
       </div>
     </main>
   );

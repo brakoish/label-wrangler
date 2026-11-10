@@ -18,7 +18,7 @@ export default function LoginPage(){
       .catch(()=>{}); // Leave the normal login form available on failure.
     return ()=>controller.abort();
   },[]);
-  return <main className="min-h-screen grid place-items-center p-6"><form className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 space-y-4" onSubmit={async(e)=>{
+  return <main className="min-h-dvh grid place-items-center p-4 sm:p-6"><form className="card w-full max-w-sm p-6 space-y-4" onSubmit={async(e)=>{
     e.preventDefault();setBusy(true);setError('');
     const form=new FormData(e.currentTarget);
     try{
@@ -33,15 +33,15 @@ export default function LoginPage(){
       window.location.assign(nextPath());
     }catch(err){setError(isNetworkError(err)?OFFLINE_MESSAGE:err instanceof Error?err.message:'Sign-in didn\u2019t work. Try again.');setBusy(false);}
   }}>
-    <h1 className="text-xl font-semibold text-amber-400">Label Wrangler</h1>
-    <p className="text-sm text-zinc-400">Sign in with your office account.</p>
-    <label htmlFor="login-username" className="block text-sm">Username</label>
-    <input id="login-username" required name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="-mt-3 w-full rounded border border-zinc-700 bg-zinc-900 p-2 text-base" />
-    <label htmlFor="login-password" className="block text-sm">Password</label>
-    <input id="login-password" required name="password" type="password" autoComplete="current-password" className="-mt-3 w-full rounded border border-zinc-700 bg-zinc-900 p-2 text-base" />
-    <label className="flex items-center gap-2 text-sm"><input name="staySignedIn" type="checkbox" className="accent-amber-500" />Stay signed in for 30 days</label>
+    <h1 className="text-xl font-semibold text-zinc-50">Label Wrangler</h1>
+    <p className="-mt-2 text-sm text-zinc-400">Sign in with your office account.</p>
+    <label htmlFor="login-username" className="field-label">Username</label>
+    <input id="login-username" required name="username" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} className="field -mt-2.5 text-base" />
+    <label htmlFor="login-password" className="field-label">Password</label>
+    <input id="login-password" required name="password" type="password" autoComplete="current-password" className="field -mt-2.5 text-base" />
+    <label className="flex min-h-control-sm items-center gap-2 text-sm text-zinc-300"><input name="staySignedIn" type="checkbox" className="size-4 accent-amber-500" />Stay signed in for 30 days</label>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-    <button disabled={busy} className="w-full min-h-11 rounded bg-amber-500 p-2 font-semibold text-black disabled:opacity-50">{busy?'Signing in…':'Sign in'}</button>
+    <button disabled={busy} className="btn btn-primary w-full">{busy?'Signing in…':'Sign in'}</button>
     <p className="text-xs text-zinc-500">Forgot your password? Ask Will to reset your password.</p>
   </form></main>;
 }

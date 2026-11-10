@@ -5,7 +5,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import {
   Check,
-  Edit3,
   PackageCheck,
   Plus,
   Printer,
@@ -160,7 +159,7 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
 
   return (
     <form
-      className="grid grid-cols-1 gap-3 rounded-lg border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] [&>*]:min-w-0"
+      className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] [&>*]:min-w-0"
       onSubmit={(event) => {
         event.preventDefault();
         if (!canAdd) return;
@@ -203,7 +202,7 @@ function ManualPackageForm({ onAdd }: { onAdd: (pkg: PackageResult) => void }) {
       <button
         type="submit"
         disabled={!canAdd}
-        className="btn btn-primary disabled:bg-zinc-800 disabled:text-zinc-500"
+        className="btn btn-primary"
       >
         <Plus className="h-4 w-4" />
         Add
@@ -275,7 +274,7 @@ function LabelPreview({ label }: { label: LabelInfo }) {
 
           <div className="flex min-h-0 items-center justify-center overflow-hidden border border-black px-[0.06in] text-center">
             <FittedText maxPx={12} minPx={7.5} rows={2}>
-              {label.itemName || 'Item Description'}
+              {label.itemName || 'Item description'}
             </FittedText>
           </div>
 
@@ -437,12 +436,10 @@ export default function NabisPage() {
 
       <div className="flex-1 overflow-auto">
         <div className="mx-auto grid w-full max-w-[1500px] grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0 lg:p-6">
+          <h1 className="text-2xl font-semibold text-zinc-50 lg:col-span-2">Nabis labels</h1>
           <section className="min-h-0 space-y-4">
-            <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Search className="h-4 w-4 text-amber-400" />
-                <h2 className="text-sm font-semibold text-zinc-200">Find Package</h2>
-              </div>
+            <div className="card p-4 sm:p-5">
+              <h2 className="mb-3 text-base font-semibold text-zinc-100">Find a package</h2>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <input
@@ -456,24 +453,24 @@ export default function NabisPage() {
                   <button
                     type="button"
                     onClick={() => setQuery('')}
-                    className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-900 hover:text-white"
+                    className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
                     aria-label="Clear search"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
-              {error && <p className="mt-2 text-xs text-amber-300">{error}</p>}
+              {error && <p className="mt-2 text-sm text-amber-300">{error}</p>}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5 stagger">
               {isSearching && (
-                <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 p-4 text-sm text-zinc-400">
+                <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
                   Searching Manifest...
                 </div>
               )}
               {!isSearching && query.trim().length >= 2 && results.length === 0 && (
-                <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/40 p-4 text-sm text-zinc-400">
+                <div className="rounded-lg bg-zinc-900 p-4 text-sm text-zinc-400">
                   No matching packages.
                 </div>
               )}
@@ -484,34 +481,30 @@ export default function NabisPage() {
                     type="button"
                     key={packageKey(pkg)}
                     onClick={() => selectPackage(pkg)}
-                    className={`w-full rounded-lg border p-4 text-left transition ${
+                    aria-pressed={active}
+                    className={`w-full rounded-lg border p-3 sm:p-4 text-left transition-colors ${
                       active
-                        ? 'border-amber-500/30 bg-amber-500/10'
-                        : 'border-zinc-800/70 bg-zinc-950/40 hover:border-zinc-700 hover:bg-zinc-900/70'
+                        ? 'border-zinc-600 bg-zinc-800'
+                        : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold text-white">{pkg.itemName}</p>
+                        <p className="break-words text-sm font-semibold text-zinc-50">{pkg.itemName}</p>
                         <p className="mt-1 break-all font-mono text-xs text-zinc-400">{pkg.tag}</p>
                       </div>
-                      {active ? <Check className="h-5 w-5 shrink-0 text-amber-300" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-500" />}
+                      {active ? <Check className="h-5 w-5 shrink-0 text-amber-400 animate-icon" aria-hidden="true" /> : <PackageCheck className="h-5 w-5 shrink-0 text-zinc-500" aria-hidden="true" />}
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
-                      {pkg.batch && <span className="rounded-md bg-zinc-900 px-2 py-1">Batch {pkg.batch}</span>}
-                      {pkg.quantity && <span className="rounded-md bg-zinc-900 px-2 py-1">{pkg.quantity} {pkg.unitOfMeasure}</span>}
-                      {pkg.brandName && <span className="rounded-md bg-zinc-900 px-2 py-1">{pkg.brandName}</span>}
-                    </div>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      {[pkg.batch && `Batch ${pkg.batch}`, pkg.quantity && `${pkg.quantity} ${pkg.unitOfMeasure ?? ''}`.trim(), pkg.brandName].filter(Boolean).join(' · ')}
+                    </p>
                   </button>
                 );
               })}
             </div>
 
-            <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Plus className="h-4 w-4 text-zinc-400" />
-                <h2 className="text-sm font-semibold text-zinc-200">Manual Package</h2>
-              </div>
+            <div className="card p-4 sm:p-5">
+              <h2 className="mb-3 text-base font-semibold text-zinc-100">Add a package by hand</h2>
               <ManualPackageForm
                 onAdd={(pkg) => {
                   setResults((current) => [pkg, ...current.filter((item) => item.tag !== pkg.tag)]);
@@ -522,17 +515,14 @@ export default function NabisPage() {
           </section>
 
           <section className="grid min-h-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] [&>*]:min-w-0">
-            <div className="rounded-lg border border-zinc-800/70 bg-zinc-950/35 p-4">
+            <div className="card p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Edit3 className="h-4 w-4 text-amber-400" />
-                  <h2 className="text-sm font-semibold text-zinc-200">Confirm Label</h2>
-                </div>
+                <h2 className="text-base font-semibold text-zinc-100">Check the label</h2>
                 <button
                   type="button"
                   disabled={!canPrint}
                   onClick={() => window.print()}
-                  className="btn btn-primary disabled:bg-zinc-800 disabled:text-zinc-500"
+                  className="btn btn-primary"
                 >
                   <Printer className="h-4 w-4" />
                   Print
@@ -546,13 +536,13 @@ export default function NabisPage() {
                     ['license', 'License'],
                     ['itemName', 'Item Description'],
                     ['batch', 'Batch'],
-                    ['uid', 'UID / Package Tag'],
-                    ['unitsPerCase', 'Units Per Case'],
+                    ['uid', 'UID / package tag'],
+                    ['unitsPerCase', 'Units per case'],
                     ['cases', 'Cases'],
                   ] as const
                 ).map(([field, labelText]) => (
                   <label key={field} className="block">
-                    <span className="mb-1 block text-xs font-medium text-zinc-500">{labelText}</span>
+                    <span className="field-label mb-1.5">{labelText}</span>
                     <input
                       value={label[field]}
                       onChange={(event) => setLabelField(field, event.target.value)}
