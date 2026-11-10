@@ -19,7 +19,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
   quiet?: boolean;
   /** Bumped by a "Make a picture copy" button elsewhere on the page (the barcode notice). */
   requestCopy?: number;
-  /** Admins: show the raw printer commands (kept here, out of the main view). */
+  /** Admins: the code the printer gets, for setting up printers (kept here, out of the main view). */
   onShowCode?: () => void;
   /** Changes when a problem notice appears: More closes so it never covers it. */
   closeKey?: string;
@@ -76,7 +76,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
   return <div className={inline ? 'contents' : 'text-sm'}>
     {source ? (canCopy || onShowCode) && <Menu closeKey={closeKey} items={[
       ...(canCopy ? [{ label: 'Make a picture copy…', onSelect: startCopy }] : []),
-      ...(onShowCode ? [{ label: 'Show printer commands', onSelect: onShowCode }] : []),
+      ...(onShowCode ? [{ label: 'Printer setup code', onSelect: onShowCode }] : []),
     ] satisfies MenuItem[]} /> : <div className={inline ? 'contents' : 'flex flex-wrap gap-2'}>
       <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Load the sample design</button>
       {/* In an empty state, importing is a quiet link on its own line, so the two buttons keep one row. */}

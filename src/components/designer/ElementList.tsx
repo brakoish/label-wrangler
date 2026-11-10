@@ -6,7 +6,7 @@ import { moveLayers, type LayerDirection } from '@/lib/designerLayers';
 import { TemplateElement } from '@/lib/types';
 import { elementTypeName, friendlyFieldName } from '@/lib/fieldLabels';
 import { Menu } from '@/components/ui/Menu';
-import { useLayoutEffect, useRef } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 
 interface ElementListProps {
   elements: TemplateElement[];
@@ -48,6 +48,7 @@ export function ElementList({
   const highlightRef = useRef<HTMLDivElement>(null);
   const shownFor = useRef<string | null>(null);
   const order = sortedElements.map((e) => e.id).join(',');
+  const hintId = useId();
   useLayoutEffect(() => {
     const list = listRef.current;
     const highlight = highlightRef.current;
@@ -111,6 +112,8 @@ export function ElementList({
       </div>
 
       {/* Element list */}
+      {/* One Tab stop per item: its actions open from the item (Shift+F10, the menu key or a right-click), and the arrow keys move it. */}
+      <p id={hintId} className="sr-only">Arrow keys move the selected item. Shift+F10 opens its actions.</p>
       <div ref={listRef} className="relative flex-1 overflow-y-auto px-2 pb-3 space-y-px">
         <div ref={highlightRef} aria-hidden="true" className="layer-highlight pointer-events-none absolute inset-x-2 top-0 rounded-lg bg-zinc-800 opacity-0 shadow-[inset_2px_0_0_var(--color-amber-500)]" />
         {sortedElements.length === 0 ? (
@@ -124,6 +127,7 @@ export function ElementList({
               key={element.id}
               element={element}
               isSelected={selectedElementIds.has(element.id)}
+              hintId={hintId}
               slidingHighlight={single === element.id}
               onSelect={(additive) => onSelectElement(element.id, additive)}
               onDelete={() => onDeleteElement(element.id)}
@@ -150,8 +154,11 @@ function ElementItem({
   onMove,
   canMove,
   slidingHighlight = false,
+  hintId,
 }: {
   element: TemplateElement;
+  /** The list's one hidden line on how to reach an item's actions. */
+  hintId?: string;
   isSelected: boolean;
   /** The list draws this row's highlight as the sliding shape, so the row itself stays clear. */
   slidingHighlight?: boolean;
@@ -165,11 +172,20 @@ function ElementItem({
   const icon = getElementIcon(element.type, `w-4 h-4 ${isSelected ? 'text-amber-400' : 'text-zinc-400'}`);
   const label = getElementLabel(element);
   const typeLabel = elementTypeName(element.type);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // The row's actions menu, opened from the row (keyboard or right-click), so it needs no Tab stop of its own.
+  const openActions = () => {
+    const trigger = rowRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]');
+    // Shift+F10 can also raise a contextmenu event: open once, never toggle shut.
+    if (trigger && trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+  };
 
   return (
     <div
+      ref={rowRef}
       data-layer-id={element.id}
       onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
+      onContextMenu={(e) => { e.preventDefault(); openActions(); }}
       role="group"
       aria-label={`${typeLabel}: ${label}`}
       className={`group/layer relative flex min-h-control items-center gap-2 rounded-lg px-1.5 py-1 cursor-pointer transition-colors ${
@@ -187,17 +203,18 @@ function ElementItem({
 
       {/* Label */}
       <div className="flex-1 min-w-0">
-        <button aria-pressed={isSelected} aria-label={`Select ${label}`} className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
+        <button aria-pressed={isSelected} aria-label={`Select ${label}`} aria-describedby={hintId} aria-keyshortcuts="Shift+F10" className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }} onKeyDown={e => { if (e.key === 'F10' && e.shiftKey) { e.preventDefault(); openActions(); } }}>{label}</button>
         {/* One short line: the icon already says what kind of item it is. */}
         {!element.isStatic && <p className="truncate text-xs text-zinc-400">Changes per label</p>}
       </div>
-      {element.locked && <button onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} ${label}`} title={element.locked ? 'Unlock' : 'Lock in place'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
+      {element.locked && <button tabIndex={-1} onClick={e => { e.stopPropagation(); onToggleLock(); }} aria-label={`${element.locked ? 'Unlock' : 'Lock'} ${label}`} title={element.locked ? 'Unlock' : 'Lock in place'} className="btn btn-ghost btn-icon btn-sm">{element.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}</button>}
 
       {/* Actions: one quiet menu per layer, shown on the selected row and on hover. */}
       <div onClick={(e) => e.stopPropagation()} className={isSelected ? 'flex items-center' : 'flex items-center opacity-0 transition-opacity duration-150 group-hover/layer:opacity-100 focus-within:opacity-100 max-lg:opacity-100'}>
         <Menu
           label={`Actions for ${label}`}
           showLabel={false}
+          triggerTabIndex={-1}
           items={[
             { label: 'Duplicate', icon: <Copy className="size-4" aria-hidden="true" />, onSelect: onDuplicate },
             { label: 'Bring to front', onSelect: () => onMove('top'), disabled: !canMove('top') },

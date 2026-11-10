@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { AlertCircle } from 'lucide-react';
-import type { LayoutProblem } from '@/lib/designerLayout';
+import { withAllEdges, type LayoutProblem } from '@/lib/designerLayout';
 import { barcodeHasDetails, barcodePlainSentence } from '@/lib/runBarcodeTicks';
 import { WhyToggle } from '@/components/checks/BarcodeWarning';
 
@@ -36,7 +36,8 @@ export function DesignNotice({ problems, action }: { problems: ReadonlyArray<Lay
         {shown.map((problem) => {
           const full = problemText(problem);
           const barcode = !!problem.barcodeFit;
-          const sentence = barcode ? barcodePlainSentence(full) : full;
+          // Every edge it runs off, not only the first (the shared words name one).
+          const sentence = withAllEdges(barcode ? barcodePlainSentence(full) : full, problem.edges);
           return (
             <li key={problem.ids.join(',') + problem.kind} className="fold-reveal flex items-start gap-1.5">
               <AlertCircle className={`mt-0.5 size-4 shrink-0 ${problem.blocking ? 'text-red-400' : 'text-amber-300'}`} aria-hidden="true" />

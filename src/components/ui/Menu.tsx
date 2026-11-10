@@ -26,10 +26,15 @@ export interface MenuItem {
  * screen (always fully on screen, drag down to close); elsewhere it is kept
  * inside the window.
  */
-export function Menu({ items, label = 'More', showLabel = true, className = '', align = 'end', closeKey }: {
+export function Menu({ items, label = 'More', showLabel = true, className = '', align = 'end', closeKey, triggerTabIndex }: {
   items: MenuItem[]; label?: string; showLabel?: boolean; className?: string; align?: 'start' | 'end';
   /** When this changes, an open menu closes (for example, a notice appeared that it would cover). */
   closeKey?: string;
+  /**
+   * -1 takes the trigger out of the Tab order, for a list that opens each
+   * row's menu from the row itself (Shift+F10) so a row is one Tab stop.
+   */
+  triggerTabIndex?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -152,6 +157,7 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
         ref={triggerRef}
         type="button"
         aria-haspopup="menu"
+        tabIndex={triggerTabIndex}
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={showLabel ? undefined : label}

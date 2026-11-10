@@ -383,7 +383,7 @@ export default function NabisPage() {
           <PageHeader
             className="lg:col-span-2"
             title="Nabis"
-            subtitle={<>Print a 6&quot; × 4&quot; case label for a Nabis delivery.</>}
+            subtitle={<>Print a 4&quot; × 6&quot; case label for a Nabis delivery.</>}
           />
           <section className="min-h-0 space-y-4">
             <div>

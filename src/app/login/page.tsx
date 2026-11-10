@@ -54,7 +54,7 @@ export default function LoginPage(){
     <label htmlFor="login-password" className="field-label">Password</label>
     <input id="login-password" required name="password" type="password" autoComplete="current-password" aria-invalid={missing.password||undefined} aria-describedby={missing.password?'login-password-missing':undefined} onInput={()=>missing.password&&setMissing(m=>({...m,password:false}))} className="field -mt-2.5 text-base" />
     {missing.password && <p id="login-password-missing" className="-mt-2.5 text-sm text-red-400">Enter your password.</p>}
-    <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-300"><input name="staySignedIn" type="checkbox" className="size-5 accent-amber-500" />Stay signed in for 30 days</label>
+    <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-300"><input name="staySignedIn" type="checkbox" className="check" />Stay signed in for 30 days</label>
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <button disabled={busy} className="btn btn-primary w-full">{busy?'Signing in…':'Sign in'}</button>
     <p className="text-sm text-zinc-400">Forgot your password? Ask your admin to reset it.</p>

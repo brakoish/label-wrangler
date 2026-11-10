@@ -223,4 +223,29 @@ const pending = [];
   assert.match(issues[0], /prints over the QR code/);
 }
 
+// Round 12: printer-font bars hanging off the bottom (or off two edges) get the
+// same "Fix it for me" as exact-picture ones, and the note names every edge.
+{
+  const short = (x, y) => [{ ...flower[2], id: 'nb', x, y, width: 150, content: 'LCG1102', defaultValue: 'LCG1102' }];
+  for (const mode of [false, true]) {
+    const bottom = short(14, 170);
+    const p = (mode ? require('../../src/lib/bitmapLayout.ts').bitmapLayoutProblems(bottom, fmt, {}) : layoutProblems(bottom, fmt, {})).find((q) => q.ids[0] === 'nb');
+    assert.ok(p, `${mode ? 'exact' : 'printer font'}: bars off the bottom are a problem`);
+    assert.match(p.message, /bottom edge/);
+    const fix = barcodeAutoFix(bottom, 'nb', fmt, {}, mode);
+    assert.equal(fix && fix.kind, 'move', `${mode ? 'exact' : 'printer font'}: Fix it for me moves it back on`);
+    assert.equal(fix.label, 'Fix it for me');
+    assert.equal(fix.done, 'Moved the barcode so it fits on the label.');
+    const after = mode ? require('../../src/lib/bitmapLayout.ts').bitmapLayoutProblems(fix.elements, fmt, {}) : layoutProblems(fix.elements, fmt, {});
+    assert.equal(after.filter((q) => q.ids.includes('nb')).length, 0, 'clean after the fix');
+  }
+  // Off the right and the bottom: both edges named, and still fixable.
+  const corner = short(330, 170);
+  const cp = layoutProblems(corner, fmt, {}).find((q) => q.ids[0] === 'nb');
+  assert.ok(cp && cp.edges && cp.edges.includes('right') && cp.edges.includes('bottom'), 'both edges recorded');
+  const { withAllEdges } = require('../../src/lib/designerLayout.ts');
+  assert.match(withAllEdges('The SKU barcode runs off the right edge of the label, so it won’t scan.', cp.edges), /off the right and bottom edges of the label/);
+  assert.equal(barcodeAutoFix(corner, 'nb', fmt, {}, false)?.kind, 'move');
+}
+
 Promise.all(pending).then(() => console.log('PASS barcode autofix: move, widen, turn or QR swap only when it prints whole and lands on nothing, for printer-font and exact-picture designs; plain sentences, one Print anyway, one Open in designer'), (error) => { console.error(error); process.exit(1); });

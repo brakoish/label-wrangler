@@ -497,7 +497,7 @@ export function NewTemplateDialog({ isOpen, onClose, onCreate }: NewTemplateDial
                 value={renderMode}
                 onChange={(v) => setRenderMode(v as 'native-v1' | 'bitmap-v1')}
                 options={[
-                  { value: 'bitmap-v1', label: 'Exact picture (recommended)', sublabel: 'Any font. Needs internet to print.' },
+                  { value: 'bitmap-v1', label: 'Exact picture (recommended)', sublabel: 'Any font. This computer must be online to print.' },
                   { value: 'native-v1', label: 'Printer font', sublabel: 'The printer’s built-in font, as older designs use' },
                 ]}
               />
@@ -612,7 +612,7 @@ export function DuplicateTemplateDialog({ isOpen, source, onClose, onCreate }: D
                 type="checkbox"
                 checked={scale}
                 onChange={(e) => setScale(e.target.checked)}
-                className="mt-0.5 size-5 shrink-0 accent-amber-500"
+                className="check -mt-2.5"
               />
               <div className="flex-1">
                 <div className="text-sm font-medium text-zinc-100">Resize everything to fit the new size</div>

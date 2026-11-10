@@ -103,6 +103,11 @@ textarea:focus-visible,
 .field:focus-visible {
   outline-offset: 0;
 }
+/* Inside a box that clips (the main nav scrolls sideways on small phones),
+   the ring is drawn just inside the control's own edge. */
+.focus-inset:focus-visible {
+  outline-offset: -2px;
+}
 /* Containers that only receive focus programmatically (dialog panels) don't need a ring. */
 [tabindex="-1"]:focus-visible {
   outline: none;
@@ -178,10 +183,12 @@ textarea:focus-visible,
   .btn-primary:hover:not(:disabled) {
     background: var(--color-amber-400);
   }
+  /* Secondary: one quiet filled button, no outline (an outlined box reads as
+     a bordered container next to the borderless cards). */
   .btn-secondary {
     background: var(--color-zinc-800);
     color: var(--color-zinc-100);
-    border-color: var(--color-zinc-700);
+    border-color: transparent;
   }
   .btn-secondary:hover:not(:disabled) {
     background: var(--color-zinc-700);
@@ -710,6 +717,64 @@ textarea:focus-visible,
 
 /* Segmented controls and filter bars: the surface alone, no outline. */
 .segmented { border-color: transparent; }
+
+/* Tick boxes and radio buttons (.check): a 20px box drawn inside a 44px
+   touch area, so a thumb doesn't have to land on the box itself. The box
+   keeps its 20px footprint in the row (the extra area is negative margin).
+   Ticking pops the mark in (150ms ease-out, none with reduced motion). */
+@layer components {
+  .check {
+    appearance: none;
+    position: relative;
+    display: inline-grid;
+    place-content: center;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: -0.75rem;
+    border-radius: var(--radius-lg);
+    background: transparent;
+    cursor: pointer;
+    vertical-align: middle;
+    outline: none;
+  }
+  .check::before {
+    content: "";
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 4px;
+    background-color: var(--color-zinc-950);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 0.875rem;
+    box-shadow: inset 0 0 0 2px var(--color-zinc-500);
+    transition: background-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+  }
+  .check:hover:not(:disabled)::before { box-shadow: inset 0 0 0 2px var(--color-zinc-300); }
+  .check:checked::before {
+    background-color: var(--color-amber-500);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+    box-shadow: none;
+  }
+  .check[type="radio"]::before { border-radius: 9999px; }
+  .check[type="radio"]:checked::before {
+    background-image: none;
+    box-shadow: inset 0 0 0 2px var(--color-amber-500), inset 0 0 0 5px var(--color-zinc-950);
+  }
+  .check:focus-visible::before { outline: 2px solid var(--color-amber-500); outline-offset: 2px; }
+  .check:disabled { cursor: not-allowed; opacity: 0.5; }
+  @media (prefers-reduced-motion: no-preference) {
+    .check:checked::before { animation: check-in 150ms var(--ease-out); }
+  }
+}
+@keyframes check-in { from { transform: scale(0.85); } }
+
+/* One recovery block (components/ui/Recovery.tsx): icon and title, then the
+   body and the buttons lined up with the title's text (1rem icon + 0.5rem
+   gap), never with the icon. Buttons in one row, primary first. */
+.recovery-body { padding-inline-start: 1.5rem; padding-top: 0.25rem; color: var(--color-zinc-300); }
+.recovery-body > * + * { margin-top: 0.25rem; }
+.recovery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-inline-start: 1.5rem; padding-top: 0.625rem; }
 
 /* Shared motion: links, icons, arcs, the phone sheet, the nav ------------------
  * Run page, office panel, Runs list, scan page and shell, with the existing

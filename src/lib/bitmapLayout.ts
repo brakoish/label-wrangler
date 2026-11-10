@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import type { LabelFormat, TemplateElement } from './types';
 import type { Box, LayoutProblem } from './designerLayout';
-import { itemName } from './designerLayout';
+import { edgesCrossed, itemName } from './designerLayout';
 import { barcodeFit, barcodeFitFix, barcodeFitProblem } from './barcodeFit';
 
 /**
@@ -111,18 +111,24 @@ export function bitmapLayoutProblems(elements: ReadonlyArray<TemplateElement>, f
       const value = resolvedValue(el, values);
       const fit = barcodeFit(el, value, format, true);
       if (fit.level === 'blocked' && fit.reason !== 'characters') {
+        // Off more than one edge: every edge is named where the words are shown (withAllEdges).
+        const edges = fit.reason === 'box-off-label' ? edgesCrossed(box, labelW, labelH, 0) : [];
+        const extra = edges.filter((edge) => edge !== fit.edge);
+        const extraText = fit.edge && extra.length ? `, and it runs off the ${listNames(extra)} edge${extra.length === 1 ? '' : 's'} too` : '';
         problems.push({
           kind: 'off-label', kinds: ['off-label', ...(over.length ? ['overlap' as const] : [])], ids: [el.id, ...over.map((o) => o.id)],
-          message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${overText ? `, and ${overText}` : ''}${lostText}.`,
+          message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${extraText}${overText ? `, and ${overText}` : ''}${lostText}.`,
           fix: barcodeFitFix(fit, 'designer') || undefined, barcodeFit: fit, blocking: true,
+          ...(fit.edge && extra.length ? { edges: [fit.edge, ...extra] } : {}),
         });
         continue;
       }
     } else if (!insideLabel(box, labelW, labelH)) {
-      const edge = edgeCrossed(box, labelW, labelH);
+      const edges = edgesCrossed(box, labelW, labelH, 0);
+      const edgeWords = edges.length > 1 ? `${listNames(edges)} edges` : `${edges[0] ?? edgeCrossed(box, labelW, labelH) ?? ''} edge`;
       problems.push({
         kind: 'off-label', kinds: ['off-label', ...(over.length ? ['overlap' as const] : [])], ids: [el.id, ...over.map((o) => o.id)],
-        message: `${capitalise(itemName(el))} runs off the ${edge ?? ''} edge of the label, so it won’t scan${overText ? `, and ${overText}` : ''}${lostText}.`.replace('the  edge', 'the edge'),
+        message: `${capitalise(itemName(el))} runs off the ${edgeWords} of the label, so it won’t scan${overText ? `, and ${overText}` : ''}${lostText}.`.replace('the  edge', 'the edge'),
         blocking: true,
       });
       continue;

@@ -3,7 +3,7 @@
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Undo2, Redo2, Pencil, ChevronLeft, Plus } from 'lucide-react';
+import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2 } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -33,7 +33,7 @@ import { GlobalSaveDialog } from '@/components/designer/GlobalSaveDialog';
 import { GlobalElementPicker } from '@/components/designer/GlobalElementPicker';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { safeNextPath } from '@/lib/safeRedirect';
-import { freeSpot, itemName, layoutProblems, printedBounds, type Box, type LayoutProblem } from '@/lib/designerLayout';
+import { freeSpot, itemName, layoutProblems, printedBounds, withAllEdges, type Box, type LayoutProblem } from '@/lib/designerLayout';
 import { bitmapLayoutProblems, bitmapTextOverlaps } from '@/lib/bitmapLayout';
 import { describeUnprintable, elementUnprintable, plainPrinterText, plainReplacement, usesPrinterFont } from '@/lib/printerCharacters';
 import { designSampleValues } from '@/lib/sampleValues';
@@ -435,7 +435,9 @@ function DesignerContent() {
   const isBarcode = (id: string | undefined) => !!id && currentTemplate?.elements.some((e) => e.id === id && e.type === 'barcode');
   const brokenBarcodeId = designProblems.find((p) => p.blocking && p.barcodeFit && p.barcodeFit.reason !== 'characters' && isBarcode(p.ids[0]))?.ids[0]
     ?? designProblems.find((p) => p.kinds.includes('overlap') && isBarcode(p.ids[0]))?.ids[0]
-    ?? designProblems.find((p) => p.kinds.includes('overlap') && p.ids.slice(1).some(isBarcode))?.ids.slice(1).find(isBarcode);
+    ?? designProblems.find((p) => p.kinds.includes('overlap') && p.ids.slice(1).some(isBarcode))?.ids.slice(1).find(isBarcode)
+    // Bars hanging off an edge get the same "Fix it for me" in either kind of design.
+    ?? designProblems.find((p) => p.kinds.includes('off-label') && isBarcode(p.ids[0]))?.ids[0];
   const autoFixes = useMemo(() => {
     if (!brokenBarcodeId || !currentTemplate || currentTemplate.summaryOnly) return { fix: null, qr: null };
     const bitmap = currentTemplate.thermalRenderMode === 'bitmap-v1';
@@ -783,7 +785,7 @@ function DesignerContent() {
   const fixStillShown = fixNote && fixNote.templateId === currentTemplate.id && fixNote.elements === currentTemplate.elements;
   // Each fix button sits under the problem it fixes. The barcode's own fix
   // is "Fix it for me" (the same words as on the new run page).
-  const barcodeProblem = brokenBarcodeId ? canvasProblems.find((p) => p.ids.includes(brokenBarcodeId) && (p.barcodeFit || p.kinds.includes('overlap'))) : undefined;
+  const barcodeProblem = brokenBarcodeId ? canvasProblems.find((p) => p.ids.includes(brokenBarcodeId) && (p.barcodeFit || p.kinds.includes('overlap') || (p.ids[0] === brokenBarcodeId && p.kinds.includes('off-label')))) : undefined;
   const copyProblem = canExactCopy ? canvasProblems.find((p) => p.barcodeFit?.fixes.includes('exact-copy')) : undefined;
   // Characters the printer font can't print, typed into the design itself
   // (not only a sample value): one click swaps them for plain ones.
@@ -841,7 +843,7 @@ function DesignerContent() {
   };
   const fixDone = fixStillShown ? (
     <p role="status" className="fold-reveal flex flex-wrap items-center gap-x-3 px-3 pb-1 text-sm text-emerald-400 sm:px-6">
-      <span>{fixNote.text}</span>
+      <span className="inline-flex items-center gap-1.5"><CheckCircle2 key={fixNote.text} className="size-4 shrink-0 rounded-full animate-success" aria-hidden="true" />{fixNote.text}</span>
       <button type="button" className="link inline-flex min-h-control-sm items-center" onClick={() => { handleUndo(); setFixNote(null); }}>Undo</button>
     </p>
   ) : null;
@@ -1082,7 +1084,7 @@ function DesignerContent() {
           onUpdateSelected={handleUpdateSelectedElements}
           bitmap={currentTemplate.thermalRenderMode === 'bitmap-v1'}
           allElements={currentTemplate.elements}
-          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => ({ text: p.barcodeFit ? barcodePlainSentence(problemText(p)) : problemText(p), blocking: !!p.blocking })) : []}
+          problems={selectedElement ? designProblems.filter((p) => p.ids.includes(selectedElement.id)).map((p) => ({ text: withAllEdges(p.barcodeFit ? barcodePlainSentence(problemText(p)) : problemText(p), p.edges), blocking: !!p.blocking })) : []}
           onArrange={(action: AlignAction) => {
             beginGesture();
             const arranged = arrangeElements(currentTemplate.elements.filter(e => selectedIds.has(e.id) && !e.locked), action);

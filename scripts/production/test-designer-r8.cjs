@@ -54,11 +54,17 @@ const BT = require('../../src/lib/runBarcodeTicks.ts');
   // Round 10: the designer's office test print says "Sending…" while the first send is in flight,
   // never "We're not sure the office got your last test print" (that is only for after a reload or a real uncertain answer).
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../src/components/designer/OfficePreviewPrint.tsx'), 'utf8');
-  assert.match(src, /\{pending && !busy && !otherTabSending && <p role="status"[^>]*>We’re not sure the office got your last test print/);
-  assert.match(src, /\{busy \? 'Sending…'/);
+  assert.match(src, /const unsure = !!pending && !busy && !otherTabSending;/);
+  assert.match(src, /\{unsure && <Recovery[^>]*title="We’re not sure the office got your last test print"/);
+  assert.match(src, /const sendLabel = busy \? 'Sending…'/);
   console.log('PASS designer r10: no "not sure" warning while a test print is still sending');
   // Round 11: nor in a second tab while the first tab's send is out (a fresh in-flight mark).
-  assert.match(src, /\{pending && !busy && otherTabSending && <p role="status"[^>]*>Sending this test print from another tab or window…/);
+  assert.match(src, /const elsewhere = !!pending && !busy && otherTabSending;/);
+  assert.match(src, /\{elsewhere && <p role="status"[^>]*>.*Sending this test print from another tab…/);
+  // Round 12: said once (no disabled button repeating it), and the other tab hears when it went.
+  assert.doesNotMatch(src, /Sending from another tab…'\s*:/, 'no button label repeats the message');
+  assert.match(src, /localStorage\.setItem\(sentKey, JSON\.stringify\(\{ runId: result\.runId/);
+  assert.match(src, /'Sent from another tab\.'/);
   assert.match(src, /localStorage\.setItem\(storageKey, JSON\.stringify\(payload\)\);[\s\S]*?mark\(\);[\s\S]*?api\('\/api\/office\/preview'/, 'the test print is saved, then marked, before its POST');
   console.log('PASS designer r11: a second tab says "sending from another tab", not "not sure"');
 }

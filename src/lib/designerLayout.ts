@@ -135,6 +135,34 @@ export interface LayoutProblem {
   barcodeFit?: BarcodeFit;
   /** The printer can't produce this item as designed: printing must wait for a fix. */
   blocking?: boolean;
+  /**
+   * Every label edge the item runs off, when it is more than the one its
+   * message names ("runs off the right edge"): see `withAllEdges`.
+   */
+  edges?: LabelEdge[];
+}
+
+export type LabelEdge = 'left' | 'right' | 'top' | 'bottom';
+
+/** The label edges a box crosses (by more than `tolerance` dots), in reading order. */
+export function edgesCrossed(box: Box, labelW: number, labelH: number, tolerance = 2): LabelEdge[] {
+  const edges: LabelEdge[] = [];
+  if (box.y < -tolerance) edges.push('top');
+  if (box.x + box.width > labelW + tolerance) edges.push('right');
+  if (box.y + box.height > labelH + tolerance) edges.push('bottom');
+  if (box.x < -tolerance) edges.push('left');
+  return edges;
+}
+
+/**
+ * A message that names one edge ("runs off the right edge of the label")
+ * names them all when the item crosses more than one ("runs off the right
+ * and bottom edges of the label"). Applied where the words are shown, so the
+ * shared message (and the plain sentence made from it) stays as it is.
+ */
+export function withAllEdges(text: string, edges?: ReadonlyArray<LabelEdge>): string {
+  if (!edges || edges.length < 2) return text;
+  return text.replace(/off the (?:left|right|top|bottom) edge of the label/, `off the ${listNames([...edges])} edges of the label`);
 }
 
 /** "the Package tag barcode", "the THC text", "the text “Net Wt 3.5g”", "the QR code". */
@@ -192,22 +220,43 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
   const wider = new Set(placed.filter(({ el, box }) => el.type === 'barcode' && rotation(el) % 180 === 0 && box.width > el.width + 2).map(({ el }) => el.id));
   const scannable = (el: TemplateElement) => el.type === 'barcode' || el.type === 'qr';
 
-  type Entry = { el: TemplateElement; offLabel: boolean; over: TemplateElement[] };
+  type Entry = { el: TemplateElement; offLabel: boolean; over: TemplateElement[]; edges: LabelEdge[] };
   const byItem = new Map<string, Entry>();
   const entry = (el: TemplateElement) => {
-    const found = byItem.get(el.id) ?? { el, offLabel: false, over: [] };
+    const found = byItem.get(el.id) ?? { el, offLabel: false, over: [], edges: [] };
     byItem.set(el.id, found);
     return found;
   };
 
   const tolerance = 2;
+  // A barcode's bars that hang off the label across their length (off the
+  // bottom of a level barcode, say): barcodeFit only follows the bars along
+  // their length. The number printed beside the bars may be cut off freely,
+  // so only the bars themselves count (the true footprint, never a measured
+  // one, which is clipped at the label edge). Upside-down barcodes are left out.
+  const acrossEdges = (el: TemplateElement): LabelEdge[] => {
+    if (el.type !== 'barcode' || rotation(el) === 180) return [];
+    const value = resolvedValue(el, values);
+    if (!value) return [];
+    const box = nativeBarcodeFootprint(el, value);
+    const sideways = rotation(el) % 180 !== 0;
+    const slack = tolerance + (el.showText ? 20 : 0);
+    const edges = edgesCrossed(box, labelW, labelH, slack);
+    return edges.filter((edge) => (sideways ? edge === 'left' || edge === 'right' : edge === 'top' || edge === 'bottom'));
+  };
   for (const { el, box } of placed) {
     const fit = fits.get(el.id);
     if (fit) {
-      if (fit.level !== 'ok' && fit.reason !== 'characters') entry(el);
+      const across = fit.reason === 'characters' ? [] : acrossEdges(el);
+      if (fit.level !== 'ok' && fit.reason !== 'characters') entry(el).edges = across;
+      else if (across.length) { const found = entry(el); found.offLabel = true; found.edges = across; }
       continue;
     }
-    if (box.x < -tolerance || box.y < -tolerance || box.x + box.width > labelW + tolerance || box.y + box.height > labelH + tolerance) entry(el).offLabel = true;
+    if (box.x < -tolerance || box.y < -tolerance || box.x + box.width > labelW + tolerance || box.y + box.height > labelH + tolerance) {
+      const found = entry(el);
+      found.offLabel = true;
+      found.edges = edgesCrossed(box, labelW, labelH, tolerance);
+    }
   }
 
   for (let i = 0; i < placed.length; i++) {
@@ -233,37 +282,45 @@ export function layoutProblems(elements: ReadonlyArray<TemplateElement>, format:
     return codes.length ? `, so ${codes.length === 1 && over.length === 1 ? 'that' : listNames(codes.map(itemName))} won’t scan either` : '';
   };
   const problems: LayoutProblem[] = [];
-  for (const { el, offLabel, over } of byItem.values()) {
+  for (const { el, offLabel, over, edges } of byItem.values()) {
     const fit = fits.get(el.id);
     const overText = over.length ? `${el.type === 'text' && over.every((o) => o.type === 'text') ? 'covers' : 'prints over'} ${listNames(over.map(itemName))}` : '';
     if (fit && fit.level !== 'ok' && fit.reason !== 'characters') {
       const value = resolvedValue(el, values);
       const blocking = fit.level === 'blocked';
       const kinds: LayoutProblemKind[] = [blocking ? 'off-label' as const : 'barcode-tight' as const, ...(over.length ? ['overlap' as const] : []), ...(wider.has(el.id) ? ['wider-than-box' as const] : [])];
+      // Its bars also hang off another edge: said once, after the measurements.
+      const alongEdge = fit.reason === 'off-label' || fit.reason === 'box-off-label' ? fit.edge : undefined;
+      const extra = edges.filter((edge) => edge !== alongEdge);
+      const extraText = extra.length ? `, and it runs off the ${listNames(extra)} edge${extra.length === 1 ? '' : 's'} too` : '';
+      if (!blocking && extra.length) kinds.push('off-label');
       problems.push({
         kind: kinds[0],
         kinds,
         ids: [el.id, ...over.map((o) => o.id)],
-        message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${overText ? `, and ${overText}` : ''}${coveredCodes(over)}.`,
+        message: `${capitalise(itemName(el))} ${barcodeFitProblem(fit, value)}${extraText}${overText ? `, and ${overText}` : ''}${coveredCodes(over)}.`,
         fix: barcodeFitFix(fit) || undefined,
         barcodeFit: fit,
         blocking,
+        ...(alongEdge && extra.length ? { edges: [alongEdge, ...extra] } : {}),
       });
       continue;
     }
     const parts: string[] = [];
-    if (offLabel) parts.push('runs off the edge of the label and will be cut off');
+    if (offLabel) parts.push(edges.length ? `runs off the ${listNames(edges)} edge${edges.length === 1 ? '' : 's'} of the label and will be cut off` : 'runs off the edge of the label and will be cut off');
     if (overText) parts.push(overText);
     if (!parts.length) continue;
     const tooWide = wider.has(el.id);
-    const mayNotScan = over.length > 0 && (scannable(el) || over.some(scannable));
+    const mayNotScan = (over.length > 0 && (scannable(el) || over.some(scannable))) || (offLabel && el.type === 'barcode');
     const kinds: LayoutProblemKind[] = [...(offLabel ? ['off-label' as const] : []), ...(over.length ? ['overlap' as const] : []), ...(tooWide ? ['wider-than-box' as const] : [])];
     problems.push({
       kind: kinds[0],
       kinds,
       ids: [el.id, ...over.map((o) => o.id)],
       message: `${capitalise(itemName(el))} ${tooWide ? 'prints wider than its box and ' : ''}${parts.join(' and ')}${mayNotScan ? ' — it may not scan' : ''}.`,
-      ...(fit ? { barcodeFit: fit } : {}),
+      // A barcode cut off across its bars keeps these words as they are (the
+      // plain-sentence rewrite would call it too wide).
+      ...(fit && !(offLabel && el.type === 'barcode') ? { barcodeFit: fit } : {}),
     });
   }
   return problems;

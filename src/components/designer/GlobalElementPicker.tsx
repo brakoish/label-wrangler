@@ -60,7 +60,7 @@ export function GlobalElementPicker({ isOpen, onClose, onInsert, onDelete, globa
               {filtered.map((g) => (
                 <div
                   key={g.id}
-                  className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3 transition-colors hover:border-zinc-700"
+                  className="flex items-start gap-3 rounded-lg bg-zinc-950 p-3 transition-colors hover:bg-zinc-800"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-zinc-100 text-sm mb-0.5">{g.name}</div>
