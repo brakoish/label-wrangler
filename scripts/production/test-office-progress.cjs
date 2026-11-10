@@ -311,6 +311,10 @@ console.log('PASS field display names');
   assert.match(panel, /`Send all \$\{sendCount\.toLocaleString\(\)\} in \$\{parts\.length\} parts`/);
   assert.match(panel, /const outcome=await submit\(part\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
   assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return;/, 'each part needs its own label check');
+  // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
+  assert.match(panel, /if\(target && \(payload\.from!==target\.from \|\| payload\.to!==target\.to\)\)\{setError/, 'a part never sends another range\'s saved request');
+  assert.match(panel, /if\(!resend && officeSendPlan\(jobsRef\.current,part\.from,part\.to\)\.kind!=='new'\)\{current=\{\.\.\.current,next:i\+1\};savePartsPlan\(current\);continue;\}/);
+  assert.match(panel, /if\(pending && pendingInPlan && partsPlan\)\{void runSeries\(partsPlan\);return;\}/, '"Send again" on an unsure part carries on with the plan');
   // Fixing a part: later parts are held before the check lets the office carry on; a 409 means already checked.
   const save = panel.slice(panel.indexOf('const saveFix='), panel.indexOf('const pendingWords='));
   assert.ok(save.indexOf("method:'DELETE'") > 0 && save.indexOf("method:'DELETE'") < save.indexOf("'/api/office/review'"), 'hold the rest before recording the check');

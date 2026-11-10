@@ -185,6 +185,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const [queueOpen,setQueueOpen]=useState(false);const [detailsOpen,setDetailsOpen]=useState(false);
   // Persist a submission identity before network I/O. An uncertain response,
   // reload or double-click retries this identity, never manufactures new jobs.
+  const jobsRef=useRef(jobs);
+  useEffect(()=>{jobsRef.current=jobs;},[jobs]);
   const storageKey=`lw:office-pending:${runId}`;
   const [partsPlan,setPartsPlan]=useState<OfficePartsPlan|null>(null);
   useEffect(()=>{
@@ -274,6 +276,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       const want=target ?? {from:fromNumber,to:toNumber};
       if(saved){
         try{payload=JSON.parse(saved);}catch{setError('The saved request on this device couldn’t be read. Check the office queue below before starting over.');return;}
+        // A part of "Send all in parts" only ever resends its own saved request.
+        if(target && (payload.from!==target.from || payload.to!==target.to)){setError(`Finish sending ${range(payload.from,payload.to)} first.`);return;}
       }else{
         // A new request always needs a check of exactly this range first, and
         // is never one the server would refuse.
@@ -336,8 +340,13 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       for(let i=current.next;i<current.parts.length;i++){
         if(stopSeries.current)break;
         const part=current.parts[i];
-        setSeries({total:current.parts.length,index:i,part,phase:bitmap?'checking':'sending'});
-        if(bitmap){
+        // A part this device already tried resends its saved request (same
+        // key). A part the office already has is skipped, never sent twice.
+        let saved:string|null=null;try{saved=localStorage.getItem(storageKey);}catch{saved=null;}
+        let resend=false;if(saved){try{const s=JSON.parse(saved);resend=s.from===part.from && s.to===part.to;}catch{resend=false;}}
+        if(!resend && officeSendPlan(jobsRef.current,part.from,part.to).kind!=='new'){current={...current,next:i+1};savePartsPlan(current);continue;}
+        setSeries({total:current.parts.length,index:i,part,phase:bitmap && !resend?'checking':'sending'});
+        if(bitmap && !resend){
           setBusy(true);
           const checked=await drawProof(part,(completed,count)=>setSeries(s=>s?{...s,progress:{completed,total:count}}:s));
           setBusy(false);
@@ -362,10 +371,16 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const leftParts=useMemo(()=>{
     const left=remainingParts(partsPlan);
     if(!left.length || !requestsEverLoaded)return [];
-    return left.every(p=>officeSendPlan(jobs,p.from,p.to).kind==='new')?left:[];
+    // Parts the office already has (a resend that did arrive) drop out.
+    return left.filter(p=>officeSendPlan(jobs,p.from,p.to).kind==='new');
   },[partsPlan,jobs,requestsEverLoaded]);
   useEffect(()=>{if(partsPlan && requestsEverLoaded && !seriesRunning.current && remainingParts(partsPlan).length && !leftParts.length){setPartsPlan(null);try{localStorage.removeItem(partsKey);}catch{/* nothing saved */}}},[partsPlan,leftParts.length,requestsEverLoaded,partsKey]);
   const planPrinterHere=!!partsPlan && !!printer && partsPlan.stationId===printer.station_id && partsPlan.printerId===printer.id;
+  // The unsure send is the next part of a saved plan: "Send again" resends it
+  // (same key) and then carries on with the other parts.
+  const planNext=partsPlan?partsPlan.parts[partsPlan.next]:undefined;
+  const pendingInPlan=!!pending && planPrinterHere && !!planNext && planNext.from===pending.from && planNext.to===pending.to;
+  const partsAfterPending=pendingInPlan?leftParts.filter(p=>!(p.from===pending?.from && p.to===pending?.to)):[];
 
   const startOver=async()=>{
     const ok=await confirmDialog({title:'Start over?',body:'Check the office queue below first. The office may already have these labels, and starting over doesn’t cancel anything.',confirmLabel:'Start over'});
@@ -407,6 +422,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :sentThisVisit?`Send the next ${plural(sendCount)}`
     :`Send ${plural(sendCount)} to office printer`;
   const onPrimary=async()=>{
+    if(pending && pendingInPlan && partsPlan){void runSeries(partsPlan);return;}
     if(!pending){
       if(plan.kind==='wait' || !rangeValid)return;
       // Ask once per range before anything long starts: printing labels the
@@ -558,7 +574,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     </div>}
     {!series && leftParts.length>0 && <div className="space-y-2 text-sm">
       <p className="text-amber-300">{leftParts.length===1?`The last part (${range(leftParts[0].from,leftParts[0].to)}) wasn’t sent yet.`:`${leftParts.length} parts (${range(leftParts[0].from,leftParts[leftParts.length-1].to)}) weren’t sent yet.`}</p>
-      {planPrinterHere
+      {pending
+        ? <p className="text-zinc-400">{pendingInPlan?(partsAfterPending.length?`“Send again” then sends the other ${partsAfterPending.length===1?'part':`${partsAfterPending.length} parts`} (${range(partsAfterPending[0].from,partsAfterPending[partsAfterPending.length-1].to)}), one after another.`:'“Send again” finishes the last part.'):'Sort out the send above first, then send these.'}</p>
+        : planPrinterHere
         ? <div className="flex flex-wrap items-center gap-2"><button type="button" disabled={busy || !canPrint || !status.canSend || !formReady || !printAllowed} onClick={()=>partsPlan && void runSeries(partsPlan)} className={`btn ${owner==='parts'?'btn-primary':'btn-secondary'}`}><PrinterIcon className="size-4" aria-hidden="true" />{leftParts.length===1?'Send the last part':`Send the remaining ${leftParts.length} parts`}</button><button type="button" className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>savePartsPlan(null)}>Don’t send them</button></div>
         : <p className="text-zinc-400">They were planned for another office printer. <button type="button" className="font-medium underline underline-offset-2" onClick={()=>savePartsPlan(null)}>Forget them</button></p>}
     </div>}
