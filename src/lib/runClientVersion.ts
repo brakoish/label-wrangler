@@ -9,6 +9,18 @@
  */
 export const RUN_CLIENT_HEADER = 'X-LW-Client';
 export const RUN_CLIENT_VERSION = 2;
+/**
+ * A guarded go-back can name the idempotency key of its 'rewind' print event
+ * in this header; the server then writes that event in the same statement as
+ * the go-back (database time) and answers REWIND_EVENT_HEADER: 'written', so
+ * the page doesn't send it separately. A server without this rule (or a 409
+ * where no event was written) answers without 'written', and the page sends
+ * the event itself as before.
+ */
+export const REWIND_KEY_HEADER = 'X-LW-Rewind-Key';
+export const REWIND_EVENT_HEADER = 'X-LW-Rewind-Event';
+/** With 'written': the entry's saved time (database clock), so the page has it in its history at once. */
+export const REWIND_AT_HEADER = 'X-LW-Rewind-At';
 
 /** True when an update follows the current rules (high-water mark, explicit rewinds). */
 export function followsCurrentRules(headers: Pick<Headers, 'get'>, body: Record<string, unknown>): boolean {

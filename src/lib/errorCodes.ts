@@ -5,3 +5,7 @@
  * a new domain, or OFFICE_APP_ORIGIN set wrong). Fixable by opening the app at
  * its usual address, so the browser keeps the update instead of dropping it. */
 export const ORIGIN_NOT_ALLOWED = 'origin_not_allowed';
+
+/** A 'rewind' print event sent on its own that no go-back wrote: the go-back
+ * records its own entry now, so the page drops this one quietly. */
+export const REWIND_NOT_APPLIED = 'rewind_not_applied';

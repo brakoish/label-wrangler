@@ -6,7 +6,10 @@ import { db } from "@/lib/db";
 import { runs, runPrintEvents, officeRequests } from "@/lib/db/schema";
 import { isForeignKeyViolation, plural } from "@/lib/dbErrors";
 import { and, eq, sql, getTableColumns } from "drizzle-orm";
-import { followsCurrentRules, keepsHighWater } from "@/lib/runClientVersion";
+import { followsCurrentRules, keepsHighWater, REWIND_KEY_HEADER, REWIND_EVENT_HEADER, REWIND_AT_HEADER } from "@/lib/runClientVersion";
+import { rewindEvent } from "@/lib/runRewind";
+import { goBackWithEntry } from "@/lib/runRewindWrite.server";
+import { uuid } from "@/lib/office/http";
 
 async function handleGET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -70,6 +73,33 @@ async function handlePUT(req: NextRequest, { params }: { params: Promise<{ id: s
     // made in the meantime. Without it, the update behaves as before.
     const guarded = body.resetProgress === true && typeof body.expectedPrintedCount === 'number';
     const where = guarded ? and(eq(runs.id, id), eq(runs.printedCount, Number(body.expectedPrintedCount))) : eq(runs.id, id);
+    // A go-back from current code names the key of its print-history entry
+    // (X-LW-Rewind-Key). That entry is then written here, in the same
+    // statement as the go-back, stamped with that statement's database time,
+    // so the cutoff is exactly when progress went back, never when a later
+    // request happened to arrive. The answer says so (X-LW-Rewind-Event:
+    // written) and the page doesn't send the entry itself. Without the header
+    // (older pages) nothing changes. Main never sees this: it refuses the
+    // go-back's fields before reading any header.
+    const rewindKey = body.resetProgress === true && typeof body.printedCount === 'number' ? req.headers.get(REWIND_KEY_HEADER) : null;
+    if (rewindKey && uuid(rewindKey)) {
+      const eventId = `print-event-${rewindKey}`;
+      const entry = rewindEvent(Number(body.printedCount) + 1, guarded ? Number(body.expectedPrintedCount) : Number(body.printedCount));
+      const goBack = db.update(runs).set(updates).where(where).returning({ id: runs.id });
+      const result = await db.execute(goBackWithEntry(goBack, eventId, id, entry));
+      type Outcome = { updated: number; written_at: string | null };
+      const outcome = (Array.isArray(result) ? result as Outcome[] : (result as unknown as { rows?: Outcome[] }).rows)?.[0];
+      const writtenAt = typeof outcome?.written_at === 'string' ? outcome.written_at : '';
+      const written: Record<string, string> = writtenAt ? { [REWIND_EVENT_HEADER]: 'written', [REWIND_AT_HEADER]: writtenAt } : { [REWIND_EVENT_HEADER]: 'none' };
+      if (!Number(outcome?.updated)) {
+        const [now] = await db.select({ printedCount: runs.printedCount }).from(runs).where(eq(runs.id, id));
+        if (now && guarded) return NextResponse.json({ error: `This run’s progress changed on another device (now ${Number(now.printedCount).toLocaleString('en-US')} printed), so going back wasn’t applied.`, code: 'progress_changed', printedCount: Number(now.printedCount) }, { status: 409, headers: written });
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
+      const [saved] = await db.select(summary).from(runs).where(eq(runs.id, id));
+      if (!saved) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      return NextResponse.json({ ...saved, ...(body.sourceData ? {sourceData:body.sourceData} : {}) }, { headers: written });
+    }
     const [updated] = await db.update(runs).set(updates).where(where).returning(summary);
     if (!updated && guarded) {
       const [now] = await db.select({ printedCount: runs.printedCount }).from(runs).where(eq(runs.id, id));
