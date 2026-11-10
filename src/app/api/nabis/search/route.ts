@@ -411,6 +411,21 @@ function extractPotencyFromLabResults(results: unknown): LabPotency {
   return potency;
 }
 
+/** Every Manifest/Metrc call gives up after this, so one slow upstream cannot
+ * hang a search (and its serverless function) indefinitely. */
+const EXTERNAL_TIMEOUT_MS = 8000;
+/** Packages enriched at once; each one makes 2-3 upstream calls. */
+const ENRICH_CONCURRENCY = 4;
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const index = next++; results[index] = await fn(items[index]); }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 async function fetchMetrcLabPotency(packageId: string): Promise<LabPotency> {
   const baseUrl = process.env.METRC_BASE_URL;
   const license = process.env.METRC_LICENSE_DISTRIBUTOR;
@@ -429,6 +444,7 @@ async function fetchMetrcLabPotency(packageId: string): Promise<LabPotency> {
       Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
   });
 
   if (!response.ok) return empty;
@@ -543,6 +559,7 @@ async function fetchMetrcRetailIdUnits(packageTag: string): Promise<ManifestLabe
       Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
   });
 
   if (!response.ok) return null;
@@ -641,6 +658,7 @@ async function fetchManifestLabelRows(packageTag: string) {
       ...(process.env.MANIFEST_COOKIE ? { Cookie: process.env.MANIFEST_COOKIE } : {}),
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
   });
 
   if (!response.ok) return null;
@@ -652,14 +670,14 @@ async function enrichWithManifestLabelData(
   packages: ReturnType<typeof normalizePackage>[],
   options: { preferLabThc?: boolean } = {},
 ) {
-  const enriched = await Promise.all(
-    packages.slice(0, 25).map(async (pkg) => {
+  const enriched = await mapLimit(
+    packages.slice(0, 25), ENRICH_CONCURRENCY, async (pkg) => {
       const rows = await fetchManifestLabelRows(pkg.packageTag || pkg.tag).catch(() => null);
       const labPkg = await rowWithMetrcLabFallback(pkg, options);
       return rows && rows.length > 0
         ? Promise.all(rows.map((row) => rowWithMetrcLabFallback(row, options)))
         : rowsWithMetrcRetailIds(labPkg);
-    }),
+    },
   );
   return finalizeLabelRows(enriched.flat());
 }
@@ -784,6 +802,7 @@ async function searchMetrcByExactTag(search: string) {
       Authorization: `Basic ${Buffer.from(`${integratorKey}:${userKey}`).toString('base64')}`,
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
   });
 
   if (response.status === 404) return [];
@@ -833,6 +852,7 @@ async function handleGET(request: NextRequest) {
         ...(process.env.MANIFEST_COOKIE ? { Cookie: process.env.MANIFEST_COOKIE } : {}),
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -853,9 +873,11 @@ async function handleGET(request: NextRequest) {
 
     return NextResponse.json({ packages: await enrichWithManifestLabelData(packages) });
   } catch (error) {
+    const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    console.error('Package search failed:', error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error');
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Could not reach Manifest',
+        error: timedOut ? 'Manifest or Metrc did not respond in time. Try the search again.' : 'Could not reach Manifest or Metrc. Try the search again.',
         packages: [],
       },
       { status: 502 },
