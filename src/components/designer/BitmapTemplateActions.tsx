@@ -8,6 +8,7 @@ import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { renderZplToDataUrl } from '@/lib/zplRenderClient';
 import type { LabelTemplate, LabelFormat } from '@/lib/types';
 import { Dialog } from '@/components/ui/Dialog';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { friendlyError } from '@/lib/userMessages';
 
 export function BitmapTemplateActions({ source, format, values = {}, onCreated, requestCopy = 0, onShowCode, closeKey, admin = false, quiet = false }: {
@@ -24,8 +25,6 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
   closeKey?: string;
 }) {
   const file = useRef<HTMLInputElement>(null);
-  const more = useRef<HTMLDetailsElement>(null);
-  useEffect(() => { more.current?.removeAttribute('open'); }, [closeKey]);
   const [draft, setDraft] = useState<{ template: LabelTemplate; format: LabelFormat; report: string[] } | null>(null);
   const [prepared, setPrepared] = useState<LabelTemplate | null>(null);
   const [adjustments, setAdjustments] = useState(0);
@@ -51,7 +50,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
   const startCopy = () => {
     if (!source || !format || source.thermalRenderMode === 'bitmap-v1' || format.type !== 'thermal') return;
     setError('');
-    setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (picture)` }, format, report: ['Makes a new design that prints as one picture: barcode bars come out thinner and any font works. This design and its runs stay as they are.', 'Text uses fonts built into the app and is sized once to fit the sample values. Compare the two previews before you make the copy.'] });
+    setDraft({ template: { ...bitmapCopy(source, format), name: `${source.name} (picture)` }, format, report: ['This makes a picture copy of the design that draws thinner bars and can use any font. Your original and its runs stay as they are.', 'Text is sized once to fit the sample values. Compare the two previews before you make the copy.'] });
   };
   const startCopyRef = useRef(startCopy);
   useEffect(() => { startCopyRef.current = startCopy; });
@@ -75,10 +74,10 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
   // In an empty state the buttons join the state's own row of actions.
   const inline = !source && !quiet;
   return <div className={inline ? 'contents' : 'text-sm'}>
-    {source ? (canCopy || onShowCode) && <details ref={more} className="group relative"><summary className="btn btn-ghost btn-sm list-none [&::-webkit-details-marker]:hidden">More</summary><div className="popover-enter absolute right-0 top-full z-30 mt-1 w-72 space-y-3 rounded-xl bg-zinc-900 p-3 shadow-xl shadow-black/40 [--origin:top_right]">
-      {canCopy && <div><p className="pb-2 text-zinc-400">A copy that prints as one picture, with thinner barcode bars and any font. This design stays as it is.</p><button type="button" className="btn btn-secondary btn-sm w-full max-sm:min-h-11" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); startCopy(); }}>Make a picture copy</button></div>}
-      {onShowCode && <div><p className="pb-2 text-zinc-400">For admins setting up a printer.</p><button type="button" className="btn btn-ghost btn-sm w-full max-sm:min-h-11" onClick={(e) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); onShowCode(); }}>Show printer commands</button></div>}
-    </div></details> : <div className={inline ? 'contents' : 'flex flex-wrap gap-2'}>
+    {source ? (canCopy || onShowCode) && <Menu closeKey={closeKey} items={[
+      ...(canCopy ? [{ label: 'Make a picture copy…', onSelect: startCopy }] : []),
+      ...(onShowCode ? [{ label: 'Show printer commands', onSelect: onShowCode }] : []),
+    ] satisfies MenuItem[]} /> : <div className={inline ? 'contents' : 'flex flex-wrap gap-2'}>
       <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={async () => { setError(''); try { const r = await fetch('/api/thermal/example'); if (!r.ok) throw new Error('Unable to load example'); load(await r.json()); } catch (e) { setError((e as Error).message); } }}>Load the sample design</button>
       {admin && <button type="button" className={quiet ? 'btn btn-secondary btn-sm' : 'btn btn-secondary'} onClick={() => file.current?.click()}>Import a design file</button>}
       {admin && <input ref={file} type="file" accept=".json" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; try { if (f.size > 4_000_000) throw new Error('Design exceeds 4 MB'); load(JSON.parse(await f.text())); } catch (e) { setError((e as Error).message); } e.target.value = ''; }} />}
@@ -92,7 +91,7 @@ export function BitmapTemplateActions({ source, format, values = {}, onCreated, 
       </div>
       {adjustments > 0 && <p className="text-amber-300">Made {adjustments} text {adjustments === 1 ? 'item' : 'items'} smaller to fit. Longer values may need more room.</p>}
       {error && <p role="alert" className="text-red-400">{friendlyError(error)}</p>}
-      <p className="text-zinc-400">{source ? 'You can fix any problems in the copy afterwards. This design stays as it is.' : 'The copy needs a working preview first.'}</p>
+      <p className="text-zinc-400">{source ? 'You can fix any problems in the copy afterwards.' : 'The copy needs a working preview first.'}</p>
       <button disabled={busy || !proof || !prepared} onClick={() => void create()} className="btn btn-primary">{busy ? (source ? 'Making the copy…' : 'Adding…') : source ? 'Make the copy' : 'Add the design'}</button>
       <button type="button" disabled={busy} className="btn btn-secondary ml-2" onClick={() => { setDraft(null); setError(''); }}>Cancel</button>
     </div>}</Dialog>
