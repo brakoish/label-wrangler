@@ -12,6 +12,7 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, rewindEvent, REWIND_EVENT } from '@/lib/runRewind';
 import { extendThrough, firstUnsentLabel, officeLabelsIn, officeMarkPlan, officeWaitingSpans, skippedLabels, spanWords, type OfficeSpan } from '@/lib/officeRange';
 import { RunProgress } from './RunProgress';
+import { printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
@@ -1293,7 +1294,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const transportReady = (transport === 'dazzle' && !!dazzleSelected) || (transport === 'webusb' && !!usbPrinter);
   const pickerOpen = !isSheetFormat && (showTransportPicker || !transport);
   const runFinished = printedCount >= total && total > 0;
-  const display = runDisplayStatus({ status: run.status, printedCount, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
+  // Every label counted as printed, wherever it sits (5–10 marked reads as 6, not 0).
+  const printedSpanList = printedSpans(printedCount, officeConfirmed, total);
+  const printedLabels = printedSpanList.reduce((n, s) => n + s.to - s.from + 1, 0);
+  const toGo = stillToGo(printedSpanList, total);
+  const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
   const officeNeedsSomeone = (officeSummary?.failed ?? 0) > 0 || (officeSummary?.onTheWay ?? 0) > 0;
@@ -1694,7 +1699,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? 'Sending is off until every label has a value (see the list above).' : checksReason} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} />}
           {officeFixFirst && checkList}
           </>}
         </section>

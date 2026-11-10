@@ -120,7 +120,7 @@ assert.doesNotMatch(page,/<PrintCheckList/,'the run page has its own one-tick-pe
 assert.match(page,/barcodeTicksAllow\(printCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
 assert.match(page,/const calm = \(runFinished \|\| run\.status === 'cancelled' \|\| status === 'cancelled'\) && !woken && status !== 'running'/,'finished and cancelled runs are a calm summary');
 assert.match(page,/\{officeFixFirst && checkList\}/,'a failed office part comes before the barcode list');
-assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it');
+assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount: printedLabels, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it, and counts every printed label');
 assert.doesNotMatch(page,/remaining in printer batch/);
 const nav=read('src/lib/printNavigation.ts');
 assert.match(nav,/if \(officeSeries\) \{/);

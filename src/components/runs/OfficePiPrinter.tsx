@@ -80,7 +80,7 @@ const tone={bad:'text-red-400',warn:'text-amber-300',ok:'text-emerald-400'} as c
 /** Runs with a "Send all in parts" series going in this tab: one series per run at a time. */
 const seriesLocks=new Set<string>();
 const dotTone={bad:'bg-red-400',warn:'bg-amber-300',ok:'bg-emerald-400'} as const;
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,toGo}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -107,7 +107,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   /** Labels already printed by scanning (scan mode), so a send can leave them out. */
   scannedLabels?:ReadonlyArray<number>;
   /** Goes up when the run page's "Print some labels again…" asks this panel to start choosing labels. */
-  openChooser?:number}){
+  openChooser?:number;
+  /** Labels not counted as printed yet, as the run's progress names them (not repeated here). */
+  toGo?:ReadonlyArray<OfficeSpan>}){
   const uid=useId();
   const [printers,setPrinters]=useState<Printer[]>([]);const [selected,setSelected]=useState('');
   const [stationsLoaded,setStationsLoaded]=useState(false);const [canPrint,setCanPrint]=useState(false);
@@ -806,7 +808,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {showForm && <>
     {(chooseAgain || reprintOf || sendOther) && !pending && <div className="flex items-center justify-between gap-2 text-sm text-zinc-300"><span>{reprintOf?'Print these labels again.':chooseAgain?'Which labels? Type the first and last label number.':'Choose which labels to send.'}</span><button type="button" className="btn btn-ghost btn-sm" onClick={()=>{setChooseAgain(false);setReprintOf('');setSendOther(false);rangeEdited.current=false;}}>Cancel</button></div>}
     {!pending && !chooseAgain && !reprintOf && !sendOther && heldOffer && <p className="text-sm text-zinc-300">{capitalise(spanWords(heldUnsent))} {single(heldUnsent)?'was':'were'} held back so the reprint came out first.{sendingHeld?'':` Send ${range(heldOffer.from,heldOffer.to)} next.`} <button type="button" className="link" onClick={()=>saveHeld([])}>Not now</button></p>}
-    {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
+    {!pending && !chooseAgain && !reprintOf && !sendOther && !heldOffer && unsentSpans.length>0 && !(toGo && toGo.length>0 && (toGo.length>1 || toGo[0].from!==printedCount+1) && spanWords(toGo)===spanWords(unsentSpans)) && <p className="text-sm text-zinc-300">{capitalise(spanWords(unsentSpans))} {single(unsentSpans)?'hasn’t':'haven’t'} gone to the office printer yet.</p>}
     {/* "Send again" resends the saved request, so the range boxes step aside. */}
     {!pending && <div className="grid grid-cols-3 gap-2">
       <label className="text-xs font-medium text-zinc-400">From label<input className={inputClass+' mt-1'} inputMode="numeric" autoFocus={chooseAgain} disabled={!!pending || busy} value={from} onChange={e=>{rangeEdited.current=true;setFrom(e.target.value);}} /></label>
