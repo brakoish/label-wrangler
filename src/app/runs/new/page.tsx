@@ -1134,6 +1134,50 @@ function NewRunContent() {
     }
   };
 
+  // "Use a QR code instead" for this run only: a copy of the design with the
+  // QR code swapped in, named plainly, so the saved design (and every other
+  // run made from it) stays as it is. A copy made before (a reload) is reused.
+  const [qrCopy, setQrCopy] = useState<{ from: string; to: string; name: string; tone: 'ok' | 'error'; qrInches?: number; keptText?: boolean; droppedText?: boolean } | null>(null);
+  const [qrBusy, setQrBusy] = useState(false);
+  const switchToQrCopy = async (fix: BarcodeAutoFix) => {
+    if (!template || qrBusy) return;
+    const from = template;
+    const name = `${from.name} (QR code)`;
+    setQrBusy(true);
+    try {
+      const existing = useTemplateStore.getState().templates.find((t) => !t.archivedAt && t.name === name && t.formatId === from.formatId && (t.thermalRenderMode ?? 'native-v1') === (from.thermalRenderMode ?? 'native-v1'));
+      const copy = existing ?? await addTemplate({ name, description: from.description, formatId: from.formatId, thermalRenderMode: from.thermalRenderMode, elements: fix.elements });
+      setImagesByTemplate((current) => ({ ...current, [copy.id]: current[from.id] ?? {} }));
+      setTemplateId(copy.id);
+      setQrCopy({ from: from.id, to: copy.id, name, tone: 'ok', qrInches: fix.qrInches, keptText: fix.keptText, droppedText: fix.droppedText });
+    } catch {
+      setQrCopy({ from: from.id, to: from.id, name, tone: 'error' });
+    } finally {
+      setQrBusy(false);
+    }
+  };
+  const undoQrCopy = () => {
+    if (!qrCopy) return;
+    setTemplateId(qrCopy.from);
+    setQrCopy(null);
+  };
+  // Arriving from the run page's "Use a QR code instead": switch once, as soon
+  // as the copied run's design and data are here.
+  const qrIntent = searchParams.get('barcode') === 'qr';
+  const qrIntentDone = useRef(false);
+  const [qrIntentNote, setQrIntentNote] = useState('');
+  const switchToQrCopyRef = useRef(switchToQrCopy);
+  useEffect(() => { switchToQrCopyRef.current = switchToQrCopy; });
+  const duplicateApplied = !!duplicateFrom && didApplyDuplicateRef.current === duplicateFrom;
+  useEffect(() => {
+    if (!qrIntent || qrIntentDone.current || !duplicateApplied) return;
+    if (!template || template.summaryOnly || !format || labelCount === 0) return;
+    qrIntentDone.current = true;
+    const qr = barcodeFixes?.qr ?? (barcodeFixes?.fix?.kind === 'qr' ? barcodeFixes.fix : null);
+    if (qr) void switchToQrCopyRef.current(qr);
+    else if (barcodeCheck.issues.length) setQrIntentNote('A QR code doesn’t fit every label of this design, so nothing was switched. The choices are under Review.');
+  }, [qrIntent, duplicateApplied, template, format, labelCount, barcodeFixes, barcodeCheck.issues.length]);
+
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
   const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
@@ -1715,6 +1759,18 @@ function NewRunContent() {
                     })}
                   />
                 )}
+                {qrCopy && template && (qrCopy.tone === 'error' || qrCopy.to === template.id) && (
+                  <p role={qrCopy.tone === 'error' ? 'alert' : 'status'} className={`fold-reveal mt-2 flex items-start gap-1.5 text-sm ${qrCopy.tone === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
+                    {qrCopy.tone === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />}
+                    <span>
+                      {qrCopy.tone === 'error'
+                        ? 'Couldn’t make the QR code copy of the design, so nothing changed. Check your connection, then press “Use a QR code instead” under Review.'
+                        : `Switched to a QR code in a copy of the design, “${qrCopy.name}”. The original is unchanged.${barcodesClear && labelCount > 0 ? ` All ${labelCount.toLocaleString()} label${labelCount === 1 ? '' : 's'} can print.` : ''}${qrCopy.droppedText ? ' The number under the barcode won’t print.' : ''}${qrCopy.qrInches !== undefined && qrCopy.qrInches < QR_SCAN_INCHES ? ` The QR code prints ${qrCopy.qrInches}" wide, small for some phones: test-scan one.` : ''}`}
+                      {qrCopy.tone === 'ok' && <>{' '}<button type="button" className="link" onClick={undoQrCopy}>Undo</button></>}
+                    </span>
+                  </p>
+                )}
+                {qrIntentNote && !qrCopy && <p role="status" className="mt-2 text-sm text-zinc-300">{qrIntentNote}</p>}
               </div>
             </div>
           </section>}
@@ -2315,10 +2371,11 @@ function NewRunContent() {
                       onTick={tickBarcodeItem}
                       fix={<>
                         {barcodeFixes?.fix && (
-                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
+                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void (barcodeFixes.fix!.kind === 'qr' ? switchToQrCopy(barcodeFixes.fix!) : applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId))}>{barcodeFixes.fix.label}</button>
                         )}
                         {!barcodeFixes?.fix && barcodeFixes?.qr && (
-                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>
+                          // A QR code changes what the label is: made in a copy for this run, never the saved design.
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void switchToQrCopy(barcodeFixes.qr!)}>{qrBusy ? 'Making a copy…' : barcodeFixes.qr.label}</button>
                         )}
                         {barcodeWords.fixIn !== 'data' && template && (
                           <FixInDesignerLink href={designerFixHref(template.id, designIssues.find((issue) => issue.elementId)?.elementId)} />
