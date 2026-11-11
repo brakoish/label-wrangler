@@ -32,6 +32,8 @@ interface TemplateListProps {
   onNewTemplate: () => void;
   /** Shown above the list, e.g. when a design link couldn't open. */
   notice?: ReactNode;
+  /** Opened from a link to a design that is gone: said once, under the title, in words that fit the list. */
+  missingLink?: boolean;
   /** When the whole list failed while a design link was opening: one error, one Try again for both. */
   openingName?: string;
   onRetryOpen?: () => void;
@@ -49,6 +51,7 @@ export function TemplateList({
   onNewTemplate,
   extra,
   notice,
+  missingLink = false,
   openingName,
   onRetryOpen,
 }: TemplateListProps) {
@@ -85,7 +88,6 @@ export function TemplateList({
 
   return (
     <div className="page-container">
-      {!(listError && templates.length === 0) && notice}
       <PageHeader
         className="mb-6"
         title="Designs"
@@ -94,6 +96,9 @@ export function TemplateList({
         // while the list failed to load, there is only Try again.
         action={(listHydrated || listError) && templates.length === 0 ? undefined : newButton}
       />
+      {/* Under the title, never above it; with no designs at all, the empty state says it. */}
+      {!(listError && templates.length === 0) && notice}
+      {missingLink && templates.length > 0 && <p role="status" className="-mt-2 mb-4 text-sm text-amber-300">That design link doesn’t go to a design any more. Pick one below.</p>}
       {templates.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2">
       <div className="segmented w-full sm:w-auto" role="group" aria-label="Show">
         <SegmentedIndicator index={showArchived ? 1 : 0} count={2} />
@@ -126,7 +131,7 @@ export function TemplateList({
       ) : visibleTemplates.length === 0 ? (
         <EmptyState
           title={isFiltered ? 'No matching designs' : showArchived ? 'No archived designs' : templates.length ? 'No active designs' : 'No designs yet'}
-          body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : 'Make your first label design, or start from the sample.'}
+          body={isFiltered ? 'Try another name or label size, or clear the filters.' : showArchived ? 'Archived designs show up here. Saved runs keep working.' : templates.length ? 'Make a new design or restore one from Archived.' : missingLink ? 'That design isn’t here any more. Make your first label design, or start from the sample.' : 'Make your first label design, or start from the sample.'}
           actions={templates.length === 0 ? <>{newButton}{extra}</> : undefined}
         />
       ) : (
