@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback, useId } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight, RotateCcw } from 'lucide-react';
+import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight, RotateCcw, Info } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { IconSwap } from '@/components/motion/IconSwap';
@@ -21,11 +21,11 @@ import { blankLabelDataUrl, isNothingToDrawError, renderZplToDataUrl, thermalRen
 import { prepareRunPreview, type RunPreviewState } from '@/lib/runPreview';
 import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
-import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
+import { BlankSummary, ProblemList, type BlankChoice } from '@/components/checks/RunChecks';
 import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
+import { NO_GLYPH_PROBLEMS, glyphProblemItems, wizardGlyphCheck } from '@/components/checks/glyphRows';
 import { LongValueWarning } from '@/components/checks/LongValueWarning';
-import { isLongValueIssue, longLabelWords, longValueReason, longValueRows, type LongValueRows } from '@/components/checks/longValues';
-import { barcodeTickLabel, barcodeWaitWords } from '@/lib/runBarcodeTicks';
+import { isLongValueIssue, longLabelWords, longValueRows, type LongValueRows } from '@/components/checks/longValues';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
 import { stopFixWords, LAYOUT_GO_AHEAD, barcodeIssueStops, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
 import { confirmDialog, toast } from '@/components/ui/feedback';
@@ -33,7 +33,9 @@ import { friendlyError, friendlyRenderError, isNetworkError, SEARCH_DETAILS_INCO
 import { LabelOutlineOverlay } from '@/components/LabelOutlineOverlay';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { MANIFEST_FIELD_OPTIONS, MANIFEST_FIELDS } from '@/lib/manifestFields';
-import type { FieldMapping, RunDataSource, TemplateElement } from '@/lib/types';
+import type { FieldMapping, LabelTemplate, RunDataSource, TemplateElement } from '@/lib/types';
+import { apiJson } from '@/lib/apiClient';
+import { designFingerprint, freshQrCopyName, qrCopyStillMatches, readQrCopy, saveQrCopy } from './qrCopy';
 import { contentModeUpdates } from '@/lib/elementBinding';
 import { friendlyFieldName, nextFieldName, setSpreadsheetHeaderRow, setSpreadsheetRowMap } from '@/lib/fieldLabels';
 import { sameValueRiskKey, sameValueRisks, scannableFieldNames, staticValuesForRun } from '@/lib/runFieldSetup';
@@ -50,6 +52,8 @@ import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/li
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
 import { saveLastColumns } from '@/lib/lastColumns';
 import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
+import { ServerDetails } from '@/components/ui/DetailsFold';
+import { plainServerError } from '@/lib/runErrors';
 import { clearRunDraft, lastRunSource, readRunDraft, rememberRunSource, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 
 /** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
@@ -205,6 +209,11 @@ function manifestPackageKey(row: ManifestRow) {
   return row.packageTag || row.tag || row.id || `${row.itemName}-${row.batch}`;
 }
 
+/** A run the wizard can copy: its saved design and every row are here. */
+function runReadyToCopy<R extends { designSnapshot?: unknown; totalLabels: number; sourceData: ReadonlyArray<unknown> }>(run: R | null | undefined): run is R & { designSnapshot: NonNullable<R['designSnapshot']> } {
+  return !!run && !!run.designSnapshot && !(run.totalLabels > 0 && run.sourceData.length === 0);
+}
+
 function shortRunDate(date = new Date()) {
   return `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`;
 }
@@ -304,7 +313,7 @@ function NewRunContent() {
   // until a new Manifest search explicitly replaces them.
   const [savedManifestRows, setSavedManifestRows] = useState<ManifestRow[] | null>(null);
   const [selectedManifestPackageKey, setSelectedManifestPackageKey] = useState<string | null>(null);
-  const [manifestError, setManifestError] = useState<string | null>(null);
+  const [manifestError, setManifestError] = useState<{ text: string; details: string } | null>(null);
   const [isSearchingManifest, setIsSearchingManifest] = useState(false);
   const [hasSearchedManifest, setHasSearchedManifest] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -314,7 +323,7 @@ function NewRunContent() {
   const [isCreatingRun, setIsCreatingRun] = useState(false);
   const [leavingAfterCreate, setLeavingAfterCreate] = useState(false);
   const formId = useId();
-  const [createRunError, setCreateRunError] = useState<string | null>(null);
+  const [createRunError, setCreateRunError] = useState<{ text: string; details: string } | null>(null);
   // Controls the 'create new template' dialog invoked from the template
   // picker. Kept local to this page so the modal render + submit logic
   // doesn't leak into the template store.
@@ -370,16 +379,28 @@ function NewRunContent() {
   // Apply duplicateFrom on mount. Clones template + mappings + static values
   // + source data so the user can re-run the same batch with a fresh name.
   // Hydrated after the runs store loads, so we wait until runs is populated.
+  // One load per try: a run that can't be loaded (deleted, no access, offline)
+  // says so with Try again, never a blank new run.
   const didApplyDuplicateRef = useRef<string | null>(null);
+  const duplicateTriedRef = useRef<string | null>(null);
+  const [duplicateTry, setDuplicateTry] = useState(0);
+  const [duplicateLoad, setDuplicateLoad] = useState<'loading' | 'failed' | null>(null);
   useEffect(() => {
     if (!duplicateFrom) return;
     if (didApplyDuplicateRef.current === duplicateFrom) return;
     const src = runs.find((r) => r.id === duplicateFrom);
-    if (!src || !src.designSnapshot || (src.totalLabels > 0 && src.sourceData.length === 0)) {
-      void fetchRun(duplicateFrom);
+    if (!runReadyToCopy(src)) {
+      const attempt = `${duplicateFrom}#${duplicateTry}`;
+      if (duplicateTriedRef.current === attempt) return;
+      duplicateTriedRef.current = attempt;
+      setDuplicateLoad('loading');
+      void fetchRun(duplicateFrom)
+        .then((loaded) => { if (!runReadyToCopy(loaded)) setDuplicateLoad('failed'); })
+        .catch(() => setDuplicateLoad('failed'));
       return;
     }
     didApplyDuplicateRef.current = duplicateFrom;
+    setDuplicateLoad(null);
     setName(`${src.name} — ${new Date().toLocaleDateString()}`);
     setTemplateId(src.templateId);
     // Legacy defaults may not meet the stricter upload limits.
@@ -419,7 +440,7 @@ function NewRunContent() {
       setPasteText((sd as string[]).join('\n'));
       if (src.mappedField) setPasteField(src.mappedField);
     }
-  }, [duplicateFrom, fetchRun, runs]);
+  }, [duplicateFrom, fetchRun, runs, duplicateTry]);
 
   useEffect(() => { if (templateId) void useTemplateStore.getState().fetchTemplate(templateId); }, [templateId]);
   const template = useMemo(() => templates.find((t) => t.id === templateId && !t.summaryOnly) ?? null, [templates, templateId]);
@@ -504,6 +525,20 @@ function NewRunContent() {
     setHiddenRunFields((prev) => (prev.includes(field) ? prev : [...prev, field]));
     setJustLeftOff((prev) => (prev.includes(field) ? prev : [...prev, field]));
   };
+  // "Choose a column for Text" in the missing-column warning: the field's
+  // column list opens, so picking one is the first way out (leaving it off
+  // prints labels without it).
+  const chooseColumnFor = (field: string) => {
+    setFieldMappings((m) => (m[field]?.mode === 'column' ? m : { ...m, [field]: { mode: 'column', csvColumn: '' } }));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const select = document.getElementById(`${formId}-col-${field}`);
+      if (!select) return;
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      select.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+      select.focus({ preventScroll: true });
+      if (select.getAttribute('aria-expanded') !== 'true') select.click();
+    }));
+  };
   const putBack = (fields: string[]) => {
     setHiddenRunFields((prev) => prev.filter((f) => !fields.includes(f)));
     setJustLeftOff((prev) => prev.filter((f) => !fields.includes(f)));
@@ -520,7 +555,7 @@ function NewRunContent() {
   // which used to bump the template revision and break other designer tabs.
   const unnamedDynamic = useMemo(() => template ? template.elements.filter((el) => el.type !== 'image' && !el.isStatic && (!el.fieldName || !el.fieldName.trim())) : [], [template]);
   const [namingFields, setNamingFields] = useState(false);
-  const [namingError, setNamingError] = useState<string | null>(null);
+  const [namingError, setNamingError] = useState<{ text: string; details: string } | null>(null);
   const nameUnnamedFields = async () => {
     if (!template || !unnamedDynamic.length) return;
     const named: { fieldName?: string }[] = template.elements.filter((el) => el.fieldName?.trim());
@@ -535,7 +570,7 @@ function NewRunContent() {
       }
       await saveTemplate(template.id);
     } catch (error) {
-      setNamingError((error as Error).message || 'Could not save the design. Try again.');
+      setNamingError(plainServerError(error, 'Could not save the design. Try again.'));
     } finally {
       setNamingFields(false);
     }
@@ -656,10 +691,10 @@ function NewRunContent() {
       setSelectedManifestPackageKey(rows[0] ? manifestPackageKey(rows[0]) : null);
       setPreviewIndex(0);
       applyAutoColumnMapping(MANIFEST_HEADERS, rows);
-      if (data.error) setManifestError(data.error);
-      else if (data.detailsIncomplete) setManifestError(SEARCH_DETAILS_INCOMPLETE);
+      if (data.error) setManifestError(plainServerError(String(data.error), 'Couldn’t search Nabis just now. Try again in a minute.'));
+      else if (data.detailsIncomplete) setManifestError({ text: SEARCH_DETAILS_INCOMPLETE, details: '' });
     } catch (error) {
-      setManifestError(error instanceof Error ? error.message : 'Couldn’t search Nabis');
+      setManifestError(plainServerError(error, 'Couldn’t search Nabis just now. Try again in a minute.'));
       setManifestRows([]);
       setSelectedManifestPackageKey(null);
     } finally {
@@ -794,7 +829,12 @@ function NewRunContent() {
   // Labels whose spreadsheet values can't print (é in a barcode, an emoji in
   // the printer's font): they can be left out too, like blank rows.
   const charFromSheet = useCallback((field: string) => allCheckData.fieldMappings[field]?.mode === 'column', [allCheckData]);
-  const charBadIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet)), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
+  // Characters a picture design can't draw (★, 龍), barcode numbers included:
+  // the renderer refuses those labels, as the run page says. Over every row,
+  // so leaving labels out never changes which labels these are.
+  const glyphAll = useMemo(() => (checkTemplate ? wizardGlyphCheck(checkTemplate, format, allCheckData) : NO_GLYPH_PROBLEMS), [checkTemplate, format, allCheckData]);
+  const glyphBadIndexes = useMemo(() => (inputMode === 'manual' || glyphAll.labels.includes(0) ? [] : glyphAll.labels.map((label) => label - 1)), [inputMode, glyphAll]);
+  const charBadIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : Array.from(new Set([...labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet), ...glyphBadIndexes])).sort((a, b) => a - b)), [inputMode, checkTemplate, format, allCheckData, charFromSheet, glyphBadIndexes]);
   // The two kinds apart, so each list's button leaves out only its own labels.
   const charBadBarcodeIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet, 'barcode')), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
   const charBadTextIndexes = useMemo(() => (inputMode === 'manual' || !checkTemplate ? [] : labelsWithBadCharacters(checkTemplate, format, allCheckData, charFromSheet, 'text')), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
@@ -1163,17 +1203,32 @@ function NewRunContent() {
 
   // "Use a QR code instead" for this run only: a copy of the design with the
   // QR code swapped in, named plainly, so the saved design (and every other
-  // run made from it) stays as it is. A copy made before (a reload) is reused.
+  // run made from it) stays as it is. A copy this device made before (a
+  // reload) is reused only when it is provably the same: made from this
+  // design as it is now and unchanged since (qrCopy.ts). Never by name.
   const [qrCopy, setQrCopy] = useState<{ from: string; to: string; name: string; tone: 'ok' | 'error'; qrInches?: number; keptText?: boolean; droppedText?: boolean } | null>(null);
   const [qrBusy, setQrBusy] = useState(false);
   const switchToQrCopy = async (fix: BarcodeAutoFix) => {
     if (!template || qrBusy) return;
     const from = template;
-    const name = `${from.name} (QR code)`;
+    let name = `${from.name} (QR code)`;
+    const wanted = { formatId: from.formatId, thermalRenderMode: from.thermalRenderMode, elements: fix.elements };
+    const storage = typeof window !== 'undefined' ? window.localStorage : null;
     setQrBusy(true);
     try {
-      const existing = useTemplateStore.getState().templates.find((t) => !t.archivedAt && t.name === name && t.formatId === from.formatId && (t.thermalRenderMode ?? 'native-v1') === (from.thermalRenderMode ?? 'native-v1'));
-      const copy = existing ?? await addTemplate({ name, description: from.description, formatId: from.formatId, thermalRenderMode: from.thermalRenderMode, elements: fix.elements });
+      const record = readQrCopy(storage, from.id);
+      // Read the copy fresh from the server: a cached one could be stale.
+      const saved = record ? await apiJson<LabelTemplate>(`/api/templates/${encodeURIComponent(record.copyId)}`).catch(() => null) : null;
+      let copy: LabelTemplate;
+      if (saved && qrCopyStillMatches(record, saved, wanted)) {
+        copy = saved;
+        useTemplateStore.setState((state) => ({ templates: [...state.templates.filter((t) => t.id !== saved.id), saved] }));
+      } else {
+        name = freshQrCopyName(from.name, useTemplateStore.getState().templates.map((t) => t.name));
+        copy = await addTemplate({ name, description: from.description, formatId: from.formatId, thermalRenderMode: from.thermalRenderMode, elements: fix.elements });
+        saveQrCopy(storage, from.id, { copyId: copy.id, made: designFingerprint(wanted), saved: designFingerprint(copy) });
+      }
+      name = copy.name;
       setImagesByTemplate((current) => ({ ...current, [copy.id]: current[from.id] ?? {} }));
       setTemplateId(copy.id);
       setQrCopy({ from: from.id, to: copy.id, name, tone: 'ok', qrInches: fix.qrInches, keptText: fix.keptText, droppedText: fix.droppedText });
@@ -1208,6 +1263,10 @@ function NewRunContent() {
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
   const characterCheck = useMemo(() => (checkTemplate && hasData ? checkRunPrinterCharacters(checkTemplate, format, runDataForCheck) : { issues: [], badLabels: 0 }), [checkTemplate, hasData, runDataForCheck, format]);
+  // The labels of this run a picture design can't draw: they can't print, so
+  // Start waits until they are left out or fixed (no "Print anyway").
+  const glyphCheck = useMemo(() => (checkTemplate && hasData ? wizardGlyphCheck(checkTemplate, format, runDataForCheck) : NO_GLYPH_PROBLEMS), [checkTemplate, hasData, runDataForCheck, format]);
+  const glyphsOk = glyphCheck.labels.length === 0;
 
   // The review picture opens on the first label with a problem (label 12,
   // say), not on label 1, so the person sees what the message is about. It
@@ -1215,7 +1274,7 @@ function NewRunContent() {
   const firstProblemIndex = useMemo(() => {
     if (inputMode === 'manual' || labelCount <= 1) return null;
     const inRun: number[] = [];
-    for (const issue of [...barcodeCheck.issues, ...characterCheck.issues]) if (issue.label > 0) inRun.push(issue.label - 1);
+    for (const issue of [...barcodeCheck.issues, ...characterCheck.issues, ...glyphCheck.issues]) if (issue.label > 0) inRun.push(issue.label - 1);
     // Blank rows are numbered over the whole file; left-out rows aren't shown.
     for (const issue of blankCheck.issues) {
       if (issue.kind !== 'empty-rows' || issue.count >= allDataRows.length) continue;
@@ -1227,7 +1286,7 @@ function NewRunContent() {
     if (!inRun.length) for (const warning of barcodeCheck.warnings) if (warning.label > 0) inRun.push(warning.label - 1);
     const first = inRun.filter((index) => index < labelCount).sort((a, b) => a - b)[0];
     return first === undefined ? null : first;
-  }, [inputMode, labelCount, barcodeCheck, characterCheck, blankCheck, allDataRows.length, keptRows]);
+  }, [inputMode, labelCount, barcodeCheck, characterCheck, glyphCheck, blankCheck, allDataRows.length, keptRows]);
   const jumpedTo = useRef<number | null>(null);
   useEffect(() => {
     if (firstProblemIndex === null) { jumpedTo.current = null; return; }
@@ -1260,6 +1319,7 @@ function NewRunContent() {
     barcodesOk &&
     charactersOk &&
     layoutOk &&
+    glyphsOk &&
     examplesOk &&
     (inputMode === 'manual'
       ? dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0) && manualQty >= 1
@@ -1285,33 +1345,25 @@ function NewRunContent() {
                 : inputMode === 'paste' && !pasteField
                   ? 'Choose which field the pasted values fill.'
                   : null;
-  // Spreadsheet rows and design problems counted apart, so the footer never
-  // blames the design for a value in the file.
-  const barcodeStopCounts = () => {
-    const stopping = designIssues.filter((issue) => barcodeIssueStops(issue, format));
-    const rows = new Set(stopping.filter((issue) => issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field)).map((issue) => issue.label)).size;
-    const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
-    return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
-  };
+
   // The parts Nabis didn't send are said once, in the Nabis notice with its
   // own Search again and Leave off: not again as "pick another package".
   const nabisCoversBlanks = !nabisOk && blankCheck.issues.length > 0 && blankCheck.issues.every((issue) => nabisGapFields.includes(issue.field));
+  const reviewProblems = [
+    !blanksOk && !nabisCoversBlanks && !blankCheck.issues.every((issue) => issue.kind === 'no-value'),
+    !longOk, !designOk, !charactersOk, !glyphsOk, !layoutOk,
+  ].filter(Boolean).length;
   const checkReasons = setupReason || !format ? [] : [
     !blanksOk && !nabisCoversBlanks && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
-      : `${blankHeading(blankCheck)}: choose what to do in Review.`),
+      : false),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && (placeholderRisks.length
       ? (placeholderRisks[0].type === 'qr' ? 'Type the web address the QR code should open, or make it change per label.' : 'Type the number the barcode should hold, or make it change per label.')
       : `Make the ${confirmRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`),
-    !longOk && longValueReason(longFields, longLeft.length, allDataRows.length, longStops),
-    !designOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
-      ? `A barcode can’t print. ${charSkippable ? 'Leave that label out, fix that row' : 'Fix that row'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`
-      : `Some barcodes can’t print. ${charSkippable ? 'Leave those labels out, fix those rows' : 'Fix those rows'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`)
-      : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
-        : barcodeWaitWords(barcodeWords.stops, barcodeItems.length, barcodeItems.length === 1 ? barcodeTickLabel(barcodeItems[0]) : undefined)),
-    !charactersOk && `${characterCheck.badLabels.toLocaleString()} label${characterCheck.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print. Fix them, leave those labels out, or tick “Print anyway” in Review.`,
-    !layoutOk && 'Items overlap: tick “I checked the preview” in Review, or fix the design.',
+    // Problems shown in Review are said there, once, with their fixes; the
+    // footer only points to them.
+    reviewProblems > 0 && (reviewProblems === 1 ? 'Sort out the problem in Review to start.' : `Sort out the ${reviewProblems} problems in Review to start.`),
     !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, manifestSelectedRows.length)}. Search again, or tick ${nabisGapFields.length ? `to leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off` : 'to print without them'}.`,
   ].filter((reason): reason is string => !!reason);
   const previewReason = setupReason || !format || checkReasons.length ? null
@@ -1514,6 +1566,11 @@ function NewRunContent() {
         status: autoStart ? 'queued' : 'draft',
       });
       if (presetId) void updatePreset(presetId, { touch: true });
+      // Made from an old run's "Use a QR code instead", with the QR copy in
+      // use: link the two, so the new run's page can offer to cancel the old one.
+      if (duplicateFrom && qrIntent && qrCopy?.tone === 'ok' && qrCopy.to === template.id) {
+        try { window.localStorage.setItem(`lw:qr-replaces:${run.id}`, duplicateFrom); } catch { /* storage off: no offer */ }
+      }
       clearRunDraft();
       rememberRunSource(inputMode);
       if (blankCheck.issues.length && leaveBlank) rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, run.id, blankCheck.signature);
@@ -1530,9 +1587,10 @@ function NewRunContent() {
       return run;
     } catch (error) {
       console.error('Error creating run:', error);
+      // Plain words; what the server said (it can name internal machines) stays behind Details.
       setCreateRunError(isNetworkError(error)
-        ? 'Couldn’t reach Label Wrangler. Check your internet and press Start run again. Nothing was printed and your data is still here.'
-        : friendlyError(error, 'Could not start this run. Nothing was printed and your data is still here.'));
+        ? { text: 'Couldn’t reach Label Wrangler. Check your internet and press Start run again. Nothing was printed and your data is still here.', details: '' }
+        : plainServerError(error, 'Something went wrong on our side, so the run didn’t start. Your data is still here. Try again in a minute.'));
       return null;
     } finally {
       setIsCreatingRun(false);
@@ -1620,8 +1678,12 @@ function NewRunContent() {
   // drawn at all: say that in plain words (the problem and its fixes are
   // listed under the picture), not the renderer's own error.
   const shownBadBarcode = previewState.status === 'error' && barcodeCheck.issues.some((issue) => issue.kind !== 'too-long' && issue.kind !== 'tight' && issue.label > feedStart && issue.label <= feedStart + across);
+  // Characters a picture design can't draw: said plainly (the list under the picture names them), not the renderer's words.
+  const shownBadGlyph = previewState.status === 'error' && !shownBadBarcode && glyphCheck.labels.some((label) => label === 0 || (label > feedStart && label <= feedStart + across));
   const previewMessage = shownBadBarcode
     ? `The preview can’t draw the barcode on ${across > 1 ? 'these labels' : 'this label'}: its value has characters a barcode can’t hold.`
+    : shownBadGlyph
+      ? `The preview can’t draw ${across > 1 ? 'these labels' : 'this label'}: some characters can’t be drawn (see below).`
     : previewState.status === 'error' && checkTemplate
       ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
       : '';
@@ -1669,6 +1731,25 @@ function NewRunContent() {
     return <button type="button" className="btn btn-secondary btn-sm max-w-full whitespace-normal text-left max-sm:min-h-11 max-sm:py-2" onClick={() => leaveCharsOut(indexes)}>{words}</button>;
   };
 
+  // "Re-run with the same data" on a run that isn't finished: say once, at
+  // the top, that the old run is still open (both could print the same labels).
+  const duplicateSource = duplicateFrom ? runs.find((r) => r.id === duplicateFrom) ?? null : null;
+  const copiedRunStillOpen = duplicateApplied && !qrIntent && !!duplicateSource
+    && duplicateSource.status !== 'completed' && duplicateSource.status !== 'cancelled'
+    && (duplicateSource.printedCount || 0) < duplicateSource.totalLabels;
+
+  // Text a picture design can't draw: one line per label, and "Leave label
+  // N out" like the other row problems (never for a fixed text: nothing prints).
+  const glyphItems = glyphProblemItems(glyphCheck, fieldIsFromSheet);
+  const glyphLeft = glyphBadIndexes.filter((index) => !charSkipped.includes(index) && (!keptRows || keptRows.includes(index)));
+  const glyphLeaveOut = charSkippable && glyphLeft.length > 0 && labelCount - glyphLeft.length >= 1 ? (
+    <button type="button" className="btn btn-secondary btn-sm max-w-full whitespace-normal text-left max-sm:min-h-11 max-sm:py-2" onClick={() => leaveCharsOut(glyphLeft)}>
+      {glyphLeft.length === 1
+        ? `Leave label ${((keptRows ? keptRows.indexOf(glyphLeft[0]) : glyphLeft[0]) + 1).toLocaleString()} out and print the other ${(labelCount - 1).toLocaleString()}`
+        : `Leave those ${glyphLeft.length.toLocaleString()} labels out and print the other ${(labelCount - glyphLeft.length).toLocaleString()}`}
+    </button>
+  ) : null;
+
   // The main AppShell nav has a 'Runs' tab, so no redundant 'Back to Runs'
   // action is needed here.
   return (
@@ -1708,6 +1789,24 @@ function NewRunContent() {
                 back={{ href: '/runs', label: 'Back to runs' }}
               />}
             />
+          )}
+
+          {duplicateFrom && duplicateLoad === 'failed' && (
+            <ErrorState
+              title="We couldn’t open that run"
+              body="Try again or start a new one."
+              actions={<>
+                <button type="button" className="btn btn-primary" onClick={() => { setDuplicateLoad(null); setDuplicateTry((n) => n + 1); }}>Try again</button>
+                <Link href="/runs/new" className="btn btn-ghost">Start a new run</Link>
+              </>}
+            />
+          )}
+          {duplicateFrom && duplicateLoad === 'loading' && <p role="status" className="text-sm text-zinc-400">Opening that run…</p>}
+          {copiedRunStillOpen && duplicateSource && (
+            <p role="status" className="flex items-start gap-1.5 text-sm text-zinc-300">
+              <Info className="mt-0.5 size-4 shrink-0 text-zinc-400" aria-hidden="true" />
+              <span>Run “<Link href={`/runs/${encodeURIComponent(duplicateSource.id)}`} className="link">{duplicateSource.name}</Link>” is still open with {(duplicateSource.printedCount || 0).toLocaleString()} of {duplicateSource.totalLabels.toLocaleString()} printed. This makes a new run from label 1.</span>
+            </p>
           )}
 
           {!libraryFailed && draftOffer && (
@@ -1819,7 +1918,7 @@ function NewRunContent() {
               >
                 {namingFields ? 'Saving design…' : 'Name them and save'}
               </button>
-              {namingError && <p role="alert" className="text-sm text-red-400">{namingError}</p>}
+              {namingError && <div role="alert" className="text-sm text-red-400"><p>{namingError.text}</p>{namingError.details && <ServerDetails text={namingError.details} />}</div>}
             </section>
           )}
 
@@ -2082,7 +2181,7 @@ function NewRunContent() {
                         <Search className="size-4" aria-hidden="true" /> {isSearchingManifest ? 'Searching' : 'Search'}
                       </button>
                     </div>
-                    {manifestError && <p className="text-sm text-amber-300">{manifestError}</p>}
+                    {manifestError && <div className="text-sm text-amber-300"><p>{manifestError.text}</p>{manifestError.details && <ServerDetails text={manifestError.details} />}</div>}
                     {manifestRows.length > 0 && (
                       <div className="space-y-1">
                         <div className="flex items-center justify-between px-1">
@@ -2156,14 +2255,17 @@ function NewRunContent() {
                           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                           No column for {unmatchedShown.map((f) => friendlyFieldName(f)).join(unmatchedShown.length === 2 ? ' and ' : ', ')}
                         </p>
-                        <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, choose &ldquo;Same on every label&rdquo; and type one value, or leave {unmatchedShown.length === 1 ? 'it' : 'them'} off this run.</p>
-                        <div className="flex flex-wrap gap-2 pl-5.5 pt-1">
-                          {unmatchedShown.map((field) => (
-                            <button key={field} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => leaveOffFromNotice(field)}>
+                        <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Choose the column that holds {unmatchedShown.length === 1 ? 'it' : 'each'}, or leave {unmatchedShown.length === 1 ? 'it' : 'them'} off and the labels print without {unmatchedShown.length === 1 ? friendlyFieldName(unmatchedShown[0]) : 'them'}.</p>
+                        {unmatchedShown.map((field) => (
+                          <div key={field} className="flex flex-wrap items-center gap-2 pl-5.5 pt-1">
+                            <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => chooseColumnFor(field)}>
+                              Choose a column for {friendlyFieldName(field)}
+                            </button>
+                            <button type="button" className="btn btn-ghost btn-sm max-sm:min-h-11" onClick={() => leaveOffFromNotice(field)}>
                               <EyeOff className="size-4" aria-hidden="true" /> Leave {friendlyFieldName(field)} off
                             </button>
-                          ))}
-                        </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                     <div className="space-y-4">
@@ -2201,6 +2303,7 @@ function NewRunContent() {
                               {mapping.mode === 'column' ? (
                                 <div className="flex-1 min-w-0">
                                   <CustomSelect
+                                    id={`${formId}-col-${field}`}
                                     aria-label={`Column for ${friendlyFieldName(field)}`}
                                     placeholder="Choose a column…"
                                     value={mapping.csvColumn ?? ''}
@@ -2335,7 +2438,7 @@ function NewRunContent() {
                         selectedLabelOffset={selectedSheetLabelOffset}
                       />
                     ) : (
-                      <LocalZplPreview state={previewState} message={previewMessage} hint={shownBadBarcode ? '' : undefined} format={format} blanks={previewUndrawn ? [...previewBlanks.boxes, ...previewUndrawn.boxes] : previewBlanks.boxes} />
+                      <LocalZplPreview state={previewState} message={previewMessage} hint={shownBadBarcode || shownBadGlyph ? '' : undefined} format={format} blanks={previewUndrawn ? [...previewBlanks.boxes, ...previewUndrawn.boxes] : previewBlanks.boxes} />
                     )}
                   </div>
                   {previewUndrawn && format.type === 'thermal' && (
@@ -2380,7 +2483,7 @@ function NewRunContent() {
                         choice={blankChoiceNow}
                         onChoiceChange={setBlankChoice}
                         sheetRow={(label) => label + (fileInfo?.headerRow ?? 1)}
-                        showWhenOk={!keptRows && barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
+                        showWhenOk={!keptRows && barcodesClear && charactersOk && glyphsOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
                       />
                     )}
                     {skipRows && skippable && (
@@ -2493,6 +2596,17 @@ function NewRunContent() {
                       onConfirmedChange={(value) => setCharacterGoAheadKey(value ? characterKey : '')}
                     />
                     <ProblemList
+                      tone="error"
+                      heading={glyphCheck.labels.includes(0) ? 'Nothing can print: the design has characters it can’t draw' : `${glyphCheck.labels.length.toLocaleString()} label${glyphCheck.labels.length === 1 ? ' has' : 's have'} characters this design can’t draw, so ${glyphCheck.labels.length === 1 ? 'it' : 'they'} can’t print`}
+                      items={glyphItems.items}
+                      more={glyphItems.more}
+                      actions={<>
+                        {glyphLeaveOut}
+                        {glyphCheck.labels.includes(0) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}
+                        {lastFile.current && glyphCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) && <span className="text-zinc-400">Or fix them in your spreadsheet, then use “Choose another file” at the top.</span>}
+                      </>}
+                    />
+                    <ProblemList
                       heading="Some items overlap or run off the label"
                       items={layoutIssues.slice(0, 5)}
                       more={layoutIssues.length - Math.min(5, layoutIssues.length)}
@@ -2533,9 +2647,13 @@ function NewRunContent() {
                   </div>
                   <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                     {createRunError ? (
-                      <p role="alert" className="flex items-start gap-1.5 text-sm text-red-400 sm:max-w-md">
-                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> {createRunError}
-                      </p>
+                      <div role="alert" className="flex items-start gap-1.5 text-sm text-red-400 sm:max-w-md">
+                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <p>{createRunError.text}</p>
+                          {createRunError.details && <ServerDetails text={createRunError.details} />}
+                        </div>
+                      </div>
                     ) : blockReasons.length && !isCreatingRun ? (
                       <WaitReasons reasons={blockReasons} />
                     ) : null}
