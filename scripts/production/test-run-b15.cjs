@@ -93,7 +93,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const run = { sourceData: [{ Strain: 'OG' }, { Strain: 'Star ★' }, { Strain: 'Kush' }], fieldMappings: { Strain: { mode: 'column', csvColumn: 'Strain' } }, staticValues: {} };
   const check = checkRunBitmapGlyphs({ elements: [text], thermalRenderMode: 'bitmap-v1' }, { type: 'thermal' }, run);
   assert.deepEqual(check.labels, [2]);
-  assert.equal(glyphStopWords(check, [2], () => true), 'Label 2’s Strain has “★”, which can’t be drawn, so it can’t print. Fix row 3 in your spreadsheet.');
+  assert.equal(glyphStopWords(check, [2], () => true), 'Label 2 (row 3 in your file) has “★” in Strain, which can’t be drawn, so it can’t print.');
   assert.deepEqual(checkRunBitmapGlyphs({ elements: [text], thermalRenderMode: 'native-v1' }, { type: 'thermal' }, run).labels, [], 'native ZPL is never stopped');
 }
 

@@ -544,7 +544,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const checkCurrent = (tickSend?.from ?? 0) === checkFrom && (tickSend?.to ?? 0) === checkTo;
   const checksOk = checkCurrent && !glyphStop && printCheckAllows(shownCheck, { ...goAhead, barcode: barcodeOk ? shownCheck.blockingKey : undefined });
   const stopWords = sendStopWords(sendCheck.stopsHere, sendCheck.before, transport === 'office' && !isSheetFormat ? 'Send' : 'Print', sendCheck.after);
-  const checksReason = checksOk ? '' : !checkCurrent ? 'Checking these labels…' : glyphStop ? glyphStop : shownCheck.blocking.length && (shownCheck.verdict.stops || !barcodeOk)
+  const checksReason = checksOk ? '' : !checkCurrent ? 'Checking these labels…' : glyphStop ? '' : shownCheck.blocking.length && (shownCheck.verdict.stops || !barcodeOk)
     ? (shownCheck.verdict.stops ? (stopWords || shownCheck.verdict.waitReason) : barcodeWaitWords(false, shownCheck.blocking.length, barcodeSendTickLabel(shownCheck.blocking[0], tickSend, total)))
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
@@ -563,6 +563,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (officeSendFrom === undefined || !Number.isInteger(officeSendFrom) || officeSendFrom < 1 || officeSendFrom > total) return;
     setPreviewIndex(officeSendFrom - 1);
   }, [officeSendFrom, total]);
+  // A label whose text can't be drawn stops the send: the preview shows it.
+  const firstGlyphLabel = glyphHere.find((label) => label > 0) ?? 0;
+  useEffect(() => {
+    if (firstGlyphLabel < 1 || firstGlyphLabel > total) return;
+    setPreviewIndex(firstGlyphLabel - 1);
+  }, [firstGlyphLabel, officeSendFrom, total]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -897,7 +903,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setPrinterStopped(false);
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before printing.'); return; }
-    if (!checksOk) { setErrorMsg(checksReason); return; }
+    if (!checksOk) { setErrorMsg(checksReason || glyphStop); return; }
     setErrorMsg(null);
     if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg(SYNC_WAIT_START); return; } }
     setRewindNotice(null);
@@ -1223,7 +1229,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const handleReprintRange = async (chosen?: { from: number; to: number }, kind: 'reprint' | 'only' = 'reprint') => {
     if (!run || !template || !format || (!chosen && !reprintValid) || reprinting || statusRef.current === 'running' || starting.current) return;
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before printing.'); return; }
-    if (!checksOk) { setErrorMsg(checksReason); return; }
+    if (!checksOk) { setErrorMsg(checksReason || glyphStop); return; }
     const range = chosen ?? { from: reprintFrom, to: reprintTo };
     // The check above covers the range boxes; these labels get their own look for a label that can't print.
     const own = runSendCheck(printCheck, run, template, format, range);
@@ -1325,7 +1331,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const openSheetPrintRange = (range?: { from?: number; to?: number }) => {
     if (!range && !rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
-    if (!checksOk) { setErrorMsg(checksReason); return; }
+    if (!checksOk) { setErrorMsg(checksReason || glyphStop); return; }
     const resolved = normalizeSheetRange(range);
     if (!openInNewTab(sheetPrintHref(resolved))) {
       setErrorMsg('Popup blocked. Allow popups, then try again.');
@@ -1659,7 +1665,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const toGo = stillToGo(printedSpanList, total);
   // Whether the progress line spells out what is still to go (then the office panel doesn't say it again).
   const toGoShown = progressParts(printedCount, total, countedSpans, officeMark.ranges, waitingSpans).shown;
-  const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total, updatedAt: run.updatedAt }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat, { printingHere: status === 'running' });
+  const baseDisplay = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total, updatedAt: run.updatedAt }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat, { printingHere: status === 'running' });
+  // Text the picture design can't draw stops Send: the header says what's needed, never "Ready".
+  const glyphLabels = glyphHere.filter((label) => label > 0);
+  const display = glyphStop && baseDisplay.bucket === 'ready'
+    ? { ...baseDisplay, bucket: 'needs-you' as const, label: 'Needs you', tone: 'attention' as const, detail: glyphHere.includes(0) ? 'A fixed text can’t print' : glyphLabels.length === 1 ? `Label ${glyphLabels[0].toLocaleString('en-US')} can’t print` : `${glyphLabels.length.toLocaleString('en-US')} labels can’t print` }
+    : baseDisplay;
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
   const officeNeedsSomeone = (officeSummary?.failed ?? 0) > 0 || (officeSummary?.onTheWay ?? 0) > 0;
@@ -2103,10 +2114,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <p className="text-sm text-zinc-400">{transport === 'webusb' ? 'Connect a printer first.' : transport === 'dazzle' ? 'Turn on a printer in the Dazzle app first.' : 'Choose a printer first.'}</p>
           )}
           {/* Why Start or Print waits, right under it: the same words wherever a label problem holds the button. */}
-          {blanksOk && !checksOk && checkCurrent && !showReprint && !isSheetFormat && transport !== 'office' && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+          {blanksOk && !checksOk && checkCurrent && !!checksReason && !showReprint && !isSheetFormat && transport !== 'office' && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
             <p className="text-sm text-amber-300">{checksReason}</p>
           )}
-          {blanksOk && !checksOk && checkCurrent && isSheetFormat && !pendingSheetRange && printedCount < total && <p className="text-sm text-amber-300">{checksReason}</p>}
+          {blanksOk && !checksOk && checkCurrent && !!checksReason && isSheetFormat && !pendingSheetRange && printedCount < total && <p className="text-sm text-amber-300">{checksReason}</p>}
           {/* A text problem doesn't hold the button: it is named beside it, in one line. */}
           {checksOk && characterNote && !showReprint && transport !== 'office' && printedCount < total && (status === 'idle' || status === 'paused' || status === 'error') && <p className="text-sm text-zinc-400">{characterNote}</p>}
           {!blanksOk && !isSheetFormat && transport !== 'office' && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (

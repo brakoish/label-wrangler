@@ -28,9 +28,11 @@ export function rerunAfterFixHref(designHref: string): string {
 }
 
 /** A value fixed in the spreadsheet: re-run with the corrected file. */
-function RerunLink({ designHref }: { designHref: string }) {
+function RerunLink({ designHref, asButton = false }: { designHref: string; asButton?: boolean }) {
   const href = new URL(rerunAfterFixHref(designHref), 'https://label-wrangler.invalid').searchParams.get('returnTo');
   if (!href?.startsWith('/runs/new?')) return null;
+  // Beside "Leave label N out", the other way out looks like its pair.
+  if (asButton) return <Link href={href} className="btn btn-ghost btn-sm text-zinc-300">Use a fixed file</Link>;
   return <Link href={href} className="link inline-flex min-h-11 items-center">Re-run with the fixed file</Link>;
 }
 
@@ -96,9 +98,9 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
           <span>{glyphStop!.words}</span>
         </p>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-5.5">
           {glyphStop!.skip && <button type="button" className="btn btn-secondary btn-sm" onClick={glyphStop!.skip.pick}>{glyphStop!.skip.label}</button>}
-          {glyphStop!.inDesign ? <FixInDesignerLink href={rerunAfterFixHref(designHref)} label={OPEN_IN_DESIGNER} /> : <RerunLink designHref={designHref} />}
+          {glyphStop!.inDesign ? <FixInDesignerLink href={rerunAfterFixHref(designHref)} label={OPEN_IN_DESIGNER} /> : <RerunLink designHref={designHref} asButton={!!glyphStop!.skip} />}
         </div>
       </div>}
       {check.blocking.length > 0 && <div role={readOnly ? undefined : 'alert'} className="space-y-2 text-sm">
