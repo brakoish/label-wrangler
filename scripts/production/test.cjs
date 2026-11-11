@@ -39,6 +39,7 @@ for(const file of [
  'scripts/production/test-run-leave-off.cjs',
  'scripts/production/test-designer-r8.cjs',
  'scripts/production/test-barcode-why.cjs',
+ 'scripts/production/test-wizard-a15.cjs',
  'scripts/production/test-designer-test-print.cjs',
  'scripts/production/test-run-b14.cjs',
  'scripts/production/test-run-b15.cjs',
