@@ -4,9 +4,11 @@ import { canLeaveLocalPrint, officeSeriesActive, setLocalPrintRunning, stopOffic
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, SquareDashed, Pencil, PenTool, Copy, ScanBarcode, Download, FileText, FileCode2, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { OfficePiPrinter } from './OfficePiPrinter';
 import { BlankValueCheck } from './BlankValueCheck';
 import { Dialog } from '@/components/ui/Dialog';
+import { Recovery } from '@/components/ui/Recovery';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { lastRewindAt, REWIND_EVENT } from '@/lib/runRewind';
@@ -143,6 +145,7 @@ const TRANSPORT_LABELS: Record<Transport, { label: string; unavailable: string }
  * batches with a live progress bar, pause/resume, and cancel.
  */
 export function RunPrinter({ runId, onDone }: RunPrinterProps) {
+  const router = useRouter();
   const { runs, fetchRun, updateRun, setRunStatus, recordPrinted, printEvents, fetchPrintEvents, createPrintEvent, runLoadErrors } = useRunStore();
   const loadError = runLoadErrors[runId] ?? null;
 
@@ -173,6 +176,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const webUsbStatusWorkingRef = useRef(false);
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // A go-back reached an earlier build of the server (a rollback): nothing was
+  // changed, and only a reload brings this page up to date.
+  const [reloadNeeded, setReloadNeeded] = useState(false);
   // The printer here stopped mid-run (out of labels, unplugged…): the header says so until the next start.
   const [printerStopped, setPrinterStopped] = useState(false);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
@@ -241,11 +247,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const guard = (event: MouseEvent) => {
       if (!(event.target instanceof Element) || !event.target.closest('a[href]') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       const href = event.target.closest('a[href]')?.getAttribute('href') ?? '';
-      if (!canLeaveLocalPrint(href && !href.startsWith('#') ? () => window.location.assign(href) : undefined)) { event.preventDefault(); event.stopPropagation(); }
+      // A page of this app is opened in the app (no full reload, so no "Leave site?" box); anything else as a link.
+      const leave = () => { if (href.startsWith('/') && !href.startsWith('//')) router.push(href); else window.location.assign(href); };
+      if (!canLeaveLocalPrint(href && !href.startsWith('#') ? leave : undefined)) { event.preventDefault(); event.stopPropagation(); }
     };
     document.addEventListener('click', guard, true);
     return () => { setLocalPrintRunning(false); document.removeEventListener('click', guard, true); };
-  }, [status, transport, isSheetFormat]);
+  }, [status, transport, isSheetFormat, router]);
 
   useEffect(() => {
     if (!run || statusRef.current === 'running') return;
@@ -362,10 +370,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const officeHeldBy = transport === 'office' ? panelHold.by : null;
   // What the office panel says (a send it isn't sure arrived, a refused send,
   // a paused printer), so the header and the panel never disagree.
-  type PanelState = { unsure: (OfficeSpan & { likely?: boolean }) | null; refused: OfficeSpan | null; paused: boolean; sending: string | null; held?: OfficeSpan | null };
+  type PanelState = { unsure: (OfficeSpan & { likely?: boolean; missing?: boolean }) | null; refused: OfficeSpan | null; paused: boolean; sending: string | null; held?: OfficeSpan | null };
   const [panelState, setPanelState] = useState<PanelState>({ unsure: null, refused: null, paused: false, sending: null, held: null });
   const onPanelState = useCallback((next: PanelState) => {
-    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.unsure?.likely === next.unsure?.likely && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to && prev.held?.from === next.held?.from && prev.held?.to === next.held?.to ? prev : next));
+    setPanelState((prev) => (prev.paused === next.paused && prev.sending === next.sending && prev.unsure?.from === next.unsure?.from && prev.unsure?.to === next.unsure?.to && prev.unsure?.likely === next.unsure?.likely && prev.unsure?.missing === next.unsure?.missing && prev.refused?.from === next.refused?.from && prev.refused?.to === next.refused?.to && prev.held?.from === next.held?.from && prev.held?.to === next.held?.to ? prev : next));
   }, []);
   const panel: PanelState = transport === 'office' ? panelState : { unsure: null, refused: null, paused: false, sending: null, held: null };
   // The labels the office panel's main button sends next (for "Print anyway" words).
@@ -899,15 +907,17 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setStatus('running');
     const controller = new AbortController();
     preparation.current = controller;
-    const refusedStart = { reason: '' };
+    const refusedStart = { reason: '', reload: false };
     let started: Awaited<ReturnType<typeof setRunStatus>> = null;
     // A go-back whose first answer was lost and that the server already had.
     const applied: { server?: number | null } = {};
     ownGoBack.current = plan.rewind;
-    try { started = await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason) => { refusedStart.reason = reason; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
+    try { started = await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason, kind) => { refusedStart.reason = reason; refusedStart.reload = kind === 'needs-reload'; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     finally { ownGoBack.current = false; }
-    if (refusedStart.reason) { setStatus('paused'); setErrorMsg(`The server refused to start this run, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
+    if (refusedStart.reason && refusedStart.reload) { setStatus('paused'); setPrintedCount(printedCount); setReloadNeeded(true); return; }
+    // A go-back says only why it wasn't applied (nothing printed or started); a start says it didn't start.
+    if (refusedStart.reason) { setStatus('paused'); setErrorMsg(plan.rewind ? refusedStart.reason : `Printing didn’t start, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
     if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg(plan.rewind ? SYNC_WAIT_GO_BACK : SYNC_WAIT_START); return; }
     // Already applied: the screen may be behind the server (another device
     // printed on meanwhile). Nothing prints from a stale count.
@@ -1892,7 +1902,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </div>
             </div>
           )}
-          {errorMsg && (
+          {reloadNeeded && (
+            <Recovery tone="warning" title="This page is out of date" actions={
+              <button type="button" className="btn btn-primary" onClick={() => { if (canLeaveLocalPrint()) window.location.reload(); }}><RotateCcw className="w-4 h-4" aria-hidden="true" />Reload page</button>}>
+              <p>Reload to see where the run is now. Nothing was changed.</p>
+            </Recovery>
+          )}
+          {errorMsg && !reloadNeeded && (
             <p role="alert" className="text-sm text-red-400 flex items-start gap-1.5">
               <AlertCircle className="mt-0.5 w-4 h-4 shrink-0" aria-hidden="true" /> {friendlyRenderError(friendlyError(plainPrinterProblem(errorMsg)), template.elements, across)}
             </p>
@@ -1925,7 +1941,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 Open print page
               </button>
             )}
-            {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            {!isSheetFormat && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
               <button type="button" onClick={startOrResume} disabled={!canStart || !rangeValid} className="btn btn-primary flex-1">
                 {status === 'paused' ? <Play className="w-4 h-4" aria-hidden="true" /> : <Printer className="w-4 h-4" aria-hidden="true" />}
                 {rangeValid && selectedFrom <= printedCount ? `Go back to label ${selectedFrom}` : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}

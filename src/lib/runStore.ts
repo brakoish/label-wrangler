@@ -34,7 +34,7 @@ interface RunStore {
   updateRun: (id: string, updates: Partial<Run>) => Promise<Run | null>;
   /** `onSetAside` is called with a plain reason when the server permanently
    * refused this update (it was set aside, not saved). */
-  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; expectedPrintedCount?: number; onSetAside?: (reason: string) => void;
+  setRunStatus: (id: string, status: RunStatus, printedCount?: number, options?: { resetProgress?: boolean; expectedPrintedCount?: number; onSetAside?: (reason: string, kind?: 'needs-reload') => void;
     /** A go-back the server already had (an earlier answer was lost): the server's count then, or null. */
     onAlreadyApplied?: (serverPrinted: number | null) => void }) => Promise<Run | null>;
   /**
