@@ -9,6 +9,7 @@ import { useGlobalElementStore } from '@/lib/globalStore';
 import { confirmDialog } from '@/components/ui/feedback';
 import { setShellBanners, useShellMounted } from '@/components/ui/shellSlot';
 import { friendlyError } from '@/lib/userMessages';
+import { plainServerError } from '@/lib/runErrors';
 import { flushOfflineQueue, pendingPatchCount, progressSyncError, QUEUE_EVENT, deadLetteredOps, exportDeadLetters, discardDeadLetters, type DeadLetter } from '@/lib/offlineQueue';
 
 function exportSetAside() {
@@ -76,7 +77,9 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     // and shows its own load error, so the runs list failing is not news there.
     // New run shows its own error when it has no designs or label sizes to pick from.
     const runPage = /^\/runs\/[^/]+(?:\/(?:scan|print))?$/.test(pathname) && !pathname.startsWith('/runs/new');
-    const ownsEmptyList = (name: string, count: number) => (name === 'Runs' && runPage) || (count === 0 && ((name === 'Label sizes' && (pathname === '/formats' || pathname === '/runs/new')) || (name === 'Designs' && (pathname === '/designer' || pathname === '/runs/new')) || (name === 'Runs' && (pathname === '/runs' || pathname === '/'))));
+    // New run copying a run (Re-run, Use a QR code instead) says itself when that run can't be opened.
+    const copyingRun = pathname === '/runs/new' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('duplicateFrom');
+    const ownsEmptyList = (name: string, count: number) => (name === 'Runs' && (runPage || copyingRun)) || (count === 0 && ((name === 'Label sizes' && (pathname === '/formats' || pathname === '/runs/new')) || (name === 'Designs' && (pathname === '/designer' || pathname === '/runs/new')) || (name === 'Runs' && (pathname === '/runs' || pathname === '/'))));
     const collections = [
       ...(library || pathname==='/formats' ? [{name:'Label sizes',store:formats,load:formats.load,count:formats.count}] : []),
       ...(library ? [{name:'Designs',store:templates,load:templates.load,count:templates.count}] : []),
@@ -96,7 +99,7 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     const setAside = sync.dead.filter((item) => item.kind !== 'rewind-dropped');
     return <div className="text-sm text-amber-200 [&>*]:bg-amber-500/10" aria-live="polite">
         {failed.length > 0 && !pageOwnsError && <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
-          <span>{anySignedOut ? `You’re signed out, so your ${named} couldn’t load.` : `Couldn’t load your ${named}. ${friendlyError(failed[0].store.error)}`}</span>
+          <span>{anySignedOut ? `You’re signed out, so your ${named} couldn’t load.` : `Couldn’t load your ${named}. ${plainServerError(failed[0].store.error ?? '', 'Something went wrong on our side. Try again in a minute.').text}`}</span>
           {anySignedOut
             ? <a className="inline-flex min-h-11 items-center font-medium underline underline-offset-2" href="/login">Sign in</a>
             : <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={()=>{ for (const {load} of failed) void load(); }}>Try again</button>}
