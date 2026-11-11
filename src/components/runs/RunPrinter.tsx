@@ -894,7 +894,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try {
     setPrinterStopped(false);
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
-    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
     setErrorMsg(null);
     if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg(SYNC_WAIT_START); return; } }
@@ -1203,7 +1203,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
    */
   const handleReprintRange = async (chosen?: { from: number; to: number }, kind: 'reprint' | 'only' = 'reprint') => {
     if (!run || !template || !format || (!chosen && !reprintValid) || reprinting || statusRef.current === 'running' || starting.current) return;
-    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before printing.'); return; }
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before printing.'); return; }
     if (!checksOk) { setErrorMsg(checksReason); return; }
     const range = chosen ?? { from: reprintFrom, to: reprintTo };
     // The check above covers the range boxes; these labels get their own look for a label that can't print.
@@ -1490,7 +1490,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportZPL = async () => {
     if (!run || !template || !format) return;
-    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before saving labels as a file.'); return; }
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before saving labels as a file.'); return; }
     setExporting('zpl');
     try {
       const range = normalizeLabelRange({ total, from: exportFrom, to: resolvedExportTo });
@@ -1522,7 +1522,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const handleExportPDF = async () => {
     if (!run || !template || !format) return;
-    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see the list above) before saving labels as a file.'); return; }
+    if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before saving labels as a file.'); return; }
     setExporting('pdf');
     setExportProgress(0);
     try {
@@ -1698,7 +1698,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
       designHref={designHref}
-      qrHref={qrFixFits ? `/runs/new?duplicateFrom=${encodeURIComponent(run.id)}` : null}
+      qrHref={qrFixFits ? `/runs/new?duplicateFrom=${encodeURIComponent(run.id)}&barcode=qr` : null}
       onQr={() => markQrFrom(run)}
     />
   );
@@ -2092,7 +2092,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {/* A text problem doesn't hold the button: it is named beside it, in one line. */}
           {checksOk && characterNote && !showReprint && transport !== 'office' && printedCount < total && (status === 'idle' || status === 'paused' || status === 'error') && <p className="text-sm text-zinc-400">{characterNote}</p>}
           {!blanksOk && !isSheetFormat && transport !== 'office' && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-            <p className="text-sm text-amber-300">{blankNeedsEditor ? 'Printing is off until someone who can edit runs fills in the missing values.' : 'Printing is off until every label has a value (see the list above).'}</p>
+            <p className="text-sm text-amber-300">{blankNeedsEditor ? 'Printing is off until someone who can edit runs fills in the missing values.' : 'Printing is off until every label has a value (see above).'}</p>
           )}
 
           {/* Reprint: a separate From/To job that never changes the run's progress.
@@ -2144,7 +2144,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : checkCurrent ? checksReason : ''} printNote={checksOk ? characterNote : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} skipLabels={officeSkip} openChooser={officeChooser} rangeAsk={officeRangeAsk} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see above).') : checkCurrent ? checksReason : ''} printNote={checksOk ? characterNote : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} skipLabels={officeSkip} openChooser={officeChooser} rangeAsk={officeRangeAsk} />}
           {officeFixFirst && checkList}
           </>}
         </section>

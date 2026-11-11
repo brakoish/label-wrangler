@@ -691,7 +691,7 @@ export default function RunsPage() {
                   {filteredRuns.active.length}{filteredRuns.active.length !== active.length ? ` of ${active.length}` : ''}
                 </span>
                 {markableRuns.length > 0 && (
-                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm text-zinc-300 max-sm:-ml-2 max-sm:basis-full max-sm:justify-start sm:ml-auto">
+                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm text-zinc-300 max-sm:basis-full max-sm:justify-start sm:ml-auto">
                     <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Mark sent labels as printed…
                   </button>
                 )}
@@ -710,7 +710,7 @@ export default function RunsPage() {
                 </span>
                 {/* With no unfinished runs, the bulk action lives here (cancelled runs with sent labels). */}
                 {markableRuns.length > 0 && filteredRuns.active.length === 0 && (
-                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm text-zinc-300 max-sm:-ml-2 max-sm:basis-full max-sm:justify-start sm:ml-auto">
+                  <button type="button" onClick={() => setBulkOpen(true)} className="btn btn-ghost btn-sm text-zinc-300 max-sm:basis-full max-sm:justify-start sm:ml-auto">
                     <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Mark sent labels as printed…
                   </button>
                 )}
