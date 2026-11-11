@@ -47,7 +47,7 @@ function RerunLink({ designHref }: { designHref: string }) {
  * that exact range and count ("Print labels 97–240 (144) anyway").
  * readOnly: a finished or cancelled run shows what was wrong, with no ticks.
  */
-export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, elsewhere = '', checkedTo = null, qrHref = null }: {
+export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, skipOut = null, elsewhere = '', checkedTo = null, qrHref = null, glyphStop = null }: {
   check: RunPrintCheck;
   ticks: ReadonlyArray<string>;
   wizardGoAhead: boolean;
@@ -64,17 +64,22 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
   stopNote?: string;
   /** Send the labels before the first one that can't print. */
   leaveOut?: { label: string; pick: () => void } | null;
+  /** Leave the labels that can't print out, and send everything else around them. */
+  skipOut?: { label: string; pick: () => void } | null;
   /** Labels that can't print but aren't in this send. */
   elsewhere?: string;
   /** Only part of a big send was checked: the last label checked. */
   checkedTo?: number | null;
+  /** Text a picture design can't draw on the labels of this send: a stop, with a one-tap leave-out on the office printer. */
+  glyphStop?: { words: string; skip: { label: string; pick: () => void } | null; inDesign: boolean } | null;
   /** A QR code of the same value fits every label: a new run with the same data, where the barcode becomes a QR code. */
   qrHref?: string | null;
 }) {
   const uid = useId();
   const hasCharacters = !!characters && characters.items.length > 0;
   const extra = !readOnly && (!!elsewhere || !!checkedTo);
-  if (!check.blocking.length && !check.tight.length && !check.layout.length && !hasCharacters && !extra) return null;
+  const glyphs = !readOnly && !!glyphStop;
+  if (!check.blocking.length && !check.tight.length && !check.layout.length && !hasCharacters && !extra && !glyphs) return null;
   const fix = check.verdict.fixIn === 'data'
     ? <RerunLink designHref={designHref} />
     : <FixInDesignerLink href={rerunAfterFixHref(designHref)} label={OPEN_IN_DESIGNER} />;
@@ -84,6 +89,16 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
   const ticked = (item: string) => barcodeItemTicked(item, ticks, wizardGoAhead);
   return (
     <div className="space-y-3">
+      {glyphs && <div role="alert" className="space-y-2 text-sm">
+        <p className="flex items-start gap-1.5 text-zinc-100">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
+          <span>{glyphStop!.words}</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
+          {glyphStop!.skip && <button type="button" className="btn btn-secondary btn-sm" onClick={glyphStop!.skip.pick}>{glyphStop!.skip.label}</button>}
+          {glyphStop!.inDesign ? <FixInDesignerLink href={rerunAfterFixHref(designHref)} label={OPEN_IN_DESIGNER} /> : <RerunLink designHref={designHref} />}
+        </div>
+      </div>}
       {check.blocking.length > 0 && <div role={readOnly ? undefined : 'alert'} className="space-y-2 text-sm">
         <ul className="space-y-2">
           {shown.map((item, i) => {
@@ -127,12 +142,13 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
         {canTick && qrHref && <p className="pl-5.5 text-zinc-300">A QR code of the same value fits every label. <Link href={qrHref} className="link">Use a QR code instead</Link> makes a new run with the same data, where you switch the barcode.</p>}
         {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopNote || stopFixWords(check.verdict.fixIn)}</p>}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
-          {check.verdict.stops && !readOnly && leaveOut && <button type="button" className="btn btn-secondary btn-sm" onClick={leaveOut.pick}>{leaveOut.label}</button>}
+          {check.verdict.stops && !readOnly && skipOut && <button type="button" className="btn btn-secondary btn-sm" onClick={skipOut.pick}>{skipOut.label}</button>}
+          {check.verdict.stops && !readOnly && leaveOut && <button type="button" className={`btn btn-sm ${skipOut ? 'btn-ghost text-zinc-300' : 'btn-secondary'}`} onClick={leaveOut.pick}>{leaveOut.label}</button>}
           {fix}
         </div>
       </div>}
       {!readOnly && elsewhere && <p className="text-sm text-zinc-300">{elsewhere}</p>}
-      {!readOnly && checkedTo && <p className="text-sm text-zinc-400">Checked the first 2,000 labels of this send, up to label {checkedTo.toLocaleString('en-US')}.</p>}
+      {!readOnly && checkedTo && <p className="text-sm text-zinc-400">Every label was checked for ones that can’t print. Other barcode problems were checked up to label {checkedTo.toLocaleString('en-US')}.</p>}
       <ProblemList heading="Barcodes close to the edge" items={check.tight.slice(0, 3)} more={check.tight.length - Math.min(3, check.tight.length)} />
       <ProblemList
         heading="Some items overlap or run off the label"
