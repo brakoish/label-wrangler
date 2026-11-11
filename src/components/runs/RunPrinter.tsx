@@ -21,7 +21,8 @@ import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
 import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, runSendCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
-import { RunBarcodeCheck } from './RunBarcodeCheck';
+import { RunBarcodeCheck, rerunAfterFixHref } from './RunBarcodeCheck';
+import { FixInDesignerLink } from '@/components/checks/BarcodeWarning';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
 import { drawFailureWords, plainJobReason } from '@/lib/officeSendOutcome';
 import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/lib/printerCharacters';
@@ -425,9 +426,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (!result.issues.length) return null;
     const fromSheet = (field: string) => run.fieldMappings?.[field]?.mode === 'column' || (!!run.mappedField && run.mappedField === field);
     const { items, more } = summarizePrinterCharacterIssues(result.issues, fromSheet);
-    return { heading: `${result.badLabels.toLocaleString()} label${result.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`, items, more };
+    const chars = [...new Set(result.issues.flatMap((issue) => issue.chars))];
+    return { heading: `${result.badLabels.toLocaleString()} label${result.badLabels === 1 ? ' has' : 's have'} characters the printer can’t print`, items, more, chars, badLabels: result.badLabels };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, template, format]);
+  // The characters by name, and what the printer puts in their place: a box.
+  const characterNames = (() => {
+    if (!characterWarning) return '';
+    const names = characterWarning.chars.slice(0, 3).map((ch) => ch === '\t' ? 'a tab' : /\s/.test(ch) ? 'an odd space' : `“${ch}”`);
+    return `${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] ?? ''}${characterWarning.chars.length > 3 ? ' and others' : ''}`;
+  })();
+  const characterBoxes = characterWarning && characterWarning.chars.length > 1 ? 'boxes' : 'a box';
+  const characterLabels = characterWarning ? `${characterWarning.badLabels.toLocaleString('en-US')} label${characterWarning.badLabels === 1 ? '' : 's'}` : '';
+  const characterNote = characterWarning ? `${characterNames} will come out as ${characterBoxes} on ${characterLabels}.` : '';
   const [goAhead, setGoAhead] = useState<PrintGoAhead>({});
   useEffect(() => { setGoAhead(readPrintGoAhead(typeof window !== 'undefined' ? window.localStorage : null, runId)); }, [runId]);
   const chooseGoAhead = (part: keyof PrintGoAhead, key: string | false) => setGoAhead((current) => {
@@ -1605,8 +1616,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // A finished or cancelled run doesn't lead with its design's problems: one
   // calm note below, and the full list (with its ticks) once someone prints again.
   const calmProblems = printCheck.blocking.length + printCheck.tight.length + printCheck.layout.length + (characterWarning?.items.length ?? 0) > 0;
+  const otherCalmProblems = printCheck.blocking.length + printCheck.tight.length + printCheck.layout.length > 0;
   const calmCheckList = calmProblems
-    ? <p className="text-sm text-zinc-400">This design has some barcode or layout problems. They’re listed if you print again.</p>
+    ? <div className="space-y-1 text-sm">
+      {/* Named plainly: what printed wrong on these labels, and where to fix it for next time. */}
+      {characterWarning && <p className="text-amber-300">{characterNames} didn’t print on {characterLabels}; {characterWarning.chars.length > 1 ? 'they' : 'it'} came out as {characterBoxes}.</p>}
+      {otherCalmProblems && <p className="text-zinc-400">This design also has some barcode or layout problems. They’re listed if you print again.</p>}
+      {characterWarning && <FixInDesignerLink href={rerunAfterFixHref(designHref)} label="Fix the design" />}
+    </div>
     : null;
   const sentLine = officeSentLine(officeSummary, total);
   // Print history, with what the office queue knows and the office's own
@@ -1968,7 +1985,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!isSheetFormat && !transportReady && !showReprint && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
             <p className="text-sm text-zinc-400">{transport === 'webusb' ? 'Connect a printer first.' : transport === 'dazzle' ? 'Turn on a printer in the Dazzle app first.' : 'Choose a printer first.'}</p>
           )}
-          {/* A barcode or layout problem is said once, in the check above, with its own tick. */}
+          {/* Why Start or Print waits, right under it: the same words wherever a label problem holds the button. */}
+          {blanksOk && !checksOk && checkCurrent && !showReprint && !isSheetFormat && transport !== 'office' && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+            <p className="text-sm text-amber-300">{checksReason}</p>
+          )}
+          {blanksOk && !checksOk && checkCurrent && isSheetFormat && !pendingSheetRange && printedCount < total && <p className="text-sm text-amber-300">{checksReason}</p>}
+          {/* A text problem doesn't hold the button: it is named beside it, in one line. */}
+          {checksOk && characterNote && !showReprint && transport !== 'office' && printedCount < total && (status === 'idle' || status === 'paused' || status === 'error') && <p className="text-sm text-zinc-400">{characterNote}</p>}
           {!blanksOk && !isSheetFormat && transport !== 'office' && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
             <p className="text-sm text-amber-300">{blankNeedsEditor ? 'Printing is off until someone who can edit runs fills in the missing values.' : 'Printing is off until every label has a value (see the list above).'}</p>
           )}
@@ -2022,7 +2045,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             )
           )}
           </>}
-          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} rangeAsk={officeRangeAsk} />}
+          {!isSheetFormat && transport === 'office' && <OfficePiPrinter toGo={toGo} toGoShown={toGoShown} run={run} template={template} format={format} runId={runId} total={total} connectionTarget={officeConnectionTarget} printAllowed={blanksOk && checksOk} printBlockedReason={!blanksOk ? (blankNeedsEditor ? 'Sending is off until someone who can edit runs fills in the missing values.' : 'Sending is off until every label has a value (see the list above).') : checkCurrent ? checksReason : ''} printNote={checksOk ? characterNote : ''} printedCount={printedCount} runStatus={run.status} requests={office.requests} jobs={office.jobs} summary={office.summary} requestsLoaded={office.loaded} requestsEverLoaded={office.everLoaded} requestsTruncated={office.truncated} requestsError={office.failed} refreshRequests={office.refresh} markRanges={status === 'running' ? [] : officeMark.ranges} onMarkPrinted={markOfficePrinted} onHeldChange={setPanelHeld} onPanelState={onPanelState} onRangeChange={onOfficeRange} onRecordPrinted={(ranges, note) => recordOfficePrinted(ranges, note ? `They printed (checked at the office). ${note}` : 'They printed (checked at the office)')} scannedLabels={scannedLabels} openChooser={officeChooser} rangeAsk={officeRangeAsk} />}
           {officeFixFirst && checkList}
           </>}
         </section>

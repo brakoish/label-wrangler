@@ -223,7 +223,7 @@ function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadB
     </Fold>
   </div>;
 }
-export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,rangeAsk=null,toGo,toGoShown=false,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
+export function OfficePiPrinter({runId,total,connectionTarget,run,template,format,printAllowed=true,printedCount=0,runStatus,requests,jobs,summary,requestsLoaded,requestsEverLoaded=requestsLoaded,requestsTruncated=false,requestsError,refreshRequests,printBlockedReason='',printNote='',markRanges=[],onMarkPrinted,onRecordPrinted,onHeldChange,scannedLabels=[],openChooser=0,rangeAsk=null,toGo,toGoShown=false,onPanelState,onRangeChange}:{runId:string;total:number;connectionTarget:HTMLDivElement|null;run?:Run;template?:LabelTemplate;format?:LabelFormat;printAllowed?:boolean;
   /** Labels already counted as printed for this run (on any printer). Office sends never change it. */
   printedCount?:number;
   runStatus?:RunStatus;
@@ -243,6 +243,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
    * says it once, with its own tick, so nothing is repeated here).
    */
   printBlockedReason?:string;
+  /** A label problem that doesn't hold Send, in one line beside it (characters that print as boxes). */
+  printNote?:string;
   /** Stretches the office reported sent that aren't counted as printed yet. */
   markRanges?:OfficeSpan[];
   /** Asks once, then counts every sent stretch as printed. */
@@ -959,7 +961,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           setBusy(false);
           // Never a silent stop: unless the check already said what went
           // wrong, say why the parts stopped and what to do.
-          if(!checked){setError(e=>e || `Stopped before part ${i+1} of ${current.parts.length}: the labels changed while sending. Check the preview, then send the remaining parts.`);break;}
+          if(!checked){if(!stopSeries.current)setError(e=>e || `Stopped before part ${i+1} of ${current.parts.length}: the labels changed while sending. Check the preview, then send the remaining parts.`);break;}
           setSeries(s=>s?{...s,phase:'sending',progress:undefined}:s);
         }
         if(stopSeries.current)break;
@@ -1009,6 +1011,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       const s=seriesRef.current;
       const verb=leaving?'Leaving':'Stopping';
       setStopAsked(!s?`${verb}…`:s.phase==='checking'?(s.index>0?`${verb} after part ${s.index}…`:`${verb}…`):`${verb} after part ${s.index+1}…`);
+      // A part still being checked was never sent: stop checking it now, so
+      // leaving doesn't wait for a check whose labels won't go.
+      if(s?.phase==='checking')preparationController.current?.abort();
     });
     // The page's own "Leave site?" guard comes down first: a "Stop after this
     // part and leave" then leaves without the browser asking a second time.
@@ -1541,7 +1546,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       <p className="text-zinc-400">Keep this page open until the last part is queued.</p>
       {/* A part still being checked isn't sent once stop is pressed, so the button says so; a part being sent finishes. */}
       {!stopAsked
-        ?<button type="button" onClick={()=>{stopSeries.current=true;setStopAsked(series.phase==='checking'?(series.index>0?`Stopping after part ${series.index}…`:'Stopping…'):`Stopping after part ${series.index+1}…`);}} className="btn btn-secondary btn-sm">{series.phase==='checking'?`Don’t send part ${series.index+1}`:'Stop after this part'}</button>
+        ?<button type="button" onClick={()=>{stopSeries.current=true;if(series.phase==='checking')preparationController.current?.abort();setStopAsked(series.phase==='checking'?(series.index>0?`Stopping after part ${series.index}…`:'Stopping…'):`Stopping after part ${series.index+1}…`);}} className="btn btn-secondary btn-sm">{series.phase==='checking'?`Don’t send part ${series.index+1}`:'Stop after this part'}</button>
         :<p className="flex flex-wrap items-center gap-x-3 gap-y-1"><button type="button" disabled className="btn btn-secondary btn-sm">{stopAsked}</button><button type="button" className="link" onClick={()=>{stopSeries.current=false;keepSeriesGoing();setStopAsked(null);}}>Keep going</button></p>}
     </div>}
     {!series && leftParts.length>0 && !cancelled && !pending && planPrinterHere && !leftFresh && <p role="status" className="flex items-center gap-2 text-sm text-zinc-300"><Loader2 className="size-4 animate-spin text-amber-400" aria-hidden="true" />Checking whether {leftParts.length===1?'the last part':'the remaining parts'} went…</p>}
@@ -1604,7 +1609,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {!pending && rangeValid && plan.kind==='wait' && <p role="status" className="text-sm text-zinc-400">{plan.why==='needs-check'?`${Range(plan.overlap.from,plan.overlap.to)} need a check first (see above).`:`${Range(plan.overlap.from,plan.overlap.to)} ${plan.overlap.from===plan.overlap.to?'is':'are'} still on the way to the office printer. Send these once ${plan.overlap.from===plan.overlap.to?'it’s':'they’re'} sent.`}</p>}
     {!pending && rangeValid && plan.kind==='reprint' && !tooBig && fixedRange.current!==`${fromNumber}-${toNumber}` && <p className="text-sm text-amber-300">{Range(plan.overlap.from,plan.overlap.to)} went to the office printer before, so this prints {plan.overlap.from===plan.overlap.to?'it':'them'} again.</p>}
     {!pending && alreadyPrinted && <div className="space-y-1 text-sm text-amber-300"><p>{Range(fromNumber,Math.min(toNumber,printedCount))} {fromNumber===Math.min(toNumber,printedCount)?'is':'are'} already counted as printed.</p>{printedCount<toNumber && <button type="button" className="btn btn-ghost btn-sm -ml-2 text-zinc-100" onClick={()=>{rangeEdited.current=true;setFrom(String(printedCount+1));}}>Send {nums(printedCount+1,toNumber)} instead</button>}</div>}
-    {!printAllowed && printBlockedReason && <p className="text-sm text-amber-300">{printBlockedReason}</p>}
+    {!printAllowed && printBlockedReason && !pending && formAllowed && <p className="text-sm text-amber-300">{printBlockedReason}</p>}
+    {printAllowed && printNote && !pending && formAllowed && <p className="text-sm text-zinc-400">{printNote}</p>}
     {!formReady && !pending && <p role="status" className="text-sm text-zinc-400">Reading the office queue first…</p>}
     {/* A saved request is resent exactly as it was first sent, blank label included. */}
     {pending && pending.endBlank && !posting && !unsure && <p className="text-sm text-zinc-400">It ends with one blank label after {range(pending.to,pending.to)}, as first sent.</p>}

@@ -401,7 +401,7 @@ console.log('PASS field display names');
   // A parts series never stops silently, and Start over drops the unsure part from a saved plan.
   {
     const pi = read('src/components/runs/OfficePiPrinter.tsx');
-    assert.match(pi, /if\(!checked\)\{setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
+    assert.match(pi, /if\(!checked\)\{if\(!stopSeries\.current\)setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
     const drop = pi.slice(pi.indexOf('const dropSaved=()'), pi.indexOf('const clearArrived='));
     assert.match(drop, /if\(pendingInPlan && partsPlan\)savePartsPlan\(\{\.\.\.partsPlan,next:partsPlan\.next\+1\}\);/);
     // B14: no "Start over". Forgetting the saved key (without the person saying the labels arrived) asks first.
