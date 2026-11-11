@@ -68,6 +68,9 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   const left = named.length ? intersectSpans(parts.left, stillToGo([...named].sort((a, b) => a.from - b.from), total)) : parts.left;
   const shown = parts.shown && left.length > 0;
   const printed = spans.reduce((n, s) => n + s.to - s.from + 1, 0);
+  // Printed labels that aren't one stretch from label 1: "Printed 65" would
+  // read like a label number, so the header says a count and a line names them.
+  const islands = printed > 0 && (spans.length > 1 || spans[0].from > 1);
   const sentCount = sentOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
   const waitingCount = waitingOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
   // One colour rule (the Runs list uses it too): printed solid, labels at
@@ -80,13 +83,13 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   const motion = animate ? 'transition-[left,width,background-color] duration-300 ease-in-out' : '';
   const officeKey = [sentCount ? { words: `${sentCount.toLocaleString()} sent to the printer`, fill: sentFill } : null, waitingCount && waitingLabel ? { words: `${waitingCount.toLocaleString()} ${waitingLabel}`, fill: waitingFill } : null].filter((k): k is { words: string; fill: string } => !!k);
   const officeWords = officeKey.map((k) => k.words);
-  const valueText = [`${printed.toLocaleString()} of ${total.toLocaleString()} printed`, ...officeWords, shown ? `Still to go: ${leftWords}` : ''].filter(Boolean).join('; ');
+  const valueText = [`${printed.toLocaleString()} of ${total.toLocaleString()} printed`, islands ? `Printed: ${spanNumbers(spans)}` : '', ...officeWords, shown ? `Still to go: ${leftWords}` : ''].filter(Boolean).join('; ');
   return <div className="space-y-2">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <h2 className="section-title">Progress</h2>
-      <span className="text-sm font-medium text-zinc-100 tabular-nums">Printed {printed.toLocaleString()} of {total.toLocaleString()}</span>
+      <span className="text-sm font-medium text-zinc-100 tabular-nums">{islands ? `${printed.toLocaleString()} of ${total.toLocaleString()} printed` : `Printed ${printed.toLocaleString()} of ${total.toLocaleString()}`}</span>
     </div>
-    <div className="relative h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printed} aria-valuetext={officeWords.length || shown ? valueText : undefined}>
+    <div className="relative h-2 rounded-full bg-zinc-800 overflow-hidden" role="progressbar" aria-label="Labels printed" aria-valuemin={0} aria-valuemax={total} aria-valuenow={printed} aria-valuetext={officeWords.length || shown || islands ? valueText : undefined}>
       {total > 0 && [...sentOnly.map((s) => ({ ...s, fill: sentFill, kind: 'sent' })), ...waitingOnly.map((s) => ({ ...s, fill: waitingFill, kind: 'waiting' }))].map((s) => (
         <div key={`${s.kind}-${s.from}-${s.to}`} className={`progress-seg absolute inset-y-0 rounded-full ${s.fill} ${motion}`}
           style={{ left: `${((s.from - 1) / total) * 100}%`, width: `${((s.to - s.from + 1) / total) * 100}%` }} />
@@ -99,6 +102,7 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
     {officeKey.length > 0 && <p className="reveal flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-300 tabular-nums">{officeKey.map((k) => (
       <span key={k.words} className="inline-flex items-center gap-1.5"><span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${k.fill}`} />{k.words}</span>
     ))}</p>}
+    {islands && <p className="reveal text-sm text-zinc-300 tabular-nums">Printed: {spanNumbers(spans)}</p>}
     {shown && <p className="reveal text-sm text-zinc-400 tabular-nums">Still to go: {spanNumbers(left)}</p>}
   </div>;
 }

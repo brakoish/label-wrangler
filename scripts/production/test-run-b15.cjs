@@ -93,7 +93,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const run = { sourceData: [{ Strain: 'OG' }, { Strain: 'Star ★' }, { Strain: 'Kush' }], fieldMappings: { Strain: { mode: 'column', csvColumn: 'Strain' } }, staticValues: {} };
   const check = checkRunBitmapGlyphs({ elements: [text], thermalRenderMode: 'bitmap-v1' }, { type: 'thermal' }, run);
   assert.deepEqual(check.labels, [2]);
-  assert.equal(glyphStopWords(check, [2], () => true), 'Label 2’s Strain has “★”, which can’t be drawn, so it can’t print. Fix row 3 in your spreadsheet.');
+  assert.equal(glyphStopWords(check, [2], () => true), 'Label 2 (row 3 in your file) has “★” in Strain, which can’t be drawn, so it can’t print.');
   assert.deepEqual(checkRunBitmapGlyphs({ elements: [text], thermalRenderMode: 'native-v1' }, { type: 'thermal' }, run).labels, [], 'native ZPL is never stopped');
 }
 
@@ -107,7 +107,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const checking = runDisplayStatus(run, { ...base, sending: 'Checking labels 1–20' });
   assert.equal(checking.label, 'Checking'); assert.equal(checking.detail, 'Labels 1–20');
   assert.equal(new Set(Object.values(RUN_TONE_MEANING)).size, 4, 'four dots by meaning');
-  assert.equal(runToneDot('confirm'), runToneDot('check'));
+  assert.equal(runToneDot('confirm'), runToneDot('active'), 'a send that went through reads as working');
+  assert.notEqual(runToneDot('confirm'), runToneDot('check'), 'a send that went through is never red');
   assert.notEqual(runToneDot('idle'), runToneDot('confirm'), 'Ready has one dot');
 }
 
@@ -152,7 +153,6 @@ const has = (src, re) => assert.ok(re.test(src), `source check: ${re}`);
   // #8: the go-back names the labels that print twice.
   has(printer, /already printed, so \$\{twiceOne \? 'it prints' : 'they print'\} a second time/);
   // #9: the QR run offers to cancel the old run.
-  has(printer, /onQr=\{\(\) => markQrFrom\(run\)\}/);
   has(read('src/components/runs/QrReplaced.tsx'), /Cancel the old run/);
   // #11: the bulk mark rebuilds its plan fresh.
   has(list, /freshPlan = officeMarkPlan\(/);

@@ -88,7 +88,7 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   const loop=src.slice(src.indexOf('const runSeries=async'),src.indexOf('const startSeries=async'));
   assert.match(loop,/const blankHere=partCarriesEndBlank\(current,part\);\s*const outcome=await submit\(part,undefined,blankHere\);/,'each part asks the plan whether it ends the range');
   const start=src.slice(src.indexOf('const startSeries=async'),src.indexOf('// Leaving the page mid-series'));
-  assert.match(start,/const blankAt=chosen\?opts\.endBlankAt:endBlank\?\(list\[list\.length-1\]\.to===toNumber\?toNumber:undefined\):undefined;[\s\S]{0,1600}\.\.\.\(blankAt\?\{endBlankAt:blankAt\}:\{\}\)/,'the choice is saved in the parts plan (with the part that ends the range)');
+  assert.match(start,/let blankAt=chosen\?opts\.endBlankAt:endBlank\?list\[list\.length-1\]\.to:undefined;[\s\S]{0,2600}if\(blankMoves\)blankAt=newLast;[\s\S]{0,1600}\.\.\.\(blankAt\?\{endBlankAt:blankAt\}:\{\}\)/,'the choice is saved in the parts plan with the part that ends the send; a refused last label moves it and the dialog says so');
   assert.match(src,/const \[endBlank,setEndBlank\]=useState\(false\);/,'defaults off');
   // Per send: off again after every send that went through, and a saved record never changes the box.
   assert.match(submit,/setPending\(null\);setPosting\(false\);\s*\/\/[^\n]*\n\s*setEndBlank\(false\);/,'a successful send turns the box off');

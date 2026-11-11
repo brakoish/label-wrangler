@@ -69,7 +69,7 @@ interface GlyphRunData {
   staticValues?: Record<string, string> | null;
   mappedField?: string | null;
 }
-type GlyphElement = { id: string; type: string; isStatic?: boolean; fieldName?: string; defaultValue?: string; prefix?: string; suffix?: string; content?: string; fontFamily?: string; fontWeight?: string; fontStyle?: string };
+type GlyphElement = { id: string; type: string; showText?: boolean; isStatic?: boolean; fieldName?: string; defaultValue?: string; prefix?: string; suffix?: string; content?: string; fontFamily?: string; fontWeight?: string; fontStyle?: string };
 
 function valuesFor(run: GlyphRunData, index: number): Record<string, string> {
   const values: Record<string, string> = { ...(run.staticValues || {}) };
@@ -102,7 +102,10 @@ export interface BitmapGlyphCheck {
 export function checkRunBitmapGlyphs(template: { elements: ReadonlyArray<GlyphElement>; thermalRenderMode?: string | null }, format: { type?: string } | null | undefined, run: GlyphRunData): BitmapGlyphCheck {
   const result: BitmapGlyphCheck = { labels: [], chars: [], issues: [] };
   if (format?.type !== 'thermal' || template.thermalRenderMode !== 'bitmap-v1') return result;
-  const texts = template.elements.filter((el) => el.type === 'text');
+  // A barcode's human-readable line is drawn too, always in Liberation Sans
+  // Regular (as the renderer draws it), so it is checked like a text.
+  const BARCODE_TEXT_FONT = { fontFamily: 'Liberation Sans', fontWeight: 'normal', fontStyle: 'normal' };
+  const texts = template.elements.flatMap((el) => el.type === 'text' ? [el] : el.type === 'barcode' && el.showText ? [{ ...el, ...BARCODE_TEXT_FONT }] : []);
   const chars = new Set<string>();
   for (const el of texts.filter((t) => t.isStatic)) {
     const content = el.content ?? '';
@@ -136,9 +139,11 @@ function charWords(chars: ReadonlyArray<string>): string {
 }
 
 /**
- * The stop said plainly, for the labels of one send: "Label 12’s Strain has
- * “✓”, which can’t be drawn on this label, so it can’t print. Fix row 13 in
- * your spreadsheet." `labels` is the part of check.labels in the send.
+ * The stop said plainly, for the labels of one send: "Label 12 (row 13 in
+ * your file) has “✓” in Strain, which can’t be drawn, so it can’t print."
+ * The row is named beside the label, so nobody wonders why they differ (the
+ * file's first row is its column names). `labels` is the part of
+ * check.labels in the send.
  */
 export function glyphStopWords(check: BitmapGlyphCheck, labels: ReadonlyArray<number>, fromSheet: (field: string) => boolean): string {
   if (!labels.length) return '';
@@ -150,12 +155,12 @@ export function glyphStopWords(check: BitmapGlyphCheck, labels: ReadonlyArray<nu
   if (labels.length === 1) {
     const issue = check.issues.find((i) => i.label === labels[0]);
     if (issue) {
-      const fix = issue.field && fromSheet(issue.field) ? ` Fix row ${n(spreadsheetRow(issue.label))} in your spreadsheet.` : '';
-      return `Label ${n(issue.label)}’s ${issue.field ? friendlyFieldName(issue.field) : 'text'} has ${charWords(issue.chars)}, which can’t be drawn, so it can’t print.${fix}`;
+      const row = issue.field && fromSheet(issue.field) ? ` (row ${n(spreadsheetRow(issue.label))} in your file)` : '';
+      return `Label ${n(issue.label)}${row} has ${charWords(issue.chars)} in ${issue.field ? friendlyFieldName(issue.field) : 'its text'}, which can’t be drawn, so it can’t print.`;
     }
   }
   const shown = check.issues.filter((i) => labels.includes(i.label));
   const chars = shown.length ? [...new Set(shown.flatMap((i) => i.chars))] : check.chars;
   const which = labels.length === 1 ? `Label ${n(labels[0])}` : `Labels ${labels.slice(0, 3).map(n).join(', ')}${labels.length > 3 ? ` and ${n(labels.length - 3)} more` : ''}`;
-  return `${which} ${labels.length === 1 ? 'has' : 'have'} ${charWords(chars)}, which can’t be drawn, so ${labels.length === 1 ? 'it' : 'they'} can’t print. Fix ${labels.length === 1 ? 'it' : 'them'} in your spreadsheet.`;
+  return `${which} ${labels.length === 1 ? 'has' : 'have'} ${charWords(chars)}, which can’t be drawn, so ${labels.length === 1 ? 'it' : 'they'} can’t print.`;
 }

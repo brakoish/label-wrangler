@@ -1,110 +1,95 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { LabelTemplate, Run } from '@/lib/types';
+import type { Run } from '@/lib/types';
+import { qrOldRunOpen, readQrReplacedBy, readQrReplaces, replacesKey } from '@/lib/runQrLink';
 import { useRunStore } from '@/lib/runStore';
 import { confirmDialog } from '@/components/ui/feedback';
 import { readOfficeJobs } from './officeCancel';
 
 /**
- * "Use a QR code instead" on a run page makes a new run with the same data
- * (in the new-run page), where the barcode becomes a QR code. The old run is
- * then still Ready, so two runs could print the same labels. The link marks
- * the old run in this tab; the new run's page then offers to cancel it (one
- * tap and a confirm), and the old run's page says a QR run replaced it.
- * Kept on this device; cancelling the old run is a normal cancel that every
- * device sees.
+ * "Use a QR code instead" on a run page opens the new-run page with the same
+ * data, where the barcode becomes a QR code. The old run is then still
+ * ready, so two runs could print the same labels. Right after it creates
+ * that run, the new-run page saves an explicit link on this device:
+ * `lw:qr-replaces:<new run id>` = `<old run id>`. Only that link makes the
+ * new run's page offer to cancel the old one (and only while the old run
+ * exists, isn't printing and isn't finished), and only that link makes the
+ * old run's page say a QR run replaced it. No clock guesses: a run made
+ * any other way never offers to cancel another run.
  */
-const FROM_KEY = 'lw:qr-from';
-const replacesKey = (runId: string) => `lw:qr-replaces:${runId}`;
-const replacedByKey = (runId: string) => `lw:qr-replaced-by:${runId}`;
-/** How long after the press a new run still counts as made from it. */
-const FROM_WINDOW_MS = 2 * 60 * 60_000;
-
-interface RunRef { id: string; name: string }
-
-function readRef(storage: Storage | null, key: string): RunRef | null {
-  try {
-    const data = JSON.parse(storage?.getItem(key) || 'null') as { id?: unknown; name?: unknown } | null;
-    return data && typeof data.id === 'string' && typeof data.name === 'string' ? { id: data.id, name: data.name } : null;
-  } catch { return null; }
-}
 const local = () => (typeof window !== 'undefined' ? window.localStorage : null);
-const session = () => (typeof window !== 'undefined' ? window.sessionStorage : null);
 
-/** Called when "Use a QR code instead" is pressed on `run`'s page. */
-export function markQrFrom(run: Pick<Run, 'id' | 'name'>): void {
-  try { session()?.setItem(FROM_KEY, JSON.stringify({ id: run.id, name: run.name, at: Date.now() })); } catch { /* storage off: no offer */ }
-}
-
-export function QrReplaced({ run, template }: { run: Run; template: Pick<LabelTemplate, 'elements'> }) {
+export function QrReplaced({ run }: { run: Run }) {
   const { runs, fetchRun, setRunStatus } = useRunStore();
-  const [replaces, setReplaces] = useState<RunRef | null>(null);
-  const [replacedBy, setReplacedBy] = useState<RunRef | null>(null);
-  const [note, setNote] = useState<{ text: string; href?: string } | null>(null);
+  const [replacesId, setReplacesId] = useState<string | null>(null);
+  const [replacedById, setReplacedById] = useState<string | null>(null);
+  const [looked, setLooked] = useState<Record<string, boolean>>({});
+  const [note, setNote] = useState<{ text: string; href?: string; name?: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const hasQr = template.elements.some((el) => el.type === 'qr');
 
   useEffect(() => {
-    let mine: RunRef | null = null;
-    try {
-      const raw = JSON.parse(session()?.getItem(FROM_KEY) || 'null') as { id?: unknown; name?: unknown; at?: unknown } | null;
-      const at = typeof raw?.at === 'number' ? raw.at : 0;
-      const made = Date.parse(run.createdAt);
-      if (raw && typeof raw.id === 'string' && typeof raw.name === 'string' && raw.id !== run.id && hasQr
-        && Date.now() - at < FROM_WINDOW_MS && Number.isFinite(made) && made >= at - 60_000) {
-        mine = { id: raw.id, name: raw.name };
-        local()?.setItem(replacesKey(run.id), JSON.stringify(mine));
-        local()?.setItem(replacedByKey(raw.id), JSON.stringify({ id: run.id, name: run.name }));
-        session()?.removeItem(FROM_KEY);
-      }
-    } catch { /* storage off: no offer */ }
-    setReplaces(mine ?? readRef(local(), replacesKey(run.id)));
-    setReplacedBy(readRef(local(), replacedByKey(run.id)));
-  }, [run.id, run.name, run.createdAt, hasQr]);
+    setReplacesId(readQrReplaces(local(), run.id));
+    setReplacedById(readQrReplacedBy(local(), run.id)[0] ?? null);
+  }, [run.id]);
 
-  const old = replaces ? runs.find((r) => r.id === replaces.id) ?? null : null;
-  useEffect(() => { if (replaces && !old) void fetchRun(replaces.id).catch(() => { /* offer stays, named from storage */ }); }, [replaces, old, fetchRun]);
-  const oldOpen = !!replaces && (!old || (old.status !== 'cancelled' && old.status !== 'completed' && (old.printedCount || 0) < old.totalLabels));
+  // The other run is read once (one small request), so a deleted or unknown run offers nothing.
+  useEffect(() => {
+    for (const id of [replacesId, replacedById]) {
+      if (!id || looked[id] || runs.some((r) => r.id === id)) continue;
+      setLooked((m) => ({ ...m, [id]: true }));
+      void fetchRun(id).catch(() => null);
+    }
+  }, [replacesId, replacedById, runs, looked, fetchRun]);
 
-  const forget = () => { try { if (replaces) local()?.removeItem(replacesKey(run.id)); } catch { /* nothing saved */ } setReplaces(null); };
+  const old = replacesId ? runs.find((r) => r.id === replacesId) ?? null : null;
+  const newer = replacedById ? runs.find((r) => r.id === replacedById) ?? null : null;
+
+  const keepBoth = () => {
+    try { local()?.removeItem(replacesKey(run.id)); } catch { /* nothing saved */ }
+    setReplacesId(null);
+  };
   const cancelOld = async () => {
-    if (!replaces || busy) return;
-    const ok = await confirmDialog({ title: `Cancel “${replaces.name}”?`, body: 'Its labels won’t print. Labels it already printed stay counted.', confirmLabel: 'Cancel the old run', danger: true });
+    if (!old || busy) return;
+    const name = old.name;
+    const ok = await confirmDialog({ title: `Cancel “${name}”?`, body: 'Its labels won’t print. Labels it already printed stay counted.', confirmLabel: 'Cancel the old run', cancelLabel: 'Keep it', danger: true });
     if (!ok) return;
     setBusy(true);
     try {
+      // Read the old run again: it may have started printing since this page loaded.
+      const current = await fetchRun(old.id).catch(() => null);
+      if (!current) { setNote({ text: `Couldn’t check “${name}”, so it wasn’t cancelled. Open it to cancel it.`, href: `/runs/${old.id}`, name }); return; }
+      if (!qrOldRunOpen(current)) { setNote({ text: current.status === 'printing' ? `“${name}” is printing now, so it wasn’t cancelled here. Open it to stop it.` : `“${name}” isn’t waiting to print any more. Nothing was cancelled.`, href: `/runs/${old.id}`, name }); return; }
       // Labels of the old run waiting at the office are its own page's choice (stop them or let them print).
-      const jobs = await readOfficeJobs(replaces.id);
+      const jobs = await readOfficeJobs(old.id);
       const waiting = jobs?.some((j) => ['queued', 'claimed', 'submitted'].includes(j.state));
       if (!jobs || waiting) {
-        setNote({ text: !jobs ? `Couldn’t check the office printer for “${replaces.name}”, so it wasn’t cancelled. Open it to cancel it.` : `“${replaces.name}” has labels waiting at the office printer, so it wasn’t cancelled here. Open it to cancel it.`, href: `/runs/${replaces.id}` });
+        setNote({ text: !jobs ? `Couldn’t check the office printer for “${name}”, so it wasn’t cancelled. Open it to cancel it.` : `“${name}” has labels waiting at the office printer, so it wasn’t cancelled here. Open it to cancel it.`, href: `/runs/${old.id}`, name });
         return;
       }
-      const current = useRunStore.getState().runs.find((r) => r.id === replaces.id) ?? (await fetchRun(replaces.id).then(() => useRunStore.getState().runs.find((r) => r.id === replaces.id)).catch(() => undefined));
-      const done = await setRunStatus(replaces.id, 'cancelled', current?.printedCount ?? undefined);
-      if (done === null) { setNote({ text: `Couldn’t cancel “${replaces.name}”. Open it to cancel it.`, href: `/runs/${replaces.id}` }); return; }
-      setNote({ text: `Cancelled “${replaces.name}”.` });
-      forget();
+      const done = await setRunStatus(old.id, 'cancelled', current.printedCount ?? undefined);
+      if (done === null) { setNote({ text: `Couldn’t cancel “${name}”. Open it to cancel it.`, href: `/runs/${old.id}`, name }); return; }
+      // The link stays, so the old run's page still says which run replaced it.
+      setNote({ text: `Cancelled “${name}”.` });
     } catch {
-      setNote({ text: `Couldn’t cancel “${replaces.name}”. Open it to cancel it.`, href: `/runs/${replaces.id}` });
+      setNote({ text: `Couldn’t cancel “${name}”. Open it to cancel it.`, href: `/runs/${old.id}`, name });
     } finally { setBusy(false); }
   };
 
-  if (note) return <p role="status" className="text-sm text-zinc-300">{note.text}{note.href && <> <Link href={note.href} className="link">Open “{replaces?.name ?? 'the old run'}”</Link></>}</p>;
-  if (replaces && oldOpen) {
+  if (note) return <p role="status" className="text-sm text-zinc-300">{note.text}{note.href && <> <Link href={note.href} className="link">Open “{note.name ?? 'the old run'}”</Link></>}</p>;
+  if (old && qrOldRunOpen(old)) {
     return (
       <div className="space-y-1 text-sm">
-        <p className="text-zinc-100">This run replaces “{replaces.name}”, which is still ready to print. Cancel it so its labels don’t print too.</p>
+        <p className="text-zinc-100">This run replaces “{old.name}”, which is still ready to print. Cancel it so its labels don’t print too.</p>
         <div className="flex flex-wrap items-center gap-x-2">
           <button type="button" disabled={busy} className="btn btn-secondary btn-sm" onClick={() => void cancelOld()}>Cancel the old run</button>
-          <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={forget}>Keep both</button>
+          <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={keepBoth}>Keep both</button>
         </div>
       </div>
     );
   }
-  if (replacedBy && replacedBy.id !== run.id) {
-    return <p className="text-sm text-zinc-300">A QR code run replaced this run: <Link href={`/runs/${replacedBy.id}`} className="link">{replacedBy.name}</Link>.</p>;
+  if (newer) {
+    return <p className="text-sm text-zinc-300">A QR code run replaced this run: <Link href={`/runs/${newer.id}`} className="link">{newer.name}</Link>.</p>;
   }
   return null;
 }

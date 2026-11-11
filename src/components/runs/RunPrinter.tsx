@@ -19,11 +19,11 @@ import { countedEventSpans, printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
-import { officeSentLine, runDisplayStatus, runToneDot } from '@/lib/runDisplayStatus';
+import { officeHoldsPrinter, officeSentLine, runDisplayStatus, runToneDot } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, runSendCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck, rerunAfterFixHref } from './RunBarcodeCheck';
 import { RawDetails } from './RawDetails';
-import { QrReplaced, markQrFrom } from './QrReplaced';
+import { QrReplaced } from './QrReplaced';
 import { plainServerError } from '@/lib/runErrors';
 import { FixInDesignerLink } from '@/components/checks/BarcodeWarning';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
@@ -97,6 +97,9 @@ function runSourceMeta(source: string) {
 
 /** Saved on this device, not confirmed by the server yet: printing waits. Named after the banner's own button. */
 const SYNC_WAIT_START = 'This run’s progress hasn’t reached the server yet, so nothing was printed. Press “Send now” at the top, then try again.';
+/** Set when an earlier server build refused a go-back; cleared once the server can do it again. */
+const GO_BACK_OFF_KEY = 'lw:go-back-refused';
+const GO_BACK_OFF_WORDS = 'Going back to an earlier label can’t be done right now. Nothing was changed.';
 const SYNC_WAIT_GO_BACK = 'Going back hasn’t reached the server yet, so nothing was printed. It tries again on its own, or press “Send now” at the top.';
 const SYNC_WAITS: ReadonlySet<string> = new Set([SYNC_WAIT_START, SYNC_WAIT_GO_BACK]);
 /** Another device printed on after a go-back this page asked for: one line, and the button to press. */
@@ -183,9 +186,31 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const webUsbStatusWorkingRef = useRef(false);
   const [printedCount, setPrintedCount] = useState(run?.printedCount ?? 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // A go-back reached an earlier build of the server (a rollback): nothing was
-  // changed, and only a reload brings this page up to date.
-  const [reloadNeeded, setReloadNeeded] = useState(false);
+  // A go-back reached an earlier build of the server (a rollback) that can't
+  // do it: nothing was changed. The page then doesn't offer going back again
+  // (not even after a reload) until the server can do it again, and says so
+  // in one line, so nobody loops through "reload, press, refused".
+  const [goBackOff, setGoBackOff] = useState(false);
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = window.localStorage.getItem(GO_BACK_OFF_KEY); } catch { saved = null; }
+    if (!saved) return;
+    setGoBackOff(true);
+    let active = true;
+    // One read of the build route (no data, no database): this branch's server has it, the older build doesn't.
+    void fetch('/api/version', { cache: 'no-store' }).then((response) => {
+      if (!active || !response.ok) return;
+      try { window.localStorage.removeItem(GO_BACK_OFF_KEY); } catch { /* nothing saved */ }
+      setGoBackOff(false);
+    }).catch(() => { /* still off: try again on the next visit */ });
+    return () => { active = false; };
+  }, []);
+  const [goBackRefusedHere, setGoBackRefusedHere] = useState(false);
+  const turnGoBackOff = () => {
+    try { window.localStorage.setItem(GO_BACK_OFF_KEY, String(Date.now())); } catch { /* this page still knows */ }
+    setGoBackOff(true);
+    setGoBackRefusedHere(true);
+  };
   // The printer here stopped mid-run (out of labels, unplugged…): the header says so until the next start.
   const [printerStopped, setPrinterStopped] = useState(false);
   const [rewindNotice, setRewindNotice] = useState<string | null>(null);
@@ -544,7 +569,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const checkCurrent = (tickSend?.from ?? 0) === checkFrom && (tickSend?.to ?? 0) === checkTo;
   const checksOk = checkCurrent && !glyphStop && printCheckAllows(shownCheck, { ...goAhead, barcode: barcodeOk ? shownCheck.blockingKey : undefined });
   const stopWords = sendStopWords(sendCheck.stopsHere, sendCheck.before, transport === 'office' && !isSheetFormat ? 'Send' : 'Print', sendCheck.after);
-  const checksReason = checksOk ? '' : !checkCurrent ? 'Checking these labels…' : glyphStop ? glyphStop : shownCheck.blocking.length && (shownCheck.verdict.stops || !barcodeOk)
+  const checksReason = checksOk ? '' : !checkCurrent ? 'Checking these labels…' : glyphStop ? '' : shownCheck.blocking.length && (shownCheck.verdict.stops || !barcodeOk)
     ? (shownCheck.verdict.stops ? (stopWords || shownCheck.verdict.waitReason) : barcodeWaitWords(false, shownCheck.blocking.length, barcodeSendTickLabel(shownCheck.blocking[0], tickSend, total)))
     : `Some items overlap or run off the label. Check the preview, then tick “${LAYOUT_GO_AHEAD}” above.`;
 
@@ -563,6 +588,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (officeSendFrom === undefined || !Number.isInteger(officeSendFrom) || officeSendFrom < 1 || officeSendFrom > total) return;
     setPreviewIndex(officeSendFrom - 1);
   }, [officeSendFrom, total]);
+  // A label whose text can't be drawn stops the send: the preview shows it.
+  const firstGlyphLabel = glyphHere.find((label) => label > 0) ?? 0;
+  useEffect(() => {
+    if (firstGlyphLabel < 1 || firstGlyphLabel > total) return;
+    setPreviewIndex(firstGlyphLabel - 1);
+  }, [firstGlyphLabel, officeSendFrom, total]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -888,55 +919,74 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     };
   };
 
-  const startOrResume = async () => {
+  /** fromOverride: start from this label instead of the From box ("Start at 1 instead" starts right away). */
+  const startOrResume = async (fromOverride?: number) => {
     if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
     starting.current = true;
+    const startFrom = typeof fromOverride === 'number' ? fromOverride : selectedFrom;
     try {
     setPrinterStopped(false);
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before printing.'); return; }
-    if (!checksOk) { setErrorMsg(checksReason); return; }
+    if (!checksOk) { setErrorMsg(checksReason || glyphStop); return; }
     setErrorMsg(null);
     if (pendingPatchCount(run.id)) { await flushOfflineQueue(); if (pendingPatchCount(run.id)) { setErrorMsg(SYNC_WAIT_START); return; } }
     setRewindNotice(null);
     // A From at or below what is already printed moves the run back, the same
     // as "Go back to label N". Without the explicit rewind the server would
     // keep the higher count and the next Resume would skip labels.
-    const plan = planRunStart(printedCount, selectedFrom);
+    const plan = planRunStart(printedCount, startFrom);
     // Starting after the next unprinted label would count the labels in
     // between as printed, because progress is "printed up to label N".
-    const skipped = plan.rewind ? null : skippedLabels(printedCount, selectedFrom);
+    const skipped = plan.rewind ? null : skippedLabels(printedCount, startFrom);
     if (skipped) {
       // The safe choice is the primary button; closing the dialog starts
       // nothing. Labels are only counted as printed when the person says
       // they did print.
       const one = skipped.from === skipped.to;
       const gap = one ? `label ${skipped.from}` : `labels ${skipped.from}–${skipped.to}`;
-      const only = selectedFrom === selectedThrough ? `${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`;
+      const only = startFrom === selectedThrough ? `${startFrom}` : `${startFrom}\u2060–\u2060${selectedThrough}`;
       const choice = await choiceDialog({
         title: `${gap.charAt(0).toUpperCase()}${gap.slice(1)} ${one ? 'isn’t' : 'aren’t'} counted as printed yet`,
-        body: `The next label to print is ${skipped.from}. Start there, or print only ${selectedFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
+        body: `The next label to print is ${skipped.from}. Start there, or print only ${startFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
         confirmLabel: `Start at ${skipped.from} instead`,
         altLabel: `Print only ${only}`,
         extraLabel: `${one ? 'It' : 'They'} already printed…`,
         cancelAlso: true,
       });
-      if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); return; }
+      // Starts right away from the next label to print (the press was the ask).
+      if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); starting.current = false; await startOrResume(skipped.from); return; }
       // Printed apart from the run (its own guard against a second start).
-      if (choice === 'alt') { starting.current = false; await handleReprintRange({ from: selectedFrom, to: selectedThrough }, 'only'); return; }
+      if (choice === 'alt') { starting.current = false; await handleReprintRange({ from: startFrom, to: selectedThrough }, 'only'); return; }
       if (choice !== 'extra') return;
       const printedThem = await confirmDialog({
         title: `Did ${gap} print?`,
-        body: `Only say yes if ${one ? 'it came' : 'they came'} out of a printer. ${one ? 'It is' : 'They are'} then counted as printed, and printing starts at ${selectedFrom}.`,
+        body: `Only say yes if ${one ? 'it came' : 'they came'} out of a printer. ${one ? 'It is' : 'They are'} then counted as printed, and printing starts at ${startFrom}.`,
         confirmLabel: `Yes, ${one ? 'it' : 'they'} printed`,
         cancelLabel: 'No',
         focusCancel: true,
       });
       if (!printedThem) return;
     }
+    // A range that is all printed already ("3–4" after printing 1–8) prints
+    // those labels again and leaves the run's progress alone, like the office
+    // panel: going back would make labels 5–8 print a second time on Resume.
+    if (plan.rewind && selectedThrough <= printedCount) {
+      const one = startFrom === selectedThrough;
+      const which = one ? `label ${startFrom.toLocaleString('en-US')}` : `labels ${startFrom.toLocaleString('en-US')}–${selectedThrough.toLocaleString('en-US')}`;
+      const ok = await confirmDialog({
+        title: `Print ${which} again?`,
+        body: `${one ? 'It was' : 'They were'} already printed, so ${one ? 'it prints' : 'they print'} a second time. The run’s progress stays at ${printedCount.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`,
+        confirmLabel: `Print ${one ? startFrom.toLocaleString('en-US') : `${startFrom.toLocaleString('en-US')}\u2060–\u2060${selectedThrough.toLocaleString('en-US')}`} again`,
+      });
+      if (!ok) return;
+      starting.current = false;
+      await handleReprintRange({ from: startFrom, to: selectedThrough }, 'reprint');
+      return;
+    }
     // Labels the office printer already has: printing them here too is a
     // choice, not a surprise.
-    const atOffice = officeLabelsIn(office.jobs, selectedFrom, selectedThrough);
+    const atOffice = officeLabelsIn(office.jobs, startFrom, selectedThrough);
     if (atOffice) {
       const one = atOffice.from === atOffice.to;
       const ok = await confirmDialog({
@@ -953,8 +1003,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const outOfOrder = printedOutOfOrder.filter((n) => n > printedCount);
     // Office ranges a person confirmed came out are printed too, wherever they sit.
     const confirmedHere: number[] = [];
-    for (const span of officeConfirmed) for (let n = Math.max(selectedFrom, span.from, printedCount + 1); n <= Math.min(selectedThrough, span.to); n++) confirmedHere.push(n);
-    const scanned = scannedSkipPlan(selectedFrom, selectedThrough, [...new Set([...scannedLabels, ...outOfOrder, ...confirmedHere])].sort((a, b) => a - b));
+    for (const span of officeConfirmed) for (let n = Math.max(startFrom, span.from, printedCount + 1); n <= Math.min(selectedThrough, span.to); n++) confirmedHere.push(n);
+    const scanned = scannedSkipPlan(startFrom, selectedThrough, [...new Set([...scannedLabels, ...outOfOrder, ...confirmedHere])].sort((a, b) => a - b));
     if (scanned.skipped.length) {
       const words = labelListWords(scanned.skipped);
       const one = scanned.skipped.length === 1;
@@ -965,23 +1015,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       const choice = await choiceDialog({
         title: `${words.charAt(0).toUpperCase()}${words.slice(1)} ${one ? 'was' : 'were'} ${how}`,
         body: scanned.keep.length
-          ? `Printing labels ${selectedFrom}–${selectedThrough} prints ${one ? 'it' : 'them'} a second time. Skipping leaves ${one ? 'it' : 'them'} out; ${one ? 'it still counts' : 'they still count'} as printed.`
-          : `Every label from ${selectedFrom} to ${selectedThrough} was ${byScan ? 'printed by scanning' : 'already printed'}. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
+          ? `Printing labels ${startFrom}–${selectedThrough} prints ${one ? 'it' : 'them'} a second time. Skipping leaves ${one ? 'it' : 'them'} out; ${one ? 'it still counts' : 'they still count'} as printed.`
+          : `Every label from ${startFrom} to ${selectedThrough} was ${byScan ? 'printed by scanning' : 'already printed'}. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
         confirmLabel: scanned.keep.length ? `Skip ${one ? 'it' : 'them'}` : 'Don’t print',
         altLabel: 'Print them again',
       });
       if (choice === null) return;
       if (choice === 'confirm') { if (!scanned.keep.length) return; pieces = scanned.keep; }
     }
+    // The server can't go back right now (an earlier build refused it): said once, nothing sent.
+    if (plan.rewind && goBackOff) { setGoBackRefusedHere(true); return; }
     if (plan.rewind) {
       // The labels that print twice, named: from the From box up to what is already printed.
       const twiceTo = Math.min(printedCount, selectedThrough);
-      const twiceOne = twiceTo === selectedFrom;
-      const twice = twiceOne ? `Label ${selectedFrom.toLocaleString('en-US')} was` : `Labels ${selectedFrom.toLocaleString('en-US')}–${twiceTo.toLocaleString('en-US')} were`;
+      const twiceOne = twiceTo === startFrom;
+      const twice = twiceOne ? `Label ${startFrom.toLocaleString('en-US')} was` : `Labels ${startFrom.toLocaleString('en-US')}–${twiceTo.toLocaleString('en-US')} were`;
       const ok = await confirmDialog({
-        title: `Go back to label ${selectedFrom} and continue?`,
-        body: `${twice} already printed, so ${twiceOne ? 'it prints' : 'they print'} a second time. The run’s progress goes back to ${plan.startCount} of ${total}, then labels ${selectedFrom}–${selectedThrough} print. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
-        confirmLabel: `Go back to label ${selectedFrom}`,
+        title: `Go back to label ${startFrom} and continue?`,
+        body: `${twice} already printed, so ${twiceOne ? 'it prints' : 'they print'} a second time. The run’s progress goes back to ${plan.startCount} of ${total}, then labels ${startFrom}–${selectedThrough} print. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
+        confirmLabel: `Go back to label ${startFrom}`,
       });
       if (!ok) { setFromDraft(null); setCountDraft(null); return; }
       setPrintedCount(plan.startCount);
@@ -998,7 +1050,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     try { started = await setRunStatus(run.id, 'printing', startCount, { resetProgress: plan.rewind, ...(plan.rewind ? { expectedPrintedCount: printedCount } : {}), onSetAside: (reason, kind) => { refusedStart.reason = reason; refusedStart.reload = kind === 'needs-reload'; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
     catch(error) { setStatus('paused'); setErrorMsg((error as Error).message); return; }
     finally { ownGoBack.current = false; }
-    if (refusedStart.reason && refusedStart.reload) { setStatus('paused'); setPrintedCount(printedCount); setReloadNeeded(true); return; }
+    if (refusedStart.reason && refusedStart.reload) { setStatus('paused'); setPrintedCount(printedCount); setFromDraft(null); setCountDraft(null); setErrorMsg(null); turnGoBackOff(); return; }
     // A go-back says only why it wasn't applied (nothing printed or started); a start says it didn't start.
     if (refusedStart.reason) { setStatus('paused'); setErrorMsg(plan.rewind ? refusedStart.reason : `Printing didn’t start, so nothing was printed. ${refusedStart.reason}`); const fresh = await fetchRun(run.id).catch(() => null); if (fresh && mounted.current) setPrintedCount(fresh.printedCount ?? 0); return; }
     if (pendingPatchCount(run.id)) { setStatus('paused'); setErrorMsg(plan.rewind ? SYNC_WAIT_GO_BACK : SYNC_WAIT_START); return; }
@@ -1030,7 +1082,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
     const printRange = normalizeLabelRange({
       total,
-      from: selectedFrom,
+      from: startFrom,
       to: selectedThrough,
     });
     // The queue tracks feeds internally (startIndex/done are feed counts).
@@ -1171,7 +1223,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const reprintFrom = Number(reprintFromDraft);
   const reprintTo = Number(reprintToDraft);
+  // A typed range that starts among printed labels and runs past them: only a go-back prints it.
+  const crossesPrinted = rangeValid && selectedFrom <= printedCount && selectedThrough > printedCount;
   const reprintValid = Number.isInteger(reprintFrom) && Number.isInteger(reprintTo) && reprintFrom >= 1 && reprintTo >= reprintFrom && reprintTo <= total;
+  // Said where a go-back would be offered (or right after one was refused), once.
+  const goBackAsked = goBackRefusedHere || crossesPrinted || (showReprint && !isSheetFormat && reprintValid && reprintFrom <= printedCount);
   const reprintCount = reprintValid ? reprintTo - reprintFrom + 1 : 0;
   const setReprintSpan = (from: number, to: number) => {
     setReprintFromDraft(String(from));
@@ -1204,7 +1260,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const handleReprintRange = async (chosen?: { from: number; to: number }, kind: 'reprint' | 'only' = 'reprint') => {
     if (!run || !template || !format || (!chosen && !reprintValid) || reprinting || statusRef.current === 'running' || starting.current) return;
     if (!blanksOk) { setErrorMsg('Some labels are missing a value. Fix the data (see above) before printing.'); return; }
-    if (!checksOk) { setErrorMsg(checksReason); return; }
+    if (!checksOk) { setErrorMsg(checksReason || glyphStop); return; }
     const range = chosen ?? { from: reprintFrom, to: reprintTo };
     // The check above covers the range boxes; these labels get their own look for a label that can't print.
     const own = runSendCheck(printCheck, run, template, format, range);
@@ -1255,6 +1311,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // going to the end from there. Only this action rewinds progress.
   const handleReprintFromHereAndContinue = async () => {
     if (!run || !reprintValid) return;
+    if (goBackOff) { setGoBackRefusedHere(true); return; }
     const n = reprintFrom;
     const ok = await confirmDialog({
       title: `Go back to label ${n}?`,
@@ -1267,13 +1324,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     setPrintedCount(n - 1);
     setStatus('paused');
     setShowReprint(false);
-    const refused = { reason: '' };
+    const refused = { reason: '', reload: false };
     const before = printedCount;
     const applied: { server?: number | null } = {};
     ownGoBack.current = true;
-    try { await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason) => { refused.reason = reason; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
+    try { await setRunStatus(run.id, 'paused', n - 1, { resetProgress: true, expectedPrintedCount: before, onSetAside: (reason, kind) => { refused.reason = reason; refused.reload = kind === 'needs-reload'; }, onAlreadyApplied: (server) => { applied.server = server; } }); }
     finally { ownGoBack.current = false; }
     if ('server' in applied) { await settleGoBack(n - 1, applied.server ?? null); return; }
+    if (refused.reason && refused.reload) { setPrintedCount(before); setErrorMsg(null); turnGoBackOff(); return; }
     if (refused.reason) {
       setPrintedCount(run.printedCount ?? 0); setErrorMsg(`Going back didn’t save. ${refused.reason}`);
       // Show the progress the other device saved.
@@ -1306,7 +1364,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
   const openSheetPrintRange = (range?: { from?: number; to?: number }) => {
     if (!range && !rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
-    if (!checksOk) { setErrorMsg(checksReason); return; }
+    if (!checksOk) { setErrorMsg(checksReason || glyphStop); return; }
     const resolved = normalizeSheetRange(range);
     if (!openInNewTab(sheetPrintHref(resolved))) {
       setErrorMsg('Popup blocked. Allow popups, then try again.');
@@ -1640,7 +1698,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const toGo = stillToGo(printedSpanList, total);
   // Whether the progress line spells out what is still to go (then the office panel doesn't say it again).
   const toGoShown = progressParts(printedCount, total, countedSpans, officeMark.ranges, waitingSpans).shown;
-  const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total, updatedAt: run.updatedAt }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat, { printingHere: status === 'running' });
+  const baseDisplay = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total, updatedAt: run.updatedAt }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat, { printingHere: status === 'running' });
+  // Text the picture design can't draw stops Send: the header says what's needed, never "Ready".
+  const glyphLabels = glyphHere.filter((label) => label > 0);
+  const display = glyphStop && baseDisplay.bucket === 'ready'
+    ? { ...baseDisplay, bucket: 'needs-you' as const, label: 'Needs you', tone: 'attention' as const, detail: glyphHere.includes(0) ? 'A fixed text can’t print' : glyphLabels.length === 1 ? `Label ${glyphLabels[0].toLocaleString('en-US')} can’t print` : `${glyphLabels.length.toLocaleString('en-US')} labels can’t print` }
+    : baseDisplay;
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
   const officeNeedsSomeone = (officeSummary?.failed ?? 0) > 0 || (officeSummary?.onTheWay ?? 0) > 0;
@@ -1699,7 +1762,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
       designHref={designHref}
       qrHref={qrFixFits ? `/runs/new?duplicateFrom=${encodeURIComponent(run.id)}&barcode=qr` : null}
-      onQr={() => markQrFrom(run)}
     />
   );
   // A finished or cancelled run doesn't lead with its design's problems: one
@@ -1843,7 +1905,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <Menu items={moreItems} label="More" />
           </div>
         </div>
-        <QrReplaced run={run} template={template} />
+        <QrReplaced run={run} />
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-5 lg:gap-6">
           {/* Print first, on every screen: what you see first is what Tab reaches first. */}
@@ -1988,7 +2050,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!calm && !officeFixFirst && checkList}
 
           <div className="space-y-2">
-            <RunProgress printedCount={printedCount} total={total} confirmed={countedSpans} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} named={transport === 'office' && !isSheetFormat ? office.summary.failed : []} tone={runFinished ? 'done' : 'active'} animate />
+            <RunProgress printedCount={printedCount} total={total} confirmed={countedSpans} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} named={transport === 'office' && !isSheetFormat ? office.summary.failed : []} tone={runFinished && !officeHoldsPrinter(officeSummary) ? 'done' : 'active'} animate />
             {/* What the office printer has done: shown, never counted as printed.
                 With the office printer chosen, its panel says it once. */}
             {transport !== 'office' && sentLine && <p className="text-sm text-zinc-400 tabular-nums">{sentLine}</p>}
@@ -2018,13 +2080,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </div>
             </div>
           )}
-          {reloadNeeded && (
-            <Recovery tone="warning" title="This page is out of date" actions={
-              <button type="button" className="btn btn-primary" onClick={() => { if (canLeaveLocalPrint()) window.location.reload(); }}><RotateCcw className="w-4 h-4" aria-hidden="true" />Reload page</button>}>
-              <p>Reload to see where the run is now. Nothing was changed.</p>
-            </Recovery>
-          )}
-          {errorMsg && !reloadNeeded && (
+          {goBackOff && goBackAsked && <p role="status" className="text-sm text-amber-300">{GO_BACK_OFF_WORDS}</p>}
+          {errorMsg && (
             <p role="alert" className="text-sm text-red-400 flex items-start gap-1.5">
               <AlertCircle className="mt-0.5 w-4 h-4 shrink-0" aria-hidden="true" /> {friendlyRenderError(friendlyError(plainPrinterProblem(errorMsg)), template.elements, across)}
             </p>
@@ -2057,10 +2114,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 Open print page
               </button>
             )}
-            {!isSheetFormat && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-              <button type="button" onClick={startOrResume} disabled={!canStart || !rangeValid} className="btn btn-primary flex-1">
+            {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+              <button type="button" onClick={() => void startOrResume(goBackOff && crossesPrinted ? printedCount + 1 : undefined)} disabled={!canStart || !rangeValid} className="btn btn-primary flex-1">
                 {status === 'paused' ? <Play className="w-4 h-4" aria-hidden="true" /> : <Printer className="w-4 h-4" aria-hidden="true" />}
-                {rangeValid && selectedFrom <= printedCount ? `Go back to label ${selectedFrom}` : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
+                {rangeValid && selectedThrough <= printedCount ? `Print ${selectedFrom === selectedThrough ? `label ${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`} again` : rangeValid && selectedFrom <= printedCount ? (goBackOff ? `Resume from label ${printedCount + 1}` : `Go back to label ${selectedFrom}`) : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
               </button>
             )}
             {status === 'running' && transport === 'dazzle' && (
@@ -2071,7 +2128,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <Pause className="w-4 h-4" aria-hidden="true" /> Pause
               </button>
             )}
-            {(status === 'completed' || (runFinished && status !== 'running')) && (
+            {(status === 'completed' || (runFinished && status !== 'running')) && !officeHoldsPrinter(officeSummary) && (
               onDone ? (
                 <button type="button" onClick={onDone} className="btn btn-secondary flex-1">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-success rounded-full" aria-hidden="true" /> Done
@@ -2085,10 +2142,10 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <p className="text-sm text-zinc-400">{transport === 'webusb' ? 'Connect a printer first.' : transport === 'dazzle' ? 'Turn on a printer in the Dazzle app first.' : 'Choose a printer first.'}</p>
           )}
           {/* Why Start or Print waits, right under it: the same words wherever a label problem holds the button. */}
-          {blanksOk && !checksOk && checkCurrent && !showReprint && !isSheetFormat && transport !== 'office' && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
+          {blanksOk && !checksOk && checkCurrent && !!checksReason && !showReprint && !isSheetFormat && transport !== 'office' && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
             <p className="text-sm text-amber-300">{checksReason}</p>
           )}
-          {blanksOk && !checksOk && checkCurrent && isSheetFormat && !pendingSheetRange && printedCount < total && <p className="text-sm text-amber-300">{checksReason}</p>}
+          {blanksOk && !checksOk && checkCurrent && !!checksReason && isSheetFormat && !pendingSheetRange && printedCount < total && <p className="text-sm text-amber-300">{checksReason}</p>}
           {/* A text problem doesn't hold the button: it is named beside it, in one line. */}
           {checksOk && characterNote && !showReprint && transport !== 'office' && printedCount < total && (status === 'idle' || status === 'paused' || status === 'error') && <p className="text-sm text-zinc-400">{characterNote}</p>}
           {!blanksOk && !isSheetFormat && transport !== 'office' && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
@@ -2135,7 +2192,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                   <button type="button" onClick={() => setReprintSpan(reprintValid ? reprintFrom : 1, total)} className="btn btn-ghost btn-sm" disabled={reprintToDraft === String(total)}>To the end</button>
                   <button type="button" onClick={() => setShowReprint(false)} className="btn btn-ghost btn-sm">Cancel</button>
                 </div>
-                {!isSheetFormat && reprintValid && reprintFrom <= printedCount && (
+                {!isSheetFormat && !goBackOff && reprintValid && reprintFrom <= printedCount && (
                   <button type="button" onClick={() => void handleReprintFromHereAndContinue()} className="btn btn-ghost btn-sm -ml-2 h-auto whitespace-normal py-2 text-left text-zinc-300">
                     Or go back to label {reprintFrom} and continue the run from there…
                   </button>
