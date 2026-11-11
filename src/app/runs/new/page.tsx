@@ -1099,10 +1099,11 @@ function NewRunContent() {
   });
   const designGoAhead = !barcodeWords.stops && designIssues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
   const designOk = designIssues.length === 0 || designGoAhead;
-  // Every problem ticked to print anyway (carried to the run page as one go-ahead).
+  // Every problem ticked to print anyway (carried to the run page as one
+  // go-ahead): the design's problems, and any too-long value still in the run.
   const barcodeGoAhead = barcodeCheck.issues.length > 0 && longOk && (designIssues.length === 0 ? longLeft.length > 0 : designGoAhead);
   const barcodesClear = barcodeCheck.issues.length === 0;
-  const barcodesOk = barcodesClear || (designOk && longOk);
+  const barcodesOk = barcodesClear || barcodeGoAhead;
   // "Fix it for me" / "Use a QR code instead" right here, offered only when
   // the changed design prints that barcode whole on every label and lands on
   // nothing. It changes the design's barcode only, is saved, and has Undo.
