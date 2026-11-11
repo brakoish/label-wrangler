@@ -17,11 +17,12 @@ const {unconfirmedSendWords}=require('../../src/lib/officeSendOutcome.ts');
 const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
 (async()=>{
  // Words: only a page that saw the try fail may say the connection dropped.
- assert.match(unconfirmedSendWords(undefined,undefined,'here'),/connection dropped/);
- assert.doesNotMatch(unconfirmedSendWords(undefined,undefined,'earlier'),/connection dropped/);
- assert.doesNotMatch(unconfirmedSendWords(undefined,undefined,'none'),/connection dropped/);
- assert.match(unconfirmedSendWords(undefined,undefined,'none'),/office queue doesn’t show them yet.*same request, so it won’t print twice/);
- assert.match(unconfirmedSendWords(undefined,undefined,'none',true),/doesn’t show it yet/);
+ // Round 14: one stable sentence for "not sure" (never blames the connection; doesn't change after a reload).
+ for(const seen of ['here','earlier','none'])assert.doesNotMatch(unconfirmedSendWords(undefined,undefined,seen),/connection dropped/);
+ assert.equal(unconfirmedSendWords(undefined,undefined,'here'),unconfirmedSendWords(undefined,undefined,'none'));
+ assert.equal(unconfirmedSendWords(503,undefined,'earlier'),unconfirmedSendWords(undefined,undefined,'none'));
+ assert.match(unconfirmedSendWords(undefined,undefined,'none'),/didn’t hear back from the office about them.*same request, so it can’t print twice/);
+ assert.match(unconfirmedSendWords(undefined,undefined,'none',true),/about it\./);
  assert.match(unconfirmedSendWords(401,undefined,'earlier'),/signed out/,'a saved reason from this device is kept');
 
  // Jobs list: "did my send with this key arrive?" (read-only, this account's own sends).

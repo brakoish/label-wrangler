@@ -68,10 +68,12 @@ export function uncertainSendWords(status: number | undefined, code?: string): {
  * office queue shows. Never says the connection dropped unless this page saw it.
  */
 export function unconfirmedSendWords(status: number | undefined, code: string | undefined, seen: 'here' | 'earlier' | 'none', one = false): string {
-  const same = 'Press “Send again”. It’s the same request, so it won’t print twice.';
-  if (seen === 'here' || (seen === 'earlier' && status !== undefined)) return uncertainSendWords(status, code).message;
-  if (seen === 'earlier') return `The last try didn’t get an answer. ${same}`;
-  return `The office queue doesn’t show ${one ? 'it' : 'them'} yet. ${same}`;
+  // One sentence for "not sure", kept the same before and after a reload, in
+  // every tab. Only a reason the person can act on (signed out, no access,
+  // the wrong address, busy) is said instead, and only when it was seen.
+  const known = seen === 'here' || seen === 'earlier' ? uncertainSendWords(status, code) : null;
+  if (known && known.cause !== 'no-answer') return known.message;
+  return `We didn’t hear back from the office about ${one ? 'it' : 'them'}. Press “Send again”. It’s the same request, so it can’t print twice.`;
 }
 
 const REFUSALS: Array<[RegExp, OfficeRefusalReason, string]> = [

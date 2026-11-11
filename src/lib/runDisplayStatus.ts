@@ -17,7 +17,7 @@ export interface RunOfficeSummary {
   /** Labels the office reported sent that nobody has said came out yet. */
   unchecked?: number;
   /** The run page's office panel: a send it isn't sure the office got (likely: the queue lists those labels). */
-  unsure?: { from: number; to: number; likely?: boolean } | null;
+  unsure?: { from: number; to: number; likely?: boolean; missing?: boolean } | null;
   /** The run page's office panel: a send the office refused (nothing was queued). */
   refused?: { from: number; to: number } | null;
   /** The run page's office panel: the office printer is paused. */
@@ -75,6 +75,7 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (run.status === 'cancelled') return out('cancelled', 'cancelled');
   if (total > 0 && printed >= total) return out('done', 'done');
   if (localProblem) return out('needs-you', 'attention', 'Stopped: printer problem');
+  if (office?.unsure?.missing) return out('check', 'check', `The office didn’t get ${labelsWord(office.unsure).toLowerCase()}`);
   if (office?.unsure) return out('check', 'check', office.unsure.likely ? `${labelsWord(office.unsure)} look${office.unsure.from === office.unsure.to ? 's' : ''} like ${office.unsure.from === office.unsure.to ? 'it' : 'they'} arrived` : `Not sure the office got ${labelsWord(office.unsure).toLowerCase()}`);
   if (office && office.failed > 0) {
     const first = office.firstFailed;
