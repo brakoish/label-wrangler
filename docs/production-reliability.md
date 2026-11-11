@@ -50,7 +50,7 @@ What happens to work still queued on a device:
 - Before "Send the last part" / "Send the remaining parts" is offered, the office queue is read once more; pressing it reads the queue again and sends only parts the office doesn't have (one request per part, each with its own saved key).
 - "Pause printer" stays on while the office printer is stopped for a check, so a manager can hold everything after the check too.
 - A barcode that won't scan still waits for its "Print anyway" tick (a send the exact renderer refuses never goes, and one it can produce never stops), and the reason is said right above the Send or Start button. Text the printer can't print doesn't hold the button; it is named beside it ("“·” will come out as a box on 30 labels"), and a finished run says what printed instead.
-- The run page reads the run again when its tab comes back into view (at most every 15 s, never while it prints or while this device has unsaved progress for the run), so a count another device moved shows before a go-back from an old number.
+- The run page reads the run again when its tab comes back into view (at most every 10 s, never while it prints or while this device has unsaved progress for the run), so a count another device moved shows before a go-back from an old number.
 - A run saved as "printing" reads "Printing" only while something is: a print on that page, office labels on their way, or progress in the last 5 minutes. Otherwise it reads Ready.
 - Print history says "then one blank label" for a send this device asked a blank for (the browser keeps which requests had one). Another device can't tell: the office request doesn't store the blank in a field the app reads, and adding one would be a schema change, so that is left for the owner.
 

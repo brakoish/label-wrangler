@@ -242,13 +242,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     }
   }, [fetchRun, run, runId]);
 
-  // Coming back to this tab: read the run once more (at most every 15 s), so
+  // Coming back to this tab: read the run once more (at most every 10 s), so
   // a count another device moved shows before anyone presses Go back or
   // Resume from an old number. Never while this page prints.
   useEffect(() => {
-    let last = Date.now();
+    let last = 0;
     const look = () => {
-      if (document.visibilityState !== 'visible' || statusRef.current === 'running' || Date.now() - last < 15_000) return;
+      if (document.visibilityState !== 'visible' || statusRef.current === 'running' || Date.now() - last < 10_000) return;
       // Progress this device hasn't saved yet would be shown lower: wait for it.
       if (pendingPatchCount(runId) > 0) return;
       last = Date.now();
