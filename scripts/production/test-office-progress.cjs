@@ -346,7 +346,7 @@ console.log('PASS field display names');
   assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true,current\.blank && rest\.length===0\);/, 'one press checks and sends one stretch; only the last can end with a blank label');
 
   const page = read('src/components/runs/RunPrinter.tsx');
-  assert.match(page, /confirmLabel: `Start at \$\{skipped\.from\} instead`,\s*altLabel: `Print only \$\{only\}`/, 'the safe start is the primary button; printing only the chosen labels leaves progress alone');
+  assert.match(page, /confirmLabel: `Move start to \$\{skipped\.from\}`,\s*altLabel: `Print only \$\{only\}`/, 'the safe start is the primary button; printing only the chosen labels leaves progress alone');
   assert.doesNotMatch(page, /Skip and count as printed/, 'skipped labels are never counted as printed without a yes');
   assert.match(page, /confirmLabel: `Yes, \$\{one \? 'it' : 'they'\} printed`/, 'counting skipped labels as printed needs the person to say they printed');
   assert.match(page, /confirmLabel: `Keep progress at \$\{printedCount\}`,\s*altLabel: 'Count them too'/, 'keeping progress honest is the primary button');
@@ -363,7 +363,7 @@ console.log('PASS field display names');
     assert.equal(officePrinterHeld([{ ...base, needs_review: true, review_holds: [{ run_id: 'x', from: 1, to: 2 }] }]), true, 'stopped for a check');
     assert.equal(officePrinterHeld([base]), false, 'ready');
     assert.equal(officePrinterHeld([]), false, 'no printer');
-    assert.match(page, /firstFailed: office\.summary\.failed\[0\], held: officeHeld,\s*unchecked: uncheckedLabels, unsure: panel\.unsure, refused: panel\.refused, printerPaused: panel\.paused, sending: panel\.sending, stillToSend, heldBack: panel\.held \?\? null \}/, 'the run header gets the station status and what the panel says');
+    assert.match(page, /firstFailed: office\.summary\.failed\.find\(\(part\) => part\.kind !== 'print-again'\) \?\? office\.summary\.failed\[0\], held: officeHeld,\s*unchecked: uncheckedLabels, unsure: panel\.unsure, refused: panel\.refused, printerPaused: panel\.paused, sending: panel\.sending, stillToSend, heldBack: panel\.held \?\? null \}/, 'the run header gets the station status and what the panel says');
     assert.match(page, /onHeldChange=\{setPanelHeld\}/, 'lifted from the office panel');
     assert.match(panel, /useEffect\(\(\)=>\{onHeldChange\?\.\(printerHeld,heldById\?\{runId:heldById,runName:heldByName\}:null\);\}/, 'the header also learns which other run holds the printer');
   }
