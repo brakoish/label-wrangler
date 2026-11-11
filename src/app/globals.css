@@ -535,9 +535,13 @@ textarea:focus-visible,
     transition-duration: var(--duration-layer-in);
     transition-timing-function: var(--ease-out);
   }
+  /* The clip reaches 1rem past each side, so a ghost button pulled out to the
+     column edge (see "Ghost buttons on the edge") keeps its hover fill. */
   .fold > .fold-inner {
     min-height: 0;
     overflow: hidden;
+    padding-inline: 1rem;
+    margin-inline: -1rem;
   }
   .fold-chevron {
     transition: transform var(--duration-layer-out) var(--ease-in);
@@ -725,6 +729,14 @@ textarea:focus-visible,
     transition: color 150ms var(--ease-out);
   }
   .link:hover { color: var(--color-amber-300); }
+  /* A link on its own (its own line, or with an icon) is an action, not part
+     of a sentence: it reads like a ghost button, amber and semibold, with no
+     underline. Only links inside a sentence are underlined. */
+  .link:is(.inline-flex, .flex, .block),
+  .link:has(> svg) {
+    font-weight: 600;
+    text-decoration-line: none;
+  }
 }
 
 /* One dialog footer: right-aligned, primary last; stacked full-width on
@@ -825,8 +837,19 @@ textarea:focus-visible,
 :not(.flex, .inline-flex, .grid, .text-center) > p + :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none) {
   margin-inline-start: calc(-1 * var(--ghost-inset));
 }
-.justify-between > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):last-child:not(:first-child) {
+.justify-between > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):last-child:not(:first-child),
+/* ...also when it ends a group on the right of such a row (a header’s
+   actions), or is pushed right by an auto margin. */
+.justify-between > :last-child:not(:first-child):not(.justify-center, .justify-start, .text-center, .items-center.flex-col) > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):last-child,
+.justify-between > :last-child:not(:first-child) :not(.justify-center, .justify-start, .text-center, .items-center.flex-col, .recovery-actions, .dialog-actions) > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):last-child,
+.justify-end > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):last-child,
+:is(.btn-ghost, .btn-danger-ghost).ml-auto:not(.btn-icon, .w-full, .rounded-none):last-child {
   margin-inline-end: calc(-1 * var(--ghost-inset));
+}
+@media (min-width: 40rem) {
+  :is(.btn-ghost, .btn-danger-ghost).sm\:ml-auto:not(.btn-icon, .w-full, .rounded-none):last-child {
+    margin-inline-end: calc(-1 * var(--ghost-inset));
+  }
 }
 /* Older markup set the old ghost grey by hand; those are actions too. A
    ghost with another colour (a toggle that is off, a hidden column) keeps it. */

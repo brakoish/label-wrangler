@@ -1737,7 +1737,7 @@ function NewRunContent() {
               <div>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2">
                   <span id={`${formId}-template`} className="field-label whitespace-nowrap">Label design</span>
-                  <div className="flex items-center max-sm:basis-full sm:-mr-[13px]">
+                  <div className="flex items-center max-sm:basis-full">
                     {/* Edit the currently-selected design without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
                     {template && (
