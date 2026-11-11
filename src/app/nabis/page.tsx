@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
+import { useRubberBand } from '@/components/motion/rubberBand';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { IconSwap } from '@/components/motion/IconSwap';
 
@@ -265,6 +266,8 @@ function LabelPreview({ label }: { label: LabelInfo }) {
 }
 
 export default function NabisPage() {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useRubberBand(scrollRef);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PackageResult[]>([]);
   const [selected, setSelected] = useState<PackageResult | null>(null);
@@ -378,7 +381,7 @@ export default function NabisPage() {
         }
       `}</style>
 
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollRef} className="flex-1 overflow-auto">
         <div className="page-container grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] [&>*]:min-w-0">
           <PageHeader
             className="lg:col-span-2"

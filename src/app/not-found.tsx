@@ -7,6 +7,8 @@ export default function NotFound() {
     <AppShell>
       <PageTitle title="Page not found" />
       <PageState
+        heading="Page not found"
+        tone="error"
         title="This page doesn’t exist"
         body="The link may be old, or the page was moved."
         actions={<StateActions back={{ href: '/runs', label: 'Go to Runs' }} />}

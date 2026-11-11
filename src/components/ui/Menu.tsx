@@ -19,7 +19,8 @@ export interface MenuItem {
 }
 
 /**
- * A quiet overflow menu ("More"). The trigger is a ghost button; the menu
+ * A quiet overflow menu ("More"). The trigger is a quiet grey ghost button
+ * (a menu, not an action, so not amber); the menu
  * grows out of it and shrinks back into it, and closing mid-way reverses.
  * Keyboard: Enter/Space/ArrowDown open it, arrows move, Escape closes and
  * returns focus to the trigger. On a phone it is a sheet at the bottom of the
@@ -165,7 +166,7 @@ export function Menu({ items, label = 'More', showLabel = true, className = '', 
         onPointerDown={() => { byPointer.current = true; }}
         onClick={() => (open ? close() : openMenu())}
         onKeyDown={(event) => { byPointer.current = false; if (!open && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) { event.preventDefault(); openMenu(); } }}
-        className={`btn btn-ghost btn-sm ${showLabel ? '' : 'btn-icon'} text-zinc-300 ${className}`}
+        className={`btn btn-ghost btn-quiet btn-sm ${showLabel ? '' : 'btn-icon'} ${className}`}
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         {showLabel && label}

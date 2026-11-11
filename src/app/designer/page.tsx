@@ -3,7 +3,8 @@
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2 } from 'lucide-react';
+import { useRubberBand } from '@/components/motion/rubberBand';
+import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2, Eye } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useTemplateStore } from '@/lib/templateStore';
 import { useFormatStore } from '@/lib/store';
@@ -96,6 +97,9 @@ function DesignerContent() {
   // Debounced save timer for arrow-key nudges so holding an arrow doesn't
   // hit the DB on every frame.
   const nudgeSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The design list scrolls with a little stretch at its ends (wheel/trackpad).
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  useRubberBand(listScrollRef);
 
   // Sync template selection FROM the URL only (one-way). When users click the
   // Templates breadcrumb we update the URL first; this effect then clears the
@@ -119,6 +123,10 @@ function DesignerContent() {
   const [phonePane, setPhonePane] = useState<'label' | 'layers' | 'data' | 'edit'>('label');
   // One label at a time: the editing canvas, or exactly what the printer makes.
   const [view, setView] = useState<'edit' | 'exact'>('edit');
+  // One zoom for both views (1 = fit), so switching views keeps the label still.
+  const [zoomFor, setZoomFor] = useState<{ id: string | null; zoom: number }>({ id: null, zoom: 1 });
+  const zoom = zoomFor.id === selectedTemplateId ? zoomFor.zoom : 1;
+  const setZoom = useCallback((next: number) => setZoomFor({ id: selectedTemplateId, zoom: next }), [selectedTemplateId]);
   const [showCode, setShowCode] = useState(false);
   // "Fix it for me": what it changed, with Undo, until the next edit.
   const [fixNote, setFixNote] = useState<{ templateId: string; text: string; elements: TemplateElement[] } | null>(null);
@@ -471,7 +479,7 @@ function DesignerContent() {
     return (
       <AppShell>
         {/* Template List */}
-        <div className="flex-1 overflow-auto">
+        <div ref={listScrollRef} className="flex-1 overflow-auto">
           <TemplateList
             openingName={templateId && openState?.id === templateId && openState.status === 'failed' ? designLabel(templates.find((t) => t.id === templateId)?.name) : undefined}
             onRetryOpen={templateId ? () => void openDesign(templateId) : undefined}
@@ -966,6 +974,14 @@ function DesignerContent() {
             {/* Saving is automatic: just say where it stands. */}
             <span role="status" aria-live="polite" className={`inline-flex min-h-control-sm items-center gap-1.5 ${saveError ? 'text-red-400' : 'text-zinc-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full ${saveError ? 'bg-red-400' : saving ? 'bg-zinc-500' : 'bg-emerald-400 animate-success'}`} />{saveError ? 'Not saved' : saving ? 'Saving…' : 'Saved'}</span>
 
+            {/* Phone: one button in the title row goes to the other view (no
+                second row of tabs under the pane tabs). */}
+            {currentFormat.type === 'thermal' && (
+              <button type="button" onClick={() => setView(exactView ? 'edit' : 'exact')} className="btn btn-ghost btn-sm ml-auto -mr-[13px] sm:hidden">
+                {exactView ? <><Pencil className="size-4" aria-hidden="true" />Edit</> : <><Eye className="size-4" aria-hidden="true" />Print preview</>}
+              </button>
+            )}
+
             {/* View, undo/redo and More. On a narrow phone this wraps (More
                 never hides in a sideways scroller): the view switch on one
                 line, undo, redo and More on the next. */}
@@ -992,7 +1008,7 @@ function DesignerContent() {
                 </>
               )}
               {currentFormat.type === 'thermal' && (
-                <div className="segmented mr-1 max-sm:order-first max-sm:mr-0 max-sm:basis-full" role="group" aria-label="What the label shows">
+                <div className="segmented mr-1 max-sm:hidden" role="group" aria-label="What the label shows">
                   <SegmentedIndicator index={exactView ? 1 : 0} count={2} />
                   <button type="button" aria-pressed={!exactView} onClick={() => setView('edit')} title="Move and change items">Edit</button>
                   <button type="button" aria-pressed={exactView} onClick={() => setView('exact')} title="Exactly what the printer makes, with test print">Print preview</button>
@@ -1061,11 +1077,13 @@ function DesignerContent() {
             testData={previewValues}
             layoutProblems={canvasProblems}
             noticeAction={noticeAction}
+            zoom={zoom}
+            onZoomChange={setZoom}
           />
           </div>
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (exactView && (
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} problemsShown={canvasProblems.length > 0} notice={canvasProblems.length > 0 ? <DesignNotice problems={canvasProblems} action={noticeAction} /> : null} />
+            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} zoom={zoom} onZoomChange={setZoom} problemsShown={canvasProblems.length > 0} notice={canvasProblems.length > 0 ? <DesignNotice problems={canvasProblems} action={noticeAction} /> : null} />
           )) : (
             <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}
@@ -1073,7 +1091,12 @@ function DesignerContent() {
 
         {/* Print preview keeps the right column, so the label and the view
             switch stay exactly where they are in Edit. */}
-        {exactView && <div className="hidden lg:block w-[264px] 2xl:w-[280px] shrink-0 bg-zinc-900 p-4 text-sm text-zinc-400">This is exactly how it prints. Press Edit to change it.</div>}
+        {exactView && <div className="hidden lg:block w-[264px] 2xl:w-[280px] shrink-0 bg-zinc-900 p-4 text-sm text-zinc-400">
+          <p className="text-zinc-100 font-medium">Print preview</p>
+          <p className="mt-1">Exactly what the printer makes, dot for dot. Try a test print from here, or press Edit to change the label.</p>
+          <p className="mt-4">{currentFormat.name}</p>
+          <p>{currentFormat.name.includes(`${currentFormat.width}"`) ? '' : `${currentFormat.width}" × ${currentFormat.height}" · `}{currentFormat.dpi || 203} dots per inch{(currentFormat.labelsAcross || 1) > 1 ? ` · ${currentFormat.labelsAcross} across` : ''}</p>
+        </div>}
         {/* Right Panel - Properties */}
         <div className={exactView ? 'hidden' : shownPane === 'edit' ? 'contents' : 'hidden lg:contents'} onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel

@@ -11,6 +11,8 @@ import { friendlyRenderError, friendlyRenderFailure } from '@/lib/userMessages';
 import { friendlyFieldName } from '@/lib/fieldLabels';
 import { plainRenderWarning, type Box, type LayoutProblem } from '@/lib/designerLayout';
 import { DesignNotice, type NoticeAction } from './DesignNotice';
+import { ZoomControl } from './ZoomControl';
+import { useFrameSize } from './useFrameSize';
 
 interface LabelPreviewProps {
   format: LabelFormat;
@@ -34,12 +36,15 @@ interface LabelPreviewProps {
   layoutProblems?: LayoutProblem[];
   /** The buttons that fix each problem, shown right under that problem. */
   noticeAction?: NoticeAction;
+  /** Zoom as a multiple of the fitted size (1 = fit), shared with Print preview. */
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
 }
 
 /** An item's printed ink relative to its x/y, in label units. */
 export interface InkOffset { dx: number; dy: number; width: number; height: number }
 
-export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', uprightTurn = 'ccw', onInkChange, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [], noticeAction }: LabelPreviewProps) {
+export function LabelPreview({ format, elements, selectedElementIds, editorOrientation = 'printer', uprightTurn = 'ccw', onInkChange, onSelectElement, onUpdateElement, onDragStart, onDragEnd, testData, thermalRenderMode, onSelectElements, onDuplicateSelection, onGestureCancel, layoutProblems = [], noticeAction, zoom = 1, onZoomChange }: LabelPreviewProps) {
   const problemIdSet = useMemo(() => new Set(layoutProblems.flatMap(p => p.ids)), [layoutProblems]);
   const bitmap = format.type === 'thermal' && thermalRenderMode === 'bitmap-v1';
   const [bitmapProof, setBitmapProof] = useState<{ advisories: Array<{ elementId: string; message: string }>; key: string; url: string; elements: TemplateElement[]; layers: EditorLayer[]; qrInkBounds: Record<string, { x: number; y: number; width: number; height: number }>; qrBounds: Record<string, { x: number; y: number; width: number; height: number }>; warnings: Array<{ elementId: string; message: string }> } | null>(null);
@@ -78,7 +83,6 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     return () => query.removeEventListener?.('change', update);
   }, []);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
   const [dragging, setDragging] = useState<{
     elementId: string;
     startX: number;
@@ -101,19 +105,9 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const nativeThermal = format.type === 'thermal' && !bitmap;
   useEffect(() => { onInkChange?.(inks as Record<string, InkOffset>); }, [inks, onInkChange]);
 
-  // Observe container size
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        setContainerSize({ width, height });
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  // The box the label fits into, measured once it has its size (and again
+  // whenever that changes), so the label never stays at a first, tiny fit.
+  const containerSize = useFrameSize(containerRef);
 
   const viewBoxWidth = format.type === 'thermal' && format.dpi
     ? format.width * format.dpi
@@ -160,7 +154,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   // On a phone the label fills the width and the canvas grows to fit it,
   // instead of a small label floating in a tall empty box.
   const phone = containerSize.width < 600;
-  const margin = phone ? 4 : 48;
+  const margin = phone ? 0 : 48;
   const availW = containerSize.width - margin * 2;
   const availH = phone ? Infinity : containerSize.height - margin * 2;
   const aspect = totalW / totalH;
@@ -174,6 +168,9 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     svgW = Math.max(availW, 200);
     svgH = svgW / aspect;
   }
+  // Zoomed in, the label grows past the frame and the frame scrolls.
+  svgW *= zoom;
+  svgH *= zoom;
 
   // Convert screen pixels to SVG viewBox units
   const screenToSvg = useCallback((screenDx: number, screenDy: number) => {
@@ -531,8 +528,12 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
     <div data-designer-canvas className="relative flex-1 shrink-0 flex flex-col overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
       {/* Notices sit above the label, in the page flow, so the canvas never
           covers them (the space is kept so the label doesn't jump). */}
-      <div className="shrink-0 space-y-1 px-3 pt-2 min-h-12 sm:min-h-16 sm:px-6">
-      {bitmap && (bitmapError || !layoutProblems.length || otherWarning) && <p role="status" className={`text-sm ${bitmapError ? 'text-red-400' : otherWarning ? 'text-amber-300' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : (bitmapProof?.key === bitmapKey ? otherWarning ? otherWarning : bitmapProof.advisories.length ? namedWarning(bitmapProof.advisories[0]) : `This is exactly how it will print. ${coarsePointer ? 'Double-tap' : 'Double-click'} text to edit it.` : 'Updating the print preview…')}</p>}
+      <div className="shrink-0 space-y-1 px-4 pt-2 min-h-12 sm:min-h-16 sm:px-6">
+      {/* What this view is for, and the same zoom as Print preview. */}
+      <div className="flex min-h-control-sm items-center gap-2">
+        {(bitmapError || otherWarning || !layoutProblems.length) && <p role="status" className={`min-w-0 flex-1 text-sm ${bitmapError ? 'text-red-400' : otherWarning ? 'text-amber-300' : 'text-zinc-400'}`}>{bitmapError ? `Showing the last good preview. ${bitmapError}` : bitmap && bitmapProof?.key !== bitmapKey ? 'Updating the label…' : otherWarning ? otherWarning : bitmap && bitmapProof?.advisories.length ? namedWarning(bitmapProof.advisories[0]) : `Drag to move items. ${coarsePointer ? 'Double-tap' : 'Double-click'} text to change it.`}</p>}
+        {onZoomChange && <ZoomControl zoom={zoom} onZoom={onZoomChange} className="ml-auto shrink-0" />}
+      </div>
       <DesignNotice problems={layoutProblems} action={noticeAction} />
       {badQr && !badQr.locked && badQrBounds && canFitQr && onUpdateElement && <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
         onDragStart?.();
@@ -544,7 +545,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         <p className="text-xs text-amber-300 mb-1">{editing.bound ? `Sample for ${friendlyFieldName(editing.field)} (the spreadsheet fills it when printing)` : 'Edit text'}. Ctrl or ⌘ + Enter saves, Esc cancels.</p>
         <textarea aria-label="Inline label text" autoFocus value={editing.value} style={{ width: '100%', height: editing.height }} className="bg-white text-black p-1 resize-none" onChange={e => { const value = e.target.value; setEditing({ ...editing, value }); onUpdateElement?.(editing.id, editing.bound ? { defaultValue: value } : { content: value }); }} onBlur={() => { onDragEnd?.(); setEditing(null); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); onGestureCancel?.(); setEditing(null); } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onDragEnd?.(); setEditing(null); } }} />
       </div>}
-      <div ref={containerRef} className="relative flex min-h-0 flex-1 items-center justify-center px-2 pb-4 pt-2 sm:px-6 sm:pb-6">
+      <div ref={containerRef} className={`relative flex min-h-0 flex-1 px-4 pb-4 pt-2 sm:px-6 sm:pb-6 ${zoom > 1 ? 'overflow-auto' : 'items-center justify-center'}`}>
       <svg
         ref={svgRef}
         tabIndex={0}
@@ -553,7 +554,7 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
         width={svgW}
         height={svgH}
         viewBox={`${-padX} ${-padY} ${totalW} ${totalH}`}
-        className="rounded-xl"
+        className="m-auto shrink-0 rounded-xl"
         style={{
           filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))',
           userSelect: 'none',

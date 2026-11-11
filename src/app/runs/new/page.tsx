@@ -10,6 +10,7 @@ import { IconSwap } from '@/components/motion/IconSwap';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useFormatStore } from '@/lib/store';
+import { ErrorState, StateActions } from '@/components/EmptyState';
 import { useTemplateStore } from '@/lib/templateStore';
 import { NewTemplateDialog } from '@/components/designer/TemplateList';
 import { useRunStore } from '@/lib/runStore';
@@ -263,6 +264,12 @@ function NewRunContent() {
   const templatesLoadError = useTemplateStore((state) => state.error);
   const templatesHydrated = useTemplateStore((state) => state.hydrated);
   const { formats, getFormatById } = useFormatStore();
+  const formatsLoadError = useFormatStore((state) => state.error);
+  const templatesRetrying = useTemplateStore((state) => state.loading);
+  const formatsRetrying = useFormatStore((state) => state.loading);
+  // Nothing to pick from: the page says so in the shared error state, under
+  // its title, with one Try again for everything that failed.
+  const libraryFailed = (templates.length === 0 && !!templatesLoadError) || (formats.length === 0 && !!formatsLoadError);
   const { runs, presets, fetchRun, createRun, createPreset, updatePreset } = useRunStore();
 
   // Form state
@@ -485,6 +492,22 @@ function NewRunContent() {
     setHiddenRunFields((prev) => (
       prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
     ));
+  };
+  // Parts just left off from the "No column for…" notice: said in the same
+  // spot with Put it back, so one click never quietly drops a code.
+  const [justLeftOff, setJustLeftOff] = useState<string[]>([]);
+  const leaveOffFromNotice = (field: string) => {
+    setHiddenRunFields((prev) => (prev.includes(field) ? prev : [...prev, field]));
+    setJustLeftOff((prev) => (prev.includes(field) ? prev : [...prev, field]));
+  };
+  const putBack = (fields: string[]) => {
+    setHiddenRunFields((prev) => prev.filter((f) => !fields.includes(f)));
+    setJustLeftOff((prev) => prev.filter((f) => !fields.includes(f)));
+  };
+  // A QR code or barcode is the part most likely to be required on the label.
+  const codeKind = (field: string) => {
+    const el = template?.elements.find((e) => e.fieldName === field && !e.isStatic);
+    return el?.type === 'qr' ? 'QR code' : el?.type === 'barcode' ? 'barcode' : null;
   };
 
   // Older templates can have dynamic elements without a fieldName, so they do
@@ -1564,7 +1587,23 @@ function NewRunContent() {
             </ol>
           </div>
 
-          {draftOffer && (
+          {libraryFailed && (
+            <ErrorState
+              title={templates.length === 0 && templatesLoadError ? 'We couldn’t load your designs' : 'We couldn’t load your label sizes'}
+              body={friendlyError(templatesLoadError || formatsLoadError, 'Check your connection, then try again.')}
+              actions={<StateActions
+                retrying={templatesRetrying || formatsRetrying}
+                onRetry={() => {
+                  if (useTemplateStore.getState().error) void useTemplateStore.getState().fetchTemplates();
+                  if (useFormatStore.getState().error) void useFormatStore.getState().fetchFormats();
+                  if (useRunStore.getState().error) void useRunStore.getState().loadAll();
+                }}
+                back={{ href: '/runs', label: 'Back to runs' }}
+              />}
+            />
+          )}
+
+          {!libraryFailed && draftOffer && (
             <section role="status" className="card card-flat p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-zinc-100">We kept your unfinished run{draftOffer.name.trim() ? <> “{draftOffer.name.trim()}”</> : ''}.</p>
               <div className="flex gap-2">
@@ -1575,7 +1614,7 @@ function NewRunContent() {
           )}
 
           {/* Design */}
-          <section className="card card-flat p-4 sm:p-5 space-y-4" aria-labelledby={`${formId}-design-h`}>
+          {!libraryFailed && <section className="card card-flat p-4 sm:p-5 space-y-4" aria-labelledby={`${formId}-design-h`}>
             <h2 id={`${formId}-design-h`} className="text-base font-semibold text-zinc-100">Name and design</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1592,7 +1631,7 @@ function NewRunContent() {
               <div>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2">
                   <span id={`${formId}-template`} className="field-label whitespace-nowrap">Label design</span>
-                  <div className="-mr-2 flex items-center">
+                  <div className="flex items-center max-sm:basis-full sm:-mr-[13px]">
                     {/* Edit the currently-selected design without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
                     {template && (
@@ -1601,7 +1640,7 @@ function NewRunContent() {
                         className="btn btn-ghost btn-sm"
                         title="Open this design in the designer"
                       >
-                        <Pencil className="hidden size-4 sm:block" aria-hidden="true" /> Edit design
+                        <Pencil className="size-4" aria-hidden="true" /> Edit design
                       </Link>
                     )}
                     {!(templates.length === 0 && templatesHydrated && !templatesLoadError) && <button
@@ -1615,10 +1654,7 @@ function NewRunContent() {
                     </button>}
                   </div>
                 </div>
-                {templates.length === 0 && templatesLoadError ? (
-                  // The page banner says what failed and has the one Try again.
-                  <p className="py-2 text-sm text-zinc-400">Your designs will show here once they load.</p>
-                ) : templates.length === 0 && !templatesHydrated ? (
+                {templates.length === 0 && !templatesHydrated ? (
                   <p className="py-2 text-sm text-zinc-400">Loading your label designs…</p>
                 ) : templates.length === 0 ? (
                   // The only way on is a real button, never a dim link.
@@ -1647,7 +1683,7 @@ function NewRunContent() {
                 )}
               </div>
             </div>
-          </section>
+          </section>}
 
           {template && <RunImagePicker key={template.id} template={template} selections={imageSelections} onBusyChange={setImageBusy} onChange={value => setImagesByTemplate(current => ({ ...current, [template.id]: value }))} />}
 
@@ -1948,6 +1984,18 @@ function NewRunContent() {
                 {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
                   <div className="space-y-3 pt-2">
                     <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Nabis detail' : 'column'}</h3>
+                    {inputMode === 'csv' && justLeftOff.filter((f) => leftOffFields.has(f)).map((field) => {
+                      const code = codeKind(field);
+                      return (
+                        <p key={field} role="status" className="reveal flex flex-wrap items-center gap-x-2 text-sm text-zinc-300">
+                          <span className="inline-flex items-start gap-1.5">
+                            <EyeOff className="mt-0.5 size-4 shrink-0 text-zinc-400" aria-hidden="true" />
+                            <span>{friendlyFieldName(field)} is left off this run{code ? `, so its ${code} won’t print. Some labels must have it by law` : ''}.</span>
+                          </span>
+                          <button type="button" className="link inline-flex min-h-control-sm items-center pl-5.5 sm:pl-0" onClick={() => putBack([field])}>Put it back</button>
+                        </p>
+                      );
+                    })}
                     {inputMode === 'csv' && unmatchedShown.length > 0 && (
                       <div role="status" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 font-medium text-amber-300">
@@ -1957,7 +2005,7 @@ function NewRunContent() {
                         <p className="pl-5.5 text-zinc-400">Your file has: {csvHeaders.join(', ') || 'no headings'}. Pick a column for each below, choose &ldquo;Same on every label&rdquo; and type one value, or leave {unmatchedShown.length === 1 ? 'it' : 'them'} off this run.</p>
                         <div className="flex flex-wrap gap-2 pl-5.5 pt-1">
                           {unmatchedShown.map((field) => (
-                            <button key={field} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => toggleRunFieldVisibility(field)}>
+                            <button key={field} type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" onClick={() => leaveOffFromNotice(field)}>
                               <EyeOff className="size-4" aria-hidden="true" /> Leave {friendlyFieldName(field)} off
                             </button>
                           ))}

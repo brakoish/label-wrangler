@@ -203,7 +203,7 @@ function ElementItem({
 
       {/* Label */}
       <div className="flex-1 min-w-0">
-        <button aria-pressed={isSelected} aria-label={`Select ${label}`} aria-describedby={hintId} aria-keyshortcuts="Shift+F10" className="block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }} onKeyDown={e => { if (e.key === 'F10' && e.shiftKey) { e.preventDefault(); openActions(); } }}>{label}</button>
+        <button aria-pressed={isSelected} aria-label={`Select ${label}`} aria-describedby={hintId} aria-keyshortcuts="Shift+F10" className="layer-select block w-full text-left text-sm text-zinc-100 font-medium truncate min-h-6 rounded-sm" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }} onKeyDown={e => { if (e.key === 'F10' && e.shiftKey) { e.preventDefault(); openActions(); } }}>{label}</button>
         {/* One short line: the icon already says what kind of item it is. */}
         {!element.isStatic && <p className="truncate text-xs text-zinc-400">Changes per label</p>}
       </div>

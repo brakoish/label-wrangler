@@ -228,11 +228,11 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           <h3 id="content-mode-label" className="text-sm font-medium text-zinc-300">Content</h3>
           <div role="radiogroup" aria-labelledby="content-mode-label">
             {([[true, 'Same on every label'], [false, 'Changes per label']] as const).map(([same, text]) => (
-              <label key={text} className="press flex min-h-control-sm cursor-pointer items-center gap-2.5 text-sm text-zinc-100">
+              <label key={text} className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-zinc-100">
                 <input
                   type="radio"
                   name={`content-mode-${element.id}`}
-                  className="size-4 shrink-0 accent-amber-500"
+                  className="check"
                   checked={element.isStatic === same}
                   // Per label keeps what was typed as the preview sample and
                   // takes a column name (picked or typed below).
@@ -259,7 +259,7 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
                 />}
               </StackedField>
             ) : (
-              <button type="button" className="min-h-control-sm text-left text-sm text-zinc-400 hover:text-zinc-100" onClick={() => setShowManifest(true)}>Use a Nabis detail instead</button>
+              <button type="button" className="link inline-flex min-h-control-sm items-center text-left text-sm" onClick={() => setShowManifest(true)}>Use a Nabis detail instead</button>
             )}
             <StackedField label="Sample for the preview">
               {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.defaultValue || ''} onChange={(e) => onUpdate({ defaultValue: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. 850010001234' : element.type === 'qr' ? 'e.g. https://lab.example/123' : 'Only shown here, never printed'} />}
@@ -483,8 +483,8 @@ function ImageProps({ element, onUpdate }: { element: ImageElement; onUpdate: (u
       <Row label="Picture fit">
         <CompactSelect ariaLabel="Picture fit" value={element.objectFit} options={['contain', 'cover', 'fill']} labels={['Shrink to fit', 'Fill and crop', 'Stretch']} onChange={(v) => onUpdate({ objectFit: v as ImageElement['objectFit'] })} />
       </Row>
-      <label className="flex min-h-control-sm items-center gap-2 text-sm text-zinc-300">
-        <input type="checkbox" className="size-4 accent-amber-500" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
+      <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-zinc-300">
+        <input type="checkbox" className="check" checked={element.runSelectable ?? false} onChange={e => onUpdate({ runSelectable: e.target.checked, isStatic: true })} />
         Pick the picture when starting a run
       </label>
       {element.runSelectable && <p className="text-sm text-zinc-400">One picture for the whole run. This one is used if you don&rsquo;t pick another.</p>}

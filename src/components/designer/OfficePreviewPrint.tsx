@@ -41,6 +41,39 @@ async function api(url: string, options?: RequestInit) {
   return data;
 }
 
+/**
+ * Runs `fn` under a Web Lock shared by every tab on this design, so checking
+ * for a saved test print and saving a new one happen as one step (the same
+ * lock the run page's office panel uses, named for the design). Without Web
+ * Locks (or if the browser refuses the lock) it runs `fn` as before, never twice.
+ */
+async function withTestPrintLock<T>(templateId: string, fn: () => T): Promise<T> {
+  let ran = false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.locks?.request) return await navigator.locks.request(`lw-office-send:test:${templateId}`, () => { ran = true; return fn(); }) as T;
+  } catch (error) { if (ran) throw error; }
+  return fn();
+}
+/**
+ * The run a test print is filed under. The server names it from the account
+ * and the request key (src/lib/office/preview.ts), so a page that finds a
+ * saved test print can ask whether it arrived without having sent it.
+ */
+export function testPrintRunId(userId: string, key: string) { return `designer-test-${userId}-${key}`; }
+/** Did the test print saved under this key reach the office? The run id, null when not, undefined when it couldn't be read. */
+async function lookUpTestPrint(userId: string | null, key: string): Promise<string | null | undefined> {
+  if (!userId) return undefined;
+  const runId = testPrintRunId(userId, key);
+  try {
+    const response = await fetch(`/api/office/jobs?runId=${encodeURIComponent(runId)}&key=${encodeURIComponent(key)}`, { cache: 'no-store' });
+    if (!response.ok) return undefined;
+    const data = await response.json().catch(() => null) as { keyRequestId?: unknown } | null;
+    if (!data || !('keyRequestId' in data)) return undefined;
+    return typeof data.keyRequestId === 'string' ? runId : null;
+  } catch { return undefined; }
+}
+const SENDING_FRESH_MS = 12_000;
+
 export function OfficePreviewPrint({ template, format, testData }: { template: LabelTemplate; format: LabelFormat; testData?: Record<string, string> }) {
   const [open, setOpen] = useState(false);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
@@ -110,11 +143,22 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   // second test print). Only a hint: the server and Runs stay the record.
   const sentKey = `lw:designer-office-sent:${template.id}`;
   const [otherTabSending, setOtherTabSending] = useState(false);
+  // This tab's own send, kept per tab across a reload, so the page after a
+  // reload mid-send says "Sending…" rather than "from another tab".
+  const mineKey = `lw:designer-office-mine:${template.id}`;
+  const [sendingBeforeReload, setSendingBeforeReload] = useState(false);
   const [sentElsewhere, setSentElsewhere] = useState(false);
   useEffect(() => {
     const check = () => {
       if (inFlight.current) { setOtherTabSending(false); return; }
-      try { const at = Number(localStorage.getItem(sendingKey)); setOtherTabSending(at > 0 && Date.now() - at < 12_000); } catch { setOtherTabSending(false); }
+      try {
+        const at = Number(localStorage.getItem(sendingKey));
+        const fresh = at > 0 && Date.now() - at < SENDING_FRESH_MS;
+        setOtherTabSending(fresh);
+        let mine = false;
+        try { const raw = localStorage.getItem(storageKey); mine = fresh && !!raw && sessionStorage.getItem(mineKey) === (JSON.parse(raw) as Pending).idempotencyKey; } catch { mine = false; }
+        setSendingBeforeReload(mine);
+      } catch { setOtherTabSending(false); }
     };
     const onStorage = (event: StorageEvent) => {
       if (event.key === storageKey && !inFlight.current) {
@@ -133,27 +177,101 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
     window.addEventListener('storage', onStorage);
     const timer = setInterval(check, 2000);
     return () => { window.removeEventListener('storage', onStorage); clearInterval(timer); };
-  }, [storageKey, sendingKey, sentKey, refusedKey]);
+  }, [storageKey, sendingKey, sentKey, refusedKey, mineKey]);
 
+  // Who is signed in: the test print's run is named from it (see testPrintRunId).
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/office/session', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(d => { if (active && typeof d?.user?.id === 'string') setUserId(d.user.id); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  // Only this send's own saved print is cleared: never one another tab saved since.
+  const forgetSaved = (key: string) => {
+    try { const saved = localStorage.getItem(storageKey); if (saved && (JSON.parse(saved) as Pending).idempotencyKey === key) localStorage.removeItem(storageKey); } catch { /* nothing saved */ }
+  };
+  // A test print found at the office: settled here and in every tab, whoever sent it.
+  const settleSent = (key: string, sentRunId: string, elsewhere: boolean) => {
+    forgetSaved(key);
+    try {
+      localStorage.setItem(sentKey, JSON.stringify({ runId: sentRunId, at: Date.now() }));
+    } catch { /* shown here anyway */ }
+    try { sessionStorage.removeItem(mineKey); } catch { /* nothing saved */ }
+    setPending(null); setRunId(sentRunId); setSentElsewhere(elsewhere); setError('');
+  };
+  const settleRef = useRef(settleSent);
+  const sendingBeforeReloadRef = useRef(false);
+  useEffect(() => { settleRef.current = settleSent; sendingBeforeReloadRef.current = sendingBeforeReload; });
+  // A saved test print this tab isn't sending (a reload mid-send, another
+  // tab's, an answer that never came): ask the office whether it arrived, now
+  // and then, so it settles on its own instead of staying "not sure".
+  const pendingKey = pending?.idempotencyKey;
+  useEffect(() => {
+    if (!pendingKey || busy || !userId) return;
+    let active = true; let timer: ReturnType<typeof setTimeout> | undefined; let looks = 0;
+    const tick = async () => {
+      if (document.visibilityState !== 'hidden') {
+        const found = await lookUpTestPrint(userId, pendingKey);
+        if (!active) return;
+        if (found) { let other = false; try { const at = Number(localStorage.getItem(sendingKey)); other = at > 0 && Date.now() - at < SENDING_FRESH_MS; } catch { /* no hint */ } settleRef.current(pendingKey, found, other && !sendingBeforeReloadRef.current); return; }
+      }
+      looks++;
+      timer = setTimeout(() => void tick(), looks < 12 ? 5000 : 20_000);
+    };
+    void tick();
+    return () => { active = false; if (timer) clearTimeout(timer); };
+  }, [pendingKey, busy, userId, sendingKey]);
+
+  const unloading = useRef(false);
+  useEffect(() => {
+    const away = () => { unloading.current = true; };
+    const back = () => { unloading.current = false; };
+    window.addEventListener('pagehide', away); window.addEventListener('pageshow', back);
+    return () => { window.removeEventListener('pagehide', away); window.removeEventListener('pageshow', back); };
+  }, []);
   const printer = printers.find(p => p.id === (pending?.printerId ?? selected));
   const submit = async () => {
     if (inFlight.current || !printer || (bitmap && !pending && proofs?.key !== proofKey)) return;
     inFlight.current = true; setBusy(true); setError(''); setRunId(''); setSentElsewhere(false);
-    // A resend goes out with the saved key; a first send gets a new one.
-    const resend = !!pending;
+    // What this tab shows: a saved test print to resend, or none (a new one).
+    const shown = pending;
     try {
-      // The saved request goes out exactly as saved (same key); the last
-      // answer's status is kept only for the words shown here.
-      const payload: Pending = pending ? withoutAnswer(pending) : {
-        idempotencyKey: crypto.randomUUID(), stationId: printer.station_id, printerId: printer.id,
-        quantity, template, format, testData: testData ?? {},
-        ...(bitmap ? { expectedPixelDigests: proofs!.results.map(r => r.pixelDigest) } : {}),
-      };
-      // Persist the exact snapshot before sending; edits/reloads cannot change a retry.
-      localStorage.setItem(storageKey, JSON.stringify(payload));
+      const mark = () => { try { localStorage.setItem(sendingKey, String(Date.now())); } catch { /* only a hint for other tabs */ } };
+      // Read, decide and save under one lock shared by this design's tabs, so
+      // two tabs pressing Send at the same moment never send two test prints:
+      // the second finds the first one's saved print and shows it instead.
+      const claimed = await withTestPrintLock(template.id, (): { payload: Pending; resend: boolean } | null => {
+        let saved: Pending | null = null;
+        try { const raw = localStorage.getItem(storageKey); saved = raw ? JSON.parse(raw) as Pending : null; } catch { saved = null; }
+        let sendingElsewhere = false;
+        try { const at = Number(localStorage.getItem(sendingKey)); sendingElsewhere = at > 0 && Date.now() - at < SENDING_FRESH_MS; } catch { sendingElsewhere = false; }
+        // Another tab is sending (or just saved) a test print: nothing new goes out from here.
+        if (sendingElsewhere) { if (saved) setPending(saved); setOtherTabSending(true); return null; }
+        if (saved && saved.idempotencyKey !== shown?.idempotencyKey) { setPending(saved); return null; }
+        // The print this tab offered to resend was settled in another tab.
+        if (!saved && shown) { setPending(null); return null; }
+        // The saved request goes out exactly as saved (same key); the last
+        // answer's status is kept only for the words shown here.
+        const payload: Pending = saved ? withoutAnswer(saved) : {
+          idempotencyKey: crypto.randomUUID(), stationId: printer.station_id, printerId: printer.id,
+          quantity, template, format, testData: testData ?? {},
+          ...(bitmap ? { expectedPixelDigests: proofs!.results.map(r => r.pixelDigest) } : {}),
+        };
+        // Persist the exact snapshot before sending; edits/reloads cannot change a retry.
+        localStorage.setItem(storageKey, JSON.stringify(payload));
+        try { sessionStorage.setItem(mineKey, payload.idempotencyKey); } catch { /* only for the words after a reload */ }
+        mark();
+        return { payload, resend: !!saved };
+      });
+      if (!claimed) return;
+      const { payload, resend } = claimed;
       setPending(payload);
       clearRefusal();
-      const mark = () => { try { localStorage.setItem(sendingKey, String(Date.now())); } catch { /* only a hint for other tabs */ } };
+      // A resend first asks whether the earlier try arrived after all.
+      if (resend) {
+        const found = await lookUpTestPrint(userId, payload.idempotencyKey);
+        if (found) { try { localStorage.removeItem(sendingKey); } catch { /* lapses on its own */ } settleSent(payload.idempotencyKey, found, false); return; }
+      }
       mark();
       const heartbeat = setInterval(mark, 4000);
       try {
@@ -161,10 +279,12 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
         // send again) a little after the server's own 60s limit.
         const result = await api('/api/office/preview', { method: 'POST', body: JSON.stringify(payload), signal: AbortSignal.timeout(75_000) }).finally(() => {
           clearInterval(heartbeat);
-          try { localStorage.removeItem(sendingKey); } catch { /* lapses on its own */ }
+          // Cut off by a reload: the mark stays up (it lapses on its own), so
+          // the next page says "sending" and looks the print up instead of "not sure".
+          if (!unloading.current) try { localStorage.removeItem(sendingKey); sessionStorage.removeItem(mineKey); } catch { /* lapses on its own */ }
         });
         try { localStorage.setItem(sentKey, JSON.stringify({ runId: result.runId, at: Date.now() })); } catch { /* only a hint for other tabs */ }
-        localStorage.removeItem(storageKey); setPending(null); setRunId(result.runId);
+        forgetSaved(payload.idempotencyKey); setPending(null); setRunId(result.runId);
       } catch (error) {
         // A definite refusal (400/404/409/413) means nothing was queued, so
         // the saved print is cleared and not offered again. So does a first
@@ -175,7 +295,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
         const status = error instanceof OfficeRequestError ? error.status : undefined;
         const code = error instanceof OfficeRequestError ? error.code : undefined;
         if (!sendKeepsRequest(status, code, resend)) {
-          localStorage.removeItem(storageKey); setPending(null);
+          forgetSaved(payload.idempotencyKey); setPending(null);
           const plain = testPrintRefusal(error instanceof Error ? error.message : '', status);
           const record: OfficeRefusalRecord = { from: 1, to: payload.quantity, reason: plain.reason, message: plain.message, at: new Date().toISOString() };
           try { localStorage.setItem(refusedKey, JSON.stringify(record)); } catch { /* shown here anyway */ }
@@ -209,7 +329,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   // Closed panel: one short line beside the button, so the state is seen
   // without the panel opening by itself (and pushing the row about).
   const inline = open ? null
-    : elsewhere ? <span role="status" className="text-zinc-400">Sending from another tab…</span>
+    : elsewhere ? <span role="status" className="text-zinc-400">{sendingBeforeReload ? 'Sending…' : 'Sending from another tab…'}</span>
       : busy ? <span role="status" className="text-zinc-400">Sending…</span>
         : unsure ? <span className="text-amber-300">Not sure the last test print went</span>
           : runId ? <span role="status" className="text-emerald-400">{sentElsewhere ? 'Sent from another tab' : 'Test print sent'}</span>
@@ -239,7 +359,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
         <span id="office-test-quantity-help" className="text-zinc-400">up to 25</span>
       </label>
       {bitmap && !pending && <div className="space-y-1">{proofs?.key === proofKey ? proofs.results.map((r, i) => <img key={i} src={r.proof} alt={`Test label ${i + 1} as it will print`} className="w-full bg-white" style={{ imageRendering: 'pixelated' }} />) : <p role="status" className="text-zinc-400">Drawing the label exactly as it will print…</p>}</div>}
-      {elsewhere && <p role="status" className="flex items-center gap-2 text-zinc-300"><Loader2 className="size-4 shrink-0 animate-spin text-amber-400" aria-hidden="true" />Sending this test print from another tab…</p>}
+      {elsewhere && <p role="status" className="flex items-center gap-2 text-zinc-300"><Loader2 className="size-4 shrink-0 animate-spin text-amber-400" aria-hidden="true" />{sendingBeforeReload ? 'Sending your last test print…' : 'Sending this test print from another tab…'}</p>}
       {unsure && <Recovery tone="warning" title="We’re not sure the office got your last test print" actions={<>
         <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">Send again</button>
         <button type="button" onClick={() => void startOver()} className="btn btn-ghost btn-sm">Start over</button>

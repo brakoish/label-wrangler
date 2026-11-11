@@ -44,7 +44,7 @@ export function DesignNotice({ problems, action }: { problems: ReadonlyArray<Lay
               <div className="min-w-0 flex-1 text-zinc-100">
                 <span>{sentence}</span>
                 {barcode && barcodeHasDetails(full) && <> <WhyToggle>{full}</WhyToggle></>}
-                {typeof action === 'function' && (() => { const own = action(problem); return own ? <div className="flex flex-wrap items-center gap-2 pt-1.5">{own}</div> : null; })()}
+                {typeof action === 'function' && (() => { const own = action(problem); return own ? <div className="notice-actions flex flex-wrap items-center gap-2 pt-1.5">{own}</div> : null; })()}
               </div>
             </li>
           );

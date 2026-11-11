@@ -74,8 +74,10 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     // skip the duplicate banner there.
     // A run's own page loads that run by itself and shows its own load error,
     // so the runs list failing is not news there.
-    const runPage = /^\/runs\/[^/]+$/.test(pathname) && pathname !== '/runs/new';
-    const ownsEmptyList = (name: string, count: number) => (name === 'Runs' && runPage) || (count === 0 && ((name === 'Label sizes' && pathname === '/formats') || (name === 'Designs' && pathname === '/designer') || (name === 'Runs' && (pathname === '/runs' || pathname === '/'))));
+    // (Its scan and sheet pages too.) New run shows its own error when it has
+    // no designs or label sizes to pick from.
+    const runPage = /^\/runs\/[^/]+(\/(scan|print))?$/.test(pathname) && pathname !== '/runs/new';
+    const ownsEmptyList = (name: string, count: number) => (name === 'Runs' && runPage) || (count === 0 && ((name === 'Label sizes' && (pathname === '/formats' || pathname === '/runs/new')) || (name === 'Designs' && (pathname === '/designer' || pathname === '/runs/new')) || (name === 'Runs' && (pathname === '/runs' || pathname === '/'))));
     const collections = [
       ...(library || pathname==='/formats' ? [{name:'Label sizes',store:formats,load:formats.load,count:formats.count}] : []),
       ...(library ? [{name:'Designs',store:templates,load:templates.load,count:templates.count}] : []),
