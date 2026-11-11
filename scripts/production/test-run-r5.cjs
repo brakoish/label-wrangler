@@ -105,8 +105,11 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   const save=panel.slice(panel.indexOf('const saveFix='),panel.indexOf('const pendingWords='));
   assert.ok(save.indexOf('saveHeld(')>save.indexOf("method:'DELETE'"),'held labels are remembered only after the office cancelled them');
   assert.doesNotMatch(panel,/<li>1\. Hold/,'B13: no numbered plan repeating the choice');
-  assert.match(panel,/wait'\}\s*until the reprint is done\. Then you send \$\{single\(fixLater\.spans\)\?'it':'them'\} with one tap\./,'B13: the order is one sentence, saying the held labels are one tap after the reprint');
-  assert.match(panel,/'Let them print first instead':'Hold them until the reprint is done'/,'B13: the other order is a link, not a second choice group');
+  // B14: the order is its own radio group (two choices, 44px targets), never a link inside a sentence.
+  assert.match(panel,/When should \{spanWords\(fixLater\.spans\)\} print\?<\/legend>/,'B14: the order is a choice of its own');
+  assert.match(panel,/name=\{`\$\{uid\}-order`\} value=\{value\} checked=\{fix\.order===value\}/,'B14: the order radios set the order');
+  assert.doesNotMatch(panel,/'Let them print first instead'/,'B14: no order link');
+  assert.doesNotMatch(panel,/type="radio"[^>]*className="size-4/,'B14: radios use the 44px .check target');
   assert.match(panel,/:sendingHeld && plan\.kind!=='reprint'\?`Send \$\{fromNumber===toNumber/,'B13: after the reprint, "Send labels 76–150": one press checks and sends');
   assert.match(panel,/if\(!pending && !proofCurrent\)\{\s*if\(printAllowed && plan\.kind!=='wait'\)void sendNow\(\{from:fromNumber,to:toNumber\}/,'B13: an exact design checks and sends in one tap (sendNow: check, then the one POST with the digest)');
   assert.doesNotMatch(panel,/`Check \$\{plural\(sendCount\)\}`/,'B13: no check-only main button');
@@ -131,7 +134,7 @@ assert.doesNotMatch(page,/<PrintCheckList/,'the run page has its own one-tick-pe
 assert.match(page,/barcodeTicksAllow\(shownCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
 assert.match(page,/const calm = \(runFinished \|\| run\.status === 'cancelled' \|\| status === 'cancelled'\) && !woken && status !== 'running'/,'finished and cancelled runs are a calm summary');
 assert.match(page,/\{officeFixFirst && checkList\}/,'a failed office part comes before the barcode list');
-assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount: printedLabels, totalLabels: total \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it, and counts every printed label');
+assert.match(page,/runDisplayStatus\(\{ status: run\.status, printedCount: printedLabels, totalLabels: total, updatedAt: run\.updatedAt \}, officeSummary, \(status === 'error' \|\| printerStopped\)/,'the header says a printer problem stopped it, and counts every printed label');
 assert.doesNotMatch(page,/remaining in printer batch/);
 const nav=read('src/lib/printNavigation.ts');
 assert.match(nav,/if \(officeSeries\) \{/);

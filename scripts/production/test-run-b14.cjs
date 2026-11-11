@@ -60,4 +60,52 @@ const allowedWithTicks = (s) => printCheckAllows(s.check, { barcode: s.check.blo
   assert.ok(all.issues.length <= 50);
 }
 
+// A run saved as "printing" with nothing going reads as Ready (user.md 6).
+{
+  const { runDisplayStatus } = require('../../src/lib/runDisplayStatus.ts');
+  const now = Date.parse('2026-11-11T12:00:00Z');
+  const run = { status: 'printing', printedCount: 40, totalLabels: 120 };
+  assert.equal(runDisplayStatus({ ...run, updatedAt: '2026-11-09T10:00:00Z' }, null, false, { now }).bucket, 'ready', 'nothing printing for days: Ready');
+  assert.equal(runDisplayStatus({ ...run, updatedAt: '2026-11-09T10:00:00Z' }, null, false, { now }).detail, 'Partly printed');
+  assert.equal(runDisplayStatus({ ...run, updatedAt: '2026-11-11T11:58:00Z' }, null, false, { now }).bucket, 'printing', 'progress moved a minute ago: still Printing');
+  assert.equal(runDisplayStatus({ ...run, updatedAt: '2026-11-09T10:00:00Z' }, null, false, { now, printingHere: true }).bucket, 'printing', 'printing on this page');
+  assert.equal(runDisplayStatus({ ...run, updatedAt: '2026-11-09T10:00:00Z' }, { sent: 0, onTheWay: 20, failed: 0 }, false, { now }).bucket, 'printing', 'labels at the office printer');
+  assert.equal(runDisplayStatus(run, null, false, { now }).bucket, 'printing', 'no time to go by keeps the saved word');
+}
+
+// The run page's barcode "Why?" is plain words: no measurements, the picture copy explained (design.md 3).
+{
+  const { barcodeRunWhy } = require('../../src/lib/runBarcodeTicks.ts');
+  const long = 'The SKU barcode on all 80 labels prints 3.38" wide for 28 characters but only 1.95" fits, so the printer cuts it off and it won’t scan. Make a picture copy of the design in the designer, which draws thinner bars that fit.';
+  const why = barcodeRunWhy(long);
+  assert.doesNotMatch(why, /\d"/, 'no inches');
+  assert.doesNotMatch(why, /design it started with/);
+  assert.match(why, /^The code is too long to fit this label\. In the designer, press “Make a picture copy”: it draws thinner bars that fit\./);
+  assert.match(why, /new run with the same data/);
+  assert.match(barcodeRunWhy(long, true), /labels already printed/);
+}
+
+// Source checks: the office panel and run page fixes stay in place.
+{
+  const read = (file) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+  const panel = read('src/components/runs/OfficePiPrinter.tsx');
+  const printer = read('src/components/runs/RunPrinter.tsx');
+  const nav = read('src/lib/printNavigation.ts');
+  // #3: leaving after a part: the page's leave warning comes down before leave() runs.
+  assert.match(nav, /leaveAfterSeries = leave;\s*stop\(true\);/);
+  assert.match(nav, /const leave = leaveAfterSeries; leaveAfterSeries = null;/);
+  // #4: a renewal of the same mark is not news; a duplicated tab id is replaced.
+  assert.match(panel, /if\(m\.type==='taken' && m\.to===pageInstance\)\{pageTabId=newTabId\(\);/);
+  assert.match(panel, /if\(nav\?\.type==='reload'\)id=sessionStorage\.getItem\('lw:tab-id'\)/);
+  // #11: the queue is read again before "Send the last part"; nothing is offered until then.
+  assert.match(panel, /const leftFresh=!!leftKey && leftReadFor===leftKey;/);
+  // #8: the reason for a held Send is passed to the office panel.
+  assert.match(printer, /: checkCurrent \? checksReason : ''\} printNote=\{checksOk \? characterNote : ''\}/);
+  // #13: a refetch on coming back never runs while this page prints or has unsaved progress.
+  assert.match(printer, /if \(pendingPatchCount\(runId\) > 0\) return;/);
+  const list = read('src/app/runs/page.tsx');
+  assert.match(list, /if \(written\.current\.has\(line\)\) continue;/, 'a retry never writes the same history line twice');
+  assert.doesNotMatch(list, /type="checkbox" className="mt-0\.5 size-4/, 'the tick box uses the 44px .check target');
+}
+
 console.log('PASS run b14: barcode stops found in full; a printable send is never blocked by a refused label elsewhere, and a refused label past the list is never missed');

@@ -242,7 +242,22 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     }
   }, [fetchRun, run, runId]);
 
-
+  // Coming back to this tab: read the run once more (at most every 15 s), so
+  // a count another device moved shows before anyone presses Go back or
+  // Resume from an old number. Never while this page prints.
+  useEffect(() => {
+    let last = Date.now();
+    const look = () => {
+      if (document.visibilityState !== 'visible' || statusRef.current === 'running' || Date.now() - last < 15_000) return;
+      // Progress this device hasn't saved yet would be shown lower: wait for it.
+      if (pendingPatchCount(runId) > 0) return;
+      last = Date.now();
+      void fetchRun(runId).catch(() => { /* the page keeps what it has */ });
+    };
+    document.addEventListener('visibilitychange', look);
+    window.addEventListener('focus', look);
+    return () => { document.removeEventListener('visibilitychange', look); window.removeEventListener('focus', look); };
+  }, [fetchRun, runId]);
 
   useEffect(() => {
     statusRef.current = status;
@@ -410,6 +425,15 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const officeSignature = office.signature;
   useEffect(() => { if (officeSignature) void fetchPrintEvents(runId); }, [officeSignature, fetchPrintEvents, runId]);
   const [markNotice, setMarkNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  // "Labels 41–50 marked printed." is news for a moment: it goes after about
+  // 8 s, and at once when the panel starts a send or has something new to say.
+  useEffect(() => {
+    if (markNotice?.tone !== 'ok') return;
+    const timer = setTimeout(() => setMarkNotice((current) => (current === markNotice ? null : current)), 8000);
+    return () => clearTimeout(timer);
+  }, [markNotice]);
+  const panelNews = !!(panelState.sending || panelState.unsure || panelState.refused);
+  useEffect(() => { if (panelNews) setMarkNotice(null); }, [panelNews]);
 
   // The same check the wizard does, before any print or office send: barcodes
   // the printer would cut off (shown first, with the fix, and an explicit
@@ -1580,7 +1604,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const toGo = stillToGo(printedSpanList, total);
   // Whether the progress line spells out what is still to go (then the office panel doesn't say it again).
   const toGoShown = progressParts(printedCount, total, countedSpans, officeMark.ranges, waitingSpans).shown;
-  const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat);
+  const display = runDisplayStatus({ status: run.status, printedCount: printedLabels, totalLabels: total, updatedAt: run.updatedAt }, officeSummary, (status === 'error' || printerStopped) && transport !== 'office' && !isSheetFormat, { printingHere: status === 'running' });
   // A finished or cancelled run is a calm summary: no live printer, no other
   // run's alarm, no barcode tick. "Print some labels again…" wakes it up.
   const officeNeedsSomeone = (officeSummary?.failed ?? 0) > 0 || (officeSummary?.onTheWay ?? 0) > 0;
@@ -1660,7 +1684,24 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     });
     return [...rows, ...failed];
   })();
+  // The blank label fed after a send (asked for on this device): kept with
+  // the send's request id on this device only, so its history line says so.
+  const blankAfter = (() => {
+    const after = new Set<number>();
+    let ids: unknown = [];
+    try { ids = JSON.parse(window.localStorage.getItem(`lw:office-blank-sends:${runId}`) || '[]'); } catch { ids = []; }
+    if (!Array.isArray(ids) || !ids.length) return after;
+    for (const requestId of ids) {
+      const ends = office.jobs.filter((job) => job.requestId === requestId).map((job) => job.to);
+      if (ends.length) after.add(Math.max(...ends));
+    }
+    return after;
+  })();
   const historyText = (event: (typeof historyRows)[number]) => {
+    const text = historyBaseText(event);
+    return event.output === 'office-pi' && event.eventType === 'sent' && blankAfter.has(event.rangeTo) ? `${text}, then one blank label` : text;
+  };
+  const historyBaseText = (event: (typeof historyRows)[number]) => {
     if (event.eventType === REWIND_EVENT) return `Went back to label ${event.rangeFrom.toLocaleString()}`;
     if (event.id.startsWith('office-failed-')) {
       const which = event.rangeFrom === event.rangeTo ? `Label ${event.rangeFrom.toLocaleString()}` : `Labels ${event.rangeFrom.toLocaleString()}–${event.rangeTo.toLocaleString()}`;

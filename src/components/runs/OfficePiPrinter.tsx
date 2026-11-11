@@ -200,18 +200,21 @@ async function lookUpSend(runId:string,key:string):Promise<string|null|undefined
  * ticked by accident on the way to Send, and a ticked box says so on the
  * fold's own line even when the fold is shut.
  */
-function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadBlank=false}:{id:string;checked:boolean;disabled?:boolean;onChange:(value:boolean)=>void;
+function BlankOption({id,checked,disabled,onChange,after,inParts=false,firstHadBlank=false,askedBefore=false}:{id:string;checked:boolean;disabled?:boolean;onChange:(value:boolean)=>void;
   /** The label the blank follows, when known. */
   after?:number;
   /** The send goes in parts: the blank follows the last part only. */
   inParts?:boolean;
-  /** The send being fixed ended with a blank label: said in one visible line (still unticked), never folded away. */
-  firstHadBlank?:boolean}){
+  /** The send being fixed ended with a blank label: said in one visible line, never folded away. */
+  firstHadBlank?:boolean;
+  /** Ticked because the person asked for a blank after this very label on an earlier send (that blank never came out): said why, in the same line. */
+  askedBefore?:boolean}){
   const [open,setOpen]=useState(false);
   const where=after?`after label ${after.toLocaleString()}`:'after the last one';
-  if(firstHadBlank)return <label className="flex cursor-pointer items-start gap-3 text-sm text-zinc-100">
+  // The one box that can start ticked: only for a blank the person already asked for, and it says so.
+  if(firstHadBlank || askedBefore)return <label className="flex cursor-pointer items-start gap-3 text-sm text-zinc-100">
     <input type="checkbox" aria-describedby={`${id}-help`} className="check shrink-0" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)} />
-    <span>Feed one blank label {where}<span id={`${id}-help`} className="block text-zinc-400">Your first send ended with one.</span></span>
+    <span>Feed one blank label {where}<span id={`${id}-help`} className="block text-zinc-400">{askedBefore?'Ticked because you asked for one there when you first sent them.':'Your first send ended with one.'}</span></span>
   </label>;
   return <div className="-mt-1">
     <FoldToggle open={open} onToggle={()=>setOpen(v=>!v)} controls={`${id}-more`}>{checked && !open?<>More options<span className="text-zinc-300"> · one blank label {where}</span></>:'More options'}</FoldToggle>
@@ -1677,7 +1680,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <legend className="mb-1 text-sm text-zinc-100">Did any of {range(part.from,part.to)} come out?</legend>
           {([['none',one?'No, it didn’t come out':'None of them'],['some','Some of them'],['all',one?'Yes, it came out':'All of them']] as const).filter(([v])=>!(one && v==='some')).map(([value,text],i)=>(
             <label key={value} className="flex min-h-control cursor-pointer items-center gap-3 rounded-lg px-2 text-sm text-zinc-100 hover:bg-zinc-800">
-              <input type="radio" name={`${uid}-seen`} value={value} checked={fix.seen===value} data-autofocus={i===0?true:undefined} onChange={()=>setFix(f=>f?{...f,seen:value}:f)} className="size-4 shrink-0 accent-amber-500" />{text}
+              <input type="radio" name={`${uid}-seen`} value={value} checked={fix.seen===value} data-autofocus={i===0?true:undefined} onChange={()=>setFix(f=>f?{...f,seen:value}:f)} className="check" />{text}
             </label>))}
         </fieldset>
         {fix.seen==='some' && (()=>{const some=fixSome(fix);return <div className="space-y-2 text-sm">
@@ -1689,13 +1692,16 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         {fix.seen==='all' && <p className="text-sm text-zinc-300">{capitalise(range(part.from,part.to))} {one?'is':'are'} counted as printed. Nothing prints again.</p>}
         {again && fixLater && (fixLater.spans.length>0 || fixLater.atOffice.length>0) && <div className="space-y-1 text-sm">
           {fixLater.atOffice.length>0 && <p className="text-zinc-300">{capitalise(spanWords(fixLater.atOffice))} {single(fixLater.atOffice)?'is':'are'} already at the office and print{single(fixLater.atOffice)?'s':''} first.</p>}
-          {/* One choice in this dialog (what came out); the order is said in one line, with its other way as a link. */}
-          {fixLater.spans.length>0 && <p className="text-zinc-300">{fix.order==='in-order'
-            ?`${capitalise(spanWords(fixLater.spans))} ${single(fixLater.spans)?'waits':'wait'} until the reprint is done. Then you send ${single(fixLater.spans)?'it':'them'} with one tap.`
-            :`${capitalise(spanWords(fixLater.spans))} ${single(fixLater.spans)?'prints':'print'} first. ${capitalise(range(again.from,again.to))} come${again.from===again.to?'s':''} out after.`}{' '}
-            <button type="button" className="link" disabled={busy} onClick={()=>setFix(f=>f?{...f,order:f.order==='in-order'?'let-run':'in-order'}:f)}>{fix.order==='in-order'?'Let them print first instead':'Hold them until the reprint is done'}</button></p>}
+          {/* The order is a choice of its own: two radios, the same 44px targets as the question above. */}
+          {fixLater.spans.length>0 && <fieldset className="space-y-1">
+            <legend className="mb-1 text-sm text-zinc-100">When should {spanWords(fixLater.spans)} print?</legend>
+            {([['in-order',`After the reprint. You send ${single(fixLater.spans)?'it':'them'} with one tap when it’s done.`],['let-run',`Now, before the reprint. ${capitalise(range(again.from,again.to))} come${again.from===again.to?'s':''} out after.`]] as const).map(([value,text])=>(
+              <label key={value} className="flex min-h-control cursor-pointer items-center gap-3 rounded-lg px-2 text-sm text-zinc-100 hover:bg-zinc-800">
+                <input type="radio" name={`${uid}-order`} value={value} checked={fix.order===value} disabled={busy} onChange={()=>setFix(f=>f?{...f,order:value}:f)} className="check" />{text}
+              </label>))}
+          </fieldset>}
         </div>}
-        {again && <BlankOption id={`${uid}-fix-blank`} checked={fixBlank(fix)} disabled={busy} onChange={value=>setFix(f=>f?{...f,blank:value}:f)} firstHadBlank={sentWithBlank(part.requestId)}
+        {again && <BlankOption id={`${uid}-fix-blank`} checked={fixBlank(fix)} disabled={busy} onChange={value=>setFix(f=>f?{...f,blank:value}:f)} firstHadBlank={sentWithBlank(part.requestId)} askedBefore={fixBlank({...fix,blank:null})}
           after={fix.order==='in-order' && fixLater && fixLater.spans.length?Math.max(...fixLater.spans.map(h=>h.to)):again.to} />}
         <div>
           <FoldToggle open={fixNoteOpen || !!fix.note} onToggle={()=>setFixNoteOpen(v=>!v)} controls={`${uid}-fix-note`}>Add a note</FoldToggle>

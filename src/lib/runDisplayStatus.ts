@@ -68,7 +68,20 @@ const labelsWord = (span: { from: number; to: number }) => (span.from === span.t
  * reports labels sent to the printer, which is not proof they printed.
  * `localProblem` is a printer here that stopped with an error.
  */
-export function runDisplayStatus(run: { status: RunStatus | string; printedCount?: number | null; totalLabels: number }, office?: RunOfficeSummary | null, localProblem = false): { label: string; tone: RunDisplayTone; bucket: RunStatusBucket; detail: string } {
+/**
+ * A run saved as printing is only shown as "Printing" while something is: a
+ * print going on this page (`printingHere`), office labels on their way, or a
+ * run whose progress moved in the last few minutes (a printer on another
+ * computer). A run left at "printing" with nothing going reads as Ready.
+ */
+const PRINTING_FRESH_MS = 5 * 60_000;
+function recentlyMoved(updatedAt: string | Date | null | undefined, now: number): boolean {
+  if (!updatedAt) return true; // no time to go by: keep the saved word
+  const at = new Date(updatedAt).getTime();
+  return !Number.isFinite(at) || now - at < PRINTING_FRESH_MS;
+}
+
+export function runDisplayStatus(run: { status: RunStatus | string; printedCount?: number | null; totalLabels: number; updatedAt?: string | Date | null }, office?: RunOfficeSummary | null, localProblem = false, options: { printingHere?: boolean; now?: number } = {}): { label: string; tone: RunDisplayTone; bucket: RunStatusBucket; detail: string } {
   const printed = run.printedCount ?? 0;
   const total = run.totalLabels;
   const out = (bucket: RunStatusBucket, tone: RunDisplayTone, detail = '') => ({ label: RUN_STATUS_WORDS[bucket], tone, bucket, detail });
@@ -104,7 +117,7 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (office?.printerPaused) return out('paused', 'paused', 'The office printer is paused');
   // Labels a "Print in order" fix held back: nothing sends them but a press.
   if (office?.heldBack) return out('ready', 'confirm', `Send ${labelsWord(office.heldBack).toLowerCase()} next`);
-  if (run.status === 'printing') return out('printing', 'active');
+  if (run.status === 'printing' && (options.printingHere || recentlyMoved(run.updatedAt, options.now ?? Date.now()))) return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
   // The question is only about what was sent; labels still to send are said apart.
   const toSend = (office?.stillToSend ?? 0) > 0 ? ` · ${office!.stillToSend!.toLocaleString('en-US')} still to send` : '';
