@@ -3,8 +3,14 @@
 import { useState, type ReactNode } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { withAllEdges, type LayoutProblem } from '@/lib/designerLayout';
-import { barcodeHasDetails, barcodePlainSentence } from '@/lib/runBarcodeTicks';
+import { barcodeHasDetails, barcodePlainSentence, barcodeWhyText } from '@/lib/runBarcodeTicks';
 import { WhyToggle } from '@/components/checks/BarcodeWarning';
+import { LONG_CODE_WHY, plainBarcodeWhy } from '@/components/checks/barcodeWhy';
+
+/** "Why?" for a barcode: the long-code sentence every page shares, else the measured words. */
+function designWhy(full: string, sentence: string): string {
+  return plainBarcodeWhy(full, barcodeWhyText(full), sentence) === LONG_CODE_WHY ? LONG_CODE_WHY : full;
+}
 
 const SHOWN = 3;
 
@@ -43,7 +49,7 @@ export function DesignNotice({ problems, action }: { problems: ReadonlyArray<Lay
               <AlertCircle className={`mt-0.5 size-4 shrink-0 ${problem.blocking ? 'text-red-400' : 'text-amber-300'}`} aria-hidden="true" />
               <div className="min-w-0 flex-1 text-zinc-100">
                 <span>{sentence}</span>
-                {barcode && barcodeHasDetails(full) && <> <WhyToggle>{full}</WhyToggle></>}
+                {barcode && barcodeHasDetails(full) && <> <WhyToggle>{designWhy(full, sentence)}</WhyToggle></>}
                 {typeof action === 'function' && (() => { const own = action(problem); return own ? <div className="notice-actions flex flex-wrap items-center gap-2 pt-1.5">{own}</div> : null; })()}
               </div>
             </li>

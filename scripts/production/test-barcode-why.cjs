@@ -17,12 +17,18 @@ for (const t of cases) {
   const w = why(t);
   assert.ok(w, t);
   assert.doesNotMatch(w, /\d"/, `no inches: ${w}`);
-  assert.match(w, /To fix it, /, w);
+  assert.match(w, /To fix it, |Print it as a QR code, or use a bigger label\./, w);
   if (/picture copy/.test(t)) assert.match(w, /“Make a picture copy”\. The copy prints the barcode with thinner bars/, w);
 }
-assert.match(why(cases[0]), /too many letters and numbers/);
+assert.match(why(cases[0]), /^This code is too long to scan at this size\. /);
 assert.match(why(cases[1]), /start too far along/);
 assert.match(why(cases[1]), /move it in the design so all of it sits on the label, make the barcode’s space wider in the design, or turn it sideways/);
+assert.match(why(cases[2]), /To fix it, print it as a QR code, use a bigger label, or open the design/);
+// The long Metrc tag: one short sentence, the same everywhere.
+{
+  const { LONG_CODE_WHY } = require('../../src/components/checks/barcodeWhy.ts');
+  assert.equal(why('The Metrc Tag barcode prints 2.95" wide for 24 characters and runs over the next label’s barcode, so neither label will scan. Use a label at least 2.95" wide, or a QR code.'), LONG_CODE_WHY);
+}
 // The plain sentence already says it covers Batch: not said twice.
 assert.doesNotMatch(why(cases[2]), /prints over Batch/);
 // Something it doesn't recognise keeps the measured words.
