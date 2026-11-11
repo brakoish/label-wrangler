@@ -1319,7 +1319,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   // Held labels of a "Print in order" fix still on their way: the next send waits for them.
   const heldWait=heldMoving.length>0 && !heldUnsent.length && !pending && !chooseAgain && !reprintOf && !sendOther;
   // Another tab is sending this very request: nothing to press here until it answers.
-  const disabled=pending?(busy || (!posting && !unsure)):(busy || heldWait || !printAllowed || !formReady || !rangeValid || plan.kind==='wait' || (tooBig && parts.length<2));
+  // Every label in the boxes is left out (it can't print): nothing to send, so no Send that does nothing.
+  const allLeftOut=!pending && skipSplit && goCount===0;
+  const disabled=pending?(busy || (!posting && !unsure)):(busy || heldWait || !printAllowed || !formReady || !rangeValid || plan.kind==='wait' || allLeftOut || (tooBig && parts.length<2));
   // One primary button on screen: the first problem's fix, else the main action.
   // The "which labels?" box is the main action while it is open.
   const againOpen=!!again && !series && !seriesElsewhere && !pending && canPrint && !!printer;
@@ -1352,6 +1354,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     :pending?'Send again'
     :heldWait?`Waiting for ${nums(heldMoving[0].from,heldMoving[heldMoving.length-1].to)}…`
     :plan.kind==='wait'?'Waiting for office printer…'
+    :allLeftOut?'Nothing to send'
     :skipSplit && parts.length>1?`Send ${plural(goCount)} in ${parts.length} parts`
     :skipSplit && parts.length===1?`Send ${spanWords(parts)}`
     :tooBig && parts.length>1?`Send all ${sendCount.toLocaleString()} in ${parts.length} parts`
@@ -1846,7 +1849,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     </div>}
     {!pending && !rangeValid && (from.trim()!=='' || to.trim()!=='') && (!/^\d*$/.test(from.trim()) || !/^\d*$/.test(to.trim())) && <p role="alert" className="text-sm text-amber-300">Type one label number in each box, like 5.{/[-–,]/.test(from+to)?' For a list like 5–8, 12, use “Print some labels again…”.':''}</p>}
     {!pending && !rangeValid && from.trim()!=='' && to.trim()!=='' && /^\d*$/.test(from.trim()) && /^\d*$/.test(to.trim()) && <p role="alert" className="text-sm text-amber-300">Enter label numbers from 1 to {total.toLocaleString()}, with &ldquo;Stop after&rdquo; at or after &ldquo;From&rdquo;.</p>}
-    {!pending && skipSplit && <p className="text-sm text-zinc-300">{capitalise(spanWords(skipHere))} {single(skipHere)?'is':'are'} left out: {single(skipHere)?'it':'they'} can’t print.</p>}
+    {!pending && skipSplit && <p className="text-sm text-zinc-300">{capitalise(spanWords(skipHere))} {single(skipHere)?'is':'are'} left out: {single(skipHere)?'it':'they'} can’t print.{allLeftOut?` Change the labels above to send others.`:''}</p>}
     {!pending && parts.length>1 && <p className="text-sm text-zinc-400">{tooBig?`Goes in parts of up to ${plural(cap)}, one after another.`:`Goes in ${parts.length} parts, one after another.`}</p>}
     {!pending && tooBig && parts.length<2 && <div className="space-y-1 text-sm text-amber-300"><p>The office printer takes up to {plural(cap)} of this design in one send.</p><button type="button" className="btn btn-ghost btn-sm -ml-2 text-zinc-100" onClick={()=>{rangeEdited.current=true;setTo(String(fromNumber+cap-1));}}>Send {nums(fromNumber,fromNumber+cap-1)} now</button></div>}
     {!pending && rangeValid && plan.kind==='wait' && <p role="status" className="text-sm text-zinc-400">{plan.why==='needs-check'?`${Range(plan.overlap.from,plan.overlap.to)} need a check first (see above).`:`${Range(plan.overlap.from,plan.overlap.to)} ${plan.overlap.from===plan.overlap.to?'is':'are'} still on the way to the office printer. Send these once ${plan.overlap.from===plan.overlap.to?'it’s':'they’re'} sent.`}</p>}
