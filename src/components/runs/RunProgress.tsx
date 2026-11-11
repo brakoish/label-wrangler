@@ -1,6 +1,6 @@
 'use client';
 import { type OfficeSpan } from '@/lib/officeRange';
-import { intersectSpans, printedSpans, stillToGo } from '@/lib/runProgress';
+import { intersectSpans, printedSpans, stillToGo, PROGRESS_FILL, PROGRESS_OFFICE_TINT } from '@/lib/runProgress';
 
 /** "41–60, 81–89, 93–120": label numbers only, each range kept on one line. */
 export function spanNumbers(spans: ReadonlyArray<OfficeSpan>): string {
@@ -70,12 +70,12 @@ export function RunProgress({ printedCount, total, confirmed, sent = [], waiting
   const printed = spans.reduce((n, s) => n + s.to - s.from + 1, 0);
   const sentCount = sentOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
   const waitingCount = waitingOnly.reduce((n, s) => n + s.to - s.from + 1, 0);
-  const fill = tone === 'done' ? 'bg-emerald-400' : tone === 'active' ? 'bg-amber-500' : 'bg-zinc-500';
-  // Three looks that can't be mixed up: printed (solid), sent to the printer
-  // (light amber, a person still says whether they came out) and waiting at
-  // the office (grey, not sent yet). The words under the bar use the same dots.
-  const sentFill = tone === 'muted' ? 'bg-zinc-600' : 'bg-amber-500/40';
-  const waitingFill = tone === 'muted' ? 'bg-zinc-700' : 'bg-zinc-600';
+  // One colour rule (the Runs list uses it too): printed solid, labels at
+  // the office not counted yet in a lighter tint of the same colour, named in
+  // the words under the bar.
+  const fill = PROGRESS_FILL[tone];
+  const sentFill = PROGRESS_OFFICE_TINT[tone];
+  const waitingFill = PROGRESS_OFFICE_TINT[tone];
   const leftWords = spanNumbers(left);
   const motion = animate ? 'transition-[left,width,background-color] duration-300 ease-in-out' : '';
   const officeKey = [sentCount ? { words: `${sentCount.toLocaleString()} sent to the printer`, fill: sentFill } : null, waitingCount && waitingLabel ? { words: `${waitingCount.toLocaleString()} ${waitingLabel}`, fill: waitingFill } : null].filter((k): k is { words: string; fill: string } => !!k);

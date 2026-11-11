@@ -47,7 +47,7 @@ function RerunLink({ designHref }: { designHref: string }) {
  * that exact range and count ("Print labels 97–240 (144) anyway").
  * readOnly: a finished or cancelled run shows what was wrong, with no ticks.
  */
-export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, skipOut = null, elsewhere = '', checkedTo = null, qrHref = null, glyphStop = null }: {
+export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, skipOut = null, elsewhere = '', checkedTo = null, qrHref = null, glyphStop = null, onQr }: {
   check: RunPrintCheck;
   ticks: ReadonlyArray<string>;
   wizardGoAhead: boolean;
@@ -74,6 +74,8 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
   glyphStop?: { words: string; skip: { label: string; pick: () => void } | null; inDesign: boolean } | null;
   /** A QR code of the same value fits every label: a new run with the same data, where the barcode becomes a QR code. */
   qrHref?: string | null;
+  /** Called when "Use a QR code instead" is pressed (the new run then offers to cancel this one). */
+  onQr?: () => void;
 }) {
   const uid = useId();
   const hasCharacters = !!characters && characters.items.length > 0;
@@ -139,7 +141,7 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
         </ul>
         {/* A go-ahead carried over from the new-run page says what it costs, right beside the tick. */}
         {canTick && wizardGoAhead && <p className="pl-5.5 text-amber-300">You ticked “Print anyway” when you made the run. {barcodeDamage(check.blocking[0])}</p>}
-        {canTick && qrHref && <p className="pl-5.5 text-zinc-300">A QR code of the same value fits every label. <Link href={qrHref} className="link">Use a QR code instead</Link> makes a new run with the same data, where you switch the barcode.</p>}
+        {canTick && qrHref && <p className="pl-5.5 text-zinc-300">A QR code fits on every label. <Link href={qrHref} className="link" onClick={onQr}>Use a QR code instead</Link></p>}
         {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopNote || stopFixWords(check.verdict.fixIn)}</p>}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
           {check.verdict.stops && !readOnly && skipOut && <button type="button" className="btn btn-secondary btn-sm" onClick={skipOut.pick}>{skipOut.label}</button>}

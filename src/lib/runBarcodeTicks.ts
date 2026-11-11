@@ -104,6 +104,8 @@ function listCount(names: string): number {
  */
 export function barcodePlainSentence(item: string): string {
   const text = item.trim();
+  // One spreadsheet row's value, already said plainly (with its fix).
+  if (/is too long for this label \(/.test(text)) return text.replace(/\s+/g, ' ');
   const head = text.match(/^The (?:(.+?) )?barcode(?: on (all [\d,]+ labels|both labels|the label|labels? .+?))? (?=prints |starts |needs |has |crosses |reaches |runs )/);
   if (!head) return firstSentence(text);
   const name = !head[1] || head[1] === 'fixed' ? 'The barcode' : `The ${head[1]} barcode`;
@@ -154,15 +156,13 @@ export function barcodeWhyText(item: string): string {
  * was made with, so the last sentence says where the fix prints.
  */
 export function barcodeRunWhy(item: string, finished = false): string {
+  void finished;
   const text = item.trim().replace(/\s+/g, ' ');
-  const picture = /picture copy/.test(text);
+  // One spreadsheet row's value: the line already says the fix.
+  if (/is too long for this label \(/.test(text)) return '';
   let fix: string;
   if (/neither label (?:would|will) scan|runs onto the next label|cuts it off|too wide/.test(text)) {
-    fix = picture
-      ? 'The code is too long to fit this label. In the designer, press “Make a picture copy”: it draws thinner bars that fit.'
-      : /QR code/.test(text)
-        ? 'The code is too long to fit this label. In the designer, make the barcode box wider, or use a QR code instead.'
-        : 'The code is too long to fit this label. In the designer, make the barcode box wider.';
+    fix = LONG_CODE_WHY;
   } else if (/starts off the|runs off the (?:left|right|top|bottom) edge|crosses the label edge|move the barcode box fully onto/.test(text)) {
     fix = 'Part of the barcode is off the label. In the designer, move it fully onto the label.';
   } else if (/needs a box at least|box too short|make the barcode box taller/.test(text)) {
@@ -176,14 +176,18 @@ export function barcodeRunWhy(item: string, finished = false): string {
   } else if (/Tab key press|Enter key press|special scanner codes?|scan won’t match/.test(text)) {
     fix = 'Some of the text turns into scanner keys (like Tab or Enter), so a scan won’t match what you see.';
   } else {
-    // Anything else: the item's own words, without measurements.
-    fix = text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter((sentence) => !/\d+(?:\.\d+)?["”]/.test(sentence)).join(' ');
+    // Anything else: the item's own words, without measurements or design jargon.
+    fix = text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter((sentence) => !/\d+(?:\.\d+)?["”]/.test(sentence) && !/picture copy/i.test(sentence)).join(' ');
   }
-  const where = finished
-    ? 'Fixing the design doesn’t change labels already printed; the fix prints in a new run with the same data.'
-    : 'Fixing the design doesn’t change this run; the fix prints in a new run with the same data.';
-  return `${fix} ${where}`.trim();
+  return fix.trim();
 }
+
+/**
+ * The one sentence for a code too long for its label (a long Metrc tag as a
+ * barcode on a small label): the same words as the new-run page and the
+ * designer, so every screen says it the same way.
+ */
+export const LONG_CODE_WHY = 'This code is too long to scan at this size. Print it as a QR code, or use a bigger label.';
 
 /**
  * Why the Start or Print button waits, in one line that points at what is

@@ -19,9 +19,12 @@ import { countedEventSpans, printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
-import { officeSentLine, runDisplayStatus } from '@/lib/runDisplayStatus';
+import { officeSentLine, runDisplayStatus, runToneDot } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, runSendCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck, rerunAfterFixHref } from './RunBarcodeCheck';
+import { RawDetails } from './RawDetails';
+import { QrReplaced, markQrFrom } from './QrReplaced';
+import { plainServerError } from '@/lib/runErrors';
 import { FixInDesignerLink } from '@/components/checks/BarcodeWarning';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
 import { drawFailureWords, plainJobReason } from '@/lib/officeSendOutcome';
@@ -516,12 +519,14 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, template, format],
   );
+  const glyphFrom = tickSend?.from ?? 0;
+  const glyphTo = tickSend?.to ?? 0;
   const glyphHere = useMemo(() => {
     const labels = glyphCheck?.labels ?? [];
     if (!labels.length) return [];
     if (labels.includes(0)) return [0];
-    return labels.filter((label) => (!tickSend || (label >= tickSend.from && label <= tickSend.to)) && !officeSkip.includes(label));
-  }, [glyphCheck, tickSend, officeSkip]);
+    return labels.filter((label) => (!glyphFrom || (label >= glyphFrom && label <= glyphTo)) && !officeSkip.includes(label));
+  }, [glyphCheck, glyphFrom, glyphTo, officeSkip]);
   const glyphStop = glyphCheck && glyphHere.length
     ? glyphStopWords(glyphCheck, glyphHere, (field) => run?.dataSource === 'csv' && run?.fieldMappings?.[field]?.mode === 'column')
     : '';
@@ -969,9 +974,13 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       if (choice === 'confirm') { if (!scanned.keep.length) return; pieces = scanned.keep; }
     }
     if (plan.rewind) {
+      // The labels that print twice, named: from the From box up to what is already printed.
+      const twiceTo = Math.min(printedCount, selectedThrough);
+      const twiceOne = twiceTo === selectedFrom;
+      const twice = twiceOne ? `Label ${selectedFrom.toLocaleString('en-US')} was` : `Labels ${selectedFrom.toLocaleString('en-US')}–${twiceTo.toLocaleString('en-US')} were`;
       const ok = await confirmDialog({
         title: `Go back to label ${selectedFrom} and continue?`,
-        body: `Labels up to ${printedCount} are already printed. The run’s progress goes back to ${plan.startCount} of ${total}, and labels ${selectedFrom} to ${selectedThrough} print now. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
+        body: `${twice} already printed, so ${twiceOne ? 'it prints' : 'they print'} a second time. The run’s progress goes back to ${plan.startCount} of ${total}, then labels ${selectedFrom}–${selectedThrough} print. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
         confirmLabel: `Go back to label ${selectedFrom}`,
       });
       if (!ok) { setFromDraft(null); setCountDraft(null); return; }
@@ -1588,23 +1597,25 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   if (!run || !template || !format) {
     // Every load failure looks the same: the page's title, then one Recovery
     // block in the normal content column, its way out first.
-    const failure = (title: string, body: string, actions: ReactNode) => (
+    const failure = (title: string, body: string, actions: ReactNode, details = '') => (
       <div className="flex-1 overflow-auto">
         <div className="page-container space-y-5 sm:space-y-6">
           <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100">{run?.name ?? 'Run'}</h1>
-          <Recovery role="alert" tone="warning" title={title} actions={actions}><p>{body}</p></Recovery>
+          <Recovery role="alert" tone="warning" title={title} actions={actions}><p>{body}</p>{details && <RawDetails text={details} />}</Recovery>
         </div>
       </div>
     );
     if (loadError) {
       const missing = loadError.status === 404;
+      const said = plainServerError(new Error(loadError.message));
       return failure(
-        missing ? 'We couldn’t find that run' : 'We couldn’t load this run',
-        missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(new Error(loadError.message)),
+        missing ? 'We couldn’t find this run' : 'We couldn’t load this run',
+        missing ? 'It may have been deleted, or the link is wrong.' : said.text,
         <>
           {!missing && <button type="button" onClick={() => void fetchRun(runId)} className="btn btn-primary">Try again</button>}
           <Link href="/runs" className={missing ? 'btn btn-primary' : 'btn btn-ghost'}><ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to runs</Link>
         </>,
+        missing ? '' : said.details,
       );
     }
     if (run && run.designSnapshot === null) {
@@ -1688,6 +1699,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
       designHref={designHref}
       qrHref={qrFixFits ? `/runs/new?duplicateFrom=${encodeURIComponent(run.id)}` : null}
+      onQr={() => markQrFrom(run)}
     />
   );
   // A finished or cancelled run doesn't lead with its design's problems: one
@@ -1814,15 +1826,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100 break-words">{run.name}</h1>
             {/* The dot sits on the first line; a long detail wraps under the words, not under the dot. */}
             <p className="mt-1 flex items-start gap-1.5 text-sm font-medium text-zinc-100">
-              <span aria-hidden="true" className={`status-dot mt-1.5 size-2 shrink-0 rounded-full ${
-                display.tone === 'done' ? 'bg-emerald-400' :
-                display.tone === 'active' ? 'bg-amber-400' :
-                display.tone === 'attention' ? 'bg-red-400' :
-                display.tone === 'check' ? 'bg-amber-300' :
-                display.tone === 'confirm' ? 'bg-zinc-300' :
-                display.tone === 'paused' ? 'ring-2 ring-inset ring-amber-300' :
-                display.tone === 'cancelled' ? 'bg-zinc-500' : 'ring-2 ring-inset ring-zinc-500'
-              }`} /><span key={`${display.label}|${display.detail}`} className={`status-swap min-w-0 ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300"> · {display.detail}</span>}</span>
+              <span aria-hidden="true" className={`status-dot mt-1.5 size-2 shrink-0 rounded-full ${runToneDot(display.tone)}`} /><span key={`${display.label}|${display.detail}`} className={`status-swap min-w-0 ${display.tone === 'attention' ? 'text-red-400' : ''}`}>{display.label}{display.detail && <span className="font-normal text-zinc-300"> · {display.detail}</span>}</span>
             </p>
             {/* Facts as separate items that wrap whole, never a run-on line of dots. */}
             <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-zinc-400" aria-label="About this run">
@@ -1839,6 +1843,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <Menu items={moreItems} label="More" />
           </div>
         </div>
+        <QrReplaced run={run} template={template} />
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-5 lg:gap-6">
           {/* Print first, on every screen: what you see first is what Tab reaches first. */}

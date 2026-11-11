@@ -38,6 +38,33 @@ export interface RunOfficeSummary {
  * after a send went through: did they all come out?
  */
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'check' | 'confirm' | 'paused' | 'cancelled' | 'idle';
+/**
+ * Four dots by meaning, the same in the Runs list and the run header: ready
+ * (nothing happening: a hollow ring), working (the accent), needs you (red:
+ * something to check or answer) and done or stopped (grey). One word never
+ * gets two dots.
+ */
+export type RunDotMeaning = 'ready' | 'working' | 'needs-you' | 'finished';
+export const RUN_TONE_MEANING: Record<RunDisplayTone, RunDotMeaning> = {
+  idle: 'ready',
+  active: 'working',
+  attention: 'needs-you',
+  check: 'needs-you',
+  confirm: 'needs-you',
+  paused: 'needs-you',
+  done: 'finished',
+  cancelled: 'finished',
+};
+const DOT_CLASS: Record<RunDotMeaning, string> = {
+  ready: 'bg-transparent ring-2 ring-inset ring-zinc-500',
+  working: 'bg-amber-500',
+  'needs-you': 'bg-red-400',
+  finished: 'bg-zinc-500',
+};
+/** The dot's classes for a status tone. */
+export function runToneDot(tone: RunDisplayTone): string {
+  return DOT_CLASS[RUN_TONE_MEANING[tone]];
+}
 /** The run statuses, used the same way in rows, the run header and the filter. */
 export type RunStatusBucket = 'needs-you' | 'check' | 'sent' | 'printing' | 'paused' | 'waiting' | 'ready' | 'done' | 'cancelled';
 export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
@@ -104,7 +131,13 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   if (office?.refused) return out('needs-you', 'attention', `${labelsWord(office.refused)} weren’t sent`.replace(/^(Label \S+) weren’t/, '$1 wasn’t'));
   // A send going out right now (a part of "Send all in parts", or one the page
   // is checking) is never "Ready": the header says what the panel is doing.
-  if (office?.sending) return out('printing', 'active', office.sending);
+  if (office?.sending) {
+    // Checking the labels before they go (or checking a send at the office):
+    // nothing is printing yet, so the word says so.
+    const checking = /^Checking (.+)$/.exec(office.sending);
+    if (checking) return { ...out('printing', 'active', checking[1].replace(/^./, (c) => c.toUpperCase())), label: 'Checking' };
+    return out('printing', 'active', office.sending);
+  }
   // Another run's part stops the shared printer. Only labels of this run
   // already waiting there make it "Paused"; a run with nothing there is
   // "Waiting" (never "Ready"), and says what for. The run header and the Runs

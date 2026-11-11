@@ -1568,7 +1568,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const refusedFrom=shownRefusal && !refusalCovered?shownRefusal.from:undefined,refusedTo=shownRefusal && !refusalCovered?shownRefusal.to:undefined;
   const panelPaused=!!printer && status.paused && !status.stopped;
   // What the panel is doing right now, in the header's few words.
-  const sendingWords=series?`Sending part ${(series.index+1).toLocaleString()} of ${series.total.toLocaleString()}`
+  const sendingWords=series?`${series.phase==='checking'?'Checking':'Sending'} part ${(series.index+1).toLocaleString()} of ${series.total.toLocaleString()}`
     :posting && pending?`Sending ${range(pending.from,pending.to)}`
     :pending && pendingPhase==='other'?'Sending from another tab'
     :pending && pendingPhase==='checking'?`Checking ${range(pending.from,pending.to)} at the office`
@@ -1756,9 +1756,12 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     {requests.length>0 && <div>
       {/* A list, with no summary of its own: the status line and progress above already say where things stand. */}
       <FoldToggle open={queueOpen} onToggle={()=>setQueueOpen(v=>!v)} controls={`${uid}-queue`}>Office queue</FoldToggle>
-      <Fold open={queueOpen} id={`${uid}-queue`}>
-      {requestsTruncated && <p className="pt-2 text-sm text-zinc-400">Showing the latest 100 sends.</p>}
-      <ul className="max-h-96 overflow-y-auto space-y-4 pt-2 text-sm">
+      {/* The list scrolls, which clips its edges: the fold steps out by one ghost
+          inset and the list pads back in, so a ghost button's icon pulled onto
+          the text edge ("Print again…") stays whole. */}
+      <Fold open={queueOpen} id={`${uid}-queue`} className="-ml-[calc(0.75rem+1px)]">
+      {requestsTruncated && <p className="pt-2 pl-[calc(0.75rem+1px)] text-sm text-zinc-400">Showing the latest 100 sends.</p>}
+      <ul className="max-h-96 overflow-y-auto space-y-4 pt-2 pl-[calc(0.75rem+1px)] text-sm">
         {requests.map(r=>{
           // A send with many parts reads as one line; parts that need someone
           // are always listed, with their own button.
@@ -1774,9 +1777,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
           <p className="text-zinc-400">{[formatWhen(r.created_at),r.username].filter(Boolean).join(' · ')}</p>
           {many && <p className="text-zinc-300 tabular-nums">{r.jobs.length.toLocaleString()} batches · {tally}</p>}
           {shown.length>0 && <ul className="space-y-1">{foldJobs(shown,attention).map(j=><li key={j.id} className="text-zinc-300"><span className="tabular-nums">{nums(j.from,j.to)}</span>: {j.review && j.state!=='rejected'?'Needs a check':labels[j.state] ?? 'Unknown'}{j.reason && (j.review || ['rejected','needs_review'].includes(j.state)) && <span className="block text-zinc-400">{capitalise(plainJobReason(j.reason))}.</span>}
-            {canPrint && !pending && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-2 block text-zinc-100" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
+            {canPrint && !pending && (j.review || j.state==='needs_review') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm -ml-[calc(0.75rem+1px)] block text-zinc-100" onClick={()=>openFix({from:j.from,to:j.to,reason:j.reason,requestId:r.id,jobIds:[j.id],didNotPrint:j.state==='rejected',kind:j.state==='rejected'?'did-not-print':'needs-check'})}>Record what happened</button>}
           </li>)}</ul>}
-          <div className="flex flex-wrap gap-1 -ml-2">
+          <div className="flex flex-wrap gap-1">
             {many && <button type="button" aria-expanded={open} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>setOpenSends(prev=>{const next=new Set(prev);if(next.has(r.id))next.delete(r.id);else next.add(r.id);return next;})}>{open?'Hide batches':`Show all ${r.jobs.length.toLocaleString()} batches`}</button>}
             {canPrint && r.jobs.some(j=>j.state==='queued') && <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>void cancelWaiting(r)}>Cancel what hasn&apos;t been picked up</button>}
             {canPrint && !series && !pending && again?.requestId!==r.id && r.jobs.every(j=>!j.review && !['queued','claimed','submitted','needs_review','rejected'].includes(j.state)) && <button type="button" disabled={busy} className="btn btn-ghost btn-sm text-zinc-300" onClick={()=>openAgain('again',r.id)}><RotateCcw className="size-4" aria-hidden="true" />Print again…</button>}
