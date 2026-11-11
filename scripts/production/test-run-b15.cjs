@@ -153,7 +153,6 @@ const has = (src, re) => assert.ok(re.test(src), `source check: ${re}`);
   // #8: the go-back names the labels that print twice.
   has(printer, /already printed, so \$\{twiceOne \? 'it prints' : 'they print'\} a second time/);
   // #9: the QR run offers to cancel the old run.
-  has(printer, /onQr=\{\(\) => markQrFrom\(run\)\}/);
   has(read('src/components/runs/QrReplaced.tsx'), /Cancel the old run/);
   // #11: the bulk mark rebuilds its plan fresh.
   has(list, /freshPlan = officeMarkPlan\(/);

@@ -23,7 +23,7 @@ import { officeHoldsPrinter, officeSentLine, runDisplayStatus, runToneDot } from
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, runSendCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck, rerunAfterFixHref } from './RunBarcodeCheck';
 import { RawDetails } from './RawDetails';
-import { QrReplaced, markQrFrom } from './QrReplaced';
+import { QrReplaced } from './QrReplaced';
 import { plainServerError } from '@/lib/runErrors';
 import { FixInDesignerLink } from '@/components/checks/BarcodeWarning';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
@@ -1718,7 +1718,6 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
       designHref={designHref}
       qrHref={qrFixFits ? `/runs/new?duplicateFrom=${encodeURIComponent(run.id)}&barcode=qr` : null}
-      onQr={() => markQrFrom(run)}
     />
   );
   // A finished or cancelled run doesn't lead with its design's problems: one
@@ -1862,7 +1861,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
             <Menu items={moreItems} label="More" />
           </div>
         </div>
-        <QrReplaced run={run} template={template} />
+        <QrReplaced run={run} />
 
         <div className="grid grid-cols-1 lg:grid-cols-[400px_minmax(0,1fr)] gap-5 lg:gap-6">
           {/* Print first, on every screen: what you see first is what Tab reaches first. */}
