@@ -19,7 +19,7 @@ import { countedEventSpans, printedSpans, stillToGo } from '@/lib/runProgress';
 import { groupPrintHistory } from '@/lib/printHistoryGroups';
 import { useOfficeRequests, type OfficeJobBrief } from './useOfficeRequests';
 import { useOfficeHeld } from './useOfficeHeld';
-import { officeSentLine, runDisplayStatus, runToneDot } from '@/lib/runDisplayStatus';
+import { officeHoldsPrinter, officeSentLine, runDisplayStatus, runToneDot } from '@/lib/runDisplayStatus';
 import { LAYOUT_GO_AHEAD, printCheckAllows, readPrintGoAhead, rememberPrintGoAhead, runPrintCheck, runSendCheck, type PrintGoAhead } from '@/lib/runLayoutCheck';
 import { RunBarcodeCheck, rerunAfterFixHref } from './RunBarcodeCheck';
 import { RawDetails } from './RawDetails';
@@ -888,9 +888,11 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     };
   };
 
-  const startOrResume = async () => {
+  /** fromOverride: start from this label instead of the From box ("Start at 1 instead" starts right away). */
+  const startOrResume = async (fromOverride?: number) => {
     if (!run || !template || !format || starting.current || sending || statusRef.current === 'running') return;
     starting.current = true;
+    const startFrom = typeof fromOverride === 'number' ? fromOverride : selectedFrom;
     try {
     setPrinterStopped(false);
     if (!rangeValid) { setErrorMsg(`Enter a whole-number range between 1 and ${total}.`); return; }
@@ -902,41 +904,58 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // A From at or below what is already printed moves the run back, the same
     // as "Go back to label N". Without the explicit rewind the server would
     // keep the higher count and the next Resume would skip labels.
-    const plan = planRunStart(printedCount, selectedFrom);
+    const plan = planRunStart(printedCount, startFrom);
     // Starting after the next unprinted label would count the labels in
     // between as printed, because progress is "printed up to label N".
-    const skipped = plan.rewind ? null : skippedLabels(printedCount, selectedFrom);
+    const skipped = plan.rewind ? null : skippedLabels(printedCount, startFrom);
     if (skipped) {
       // The safe choice is the primary button; closing the dialog starts
       // nothing. Labels are only counted as printed when the person says
       // they did print.
       const one = skipped.from === skipped.to;
       const gap = one ? `label ${skipped.from}` : `labels ${skipped.from}–${skipped.to}`;
-      const only = selectedFrom === selectedThrough ? `${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`;
+      const only = startFrom === selectedThrough ? `${startFrom}` : `${startFrom}\u2060–\u2060${selectedThrough}`;
       const choice = await choiceDialog({
         title: `${gap.charAt(0).toUpperCase()}${gap.slice(1)} ${one ? 'isn’t' : 'aren’t'} counted as printed yet`,
-        body: `The next label to print is ${skipped.from}. Start there, or print only ${selectedFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
+        body: `The next label to print is ${skipped.from}. Start there, or print only ${startFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
         confirmLabel: `Start at ${skipped.from} instead`,
         altLabel: `Print only ${only}`,
         extraLabel: `${one ? 'It' : 'They'} already printed…`,
         cancelAlso: true,
       });
-      if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); return; }
+      // Starts right away from the next label to print (the press was the ask).
+      if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); starting.current = false; await startOrResume(skipped.from); return; }
       // Printed apart from the run (its own guard against a second start).
-      if (choice === 'alt') { starting.current = false; await handleReprintRange({ from: selectedFrom, to: selectedThrough }, 'only'); return; }
+      if (choice === 'alt') { starting.current = false; await handleReprintRange({ from: startFrom, to: selectedThrough }, 'only'); return; }
       if (choice !== 'extra') return;
       const printedThem = await confirmDialog({
         title: `Did ${gap} print?`,
-        body: `Only say yes if ${one ? 'it came' : 'they came'} out of a printer. ${one ? 'It is' : 'They are'} then counted as printed, and printing starts at ${selectedFrom}.`,
+        body: `Only say yes if ${one ? 'it came' : 'they came'} out of a printer. ${one ? 'It is' : 'They are'} then counted as printed, and printing starts at ${startFrom}.`,
         confirmLabel: `Yes, ${one ? 'it' : 'they'} printed`,
         cancelLabel: 'No',
         focusCancel: true,
       });
       if (!printedThem) return;
     }
+    // A range that is all printed already ("3–4" after printing 1–8) prints
+    // those labels again and leaves the run's progress alone, like the office
+    // panel: going back would make labels 5–8 print a second time on Resume.
+    if (plan.rewind && selectedThrough <= printedCount) {
+      const one = startFrom === selectedThrough;
+      const which = one ? `label ${startFrom.toLocaleString('en-US')}` : `labels ${startFrom.toLocaleString('en-US')}–${selectedThrough.toLocaleString('en-US')}`;
+      const ok = await confirmDialog({
+        title: `Print ${which} again?`,
+        body: `${one ? 'It was' : 'They were'} already printed, so ${one ? 'it prints' : 'they print'} a second time. The run’s progress stays at ${printedCount.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}.`,
+        confirmLabel: `Print ${one ? startFrom.toLocaleString('en-US') : `${startFrom.toLocaleString('en-US')}\u2060–\u2060${selectedThrough.toLocaleString('en-US')}`} again`,
+      });
+      if (!ok) return;
+      starting.current = false;
+      await handleReprintRange({ from: startFrom, to: selectedThrough }, 'reprint');
+      return;
+    }
     // Labels the office printer already has: printing them here too is a
     // choice, not a surprise.
-    const atOffice = officeLabelsIn(office.jobs, selectedFrom, selectedThrough);
+    const atOffice = officeLabelsIn(office.jobs, startFrom, selectedThrough);
     if (atOffice) {
       const one = atOffice.from === atOffice.to;
       const ok = await confirmDialog({
@@ -953,8 +972,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     const outOfOrder = printedOutOfOrder.filter((n) => n > printedCount);
     // Office ranges a person confirmed came out are printed too, wherever they sit.
     const confirmedHere: number[] = [];
-    for (const span of officeConfirmed) for (let n = Math.max(selectedFrom, span.from, printedCount + 1); n <= Math.min(selectedThrough, span.to); n++) confirmedHere.push(n);
-    const scanned = scannedSkipPlan(selectedFrom, selectedThrough, [...new Set([...scannedLabels, ...outOfOrder, ...confirmedHere])].sort((a, b) => a - b));
+    for (const span of officeConfirmed) for (let n = Math.max(startFrom, span.from, printedCount + 1); n <= Math.min(selectedThrough, span.to); n++) confirmedHere.push(n);
+    const scanned = scannedSkipPlan(startFrom, selectedThrough, [...new Set([...scannedLabels, ...outOfOrder, ...confirmedHere])].sort((a, b) => a - b));
     if (scanned.skipped.length) {
       const words = labelListWords(scanned.skipped);
       const one = scanned.skipped.length === 1;
@@ -965,8 +984,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       const choice = await choiceDialog({
         title: `${words.charAt(0).toUpperCase()}${words.slice(1)} ${one ? 'was' : 'were'} ${how}`,
         body: scanned.keep.length
-          ? `Printing labels ${selectedFrom}–${selectedThrough} prints ${one ? 'it' : 'them'} a second time. Skipping leaves ${one ? 'it' : 'them'} out; ${one ? 'it still counts' : 'they still count'} as printed.`
-          : `Every label from ${selectedFrom} to ${selectedThrough} was ${byScan ? 'printed by scanning' : 'already printed'}. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
+          ? `Printing labels ${startFrom}–${selectedThrough} prints ${one ? 'it' : 'them'} a second time. Skipping leaves ${one ? 'it' : 'them'} out; ${one ? 'it still counts' : 'they still count'} as printed.`
+          : `Every label from ${startFrom} to ${selectedThrough} was ${byScan ? 'printed by scanning' : 'already printed'}. Printing ${one ? 'it' : 'them'} again makes a second copy.`,
         confirmLabel: scanned.keep.length ? `Skip ${one ? 'it' : 'them'}` : 'Don’t print',
         altLabel: 'Print them again',
       });
@@ -976,12 +995,12 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     if (plan.rewind) {
       // The labels that print twice, named: from the From box up to what is already printed.
       const twiceTo = Math.min(printedCount, selectedThrough);
-      const twiceOne = twiceTo === selectedFrom;
-      const twice = twiceOne ? `Label ${selectedFrom.toLocaleString('en-US')} was` : `Labels ${selectedFrom.toLocaleString('en-US')}–${twiceTo.toLocaleString('en-US')} were`;
+      const twiceOne = twiceTo === startFrom;
+      const twice = twiceOne ? `Label ${startFrom.toLocaleString('en-US')} was` : `Labels ${startFrom.toLocaleString('en-US')}–${twiceTo.toLocaleString('en-US')} were`;
       const ok = await confirmDialog({
-        title: `Go back to label ${selectedFrom} and continue?`,
-        body: `${twice} already printed, so ${twiceOne ? 'it prints' : 'they print'} a second time. The run’s progress goes back to ${plan.startCount} of ${total}, then labels ${selectedFrom}–${selectedThrough} print. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
-        confirmLabel: `Go back to label ${selectedFrom}`,
+        title: `Go back to label ${startFrom} and continue?`,
+        body: `${twice} already printed, so ${twiceOne ? 'it prints' : 'they print'} a second time. The run’s progress goes back to ${plan.startCount} of ${total}, then labels ${startFrom}–${selectedThrough} print. To print a few labels again without changing progress, use “Print some labels again…” instead.`,
+        confirmLabel: `Go back to label ${startFrom}`,
       });
       if (!ok) { setFromDraft(null); setCountDraft(null); return; }
       setPrintedCount(plan.startCount);
@@ -1030,7 +1049,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
 
     const printRange = normalizeLabelRange({
       total,
-      from: selectedFrom,
+      from: startFrom,
       to: selectedThrough,
     });
     // The queue tracks feeds internally (startIndex/done are feed counts).
@@ -1988,7 +2007,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
           {!calm && !officeFixFirst && checkList}
 
           <div className="space-y-2">
-            <RunProgress printedCount={printedCount} total={total} confirmed={countedSpans} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} named={transport === 'office' && !isSheetFormat ? office.summary.failed : []} tone={runFinished ? 'done' : 'active'} animate />
+            <RunProgress printedCount={printedCount} total={total} confirmed={countedSpans} sent={officeMark.ranges} waiting={waitingSpans} waitingLabel={transport === 'office' && panel.paused ? 'waiting at the office' : ''} named={transport === 'office' && !isSheetFormat ? office.summary.failed : []} tone={runFinished && !officeHoldsPrinter(officeSummary) ? 'done' : 'active'} animate />
             {/* What the office printer has done: shown, never counted as printed.
                 With the office printer chosen, its panel says it once. */}
             {transport !== 'office' && sentLine && <p className="text-sm text-zinc-400 tabular-nums">{sentLine}</p>}
@@ -2058,9 +2077,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </button>
             )}
             {!isSheetFormat && !reloadNeeded && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-              <button type="button" onClick={startOrResume} disabled={!canStart || !rangeValid} className="btn btn-primary flex-1">
+              <button type="button" onClick={() => void startOrResume()} disabled={!canStart || !rangeValid} className="btn btn-primary flex-1">
                 {status === 'paused' ? <Play className="w-4 h-4" aria-hidden="true" /> : <Printer className="w-4 h-4" aria-hidden="true" />}
-                {rangeValid && selectedFrom <= printedCount ? `Go back to label ${selectedFrom}` : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
+                {rangeValid && selectedThrough <= printedCount ? `Print ${selectedFrom === selectedThrough ? `label ${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`} again` : rangeValid && selectedFrom <= printedCount ? `Go back to label ${selectedFrom}` : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
               </button>
             )}
             {status === 'running' && transport === 'dazzle' && (
@@ -2071,7 +2090,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <Pause className="w-4 h-4" aria-hidden="true" /> Pause
               </button>
             )}
-            {(status === 'completed' || (runFinished && status !== 'running')) && (
+            {(status === 'completed' || (runFinished && status !== 'running')) && !officeHoldsPrinter(officeSummary) && (
               onDone ? (
                 <button type="button" onClick={onDone} className="btn btn-secondary flex-1">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-success rounded-full" aria-hidden="true" /> Done
