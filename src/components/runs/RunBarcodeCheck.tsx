@@ -5,7 +5,7 @@ import { AlertCircle } from 'lucide-react';
 import { FixInDesignerLink, WhyToggle } from '@/components/checks/BarcodeWarning';
 import { ProblemList } from '@/components/checks/RunChecks';
 import { LAYOUT_GO_AHEAD, stopFixWords, type RunPrintCheck } from '@/lib/runLayoutCheck';
-import { barcodeHasDetails, barcodeItemTicked, barcodePlainSentence, barcodeSendTickLabel } from '@/lib/runBarcodeTicks';
+import { barcodeDamage, barcodeItemTicked, barcodePlainSentence, barcodeRunWhy, barcodeSendTickLabel } from '@/lib/runBarcodeTicks';
 
 /** The run page's way to the designer: the same name area A uses. */
 export const OPEN_IN_DESIGNER = 'Open in designer';
@@ -47,7 +47,7 @@ function RerunLink({ designHref }: { designHref: string }) {
  * that exact range and count ("Print labels 97–240 (144) anyway").
  * readOnly: a finished or cancelled run shows what was wrong, with no ticks.
  */
-export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, elsewhere = '', checkedTo = null }: {
+export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoAhead, onLayoutGoAhead, designHref, send = null, total, readOnly = false, characters, stopNote = '', leaveOut = null, elsewhere = '', checkedTo = null, qrHref = null }: {
   check: RunPrintCheck;
   ticks: ReadonlyArray<string>;
   wizardGoAhead: boolean;
@@ -68,6 +68,8 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
   elsewhere?: string;
   /** Only part of a big send was checked: the last label checked. */
   checkedTo?: number | null;
+  /** A QR code of the same value fits every label: a new run with the same data, where the barcode becomes a QR code. */
+  qrHref?: string | null;
 }) {
   const uid = useId();
   const hasCharacters = !!characters && characters.items.length > 0;
@@ -80,14 +82,13 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
   const rest = check.blocking.slice(MAX_SHOWN);
   const canTick = !readOnly && !check.verdict.stops;
   const ticked = (item: string) => barcodeItemTicked(item, ticks, wizardGoAhead);
-  const why = readOnly ? 'This run kept the design it started with. A fix prints in a re-run with the same data.' : 'This run keeps the design it started with, so a fix prints in a re-run with the same data.';
   return (
     <div className="space-y-3">
       {check.blocking.length > 0 && <div role={readOnly ? undefined : 'alert'} className="space-y-2 text-sm">
         <ul className="space-y-2">
           {shown.map((item, i) => {
-            const last = i === shown.length - 1 && !rest.length;
-            const details = barcodeHasDetails(item) ? `${item}${last ? ` ${why}` : ''}` : (last ? why : '');
+            // What to do about it, in plain words (no measurements): RunBarcodeCheck's own "Why?".
+            const details = barcodeRunWhy(item, readOnly);
             return (
               <li key={item} className="space-y-1">
                 <div className="flex items-start gap-1.5 text-zinc-100">
@@ -121,7 +122,9 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
             </li>
           )}
         </ul>
-        {canTick && wizardGoAhead && <p className="pl-5.5 text-zinc-400">You chose to print {check.blocking.length === 1 ? 'this' : 'these'} anyway when you made the run.</p>}
+        {/* A go-ahead carried over from the new-run page says what it costs, right beside the tick. */}
+        {canTick && wizardGoAhead && <p className="pl-5.5 text-amber-300">You ticked “Print anyway” when you made the run. {barcodeDamage(check.blocking[0])}</p>}
+        {canTick && qrHref && <p className="pl-5.5 text-zinc-300">A QR code of the same value fits every label. <Link href={qrHref} className="link">Use a QR code instead</Link> makes a new run with the same data, where you switch the barcode.</p>}
         {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopNote || stopFixWords(check.verdict.fixIn)}</p>}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">
           {check.verdict.stops && !readOnly && leaveOut && <button type="button" className="btn btn-secondary btn-sm" onClick={leaveOut.pick}>{leaveOut.label}</button>}

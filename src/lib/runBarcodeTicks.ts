@@ -149,6 +149,43 @@ export function barcodeWhyText(item: string): string {
 }
 
 /**
+ * The run page's "Why?" in words a first-timer follows: what to do about it,
+ * with no measurements and no unexplained terms. A run keeps the design it
+ * was made with, so the last sentence says where the fix prints.
+ */
+export function barcodeRunWhy(item: string, finished = false): string {
+  const text = item.trim().replace(/\s+/g, ' ');
+  const picture = /picture copy/.test(text);
+  let fix: string;
+  if (/neither label (?:would|will) scan|runs onto the next label|cuts it off|too wide/.test(text)) {
+    fix = picture
+      ? 'The code is too long to fit this label. In the designer, press “Make a picture copy”: it draws thinner bars that fit.'
+      : /QR code/.test(text)
+        ? 'The code is too long to fit this label. In the designer, make the barcode box wider, or use a QR code instead.'
+        : 'The code is too long to fit this label. In the designer, make the barcode box wider.';
+  } else if (/starts off the|runs off the (?:left|right|top|bottom) edge|crosses the label edge|move the barcode box fully onto/.test(text)) {
+    fix = 'Part of the barcode is off the label. In the designer, move it fully onto the label.';
+  } else if (/needs a box at least|box too short|make the barcode box taller/.test(text)) {
+    fix = 'The barcode’s box is too small for it. In the designer, make the box bigger.';
+  } else if (/almost no clear space/.test(text)) {
+    fix = 'Scanners need a little empty space around a barcode. In the designer, move it in from the edge a little.';
+  } else if (/characters a barcode can['’]t hold/.test(text)) {
+    fix = 'This barcode holds plain letters, numbers and everyday symbols only. Change the text, or use a QR code instead.';
+  } else if (/will scan as UPPERCASE/.test(text)) {
+    fix = 'This kind of barcode only holds capital letters, so a scanner reads the text in capitals.';
+  } else if (/Tab key press|Enter key press|special scanner codes?|scan won’t match/.test(text)) {
+    fix = 'Some of the text turns into scanner keys (like Tab or Enter), so a scan won’t match what you see.';
+  } else {
+    // Anything else: the item's own words, without measurements.
+    fix = text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter((sentence) => !/\d+(?:\.\d+)?["”]/.test(sentence)).join(' ');
+  }
+  const where = finished
+    ? 'Fixing the design doesn’t change labels already printed; the fix prints in a new run with the same data.'
+    : 'Fixing the design doesn’t change this run; the fix prints in a new run with the same data.';
+  return `${fix} ${where}`.trim();
+}
+
+/**
  * Why the Start or Print button waits, in one line that points at what is
  * on the page (never "the list above"): the run waits for a fix, or for a
  * tick on each "Print anyway".

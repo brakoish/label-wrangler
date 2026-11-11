@@ -314,7 +314,7 @@ console.log('PASS field display names');
   // A failed storage write is said, not silent, and nothing is sent.
   assert.match(panel, /try\{localStorage\.setItem\(storageKey,JSON\.stringify\(payload\)\);\}\s*catch\{setError\('This device can’t save the request, so it wasn’t sent/, 'a failed save stops the send and says so');
   // "Send again" reuses the saved key whatever the printer says (the server answers a saved key first).
-  assert.match(panel, /const disabled=pending\?\(busy \|\| \(!posting && pendingPhase!=='unsure'\)\):/, '"Send again" is only offered once the page is unsure: not while busy, checking, or while another tab is sending that same request');
+  assert.match(panel, /const disabled=pending\?\(busy \|\| \(!posting && !unsure\)\):/, '"Send again" is only offered once the page is unsure: not while busy, checking, or while another tab is sending that same request');
   assert.match(panel, /:pending && !posting && pendingPhase==='checking'\?'Checking…'/, 'while checking, the button says so');
   // The reason for "not sure" is kept beside the saved request, so a refresh says the same.
   assert.match(panel, /localStorage\.setItem\(metaKey,JSON\.stringify\(meta\)\)/);
@@ -401,10 +401,15 @@ console.log('PASS field display names');
   // A parts series never stops silently, and Start over drops the unsure part from a saved plan.
   {
     const pi = read('src/components/runs/OfficePiPrinter.tsx');
-    assert.match(pi, /if\(!checked\)\{setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
-    const over = pi.slice(pi.indexOf('const startOver=async'), pi.indexOf('const act=async'));
-    assert.match(over, /if\(pendingInPlan && partsPlan\)savePartsPlan\(\{\.\.\.partsPlan,next:partsPlan\.next\+1\}\);/);
-    assert.ok(over.indexOf('confirmDialog') < over.indexOf('savePartsPlan'), 'only after the person confirms');
+    assert.match(pi, /if\(!checked\)\{if\(!stopSeries\.current\)setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
+    const drop = pi.slice(pi.indexOf('const dropSaved=()'), pi.indexOf('const clearArrived='));
+    assert.match(drop, /if\(pendingInPlan && partsPlan\)savePartsPlan\(\{\.\.\.partsPlan,next:partsPlan\.next\+1\}\);/);
+    // B14: no "Start over". Forgetting the saved key (without the person saying the labels arrived) asks first.
+    assert.doesNotMatch(pi, /Start over/);
+    const forget = pi.slice(pi.indexOf('const forgetSend=async'), pi.indexOf('const act=async'));
+    assert.ok(forget.indexOf('confirmDialog') >= 0 && forget.indexOf('confirmDialog') < forget.indexOf('dropSaved()'), 'only after the person confirms');
+    assert.match(forget, /danger:true/);
+    assert.match(pi, /const ARRIVED_LABEL='They arrived, clear this'/);
   }
   // Another run on the same page starts empty, and a late answer for the last run is dropped.
   const officeHook = read('src/components/runs/useOfficeRequests.ts');

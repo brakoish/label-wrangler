@@ -1,5 +1,6 @@
 'use client';
 
+import { Recovery } from '@/components/ui/Recovery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, CheckCircle2, Loader2, X } from 'lucide-react';
@@ -237,7 +238,11 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
   const saving = useRef(false);
   const [problem, setProblem] = useState('');
   // Picked once when the dialog opens; a list refresh while it is open keeps the choice.
-  useEffect(() => { if (open) { setPicked(new Set(runs.map((r) => r.id))); setProblem(''); } },
+  // History lines already handed to the outbox in this dialog: the outbox
+  // delivers each one (same key) however many times it retries, so a second
+  // try after a failure never writes the same line twice.
+  const written = useRef(new Set<string>());
+  useEffect(() => { if (open) { setPicked(new Set(runs.map((r) => r.id))); setProblem(''); written.current = new Set(); } },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open]);
   const save = async () => {
@@ -276,7 +281,10 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
           if (refused.reason) { failed.push(run.name); continue; }
         }
         for (const r of plan.ranges) {
+          const line = `${run.id}:${r.from}-${r.to}`;
+          if (written.current.has(line)) continue;
           await createPrintEvent(run.id, { eventType: 'confirmed', output: 'office-pi', rangeFrom: r.from, rangeTo: r.to, labelCount: r.to - r.from + 1, printedCountAfter: through, printerName: 'Office printer', message: 'Checked and marked printed after the office sent them (from the Runs list)' });
+          written.current.add(line);
         }
         done++;
         // Saved: a second try after a failure never marks this run again.
@@ -302,7 +310,7 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
           return (
             <li key={run.id}>
               <label className="flex min-h-control cursor-pointer items-start gap-3 rounded-lg px-2 py-2 text-sm hover:bg-zinc-800">
-                <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-amber-500" checked={picked.has(run.id)} disabled={busy}
+                <input type="checkbox" className="check" checked={picked.has(run.id)} disabled={busy}
                   onChange={(e) => setPicked((current) => { const next = new Set(current); if (e.target.checked) next.add(run.id); else next.delete(run.id); return next; })} />
                 <span className="min-w-0">
                   <span className="block font-medium text-zinc-100">{run.name}{run.status === 'cancelled' ? <span className="font-normal text-zinc-400"> · cancelled</span> : null}</span>
@@ -626,15 +634,14 @@ export default function RunsPage() {
             </div>
           )}
           {runsHydrated && runsError && runs.length === 0 && (
-            <div role="alert" className="py-10 text-center space-y-3">
-              <h2 className="text-base font-semibold text-zinc-100">We couldn&apos;t load your runs</h2>
-              <p className="text-sm text-zinc-400">{friendlyError(runsError, 'Check your connection, then try again.')}</p>
-              <button type="button" disabled={runsLoading} onClick={() => {
+            <Recovery role="alert" tone="warning" title="We couldn’t load your runs"
+              actions={<button type="button" disabled={runsLoading} onClick={() => {
                 void useRunStore.getState().loadAll();
                 if (useTemplateStore.getState().error) void useTemplateStore.getState().fetchTemplates();
                 if (useFormatStore.getState().error) void useFormatStore.getState().fetchFormats();
-              }} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>
-            </div>
+              }} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>}>
+              <p>{friendlyError(runsError, 'Check your connection, then try again.')}</p>
+            </Recovery>
           )}
           {/* Empty state: only once loading has finished and there really are no runs. */}
           {runsHydrated && !runsError && runs.length === 0 && (

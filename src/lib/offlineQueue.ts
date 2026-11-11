@@ -88,6 +88,8 @@ const syncedRuns = new Map<string, Run>();
  * the caller that queued one can tell its own update was refused. */
 const setAsideOps = new Map<string, string>();
 const rewindDropOps = new Set<string>();
+/** Go-backs set aside because the server is an earlier build (the page only needs a reload). */
+const reloadOps = new Set<string>();
 /** Operations a flush has tried to send (cleared by the caller that queued them). */
 const attemptedOps = new Set<string>();
 export const QUEUE_EVENT = 'lw:progress-sync';
@@ -129,7 +131,7 @@ export function rewindDroppedMessage(goBackTo: number, serverPrinted: number | n
 }
 /** Words for a go-back that reached a server rolled back to the previous build. */
 export function rewindNeedsReloadMessage(goBackTo: number): string {
-  return `“Go back to label ${(goBackTo + 1).toLocaleString('en-US')}” wasn’t applied, because Label Wrangler was changed back to an earlier version. Reload the page, then go back again if you still need to.`;
+  return `“Go back to label ${(goBackTo + 1).toLocaleString('en-US')}” wasn’t applied: Label Wrangler just updated. Reload the page, then go back again if you still need to. Nothing was changed.`;
 }
 /** The operation as it was stored (without the storage key this module adds). */
 function storedOp(op: Stored): Operation {
@@ -308,6 +310,8 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
           syncedRuns.delete(runId);
           setAsideOps.set(op.id, message);
           rewindDropOps.add(op.id);
+          reloadOps.add(op.id);
+          if (reloadOps.size > 128) reloadOps.delete(reloadOps.values().next().value!);
           if (setAsideOps.size > 128) setAsideOps.delete(setAsideOps.keys().next().value!);
           announce(pendingError);
           continue;
@@ -409,7 +413,7 @@ export async function flushOfflineQueue(): Promise<{ flushed: number; remaining:
  * refused this update, `onSetAside` gets the plain reason (and the stale
  * cached run is not returned).
  */
-export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAside?: (reason: string) => void, then?: PrintEventData, onAlreadyApplied?: (serverPrinted: number | null) => void): Promise<Run | null> {
+export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAside?: (reason: string, kind?: 'needs-reload') => void, then?: PrintEventData, onAlreadyApplied?: (serverPrinted: number | null) => void): Promise<Run | null> {
   const id = enqueueRunPatch({ runId, ...patch }, undefined, false, then);
   await flushOfflineQueue();
   // A flush that was already finishing when this was queued may have missed
@@ -429,7 +433,8 @@ export async function updateRunWithQueue(runId: string, patch: RunPatch, onSetAs
     // A dropped "go back" the page is told about right away needs no second,
     // app-wide notice; one that drops later (offline) still gets it.
     if (rewindDropOps.delete(id) && onSetAside) discardDeadLetters([id]);
-    onSetAside?.(refused);
+    // 'needs-reload': the server is an earlier build; nothing was changed, the page only needs a reload.
+    onSetAside?.(refused, reloadOps.delete(id) ? 'needs-reload' : undefined);
     return null;
   }
   // Callers should display pendingPatchCount rather than implying that local

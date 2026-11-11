@@ -1,18 +1,32 @@
 import { alertDialog, choiceDialog } from '@/components/ui/feedback';
 let running = false;
 let officeSeries = false;
-let stopSeries: (() => void) | null = null;
+/** `leaving`: the person chose "Stop after this part and leave" (the panel says "Leaving after part N…"). */
+type StopSeries = (leaving?: boolean) => void;
+let stopSeries: StopSeries | null = null;
 let seriesEnded: Array<() => void> = [];
+/** The page to leave for once the series has stopped (from "Stop after this part and leave"). */
+let leaveAfterSeries: (() => void) | null = null;
 export function setLocalPrintRunning(value: boolean) { running = value; }
 /**
  * True while this page is sending a "Send all in parts" series to the office
  * printer. `stop` asks the series to stop after the part that is going now.
  */
-export function setOfficeSeriesRunning(value: boolean, stop?: () => void) {
+export function setOfficeSeriesRunning(value: boolean, stop?: StopSeries) {
   officeSeries = value;
   stopSeries = value ? stop ?? null : null;
-  if (!value) { const waiting = seriesEnded; seriesEnded = []; for (const done of waiting) done(); }
+  if (!value) {
+    const waiting = seriesEnded; seriesEnded = [];
+    const leave = leaveAfterSeries; leaveAfterSeries = null;
+    for (const done of waiting) done();
+    // Last, after the page has taken down its own "Leave site?" guard.
+    leave?.();
+  }
 }
+/** "Keep going" after "Stop after this part and leave": the series carries on and the page stays. */
+export function keepSeriesGoing(): void { leaveAfterSeries = null; }
+/** True while a "Stop after this part and leave" waits for the part on its way. */
+export function leavingAfterSeries(): boolean { return leaveAfterSeries !== null; }
 /** True while a "Send all in parts" series is going on this page. */
 export function officeSeriesActive(): boolean { return officeSeries; }
 /**
@@ -47,8 +61,10 @@ export function canLeaveLocalPrint(leave?: () => void): boolean {
       altLabel: 'Stop after this part and leave',
     }).then((answer) => {
       if (answer !== 'alt' || !stop || !leave) return;
-      seriesEnded.push(leave);
-      stop();
+      // The series may have ended while the question was open: leave now.
+      if (!officeSeries) { leave(); return; }
+      leaveAfterSeries = leave;
+      stop(true);
     });
     return false;
   }

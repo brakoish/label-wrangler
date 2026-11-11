@@ -67,6 +67,12 @@ export interface BarcodeCheck {
   checkedLabels: number;
   /** Labels per barcode field and fit problem ("field|reason"), counted in full. */
   fitCounts: Record<string, number>;
+  /**
+   * Every label the exact (bitmap) renderer refuses, found in full (0: a
+   * fixed barcode, so every label). `issues` is capped for display; this is
+   * not, so a check never decides "stop" or "no stop" from a shortened list.
+   */
+  stopLabels?: number[];
 }
 
 interface RunData {
@@ -98,6 +104,15 @@ function printedValue(el: TemplateElement, values: Record<string, string>): stri
 }
 
 const MAX_ISSUES = 50;
+
+/**
+ * A barcode the exact (bitmap) renderer refuses: nothing prints, so it is a
+ * stop. Everything else the printer produces needs a go-ahead instead.
+ * (runLayoutCheck.barcodeIssueStops is this same rule.)
+ */
+export function issueStopsRenderer(issue: Pick<BarcodeIssue, 'fit'>, format: Pick<LabelFormat, 'type'> | null | undefined): boolean {
+  return format?.type === 'thermal' && !!issue.fit?.bitmap && issue.fit.level === 'blocked' && !issue.fit.printable;
+}
 
 function issueFor(el: BarcodeElement, label: number, value: string, format: FitFormat | null | undefined, bitmap: boolean): BarcodeIssue | null {
   const fit = barcodeFit(el, value, format, bitmap);
@@ -148,12 +163,14 @@ export function describeOverprints(issue: Pick<BarcodeIssue, 'overprints' | 'ove
 export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format?: FitFormat | null): BarcodeCheck {
   const bitmap = template.thermalRenderMode === 'bitmap-v1';
   const barcodes = template.elements.filter((el): el is BarcodeElement => el.type === 'barcode');
-  const issues: BarcodeIssue[] = [];
+  const others: BarcodeIssue[] = [];
+  const stopping: BarcodeIssue[] = [];
   const warnings: BarcodeIssue[] = [];
   const fitCounts: Record<string, number> = {};
+  const stopLabels: number[] = [];
   let badLabels = 0;
   const total = Math.max(1, run.sourceData.length);
-  if (!barcodes.length) return { issues, badLabels, warnings, checkedLabels: total, fitCounts };
+  if (!barcodes.length) return { issues: [], badLabels, warnings, checkedLabels: total, fitCounts, stopLabels };
   const keep = (list: BarcodeIssue[], found: BarcodeIssue) => {
     if (list.length < MAX_ISSUES && !list.some((i) => i.label === found.label && i.field === found.field)) list.push(found);
   };
@@ -162,24 +179,36 @@ export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Par
     const found = issueFor(el, 0, printedValue(el, {}), format, bitmap);
     if (!found) continue;
     if (found.kind === 'tight') warnings.push(found);
-    else { issues.push(found); badLabels = total; }
+    else {
+      if (issueStopsRenderer(found, format)) { stopping.push(found); if (!stopLabels.includes(0)) stopLabels.push(0); }
+      else others.push(found);
+      badLabels = total;
+    }
   }
   const dynamic = barcodes.filter((b) => !b.isStatic);
   for (let index = 0; index < total && dynamic.length; index++) {
     const values = valuesFor(run, index);
     let bad = false;
+    let stops = false;
     for (const el of dynamic) {
       const found = issueFor(el, index + 1, printedValue(el, values), format, bitmap);
       if (!found) continue;
       if (found.fit && found.kind !== 'characters') fitCounts[`${found.field}|${found.fit.reason}`] = (fitCounts[`${found.field}|${found.fit.reason}`] ?? 0) + 1;
       if (found.kind === 'tight') { keep(warnings, found); continue; }
       bad = true;
-      keep(issues, found);
+      // Labels the renderer refuses are kept apart (and counted in full), so a
+      // run with many printable problems never hides its stops, or invents one.
+      if (issueStopsRenderer(found, format)) { stops = true; keep(stopping, found); }
+      else keep(others, found);
     }
     if (bad && badLabels < total) badLabels++;
+    if (stops) stopLabels.push(index + 1);
   }
+  // Stops first (they decide what can print), then the rest, in label order, up to the cap.
+  const issues = [...stopping, ...others.slice(0, Math.max(0, MAX_ISSUES - stopping.length))]
+    .sort((a, b) => a.label - b.label);
   addOverprints(template, run, format, issues);
-  return { issues, badLabels, warnings, checkedLabels: total, fitCounts };
+  return { issues, badLabels, warnings, checkedLabels: total, fitCounts, stopLabels };
 }
 
 function shorten(value: string, max = 24): string {

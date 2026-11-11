@@ -40,6 +40,7 @@ for(const file of [
  'scripts/production/test-designer-r8.cjs',
  'scripts/production/test-barcode-why.cjs',
  'scripts/production/test-designer-test-print.cjs',
+ 'scripts/production/test-run-b14.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',
