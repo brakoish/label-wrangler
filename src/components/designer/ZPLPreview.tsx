@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import { RefreshCw, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { LabelFormat, LabelTemplate } from '@/lib/types';
 import { getBitmapProof } from '@/lib/thermal/client';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
@@ -10,6 +10,8 @@ import { renderZplToDataUrl, thermalRenderGeometry } from '@/lib/zplRenderClient
 import { PrintControls } from './PrintControls';
 import { OfficePreviewPrint } from './OfficePreviewPrint';
 import { LabelOutlineOverlay } from '../LabelOutlineOverlay';
+import { ZoomControl } from './ZoomControl';
+import { useFrameSize } from './useFrameSize';
 import { friendlyRenderError, friendlyRenderFailure } from '@/lib/userMessages';
 
 interface ZPLPreviewProps {
@@ -22,9 +24,12 @@ interface ZPLPreviewProps {
   problemsShown?: boolean;
   /** The design's problems, shown where the Edit view shows them. */
   notice?: ReactNode;
+  /** Zoom shared with the Edit view, so switching views keeps the size. */
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
 }
 
-export function ZPLPreview({ format, template, testData, active = true, problemsShown = false, notice }: ZPLPreviewProps) {
+export function ZPLPreview({ format, template, testData, active = true, problemsShown = false, notice, zoom: sharedZoom, onZoomChange }: ZPLPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +38,9 @@ export function ZPLPreview({ format, template, testData, active = true, problems
   const [renderedSignature, setRenderedSignature] = useState('');
   const proofReady = template.thermalRenderMode !== 'bitmap-v1' || (signature === renderedSignature && !loading && !error);
   // Zoom level as multiplier of "fit" size. 1 = fit to container, 2 = double.
-  const [zoom, setZoom] = useState<number>(1);
+  const [ownZoom, setOwnZoom] = useState<number>(1);
+  const zoom = sharedZoom ?? ownZoom;
+  const setZoom = onZoomChange ?? setOwnZoom;
   // Label edges are off by default: this is exactly what the printer makes.
   // On rolls with 2+ across they can be turned on to see where each label is.
   // Default on when labelsAcross > 1 (where it actually helps), off otherwise.
@@ -84,27 +91,19 @@ export function ZPLPreview({ format, template, testData, active = true, problems
   // The label sits in the same frame, at the same size and place, as in the
   // Edit view (LabelPreview): switching views compares, it doesn't jump.
   const frameRef = useRef<HTMLDivElement>(null);
-  const [frameSize, setFrameSize] = useState({ width: 600, height: 400 });
-  useEffect(() => {
-    const el = frameRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) setFrameSize({ width: entry.contentRect.width, height: entry.contentRect.height });
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const frameSize = useFrameSize(frameRef);
 
   if (format.type !== 'thermal') return null;
 
   // The same fit as the Edit canvas: the label plus a 10% surround, fitted
-  // with a 48px margin (4px on a phone, where the frame follows the width).
+  // with a 48px margin (none on a phone, where the frame follows the width
+  // and sits on the page's 16px gutter).
   const { linerDots, heightDots } = thermalRenderGeometry(format);
   const labelDots = Math.round(format.width * (format.dpi || 203));
   const padX = labelDots * 0.1, padY = heightDots * 0.1;
   const totalW = linerDots + padX * 2, totalH = heightDots + padY * 2;
   const phone = frameSize.width < 600;
-  const margin = phone ? 4 : 48;
+  const margin = phone ? 0 : 48;
   const availW = frameSize.width - margin * 2;
   const availH = phone ? Infinity : frameSize.height - margin * 2;
   const fitW = availW / availH > totalW / totalH ? Math.max(availH, 200) * (totalW / totalH) : Math.max(availW, 200);
@@ -117,12 +116,12 @@ export function ZPLPreview({ format, template, testData, active = true, problems
       {/* Desktop: problems and the test print row above the label, in the
           space the Edit view keeps for its notices. Phone: the row goes
           under the label, so the label sits where it does in Edit. */}
-      <div className="shrink-0 sm:space-y-1 px-3 pt-2 min-h-12 sm:min-h-16 sm:px-6 max-sm:contents">
-        <div className="space-y-1 sm:empty:hidden max-sm:order-1 max-sm:min-h-12 max-sm:px-3 max-sm:pt-2">
+      <div className="shrink-0 sm:space-y-1 px-4 pt-2 min-h-12 sm:min-h-16 sm:px-6 max-sm:contents">
+        <div className="space-y-1 sm:empty:hidden max-sm:order-1 max-sm:min-h-12 max-sm:px-4 max-sm:pt-2">
           {notice}
           {error && previewUrl && !problemsShown && <p role="status" className="text-sm text-amber-300">Fix this before printing: {error}</p>}
         </div>
-        <div className="flex flex-wrap items-center gap-2 max-sm:order-3 max-sm:px-3 max-sm:pb-4">
+        <div className="flex flex-wrap items-center gap-2 max-sm:order-3 max-sm:px-4 max-sm:pb-4">
           {/* Test prints: the office printer, and a printer plugged into this computer. */}
           <OfficePreviewPrint key={template.id} format={format} template={template} testData={testData} />
           <PrintControls format={format} template={template} testData={testData} proofReady={proofReady} />
@@ -134,38 +133,14 @@ export function ZPLPreview({ format, template, testData, active = true, problems
             >
               {showOutlines ? 'Hide label edges' : 'Show label edges'}
             </button>}
-            <button
-              onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
-              title="Zoom out"
-              aria-label="Zoom out"
-              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-zinc-400 w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-            <button
-              onClick={() => setZoom((z) => Math.min(8, +(z + 0.25).toFixed(2)))}
-              title="Zoom in"
-              aria-label="Zoom in"
-              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setZoom(1)}
-              title="Fit to view"
-              aria-label="Fit to view"
-              className="btn btn-ghost btn-icon btn-sm text-zinc-400"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
+            <ZoomControl zoom={zoom} onZoom={setZoom} />
           </div>
         </div>
       </div>
 
       {/* The same box as the Edit canvas; zoomed output scrolls inside it. */}
       <div className="relative flex-1 shrink-0 flex flex-col overflow-hidden max-sm:order-2 min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
-        <div ref={frameRef} className={`relative flex min-h-0 flex-1 px-2 pb-4 pt-2 sm:px-6 sm:pb-6 ${zoom > 1 ? 'overflow-auto' : 'items-center justify-center'}`}>
+        <div ref={frameRef} className={`relative flex min-h-0 flex-1 px-4 pb-4 pt-2 sm:px-6 sm:pb-6 ${zoom > 1 ? 'overflow-auto' : 'items-center justify-center'}`}>
           <div
             className="relative m-auto shrink-0 rounded-xl"
             style={{ width: `${frameW}px`, height: `${frameH}px`, background: '#1e1e23', filter: 'drop-shadow(0 8px 30px rgba(0,0,0,0.3))' }}
