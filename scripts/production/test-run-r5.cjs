@@ -118,7 +118,7 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   assert.match(panel,/setOfficeSeriesRunning\(true,\(leaving\)=>\{\s*stopSeries\.current=true;/,'in-app links ask too, and can stop after this part');
   assert.match(panel,/return\(\)=>\{window\.removeEventListener\('beforeunload',warn\);setOfficeSeriesRunning\(false\);\}/,'B14: the leave warning is removed before the page leaves after the part');
   assert.match(panel,/const ok=await confirmDialog\(\{title:`Send \$\{plural\(count\)\} in \$\{list\.length\} parts\?`/,'one confirm before a multi-part send');
-  assert.match(panel,/if\(!resend\)\{\s*const after=partsAfterPrinted\(\[part\],printedRef\.current\);/,'a new part leaves out labels printed meanwhile; an unsure part resends exactly what it saved');
+  assert.match(panel,/if\(!resend\)\{\s*const after=partsAfterCounted\(\[part\],printedRef\.current,toGoRef\.current\);/,'a new part leaves out labels printed meanwhile; an unsure part resends exactly what it saved');
   assert.match(panel,/seriesLocks\.has\(runId\)/,'one series per run');
   assert.match(panel,/let parts=fresh\?leftParts\.filter\(p=>officeSendPlan\(fresh,p\.from,p\.to\)\.kind==='new'\):leftParts;[\s\S]{0,1600}void runSeries\(\{\.\.\.partsPlan,parts,next:0/,'"Send the remaining parts" reads the queue again and sends only what is left');
   assert.doesNotMatch(panel,/This plan is saved on this device only/,'no storage jargon');
@@ -166,7 +166,7 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.equal(held.label, 'Waiting', 'held by another run, nothing waiting: not "Paused", not "Ready"');
   assert.equal(held.detail, 'For “Run A” to be checked');
   const waiting = D.runDisplayStatus(run, { sent: 10, onTheWay: 10, failed: 0, heldBy: { runId: 'a', runName: 'Run A' } });
-  assert.equal(waiting.label, 'Paused', 'labels waiting behind another run: Paused, said once, in the detail');
+  assert.equal(waiting.label, 'Waiting', 'labels waiting behind another run: Waiting (nobody paused it), said once, in the detail');
   assert.equal(waiting.detail, '“Run A” needs a check first');
   const heldBack = D.runDisplayStatus(run, { sent: 75, onTheWay: 0, failed: 0, unchecked: 75, stillToSend: 1925, heldBack: { from: 76, to: 150 } });
   assert.equal(heldBack.detail, 'Send labels 76–150 next', 'held labels of a "Print in order" fix are named in the header, as one plain step');

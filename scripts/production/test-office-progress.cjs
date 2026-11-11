@@ -326,7 +326,7 @@ console.log('PASS field display names');
   assert.match(panel, /if\(!printAllowed \|\| !requestsEverLoaded\)return false;/);
   // A multi-part send is one explicit tap, and each part goes through the one POST site with its own saved key.
   assert.match(panel, /`Send all \$\{sendCount\.toLocaleString\(\)\} in \$\{parts\.length\} parts`/);
-  assert.match(panel, /const outcome=await submit\(part,undefined,blankHere\);\s*if\(outcome!=='sent'\)break;/, 'parts go one after another and stop at the first one not clearly queued');
+  assert.match(panel, /const outcome=await submit\(part,undefined,blankHere\);\s*if\(outcome!=='sent'\)\{[\s\S]{0,500}?break;\s*\}/, 'parts go one after another and stop at the first one not clearly queued');
   assert.match(panel, /if\(bitmap && proof\?\.key!==keyOf\(want\.from,want\.to\)\)return false;/, 'each part needs its own label check');
   // An unsure part resends its own saved request (same key); a part already queued is skipped, never sent twice.
   assert.match(panel, /if\(direct \|\| payload\.from!==want\.from \|\| payload\.to!==want\.to\)\{/, 'a part, the form or a one-tap send never sends another range\'s saved request');
@@ -342,7 +342,7 @@ console.log('PASS field display names');
   assert.match(panel, /Print some labels again…/);
   assert.match(panel, /const openAgain=\(mode:Again\['mode'\],requestId\?:string\)=>\{setAgain\(\{mode,text:'',queue:\[\],requestId,blank:false\}\);/, 'choosing labels again starts with an empty box and no blank label (never prefilled, also in a queue row)');
   assert.ok((panel.match(/openAgain\('(again|missing)'/g) || []).length >= 4, 'every "print again" opens the same one box');
-  assert.match(panel, /const showForm=!!pending \|\| \(!again && /, 'only one range editor at a time');
+  assert.match(panel, /const showForm=\(!!pending && !seriesElsewhere\) \|\| \(!again && /, 'only one range editor at a time');
   assert.match(panel, /const outcome=await sendNow\(againNext,current\.requestId,true,current\.blank && rest\.length===0\);/, 'one press checks and sends one stretch; only the last can end with a blank label');
 
   const page = read('src/components/runs/RunPrinter.tsx');
@@ -401,7 +401,7 @@ console.log('PASS field display names');
   // A parts series never stops silently, and Start over drops the unsure part from a saved plan.
   {
     const pi = read('src/components/runs/OfficePiPrinter.tsx');
-    assert.match(pi, /if\(!checked\)\{if\(!stopSeries\.current\)setError\(e=>e \|\| `Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`\);break;\}/);
+    assert.match(pi, /if\(!checked\)\{\s*if\(!stopSeries\.current\)\{[\s\S]{0,900}?`Stopped before part \$\{i\+1\} of \$\{current\.parts\.length\}: the labels changed while sending\. Check the preview, then send the remaining parts\.`[\s\S]{0,200}?break;\s*\}/);
     const drop = pi.slice(pi.indexOf('const dropSaved=()'), pi.indexOf('const clearArrived='));
     assert.match(drop, /if\(pendingInPlan && partsPlan\)savePartsPlan\(\{\.\.\.partsPlan,next:partsPlan\.next\+1\}\);/);
     // B14: no "Start over". Forgetting the saved key (without the person saying the labels arrived) asks first.

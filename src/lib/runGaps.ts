@@ -96,3 +96,25 @@ export function spanListWords(spans: ReadonlyArray<OfficeSpan>): string {
   const words = spans.map(one);
   return words.length <= 1 ? words[0] ?? '' : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
+
+/**
+ * A saved "Send all in parts" plan, minus every label already counted as
+ * printed: the progress, office ranges a person confirmed and labels printed
+ * by scanning (the same counted labels a fresh send leaves out). A part that
+ * a printed island splits becomes one part per gap, each smaller than the
+ * part it came from. `toGo` undefined: no print history known, the progress
+ * alone. `trimmed`: the labels taken out, merged. Printing them again stays
+ * its own choice ("Print some labels again…").
+ */
+export function partsAfterCounted(parts: ReadonlyArray<OfficeSpan>, printedCount: number, toGo?: ReadonlyArray<OfficeSpan>): { parts: OfficeSpan[]; trimmed: OfficeSpan[] } {
+  const printed = Math.max(0, Math.floor(printedCount) || 0);
+  const kept: OfficeSpan[] = [];
+  const out: OfficeSpan[] = [];
+  for (const part of parts) {
+    let left = spansWithout(part.from, part.to, printed > 0 ? [{ from: 1, to: printed }] : []);
+    if (toGo) left = left.flatMap((s) => spansWithin(s.from, s.to, toGo));
+    kept.push(...left);
+    out.push(...spansWithout(part.from, part.to, left));
+  }
+  return { parts: kept, trimmed: mergeSpans(out) };
+}
