@@ -2115,9 +2115,9 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
               </button>
             )}
             {!isSheetFormat && (status === 'idle' || status === 'paused' || status === 'error') && printedCount < total && (
-              <button type="button" onClick={() => void startOrResume()} disabled={!canStart || !rangeValid || (goBackOff && crossesPrinted)} className="btn btn-primary flex-1">
+              <button type="button" onClick={() => void startOrResume(goBackOff && crossesPrinted ? printedCount + 1 : undefined)} disabled={!canStart || !rangeValid} className="btn btn-primary flex-1">
                 {status === 'paused' ? <Play className="w-4 h-4" aria-hidden="true" /> : <Printer className="w-4 h-4" aria-hidden="true" />}
-                {rangeValid && selectedThrough <= printedCount ? `Print ${selectedFrom === selectedThrough ? `label ${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`} again` : rangeValid && selectedFrom <= printedCount ? `Go back to label ${selectedFrom}` : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
+                {rangeValid && selectedThrough <= printedCount ? `Print ${selectedFrom === selectedThrough ? `label ${selectedFrom}` : `${selectedFrom}\u2060–\u2060${selectedThrough}`} again` : rangeValid && selectedFrom <= printedCount ? (goBackOff ? `Resume from label ${printedCount + 1}` : `Go back to label ${selectedFrom}`) : allWithOffice ? 'Print here too…' : status === 'paused' ? `Resume from label ${selectedFrom || printedCount + 1}` : status === 'error' ? 'Try again' : 'Start printing'}
               </button>
             )}
             {status === 'running' && transport === 'dazzle' && (
