@@ -15,14 +15,17 @@ import type { Run, RunPreset, RunStatus } from '@/lib/types';
 import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
 import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError } from '@/lib/userMessages';
-import { moreNeedAttention, runDisplayStatus, RUN_STATUS_WORDS, type RunDisplayTone, type RunStatusBucket } from '@/lib/runDisplayStatus';
+import { moreNeedAttention, runDisplayStatus, runToneDot, RUN_STATUS_WORDS, type RunStatusBucket } from '@/lib/runDisplayStatus';
 import { officeStatusLine, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { officeProblemWords } from '@/lib/officeProblem';
 import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from '@/components/runs/officeCancel';
 import { scannedLabelNumbers } from '@/lib/scannedLabels';
-import { readHeldSpans, readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
+import { officeMarkPlan, readHeldSpans, readPartsPlan, remainingParts, spanWords, statusAfterMarkPrinted, type OfficeSpan } from '@/lib/officeRange';
+import { lastRewindAt } from '@/lib/runRewind';
+import { plainServerError } from '@/lib/runErrors';
+import { RawDetails } from '@/components/runs/RawDetails';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
-import { intersectSpans, printedLabelCount, printedSpans, stillToGo } from '@/lib/runProgress';
+import { intersectSpans, printedLabelCount, printedSpans, stillToGo, PROGRESS_FILL } from '@/lib/runProgress';
 import { spanNumbers } from '@/components/runs/RunProgress';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
@@ -45,17 +48,6 @@ type StatusFilter = 'all' | RunStatusBucket;
 const RUN_SCROLL_THRESHOLD = 15;
 const ACTIVE_STATUSES: RunStatus[] = ['draft', 'queued', 'printing', 'paused'];
 
-/** Status is a coloured dot plus plain words — no pills. */
-const TONE_DOT: Record<RunDisplayTone, string> = {
-  idle: 'bg-transparent ring-2 ring-inset ring-zinc-500',
-  active: 'bg-amber-400',
-  attention: 'bg-red-400',
-  check: 'bg-amber-300',
-  confirm: 'bg-zinc-300',
-  paused: 'bg-transparent ring-2 ring-inset ring-amber-300',
-  done: 'bg-emerald-400',
-  cancelled: 'bg-zinc-500',
-};
 
 /** Labels in the given stretches. */
 const spanCount = (spans: ReadonlyArray<OfficeSpan> | undefined) => (spans ?? []).reduce((n, s) => n + s.to - s.from + 1, 0);
@@ -71,15 +63,17 @@ function lastPrinterIsLocal(): boolean {
   try { const saved = typeof window !== 'undefined' ? window.localStorage.getItem('lw:last-transport') : null; return saved === 'webusb' || saved === 'dazzle'; } catch { return false; }
 }
 
-function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null) {
+function rowOffice(run: ListRun, printerHeld: boolean, holdRun: { runId: string; runName: string } | null, thermal = false) {
   // Another run's check holds the shared printer: an unfinished run that uses
-  // the office waits for it, the same rule as the run page's header.
+  // the office waits for it, the same rule as the run page's header. Only a
+  // thermal run can use the office printer: a sheet run never waits for it.
+  if (!thermal && !run.office) return null;
   const unfinished = run.status !== 'cancelled' && run.status !== 'completed' && printedShown(run) < run.totalLabels;
   // A run printing on another printer right now (USB, the Dazzle app) with no
   // office work doesn't wait for the office printer.
   // This device last printed elsewhere (the run page then opens on that printer), so the row agrees with it.
   const printingElsewhere = !run.office && run.status === 'printing' && lastPrinterIsLocal();
-  const heldBy = holdRun && holdRun.runId !== run.id && unfinished && !printingElsewhere ? holdRun : null;
+  const heldBy = thermal && holdRun && holdRun.runId !== run.id && unfinished && !printingElsewhere ? holdRun : null;
   // Labels still to send are said beside "Did they all come out?", like the run page.
   if (run.office) return { ...run.office, held: printerHeld, heldBy, unchecked: spanCount(run.office.markable?.ranges), stillToSend: spanCount(run.office.unsent), heldBack: heldBackOnThisDevice(run) };
   // Nothing sent to the office yet: the run page (office printer by default) still says it waits, so the row does too.
@@ -104,8 +98,8 @@ function heldBackOnThisDevice(run: ListRun): OfficeSpan | null {
 function RunStatusText({ run, office }: { run: ListRun; office: (ListOffice & { held?: boolean; heldBy?: { runId: string; runName: string } | null; heldBack?: OfficeSpan | null }) | null }) {
   const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : display.tone === 'check' ? 'text-amber-300' : 'text-zinc-300'}`}>
-      <span aria-hidden="true" className={`size-2 rounded-full transition-colors duration-200 ${TONE_DOT[display.tone]}`} />
+    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${display.tone === 'attention' ? 'text-red-400' : 'text-zinc-300'}`}>
+      <span aria-hidden="true" className={`size-2 rounded-full transition-colors duration-200 ${runToneDot(display.tone)}`} />
       <span key={display.label} className="status-swap">{display.label}</span>
     </span>
   );
@@ -270,8 +264,28 @@ function BulkMarkDialog({ runs, leftOut = [], open, onClose }: { runs: ListRun[]
         setPicked((current) => { const next = new Set(current); next.delete(run.id); return next; });
         continue;
       }
+      // The plan itself is rebuilt from a fresh read of the office queue and
+      // the print history (code.md L-5): labels another device marked, or a
+      // go-back since the list was read, never get written from a stale plan.
+      // A plan that changed is left for the person to look at again.
+      let freshPlan: { ranges: OfficeSpan[]; through: number };
+      try {
+        const [jobs, eventsResponse] = await Promise.all([readOfficeJobs(run.id), fetch(`/api/runs/${encodeURIComponent(run.id)}/print-events`, { cache: 'no-store' })]);
+        if (!jobs || !eventsResponse.ok) throw new Error('read');
+        const events = await eventsResponse.json() as Array<{ eventType: string; output: string; rangeFrom: number; rangeTo: number; createdAt: string }>;
+        const rewound = lastRewindAt(events);
+        const confirmed = events.filter((e) => e.eventType === 'confirmed' && e.output === 'office-pi' && Date.parse(e.createdAt) > rewound).map((e) => ({ from: e.rangeFrom, to: e.rangeTo }));
+        const sinceRewind = rewound ? jobs.filter((job) => !!job.requestAt && Date.parse(job.requestAt) > rewound) : jobs;
+        freshPlan = officeMarkPlan(fresh.printedCount || 0, sinceRewind, confirmed, fresh.totalLabels);
+      } catch { failed.push(run.name); continue; }
+      const key = (p: { ranges: OfficeSpan[] }) => p.ranges.map((r) => `${r.from}-${r.to}`).join(',');
+      if (key(freshPlan) !== key(plan)) {
+        changed.push(run.name);
+        setPicked((current) => { const next = new Set(current); next.delete(run.id); return next; });
+        continue;
+      }
       const printed = fresh.printedCount || 0;
-      const through = Math.max(printed, plan.through);
+      const through = Math.max(printed, freshPlan.through);
       const refused = { reason: '' };
       try {
         if (through > printed) {
@@ -415,6 +429,11 @@ export default function RunsPage() {
     if (!t) return '';
     return formats.find((f) => f.id === t.formatId)?.name ?? '';
   };
+  /** True when the run's design is for a thermal printer (the only kind the office printer serves). */
+  const isThermal = (templateId: string) => {
+    const t = templates.find((x) => x.id === templateId);
+    return !!t && formats.find((f) => f.id === t.formatId)?.type === 'thermal';
+  };
 
   // Split runs into three buckets: active (printing/paused/queued/draft/error),
   // pinned (anything explicitly pinned by the user), and the rest (history).
@@ -476,7 +495,7 @@ export default function RunsPage() {
     const q = search.trim().toLowerCase();
     const matches = (r: Run) => {
       // The same five words as the rows and the run page.
-      if (statusFilter !== 'all' && runDisplayStatus({ ...r, printedCount: printedShown(r as ListRun) }, rowOffice(r as ListRun, printerHeld, holdRun)).bucket !== statusFilter) return false;
+      if (statusFilter !== 'all' && runDisplayStatus({ ...r, printedCount: printedShown(r as ListRun) }, rowOffice(r as ListRun, printerHeld, holdRun, isThermal(r.templateId))).bucket !== statusFilter) return false;
       if (templateFilter !== 'all' && r.templateId !== templateFilter) return false;
       if (q) {
         const hay = [
@@ -530,6 +549,7 @@ export default function RunsPage() {
                 onTogglePin={() => void togglePin(r.id)}
                 printerHeld={printerHeld}
                 holdRun={holdRun}
+                thermal={isThermal(r.templateId)}
               />
             </li>
           ))}
@@ -640,7 +660,8 @@ export default function RunsPage() {
                 if (useTemplateStore.getState().error) void useTemplateStore.getState().fetchTemplates();
                 if (useFormatStore.getState().error) void useFormatStore.getState().fetchFormats();
               }} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>}>
-              <p>{friendlyError(runsError, 'Check your connection, then try again.')}</p>
+              <p>{plainServerError(runsError).text}</p>
+              {plainServerError(runsError).details && <RawDetails text={plainServerError(runsError).details} />}
             </Recovery>
           )}
           {/* Empty state: only once loading has finished and there really are no runs. */}
@@ -788,8 +809,11 @@ function RunRow({
   onTogglePin,
   printerHeld = false,
   holdRun = null,
+  thermal = false,
 }: {
   run: ListRun;
+  /** The design is for a thermal printer, so the run can use the office printer. */
+  thermal?: boolean;
   printerHeld?: boolean;
   /** Another run whose part stops the shared printer. */
   holdRun?: { runId: string; runName: string } | null;
@@ -797,7 +821,7 @@ function RunRow({
   onDelete: () => void;
   onTogglePin?: () => void;
 }) {
-  const office = rowOffice(run, printerHeld, holdRun);
+  const office = rowOffice(run, printerHeld, holdRun, thermal);
   const { setRunStatus, createPrintEvent } = useRunStore();
   const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
@@ -892,7 +916,7 @@ function RunRow({
               : <><span className="font-medium text-zinc-100">{shown.toLocaleString()}</span> of {run.totalLabels.toLocaleString()} printed</>}
           </p>
           <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
-            <div className={`h-full rounded-full ${run.status === 'cancelled' ? 'bg-zinc-500' : finished ? 'bg-emerald-400' : 'bg-amber-500'}`} style={{ width: `${pct}%` }} />
+            <div className={`h-full rounded-full ${PROGRESS_FILL[run.status === 'cancelled' ? 'muted' : finished ? 'done' : 'active']}`} style={{ width: `${pct}%` }} />
           </div>
           {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>
