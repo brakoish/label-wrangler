@@ -31,18 +31,20 @@ export interface RunOfficeSummary {
 }
 
 /**
- * Tones: 'attention' (red) is only for something that went wrong (a printer
- * problem, labels that didn't print, a refused send); 'check' (amber) is for
- * something that is actually uncertain (the office didn't confirm a part, a
- * send nobody is sure arrived); 'confirm' (calm, neutral) is the normal ask
- * after a send went through: did they all come out?
+ * Tones: 'attention' is for something that went wrong (a printer problem,
+ * labels that didn't print, a refused send); 'check' is for something that is
+ * actually uncertain (the office didn't confirm a part, a send nobody is sure
+ * arrived); both need the person (red). 'confirm' is the normal ask after a
+ * send went through (did they all come out?): never red. 'paused' is a run
+ * that waits on something else (another run's check, a paused printer): calm.
  */
 export type RunDisplayTone = 'done' | 'active' | 'attention' | 'check' | 'confirm' | 'paused' | 'cancelled' | 'idle';
 /**
  * Four dots by meaning, the same in the Runs list and the run header: ready
- * (nothing happening: a hollow ring), working (the accent), needs you (red:
- * something to check or answer) and done or stopped (grey). One word never
- * gets two dots.
+ * or waiting (nothing for you to do now: a hollow ring), working (the accent:
+ * printing, sending, or sent and waiting for "did they come out?"), needs you
+ * (red: only something to check or fix) and done or stopped (grey). One word
+ * never gets two dots.
  */
 export type RunDotMeaning = 'ready' | 'working' | 'needs-you' | 'finished';
 export const RUN_TONE_MEANING: Record<RunDisplayTone, RunDotMeaning> = {
@@ -50,8 +52,8 @@ export const RUN_TONE_MEANING: Record<RunDisplayTone, RunDotMeaning> = {
   active: 'working',
   attention: 'needs-you',
   check: 'needs-you',
-  confirm: 'needs-you',
-  paused: 'needs-you',
+  confirm: 'working',
+  paused: 'ready',
   done: 'finished',
   cancelled: 'finished',
 };
@@ -78,6 +80,18 @@ export const RUN_STATUS_WORDS: Record<RunStatusBucket, string> = {
   done: 'Done',
   cancelled: 'Cancelled',
 };
+
+/**
+ * True when the run's own office part stops the shared printer until someone
+ * checks it (it didn't print, or the office didn't confirm it). Such a run
+ * never reads as finished, even with every label counted.
+ */
+export function officeHoldsPrinter(office: Pick<RunOfficeSummary, 'failed' | 'firstFailed'> | null | undefined): boolean {
+  if (!office || office.failed <= 0) return false;
+  const first = office.firstFailed;
+  const kind = first?.kind ?? (first?.didNotPrint ? 'did-not-print' : 'needs-check');
+  return kind !== 'print-again';
+}
 
 const labelsWord = (span: { from: number; to: number }) => (span.from === span.to ? `Label ${span.from.toLocaleString('en-US')}` : `Labels ${span.from.toLocaleString('en-US')}–${span.to.toLocaleString('en-US')}`);
 
@@ -113,7 +127,9 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   const total = run.totalLabels;
   const out = (bucket: RunStatusBucket, tone: RunDisplayTone, detail = '') => ({ label: RUN_STATUS_WORDS[bucket], tone, bucket, detail });
   if (run.status === 'cancelled') return out('cancelled', 'cancelled');
-  if (total > 0 && printed >= total) return out('done', 'done');
+  // A run whose part stops the shared printer is never "Done", even with every
+  // label counted: it waits for a check (below), so it reads like one.
+  if (total > 0 && printed >= total && !officeHoldsPrinter(office)) return out('done', 'done');
   if (localProblem) return out('needs-you', 'attention', 'Stopped: printer problem');
   if (office?.unsure?.missing) return out('check', 'check', office.unsure.notYet ? `The office hasn’t got ${labelsWord(office.unsure).toLowerCase()} yet` : `The office didn’t get ${labelsWord(office.unsure).toLowerCase()}`);
   if (office?.unsure) return out('check', 'check', office.unsure.likely ? `${labelsWord(office.unsure)} look${office.unsure.from === office.unsure.to ? 's' : ''} like ${office.unsure.from === office.unsure.to ? 'it' : 'they'} arrived` : `Not sure the office got ${labelsWord(office.unsure).toLowerCase()}`);
@@ -144,12 +160,13 @@ export function runDisplayStatus(run: { status: RunStatus | string; printedCount
   // list both read this, so they use the same word.
   if (office?.heldBy && run.status !== 'draft') {
     const name = office.heldBy.runName || 'Another run';
-    return office.onTheWay > 0 ? out('paused', 'paused', `“${name}” needs a check first`) : out('waiting', 'paused', `For “${name}” to be checked`);
+    // Nobody paused it: it waits (a calm dot), and says what for.
+    return office.onTheWay > 0 ? out('waiting', 'paused', `“${name}” needs a check first`) : out('waiting', 'paused', `For “${name}” to be checked`);
   }
   if (office && office.onTheWay > 0) return office.held ? out('paused', 'paused', 'Waiting for the office printer') : out('printing', 'active', 'At the office printer');
   if (office?.printerPaused) return out('paused', 'paused', 'The office printer is paused');
   // Labels a "Print in order" fix held back: nothing sends them but a press.
-  if (office?.heldBack) return out('ready', 'confirm', `Send ${labelsWord(office.heldBack).toLowerCase()} next`);
+  if (office?.heldBack) return out('waiting', 'paused', `Send ${labelsWord(office.heldBack).toLowerCase()} next`);
   if (run.status === 'printing' && (options.printingHere || recentlyMoved(run.updatedAt, options.now ?? Date.now()))) return out('printing', 'active');
   if (run.status === 'completed') return out('done', 'done');
   // The question is only about what was sent; labels still to send are said apart.

@@ -107,7 +107,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const checking = runDisplayStatus(run, { ...base, sending: 'Checking labels 1–20' });
   assert.equal(checking.label, 'Checking'); assert.equal(checking.detail, 'Labels 1–20');
   assert.equal(new Set(Object.values(RUN_TONE_MEANING)).size, 4, 'four dots by meaning');
-  assert.equal(runToneDot('confirm'), runToneDot('check'));
+  assert.equal(runToneDot('confirm'), runToneDot('active'), 'a send that went through reads as working');
+  assert.notEqual(runToneDot('confirm'), runToneDot('check'), 'a send that went through is never red');
   assert.notEqual(runToneDot('idle'), runToneDot('confirm'), 'Ready has one dot');
 }
 

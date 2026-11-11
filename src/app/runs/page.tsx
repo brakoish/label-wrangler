@@ -15,7 +15,7 @@ import type { Run, RunPreset, RunStatus } from '@/lib/types';
 import { alertDialog, confirmDialog, toast } from '@/components/ui/feedback';
 import { Dialog } from '@/components/ui/Dialog';
 import { friendlyError } from '@/lib/userMessages';
-import { moreNeedAttention, runDisplayStatus, runToneDot, RUN_STATUS_WORDS, type RunStatusBucket } from '@/lib/runDisplayStatus';
+import { moreNeedAttention, officeHoldsPrinter, runDisplayStatus, runToneDot, RUN_STATUS_WORDS, type RunStatusBucket } from '@/lib/runDisplayStatus';
 import { officeStatusLine, type OfficeReviewHold } from '@/lib/officeSendOutcome';
 import { officeProblemWords } from '@/lib/officeProblem';
 import { askCancelRun, cancelEvents, readOfficeJobs, stopProblem, stopWaitingAtOffice } from '@/components/runs/officeCancel';
@@ -456,6 +456,8 @@ export default function RunsPage() {
         } catch { /* ignore */ }
       }
       if (r.pinnedAt) pinned.push(r);
+      // A run whose part stops the shared printer is never filed as finished: it waits for a check.
+      else if (officeHoldsPrinter((r as ListRun).office)) active.push(r);
       else if (r.status === 'completed' && (r.printedCount || 0) < r.totalLabels) active.push({...r,status:'paused'});
       else if (ACTIVE_STATUSES.includes(r.status)) active.push(r);
       else history.push(r);
@@ -825,14 +827,19 @@ function RunRow({
   const { setRunStatus, createPrintEvent } = useRunStore();
   const display = runDisplayStatus({ ...run, printedCount: printedShown(run) }, office);
   // Under the bar, only what the bar doesn't show: labels on their way.
-  const waitingLine = office && office.onTheWay > 0 ? `${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way to the office printer'}` : '';
+  // The bar's lighter tint is labels sent that nobody counted yet: the line under it says so, so bar and words agree.
+  const sentUnchecked = office?.unchecked ?? 0;
+  const waitingLine = office && office.onTheWay > 0 ? `${office.onTheWay.toLocaleString()} ${office.failed > 0 || office.held ? 'waiting' : 'on the way to the office printer'}` : sentUnchecked > 0 && run.status !== 'cancelled' ? `${sentUnchecked.toLocaleString()} sent, not counted yet` : '';
+  // The run whose part stops the shared printer never looks finished.
+  const holdsPrinter = run.status !== 'cancelled' && officeHoldsPrinter(office);
   const failed = office?.firstFailed ?? null;
   // The run's progress (what a cancel keeps), and every label counted as printed (what the row shows, like the run page).
   const printed = Math.min(run.printedCount || 0, run.totalLabels);
   const shown = printedShown(run);
-  const finished = run.totalLabels > 0 && shown >= run.totalLabels;
+  const allCounted = run.totalLabels > 0 && shown >= run.totalLabels;
+  const finished = allCounted && !holdsPrinter;
   const pct = run.totalLabels > 0 ? Math.round((shown / run.totalLabels) * 100) : 0;
-  const unfinished = !finished && run.status !== 'cancelled';
+  const unfinished = !allCounted && run.status !== 'cancelled';
   // Labels no office send covers and nothing counts as printed: the run page's "Still to go" line, in the same words.
   // Without the server's counted stretches (main, or a history read that failed) the run page may count
   // more than this row can know, so the row names no range rather than a different one.
@@ -913,6 +920,8 @@ function RunRow({
           <p className="text-sm tabular-nums text-zinc-400">
             {finished
               ? <span className="font-medium text-emerald-400">All {run.totalLabels.toLocaleString()} printed</span>
+              : holdsPrinter && allCounted
+              ? <span className="font-medium text-amber-300">Waiting for a check</span>
               : <><span className="font-medium text-zinc-100">{shown.toLocaleString()}</span> of {run.totalLabels.toLocaleString()} printed</>}
           </p>
           {/* The run page's colour rule: printed solid, labels the office sent that nobody counted yet in a lighter tint. */}
