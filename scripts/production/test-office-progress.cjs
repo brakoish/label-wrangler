@@ -272,7 +272,7 @@ assert.doesNotMatch(O.controlFailure(403).message, /permission required/i);
   assert.ok(save > 0 && post > save, 'idempotency key saved before the POST');
   assert.equal(src.split("api('/api/office/jobs',{method:'POST'").length - 1, 1, 'one POST site: one tap, one job request');
   assert.match(src, /if\(bitmap && proof\?\.key!==currentProofKey\.current\)return false;/, 'the label check (proof) still gates a new send');
-  assert.match(src, /plan\.kind==='wait' \|\| tooBig\)return false;/, 'never sends what the server would refuse');
+  assert.match(src, /plan\.kind==='wait' \|\| tooBig \|\| \(!direct && onScreen\.skipSplit\)\)return false;/, 'never sends what the server would refuse');
   // Checked and saved under one Web Lock per run (two tabs never overwrite each other's saved request).
   const lock = src.indexOf('withOfficeSendLock(runId,');
   assert.ok(lock > 0 && lock < save && save < post, 'the saved request is checked and written inside the lock, before the POST');
