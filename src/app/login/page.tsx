@@ -26,11 +26,12 @@ export default function LoginPage(){
     put the username and password in the address bar, history and logs. */}
   <form noValidate method="post" className="w-full max-w-sm space-y-4 p-2 sm:p-6" onSubmit={async(e)=>{
     e.preventDefault();
-    const form=new FormData(e.currentTarget);
+    const formEl=e.currentTarget;
+    const form=new FormData(formEl);
     // Say what is missing in the page's own words, next to the field.
     const empty={username:!String(form.get('username') ?? '').trim(),password:!String(form.get('password') ?? '')};
     setMissing(empty);
-    if(empty.username||empty.password){(e.currentTarget.elements.namedItem(empty.username?'username':'password') as HTMLInputElement|null)?.focus();return;}
+    if(empty.username||empty.password){(formEl.elements.namedItem(empty.username?'username':'password') as HTMLInputElement|null)?.focus();return;}
     setBusy(true);setError('');
     try{
       const username=String(form.get('username') ?? '').trim();
@@ -39,6 +40,10 @@ export default function LoginPage(){
       if(!response.ok){
         // Server trouble reads differently from a wrong password.
         if(response.status>=500)throw new Error('Label Wrangler is having trouble right now. Try again in a minute.');
+        // A wrong password: keep the username, empty the password and put the
+        // cursor there, so the next try is just typing it again.
+        const password=formEl.elements.namedItem('password') as HTMLInputElement|null;
+        if(password){password.value='';password.focus();}
         throw new Error(result.error || 'That username and password didn\u2019t work. Check them and try again.');
       }
       window.location.assign(nextPath());
