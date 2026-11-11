@@ -44,6 +44,7 @@ import { leaveFieldsOff } from '@/lib/runLeaveOff';
 import { cleanHiddenCharacters, labelsWithBadCharacters } from '@/lib/runCharacterRows';
 import { blankPreviewItems, type PreviewBlankBox } from '@/lib/runPreviewBlanks';
 import { QR_SCAN_INCHES, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
+import { EXAMPLE_CODE_VALUES } from '@/lib/sampleValues';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
@@ -941,9 +942,34 @@ function NewRunContent() {
   // waits until it changes per label or the person says that's right.
   const rowsBacked = inputMode === 'csv' || inputMode === 'manifest';
   const exampleRisks = useMemo(() => exampleCodeRisks(template, rowsBacked ? (inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders) : [], rowsBacked ? sourceData : []), [template, rowsBacked, inputMode, csvHeaders, sourceData]);
-  const exampleKey = exampleRisks.map((r) => `${r.elementId}:${r.value}:${r.column ?? ''}`).join('|');
+  // The design's own example ("https://example.com", "123456789") is not a
+  // value: it is never confirmed as "the same on every label". The person
+  // types the real one (or makes it change per label) before it can print.
+  const placeholderRisks = exampleRisks.filter((r) => r.isExample);
+  const confirmRisks = exampleRisks.filter((r) => !r.isExample);
+  const exampleKey = confirmRisks.map((r) => `${r.elementId}:${r.value}:${r.column ?? ''}`).join('|');
   const [exampleConfirmedKey, setExampleConfirmedKey] = useState('');
-  const examplesOk = !exampleRisks.length || exampleConfirmedKey === exampleKey;
+  const examplesOk = !placeholderRisks.length && (!confirmRisks.length || exampleConfirmedKey === exampleKey);
+  const [realValues, setRealValues] = useState<Record<string, string>>({});
+  const [realSaving, setRealSaving] = useState<string | null>(null);
+  const [realNote, setRealNote] = useState<{ elementId: string; tone: 'ok' | 'error'; text: string } | null>(null);
+  const saveRealValue = async (elementId: string) => {
+    const value = (realValues[elementId] ?? '').trim();
+    const el = template?.elements.find((e) => e.id === elementId);
+    if (!template || !el || !value || realSaving) return;
+    const kind = el.type === 'qr' ? 'QR code' : 'barcode';
+    setRealSaving(elementId);
+    setRealNote(null);
+    updateElementLocal(template.id, elementId, { content: value });
+    try {
+      await saveTemplate(template.id);
+      setRealNote({ elementId, tone: 'ok', text: 'Saved to the design.' });
+    } catch {
+      setRealNote({ elementId, tone: 'error', text: `The ${kind} shows it on this page, but the design couldn’t be saved. Check your connection, then try again.` });
+    } finally {
+      setRealSaving(null);
+    }
+  };
   const [flipNote, setFlipNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [flipping, setFlipping] = useState<string | null>(null);
   const flipToPerLabel = async (elementId: string, suggestedName: string) => {
@@ -1274,7 +1300,9 @@ function NewRunContent() {
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do in Review.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
-    !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
+    !examplesOk && (placeholderRisks.length
+      ? (placeholderRisks[0].type === 'qr' ? 'Type the web address the QR code should open, or make it change per label.' : 'Type the number the barcode should hold, or make it change per label.')
+      : `Make the ${confirmRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`),
     !longOk && longValueReason(longFields, longLeft.length, allDataRows.length, longStops),
     !designOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
       ? `A barcode can’t print. ${charSkippable ? 'Leave that label out, fix that row' : 'Fix that row'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`
@@ -1805,27 +1833,62 @@ function NewRunContent() {
                   const kind = f.type === 'qr' ? 'QR code' : 'barcode';
                   const columnName = risk?.column ? (inputMode === 'manifest' ? friendlyFieldName(risk.column) : risk.column) : null;
                   const columnWord = inputMode === 'manifest' ? 'detail' : 'column';
+                  const placeholder = !!risk?.isExample;
+                  const what = f.type === 'qr' ? 'address' : 'number';
+                  const real = realValues[f.id] ?? '';
                   return (
-                    <li key={f.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                      <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
-                        The {kind} prints {risk?.isExample ? 'the design’s example ' : ''}“{value || 'nothing'}” on every label.{columnName ? ` Your ${sheetWord} has a “${columnName}” ${columnWord}.` : ''}
-                      </p>
-                      <button
-                        type="button"
-                        disabled={flipping === f.id}
-                        onClick={() => void flipToPerLabel(f.id, f.suggestedName)}
-                        className="btn btn-secondary btn-sm max-w-full shrink-0 self-start sm:self-auto"
-                      >
-                        <span className="truncate">{flipping === f.id ? 'Saving the design…' : columnName ? `Use the ${columnName} ${columnWord}` : 'Change it per label'}</span>
-                      </button>
+                    <li key={f.id} className="space-y-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
+                          {placeholder
+                            ? `The ${kind} still has the design’s sample ${what}${value ? ` “${value}”` : ''}, so it isn’t ready to print.`
+                            : `The ${kind} prints “${value || 'nothing'}” on every label.`}{columnName ? ` Your ${sheetWord} has a “${columnName}” ${columnWord}.` : ''}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={flipping === f.id}
+                          onClick={() => void flipToPerLabel(f.id, f.suggestedName)}
+                          className="btn btn-secondary btn-sm max-w-full shrink-0 self-start sm:self-auto"
+                        >
+                          <span className="truncate">{flipping === f.id ? 'Saving the design…' : columnName ? `Use the ${columnName} ${columnWord}` : 'Change it per label'}</span>
+                        </button>
+                      </div>
+                      {placeholder && (
+                        // The real value, asked for here: the sample is never printed by a tick.
+                        <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={(e) => { e.preventDefault(); void saveRealValue(f.id); }}>
+                          <div className="min-w-0 flex-1">
+                            <label htmlFor={`${formId}-real-${f.id}`} className="field-label">{f.type === 'qr' ? 'What web address should the QR code open?' : 'What number should the barcode hold?'}</label>
+                            <input
+                              id={`${formId}-real-${f.id}`}
+                              type="text"
+                              inputMode={f.type === 'qr' ? 'url' : 'text'}
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={real}
+                              onChange={(e) => setRealValues((current) => ({ ...current, [f.id]: e.target.value }))}
+                              placeholder={f.type === 'qr' ? 'https://your-shop.com' : ''}
+                              className="field mt-1"
+                            />
+                          </div>
+                          <button type="submit" className="btn btn-primary shrink-0 self-start sm:self-auto" disabled={!real.trim() || EXAMPLE_CODE_VALUES.includes(real.trim()) || realSaving === f.id}>
+                            {realSaving === f.id ? 'Saving…' : `Use this ${what}`}
+                          </button>
+                        </form>
+                      )}
+                      {realNote?.elementId === f.id && (
+                        <p role={realNote.tone === 'error' ? 'alert' : 'status'} className={`flex items-start gap-1.5 text-sm ${realNote.tone === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
+                          {realNote.tone === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />}
+                          {realNote.text}
+                        </p>
+                      )}
                     </li>
                   );
                 })}
               </ul>
-              {exampleRisks.length > 0 && (
+              {confirmRisks.length > 0 && (
                 <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-100">
                   <input type="checkbox" className="check" checked={exampleConfirmedKey === exampleKey} onChange={(e) => setExampleConfirmedKey(e.target.checked ? exampleKey : '')} />
-                  <span>Yes, print {exampleRisks.length === 1 ? `this ${exampleRisks[0].type === 'qr' ? 'QR code' : 'barcode'}` : 'these'} the same on every label</span>
+                  <span>Yes, print {confirmRisks.length === 1 ? `this ${confirmRisks[0].type === 'qr' ? 'QR code' : 'barcode'}` : 'these'} the same on every label</span>
                 </label>
               )}
             </section>
