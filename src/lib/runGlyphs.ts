@@ -1,4 +1,6 @@
 import { friendlyFieldName, spreadsheetRow } from './fieldLabels';
+import { barcodeValueProblem } from './barcodeValue';
+import type { BarcodeFormat } from './types';
 
 /**
  * Which characters the exact (bitmap) renderer can draw: the bundled
@@ -69,7 +71,7 @@ interface GlyphRunData {
   staticValues?: Record<string, string> | null;
   mappedField?: string | null;
 }
-type GlyphElement = { id: string; type: string; showText?: boolean; isStatic?: boolean; fieldName?: string; defaultValue?: string; prefix?: string; suffix?: string; content?: string; fontFamily?: string; fontWeight?: string; fontStyle?: string };
+type GlyphElement = { id: string; type: string; showText?: boolean; barcodeFormat?: BarcodeFormat; isStatic?: boolean; fieldName?: string; defaultValue?: string; prefix?: string; suffix?: string; content?: string; fontFamily?: string; fontWeight?: string; fontStyle?: string };
 
 function valuesFor(run: GlyphRunData, index: number): Record<string, string> {
   const values: Record<string, string> = { ...(run.staticValues || {}) };
@@ -106,10 +108,13 @@ export function checkRunBitmapGlyphs(template: { elements: ReadonlyArray<GlyphEl
   // Regular (as the renderer draws it), so it is checked like a text.
   const BARCODE_TEXT_FONT = { fontFamily: 'Liberation Sans', fontWeight: 'normal', fontStyle: 'normal' };
   const texts = template.elements.flatMap((el) => el.type === 'text' ? [el] : el.type === 'barcode' && el.showText ? [{ ...el, ...BARCODE_TEXT_FONT }] : []);
+  // A value the barcode itself can't hold is the barcode check's to name, so
+  // one value is never named twice (and the barcode check's own wording wins).
+  const barcodeOwns = (el: GlyphElement, value: string) => el.type === 'barcode' && !!barcodeValueProblem(el.barcodeFormat, value);
   const chars = new Set<string>();
   for (const el of texts.filter((t) => t.isStatic)) {
     const content = el.content ?? '';
-    const bad = content.trim() ? missingGlyphs(el, content) : [];
+    const bad = content.trim() && !barcodeOwns(el, content) ? missingGlyphs(el, content) : [];
     if (bad.length) { bad.forEach((c) => chars.add(c)); result.issues.push({ label: 0, field: '', chars: bad }); }
   }
   if (result.issues.length) return { ...result, labels: [0], chars: [...chars] };
@@ -120,7 +125,7 @@ export function checkRunBitmapGlyphs(template: { elements: ReadonlyArray<GlyphEl
     let bad = false;
     for (const el of dynamic) {
       const value = `${el.prefix || ''}${(el.fieldName && values[el.fieldName]) || el.defaultValue || ''}${el.suffix || ''}`;
-      if (!value.trim()) continue;
+      if (!value.trim() || barcodeOwns(el, value)) continue;
       const missing = missingGlyphs(el, value);
       if (!missing.length) continue;
       bad = true;

@@ -83,9 +83,12 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const run = { sourceData: [{ SKU: 'ABC-1' }, { SKU: 'ABC★2' }], fieldMappings: { sku: { mode: 'column', csvColumn: 'SKU' } } };
   const barcode = { id: 'b', type: 'barcode', fieldName: 'sku', showText: true, fontFamily: 'Liberation Serif', fontWeight: 'bold' };
   const t = { elements: [barcode], thermalRenderMode: 'bitmap-v1' };
-  assert.deepEqual(checkRunBitmapGlyphs(t, { type: 'thermal' }, run).labels, [2], 'the line under a barcode is drawn too');
+  // A value the barcode can't hold (★ in a Code 128) is the barcode check's to name, never twice.
+  assert.deepEqual(checkRunBitmapGlyphs(t, { type: 'thermal' }, run).labels, [], 'the barcode check owns a value the barcode cannot hold');
+  const holds = { elements: [{ ...barcode, barcodeFormat: 'QR' }], thermalRenderMode: 'bitmap-v1' };
+  assert.deepEqual(checkRunBitmapGlyphs(holds, { type: 'thermal' }, run).labels, [2], 'the line under a barcode is drawn too');
   assert.deepEqual(checkRunBitmapGlyphs({ ...t, elements: [{ ...barcode, showText: false }] }, { type: 'thermal' }, run).labels, [], 'no text line: nothing drawn');
-  const check = checkRunBitmapGlyphs(t, { type: 'thermal' }, run);
+  const check = checkRunBitmapGlyphs(holds, { type: 'thermal' }, run);
   assert.equal(glyphStopWords(check, [2], () => true), 'Label 2 (row 3 in your file) has “★” in SKU, which can’t be drawn, so it can’t print.');
   assert.doesNotMatch(glyphStopWords(check, [2], () => false), /row|spreadsheet/);
   const printer = read('src/components/runs/RunPrinter.tsx');
