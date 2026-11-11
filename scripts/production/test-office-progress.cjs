@@ -369,7 +369,7 @@ console.log('PASS field display names');
   }
   // Designer test print: a first send refused as signed out / no access queued nothing (plain refusal); a resend keeps its key.
   const preview = read('src/components/designer/OfficePreviewPrint.tsx');
-  assert.match(preview, /const resend = !!pending;/);
+  assert.match(preview, /return \{ payload, resend: !!saved \};/, 'a resend is a print saved before this press (under the lock)');
   assert.match(preview, /if \(!sendKeepsRequest\(status, code, resend\)\) \{/, 'the test print uses the same rule as the run panel');
   assert.ok(preview.indexOf('localStorage.setItem(storageKey, JSON.stringify(payload))') < preview.indexOf("api('/api/office/preview', { method: 'POST'"), 'the key is saved before the POST');
   const controls = read('src/components/runs/OfficePrinterControls.tsx');
