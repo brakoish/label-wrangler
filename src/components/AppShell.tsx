@@ -190,7 +190,8 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
             ))}
           </nav>
 
-          <button type="button" className="btn btn-ghost btn-sm shrink-0 max-sm:size-control-sm max-sm:px-0" onClick={async()=>{
+          {/* Quiet like the nav links beside it, not an amber action. */}
+          <button type="button" className="press inline-flex h-control-sm shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 max-sm:size-control-sm max-sm:px-0" onClick={async()=>{
             if (!canLeaveLocalPrint()) return;
             if (beforeLeave && !await beforeLeave()) return;
             const result=await fetch('/api/office/session',{method:'DELETE'});

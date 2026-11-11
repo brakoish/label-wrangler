@@ -193,12 +193,31 @@ textarea:focus-visible,
   .btn-secondary:hover:not(:disabled) {
     background: var(--color-zinc-700);
   }
+  /* Ghost: no border and no resting fill, so it reads by its words: amber
+     (the accent every action uses) and semibold, with a quiet fill under it
+     on hover and while pressed. Its text lines up with the column edge (see
+     "Ghost buttons on the edge" below). */
   .btn-ghost {
     background: transparent;
-    color: var(--color-zinc-300);
+    color: var(--color-amber-400);
+    font-weight: 600;
   }
   .btn-ghost:hover:not(:disabled) {
     background: var(--color-zinc-800);
+    color: var(--color-amber-300);
+  }
+  .btn-ghost:active:not(:disabled) {
+    background: color-mix(in oklab, var(--color-zinc-700) 80%, transparent);
+  }
+  /* Icon-only ghost buttons (close, zoom, nudge) and menu triggers ("··· More")
+     stay grey: the icon is the cue. */
+  .btn-ghost.btn-icon,
+  .btn-ghost.btn-quiet {
+    color: var(--color-zinc-300);
+    font-weight: 500;
+  }
+  .btn-ghost.btn-icon:hover:not(:disabled),
+  .btn-ghost.btn-quiet:hover:not(:disabled) {
     color: var(--color-zinc-100);
   }
   .btn-danger {
@@ -212,6 +231,7 @@ textarea:focus-visible,
   .btn-danger-ghost {
     background: transparent;
     color: var(--color-red-400);
+    font-weight: 600;
   }
   .btn-danger-ghost:hover:not(:disabled) {
     background: color-mix(in oklab, var(--color-red-500) 10%, transparent);
@@ -771,10 +791,47 @@ textarea:focus-visible,
 
 /* One recovery block (components/ui/Recovery.tsx): icon and title, then the
    body and the buttons lined up with the title's text (1rem icon + 0.5rem
-   gap), never with the icon. Buttons in one row, primary first. */
+   gap), never with the icon. Buttons in one row, primary first.
+   The buttons' row puts a ghost button's words (not its invisible box) on
+   that text edge, also when it wraps under the primary on a phone: the row
+   starts one ghost inset (0.75rem padding + 1px border) further left, every
+   other button steps back in by that inset, and a ghost doesn't. */
 .recovery-body { padding-inline-start: 1.5rem; padding-top: 0.25rem; color: var(--color-zinc-300); }
 .recovery-body > * + * { margin-top: 0.25rem; }
-.recovery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding-inline-start: 1.5rem; padding-top: 0.625rem; }
+.recovery-actions {
+  --ghost-inset: calc(0.75rem + 1px);
+  display: flex; flex-wrap: wrap; align-items: center;
+  column-gap: 0; row-gap: 0.5rem;
+  padding-inline-start: calc(1.5rem - var(--ghost-inset)); padding-top: 0.625rem;
+}
+/* (A wrapper drawn as display: contents passes its buttons straight into the row.) */
+.recovery-actions > :not(.contents),
+.recovery-actions > .contents > :not(.contents),
+.recovery-actions > .contents > .contents > * { margin-inline-start: var(--ghost-inset); }
+.recovery-actions :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon) { margin-inline-start: 0 !important; padding-inline: 0.75rem; }
+
+/* Ghost buttons on the edge ------------------------------------------------------
+ * A ghost button has no visible box, so its padding would push its words in
+ * from the edge it sits on (7–13px off the column). Where it starts a line
+ * (first in its row, or after a paragraph in a block) it moves out by its
+ * padding and border, so the words sit on the edge; last in a row spread to
+ * both edges, it moves out on the right the same way. Not inside centred
+ * rows, full-width buttons, list rows or phone dialog footers. Unlayered on
+ * purpose: it replaces the hand-tuned -ml-2 / -mr-2 nudges on these buttons.
+ */
+:is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none) { --ghost-inset: calc(1rem + 1px); }
+:is(.btn-ghost, .btn-danger-ghost).btn-sm:not(.btn-icon, .w-full, .rounded-none) { --ghost-inset: calc(0.75rem + 1px); }
+:not(.justify-center, .text-center, .items-center.flex-col, .recovery-actions, .dialog-actions) > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):first-child,
+:not(.flex, .inline-flex, .grid, .text-center) > p + :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none) {
+  margin-inline-start: calc(-1 * var(--ghost-inset));
+}
+.justify-between > :is(.btn-ghost, .btn-danger-ghost):not(.btn-icon, .w-full, .rounded-none):last-child:not(:first-child) {
+  margin-inline-end: calc(-1 * var(--ghost-inset));
+}
+/* Older markup set the old ghost grey by hand; those are actions too. A
+   ghost with another colour (a toggle that is off, a hidden column) keeps it. */
+:is(.btn-ghost.text-zinc-300, .btn-ghost.text-zinc-100):not(.btn-icon, .btn-quiet) { color: var(--color-amber-400); }
+:is(.btn-ghost.text-zinc-300, .btn-ghost.text-zinc-100):not(.btn-icon, .btn-quiet):hover:not(:disabled) { color: var(--color-amber-300); }
 
 /* Shared motion: links, icons, arcs, the phone sheet, the nav ------------------
  * Run page, office panel, Runs list, scan page and shell, with the existing
@@ -831,4 +888,19 @@ textarea:focus-visible,
     .link { position: relative; }
     .link::after { content: ""; position: absolute; inset: -12px -6px; }
   }
+}
+
+/* Designer ------------------------------------------------------------------------
+ * - A layer row shows keyboard focus as one amber ring around the whole row
+ *   (what a click selects), not around the small name button inside it.
+ * - A problem's fix buttons stack full width on a phone, one edge, one width.
+ */
+.layer-select:focus-visible { outline: none; }
+[data-layer-id]:has(.layer-select:focus-visible) {
+  outline: 2px solid var(--color-amber-500);
+  outline-offset: -2px;
+}
+@media (max-width: 639.98px) {
+  .notice-actions { flex-direction: column; align-items: stretch; }
+  .notice-actions > .btn { width: 100%; margin-inline: 0 !important; white-space: normal; }
 }
