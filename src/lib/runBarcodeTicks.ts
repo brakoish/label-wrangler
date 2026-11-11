@@ -30,6 +30,20 @@ export function barcodeDamage(item: string): string {
   return 'Printing anyway gives labels whose barcode may not scan.';
 }
 
+/**
+ * One short line for a "Print anyway" carried over from the new-run page:
+ * the choice and what it costs, e.g. "You chose “Print anyway” when you made
+ * the run, so these barcodes may not scan."
+ */
+export function barcodeGoAheadLine(item: string): string {
+  const cost = barcodeProblemSevere(item) ? 'each one spoils the next label too'
+    : /cuts it off/i.test(item) ? 'these barcodes won’t scan'
+      : drawnAs(item) === 'uppercase' ? 'these barcodes scan in UPPERCASE'
+        : drawnAs(item) ? 'these barcodes won’t scan exactly as written'
+          : 'these barcodes may not scan';
+  return `You chose “Print anyway” when you made the run, so ${cost}.`;
+}
+
 /** The problem as the run page shows it: the fix points at the designer link beside it. */
 export function runPageProblemText(item: string): string {
   return item.replace(/ \(More menu in the designer\)/g, ' (in the designer)');

@@ -5,7 +5,7 @@ import { AlertCircle } from 'lucide-react';
 import { FixInDesignerLink, WhyToggle } from '@/components/checks/BarcodeWarning';
 import { ProblemList } from '@/components/checks/RunChecks';
 import { LAYOUT_GO_AHEAD, stopFixWords, type RunPrintCheck } from '@/lib/runLayoutCheck';
-import { barcodeDamage, barcodeItemTicked, barcodePlainSentence, barcodeRunWhy, barcodeSendTickLabel } from '@/lib/runBarcodeTicks';
+import { barcodeGoAheadLine, barcodeItemTicked, barcodePlainSentence, barcodeRunWhy, barcodeSendTickLabel } from '@/lib/runBarcodeTicks';
 
 /** The run page's way to the designer: the same name area A uses. */
 export const OPEN_IN_DESIGNER = 'Open in designer';
@@ -140,7 +140,7 @@ export function RunBarcodeCheck({ check, ticks, wizardGoAhead, onTick, layoutGoA
           )}
         </ul>
         {/* A go-ahead carried over from the new-run page says what it costs, right beside the tick. */}
-        {canTick && wizardGoAhead && <p className="pl-5.5 text-amber-300">You ticked “Print anyway” when you made the run. {barcodeDamage(check.blocking[0])}</p>}
+        {canTick && wizardGoAhead && <p className="pl-5.5 text-amber-300">{barcodeGoAheadLine(check.blocking[0])}</p>}
         {canTick && qrHref && <p className="pl-5.5 text-zinc-300">A QR code fits on every label. <Link href={qrHref} className="link" onClick={onQr}>Use a QR code instead</Link></p>}
         {check.verdict.stops && !readOnly && <p className="pl-5.5 text-zinc-300">{stopNote || stopFixWords(check.verdict.fixIn)}</p>}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-5.5">

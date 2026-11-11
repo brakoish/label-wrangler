@@ -156,6 +156,29 @@ const has = (src, re) => assert.ok(re.test(src), `source check: ${re}`);
   has(read('src/components/runs/QrReplaced.tsx'), /Cancel the old run/);
   // #11: the bulk mark rebuilds its plan fresh.
   has(list, /freshPlan = officeMarkPlan\(/);
+  // Area A hand-offs: the QR copy link asks the wizard for a QR code, and ghost buttons carry no hand nudges.
+  has(printer, /duplicateFrom=\$\{encodeURIComponent\(run\.id\)\}&barcode=qr/);
+  assert.doesNotMatch(panel, /btn-sm -ml-2 text-zinc-300" onClick=\{\(\)=>\{setSendOther/, 'no nudge on Send other labels');
+  assert.doesNotMatch(read('src/components/runs/OfficePrinterControls.tsx'), /btn-ghost text-zinc-300\$\{showStatus|' -ml-2'/, 'no nudge on Pause printer');
+  assert.doesNotMatch(list, /max-sm:-ml-2/, 'no nudge on Mark sent labels as printed');
+  // The blank check is one line, with the detail folded away.
+  const blank = read('src/components/runs/BlankValueCheck.tsx');
+  assert.doesNotMatch(blank, /border-amber|bg-amber/, 'no amber box');
+  has(blank, /\{hasRows \? 'Show which' : 'How to fix it'\}/);
+}
+
+{
+  const { describeBlankLine, checkRunData } = require('../../src/lib/runDataCheck.ts');
+  const { fieldDisplayName } = require('../../src/lib/fieldDisplayName.ts');
+  const el = (fieldName, extra = {}) => ({ id: fieldName, type: 'text', x: 0, y: 0, width: 10, height: 5, fieldName, defaultValue: '', ...extra });
+  const rows = [{ n: '' }, { n: 'b' }, { n: '' }, { n: 'd' }, { n: '' }];
+  const check = checkRunData({ elements: [el('product_name')] }, { sourceData: rows, fieldMappings: { product_name: { mode: 'column', csvColumn: 'n' } } });
+  assert.equal(describeBlankLine(check, fieldDisplayName), '3 labels have no product name. They’ll print blank there.');
+  const one = checkRunData({ elements: [el('sku', { defaultValue: 'ABC' })] }, { sourceData: [{ s: '' }, { s: 'x' }], fieldMappings: { sku: { mode: 'column', csvColumn: 's' } } });
+  assert.equal(describeBlankLine(one, fieldDisplayName), '1 label has no SKU. It’d print the design’s sample “ABC” there.');
+  const B = require('../../src/lib/runBarcodeTicks.ts');
+  assert.equal(B.barcodeGoAheadLine('Label 1 needs a QR code'), 'You chose “Print anyway” when you made the run, so these barcodes may not scan.');
+  assert.doesNotMatch(B.barcodeGoAheadLine('x'), /\n|\. [A-Z]/, 'one short line');
 }
 
 console.log('PASS run b15: printed gaps, uncapped stops with leave-out, glyph tables, four dots, plain errors, one long-code sentence');
