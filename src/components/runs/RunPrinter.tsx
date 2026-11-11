@@ -26,6 +26,8 @@ import { FixInDesignerLink } from '@/components/checks/BarcodeWarning';
 import { barcodeItemTicked, barcodeSendTickLabel, barcodeTicksAllow, barcodeWaitWords, readRunBarcodeTicks, saveRunBarcodeTicks } from '@/lib/runBarcodeTicks';
 import { drawFailureWords, plainJobReason } from '@/lib/officeSendOutcome';
 import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/lib/printerCharacters';
+import { checkRunBarcodes } from '@/lib/barcodeCheck';
+import { runBarcodeFixes } from '@/lib/runBarcodeFix';
 import { labelListWords, scannedLabelNumbers, scannedSkipPlan, type LabelSpan } from '@/lib/scannedLabels';
 import { plainPrinterProblem } from '@/lib/printerWords';
 import { fieldDisplayName } from '@/lib/fieldDisplayName';
@@ -419,6 +421,18 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [run?.id, run?.sourceData, run?.fieldMappings, run?.staticValues, run?.mappedField, run?.totalLabels, run?.dataSource, template, format],
   );
+  // The wizard's "Use a QR code instead", for a barcode too long for this
+  // label: offered here too (a run keeps its design, so it leads to a new run
+  // with the same data, where the switch is made), only when a QR code of the
+  // same value fits every label.
+  const qrFixFits = useMemo(() => {
+    if (!run || !template || !format || format.type !== 'thermal' || !printCheck.blocking.length || printCheck.verdict.stops) return false;
+    const rows = Math.min(Math.max(1, run.totalLabels || run.sourceData.length || 1), 2000);
+    const data = { sourceData: run.sourceData.slice(0, rows), fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField };
+    const found = checkRunBarcodes(template, data, format);
+    if (!found.issues.some((issue) => issue.kind === 'too-long')) return false;
+    return !!runBarcodeFixes(template, data, format, found.issues, rows)?.qr;
+  }, [run, template, format, printCheck]);
   // Text the thermal printer can't print ("·", accents): named on every view of the run, done runs included.
   const characterWarning = useMemo(() => {
     if (!run || !template) return null;
@@ -1610,6 +1624,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       layoutGoAhead={!!printCheck.layout.length && goAhead.layout === printCheck.layoutKey}
       onLayoutGoAhead={(value) => chooseGoAhead('layout', value && printCheck.layoutKey)}
       designHref={designHref}
+      qrHref={qrFixFits ? `/runs/new?duplicateFrom=${encodeURIComponent(run.id)}` : null}
     />
   );
   // A finished or cancelled run doesn't lead with its design's problems: one
