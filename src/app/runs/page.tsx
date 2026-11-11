@@ -25,7 +25,7 @@ import { lastRewindAt } from '@/lib/runRewind';
 import { plainServerError } from '@/lib/runErrors';
 import { RawDetails } from '@/components/runs/RawDetails';
 import { OfficePrinterControls } from '@/components/runs/OfficePrinterControls';
-import { intersectSpans, printedLabelCount, printedSpans, stillToGo, PROGRESS_FILL } from '@/lib/runProgress';
+import { intersectSpans, printedLabelCount, printedSpans, stillToGo, PROGRESS_FILL, PROGRESS_OFFICE_TINT } from '@/lib/runProgress';
 import { spanNumbers } from '@/components/runs/RunProgress';
 import { officePrinterHeld } from '@/components/runs/useOfficeHeld';
 
@@ -915,8 +915,13 @@ function RunRow({
               ? <span className="font-medium text-emerald-400">All {run.totalLabels.toLocaleString()} printed</span>
               : <><span className="font-medium text-zinc-100">{shown.toLocaleString()}</span> of {run.totalLabels.toLocaleString()} printed</>}
           </p>
-          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
-            <div className={`h-full rounded-full ${PROGRESS_FILL[run.status === 'cancelled' ? 'muted' : finished ? 'done' : 'active']}`} style={{ width: `${pct}%` }} />
+          {/* The run page's colour rule: printed solid, labels the office sent that nobody counted yet in a lighter tint. */}
+          <div className="relative mt-1.5 h-1 w-full overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
+            {!finished && run.totalLabels > 0 && (office?.markable?.ranges ?? []).map((r) => (
+              <div key={`${r.from}-${r.to}`} className={`absolute inset-y-0 rounded-full ${PROGRESS_OFFICE_TINT[run.status === 'cancelled' ? 'muted' : 'active']}`}
+                style={{ left: `${((r.from - 1) / run.totalLabels) * 100}%`, width: `${((r.to - r.from + 1) / run.totalLabels) * 100}%` }} />
+            ))}
+            <div className={`relative h-full rounded-full ${PROGRESS_FILL[run.status === 'cancelled' ? 'muted' : finished ? 'done' : 'active']}`} style={{ width: `${pct}%` }} />
           </div>
           {waitingLine && !finished && <p className="mt-1 text-xs tabular-nums text-zinc-400">{waitingLine}</p>}
         </div>

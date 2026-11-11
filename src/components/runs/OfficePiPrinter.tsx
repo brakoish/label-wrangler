@@ -607,6 +607,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // The last moment a tab was still sending this send (its mark was up).
     let lastLive=Date.now();
     let looks=0;
+    // A send saved without its time (by main or an older page) was made before
+    // this page started looking, so the server's limit runs out no later than
+    // this moment plus the limit.
+    const lookStart=Date.now();
     const readMark=()=>{
       let mark:SendingMark|null=null;try{mark=readSendingMark(localStorage.getItem(sendingKey));}catch{mark=null;}
       const live=!!mark && mark.key===key && mark.until>Date.now();
@@ -633,10 +637,10 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       // The lookup can't answer, but the queue lists this very send.
       if(found===undefined && queueSureRef.current){settleArrived(key,queueSureRef.current,{from:pendingFrom,to:pendingTo});return;}
       setLookupMissing(found===undefined);
-      // When was this send made? Unknown (saved by main or an older page): never the stronger claim.
-      let sentAt:number|null=null;
-      try{const raw=localStorage.getItem(priorKey);const data=raw?JSON.parse(raw):null;if(data?.key===key && Number.isFinite(data.sentAt))sentAt=Number(data.sentAt);}catch{sentAt=null;}
-      const windowLeft=sentAt===null?Infinity:sentAt+OFFICE_POST_TIMEOUT_MS-Date.now();
+      // When was this send made? Unknown (saved by main or an older page): no later than when this page started looking.
+      let sentAt=lookStart;
+      try{const raw=localStorage.getItem(priorKey);const data=raw?JSON.parse(raw):null;if(data?.key===key && Number.isFinite(data.sentAt))sentAt=Math.min(lookStart,Number(data.sentAt));}catch{sentAt=lookStart;}
+      const windowLeft=sentAt+OFFICE_POST_TIMEOUT_MS-Date.now();
       if(found===null)setNotYet(windowLeft>0);
       // This tab's own try from before a reload may still land: keep checking,
       // often, so it settles as soon as it does.
@@ -652,7 +656,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
       if(phase==='missing' && windowLeft<=0)return;
       const wait=live?LIVE_LOOK_MS:LOOK_AGAIN_MS[Math.min(looks++,LOOK_AGAIN_MS.length-1)];
       // One last look right after the server's limit has passed.
-      timer=setTimeout(()=>void tick(),phase==='missing' && Number.isFinite(windowLeft)?Math.max(500,Math.min(wait,windowLeft+500)):wait);
+      timer=setTimeout(()=>void tick(),phase==='missing'?Math.max(500,Math.min(wait,windowLeft+500)):wait);
     };
     void tick();
     return()=>{active=false;if(timer)clearTimeout(timer);};
@@ -1153,6 +1157,8 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const forgetSend=async()=>{
     if(!pending)return;
     const one=pending.from===pending.to;
+    // The send the person is looking at, read before the confirm opens.
+    const key=savedKey();
     const ok=await confirmDialog({title:'Forget this send?',
       body:`If the office did get ${range(pending.from,pending.to)}, sending ${one?'it':'them'} again later prints ${one?'it':'them'} twice. “${missing?`Send ${range(pending.from,pending.to)}`:'Send again'}” is the safe way: it can’t print twice.${pendingInPlan?' This part is also taken out of the remaining parts.':''}`,
       confirmLabel:'Forget it',cancelLabel:'Keep it',danger:true});
@@ -1160,7 +1166,6 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // Under the same lock a send takes: another tab may have sent this very
     // request again meanwhile (its mark is up) or saved a new one. Then
     // nothing is forgotten, and the page shows the live state.
-    const key=savedKey();
     const forgot=await withOfficeSendLock(runId,()=>{
       let raw:string|null=null;try{raw=localStorage.getItem(storageKey);}catch{raw=null;}
       let nowKey='';try{nowKey=raw?String(JSON.parse(raw)?.idempotencyKey ?? ''):'';}catch{nowKey='';}
