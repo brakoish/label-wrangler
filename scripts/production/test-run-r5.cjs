@@ -113,7 +113,7 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   assert.match(panel,/:sendingHeld && plan\.kind!=='reprint'\?`Send \$\{fromNumber===toNumber/,'B13: after the reprint, "Send labels 76–150": one press checks and sends');
   assert.match(panel,/if\(!pending && !proofCurrent\)\{\s*if\(printAllowed && plan\.kind!=='wait'\)void sendNow\(\{from:fromNumber,to:toNumber\}/,'B13: an exact design checks and sends in one tap (sendNow: check, then the one POST with the digest)');
   assert.doesNotMatch(panel,/`Check \$\{plural\(sendCount\)\}`/,'B13: no check-only main button');
-  assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
+  assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:gapSuggestion\(jobs,total,printedCount,toGoSpans\)/,'the held range is suggested before the rest of the run (then the first gap left to print)');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
   assert.match(panel,/setOfficeSeriesRunning\(true,\(leaving\)=>\{\s*stopSeries\.current=true;/,'in-app links ask too, and can stop after this part');
   assert.match(panel,/return\(\)=>\{window\.removeEventListener\('beforeunload',warn\);setOfficeSeriesRunning\(false\);\}/,'B14: the leave warning is removed before the page leaves after the part');
