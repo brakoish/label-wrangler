@@ -87,3 +87,15 @@ What happens to work still queued on a device:
 - Client JavaScript failures and >500ms main-thread tasks emit bounded, authenticated structured Vercel logs (at most 10 reports per document). No label values, package tags, query strings or stack traces are transmitted by this instrumentation.
 - Hosting alert routing, provider point-in-time recovery retention and scheduled off-machine backup policy are not established by this code change. The verified private backup/restore rehearsal is not a replacement for those operator settings. They require provider-level configuration/access and remain explicit operational follow-ups.
 - Physical printer behavior is not certified by mocked tests. Delivery acceptance is not physical-label confirmation.
+
+## Left for the owner (not changed on this branch)
+
+These were found during review but need a decision, a schema change, or a change to the print path, so they were left alone.
+
+- **Printed text:** ZPL ^FH/^CI28 encoding (a "·" prints garbled); barcode ^BY order; QR error correction is fixed at Q.
+- **Database (needs a migration):** indexes on run_print_events(run_id, event_type), office_requests(run_id), office_jobs(request_id); schema.sql timestamps; the end blank stored server-side so Print history shows it on every device; the office accepts jobs for cancelled runs; spreadsheet row not stored per label; failed-part reason not kept; parts plan not shared across devices; a print history actor column.
+- **Already like this on main:** sign-in lockout is per username; run creation has no idempotency key; editing a run can shrink its data below the printed count; the sheet SVG image link accepts any address; the build needs DATABASE_URL; Nabis blanks and duplicate Metrc lab calls; 2"×1" Metrc barcodes are cut off.
+- **Security and data:** Next 16.2.6 advisories (upgrade separately); last_45.csv (Metrc data) is in git history; a server-side blank check.
+- **Behaviour to know:** an unknown legacy barcode type now prints as CODE128; the wizard's "Print anyway" carries over to the run page; reprints start with the end blank off (OFFICE_PI.md says they use the current choice); after a rollback to main, stale tabs can lower the printed count and "leave off" gets a 400; the rollback count differs between the list and the run page.
+- **Preview deploys:** OFFICE_APP_ORIGIN must be set for preview sign-in; check that preview env vars don't point at the production database before making one.
+- **Ship step:** reload every open Label Wrangler tab after a deploy and after any rollback.
