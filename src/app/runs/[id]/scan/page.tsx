@@ -6,7 +6,8 @@ import { ArrowLeft, AlertCircle, CheckCircle2, Loader2, Plug, ScanBarcode } from
 import { AppShell } from '@/components/AppShell';
 import { IconSwap } from '@/components/ui/IconSwap';
 import { PageTitle } from '@/components/PageTitle';
-import { EmptyState, ErrorState } from '@/components/EmptyState';
+import { EmptyState } from '@/components/EmptyState';
+import { Recovery } from '@/components/ui/Recovery';
 import { useRunStore } from '@/lib/runStore';
 import { BlankSummary } from '@/components/checks/RunChecks';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -293,17 +294,22 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       <div className="flex-1 overflow-auto"><div className="page-container">{node}</div></div>
     </AppShell>
   );
+  // A load failure: the page's title, then one Recovery block in the content
+  // column (the app-wide banner stays out of the way on this page).
   if (!run && loadError) {
+    const missing = loadError.status === 404;
     return state('Scan to print', (
-      <ErrorState
-        as="h1"
-        title={loadError.status === 404 ? 'We couldn’t find that run' : 'We couldn’t load that run'}
-        body={loadError.status === 404 ? 'It may have been deleted.' : friendlyError(loadError.message)}
-        actions={<>
-          {loadError.status !== 404 && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="btn btn-primary">Try again</button>}
-          <Link href="/runs" className={loadError.status === 404 ? 'btn btn-primary' : 'btn btn-secondary'}>Go to Runs</Link>
-        </>}
-      />
+      <div className="space-y-5">
+        <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100">Scan to print</h1>
+        <Recovery role="alert" tone="warning"
+          title={missing ? 'We couldn’t find that run' : 'We couldn’t load that run'}
+          actions={<>
+            {!missing && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="btn btn-primary">Try again</button>}
+            <Link href="/runs" className={missing ? 'btn btn-primary' : 'btn btn-ghost'}><ArrowLeft className="size-4" aria-hidden="true" /> Back to runs</Link>
+          </>}>
+          <p>{missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(loadError.message)}</p>
+        </Recovery>
+      </div>
     ));
   }
   if (run && (!template || !format)) {

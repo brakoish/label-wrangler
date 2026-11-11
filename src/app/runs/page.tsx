@@ -1,5 +1,6 @@
 'use client';
 
+import { Recovery } from '@/components/ui/Recovery';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Trash2, Copy, Play, Search, Pin, PinOff, CheckCircle2, Loader2, X } from 'lucide-react';
@@ -626,15 +627,14 @@ export default function RunsPage() {
             </div>
           )}
           {runsHydrated && runsError && runs.length === 0 && (
-            <div role="alert" className="py-10 text-center space-y-3">
-              <h2 className="text-base font-semibold text-zinc-100">We couldn&apos;t load your runs</h2>
-              <p className="text-sm text-zinc-400">{friendlyError(runsError, 'Check your connection, then try again.')}</p>
-              <button type="button" disabled={runsLoading} onClick={() => {
+            <Recovery role="alert" tone="warning" title="We couldn’t load your runs"
+              actions={<button type="button" disabled={runsLoading} onClick={() => {
                 void useRunStore.getState().loadAll();
                 if (useTemplateStore.getState().error) void useTemplateStore.getState().fetchTemplates();
                 if (useFormatStore.getState().error) void useFormatStore.getState().fetchFormats();
-              }} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>
-            </div>
+              }} className="btn btn-primary">{runsLoading ? 'Trying again…' : 'Try again'}</button>}>
+              <p>{friendlyError(runsError, 'Check your connection, then try again.')}</p>
+            </Recovery>
           )}
           {/* Empty state: only once loading has finished and there really are no runs. */}
           {runsHydrated && !runsError && runs.length === 0 && (

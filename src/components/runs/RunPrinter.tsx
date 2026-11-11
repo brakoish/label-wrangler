@@ -1,7 +1,7 @@
 'use client';
 
 import { canLeaveLocalPrint, officeSeriesActive, setLocalPrintRunning, stopOfficeSeries } from '@/lib/printNavigation';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Printer, Pause, Play, X, CheckCircle2, AlertCircle, Loader2, Plug, RotateCcw, FileSpreadsheet, Clipboard, SquareDashed, Pencil, PenTool, Copy, ScanBarcode, Download, FileText, FileCode2, Search, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -1523,31 +1523,30 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   };
 
   if (!run || !template || !format) {
+    // Every load failure looks the same: the page's title, then one Recovery
+    // block in the normal content column, its way out first.
+    const failure = (title: string, body: string, actions: ReactNode) => (
+      <div className="flex-1 overflow-auto">
+        <div className="page-container space-y-5 sm:space-y-6">
+          <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100">{run?.name ?? 'Run'}</h1>
+          <Recovery role="alert" tone="warning" title={title} actions={actions}><p>{body}</p></Recovery>
+        </div>
+      </div>
+    );
     if (loadError) {
       const missing = loadError.status === 404;
-      return (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div role="alert" className="max-w-sm space-y-3 text-center">
-            <h1 className="text-lg font-semibold text-zinc-100">{missing ? 'We couldn’t find that run' : 'We couldn’t load this run'}</h1>
-            <p className="text-sm text-zinc-400">{missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(new Error(loadError.message))}</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {!missing && <button type="button" onClick={() => void fetchRun(runId)} className="btn btn-primary">Try again</button>}
-              <Link href="/runs" className="btn btn-secondary"><ArrowLeft className="h-4 w-4" /> Back to runs</Link>
-            </div>
-          </div>
-        </div>
+      return failure(
+        missing ? 'We couldn’t find that run' : 'We couldn’t load this run',
+        missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(new Error(loadError.message)),
+        <>
+          {!missing && <button type="button" onClick={() => void fetchRun(runId)} className="btn btn-primary">Try again</button>}
+          <Link href="/runs" className={missing ? 'btn btn-primary' : 'btn btn-ghost'}><ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to runs</Link>
+        </>,
       );
     }
     if (run && run.designSnapshot === null) {
-      return (
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div role="alert" className="max-w-sm space-y-3 text-center">
-            <h1 className="text-lg font-semibold text-zinc-100">This run has no saved design</h1>
-            <p className="text-sm text-zinc-400">It can’t be printed. Use Re-run to start a new run from the same data.</p>
-            <Link href="/runs" className="btn btn-secondary"><ArrowLeft className="h-4 w-4" /> Back to runs</Link>
-          </div>
-        </div>
-      );
+      return failure('This run has no saved design', 'It can’t be printed. Use Re-run to start a new run from the same data.',
+        <Link href="/runs" className="btn btn-primary"><ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to runs</Link>);
     }
     return (
       <div role="status" className="flex-1 flex items-center justify-center text-sm text-zinc-400">

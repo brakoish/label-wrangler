@@ -72,9 +72,9 @@ export function StoreHydrator({ children }: { children: React.ReactNode }) {
     if (pathname === '/login') return null;
     // A list page that is empty shows its own load error with "Try again";
     // skip the duplicate banner there.
-    // A run's own page loads that run by itself and shows its own load error,
-    // so the runs list failing is not news there.
-    const runPage = /^\/runs\/[^/]+$/.test(pathname) && pathname !== '/runs/new';
+    // A run's own page (and its scan and print pages) loads that run by itself
+    // and shows its own load error, so the runs list failing is not news there.
+    const runPage = /^\/runs\/[^/]+(?:\/(?:scan|print))?$/.test(pathname) && !pathname.startsWith('/runs/new');
     const ownsEmptyList = (name: string, count: number) => (name === 'Runs' && runPage) || (count === 0 && ((name === 'Label sizes' && pathname === '/formats') || (name === 'Designs' && pathname === '/designer') || (name === 'Runs' && (pathname === '/runs' || pathname === '/'))));
     const collections = [
       ...(library || pathname==='/formats' ? [{name:'Label sizes',store:formats,load:formats.load,count:formats.count}] : []),
