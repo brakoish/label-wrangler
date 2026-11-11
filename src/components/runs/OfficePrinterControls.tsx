@@ -24,7 +24,11 @@ const clearSaved=(userId?:string)=>clearSavedControl(typeof window!=='undefined'
  * and not at all while the page is hidden.
  */
 export function OfficePrinterControls({attention=false,stopped=false,showStatus=false,onUnavailable,onChange,onPausedChange,primaryResume=false}:{attention?:boolean;showStatus?:boolean;
- /** The printer is already stopped (a part needs a check): Pause would do nothing, so it isn't offered. */
+ /**
+  * The printer is already stopped (a part needs a check). Pause is still
+  * offered, so someone can hold everything: it keeps the printer paused after
+  * the check too, until someone presses Resume.
+  */
  stopped?:boolean;
  /** Called with the printer's own pause state whenever it changes (null: not known). */
  onPausedChange?:(paused:boolean|null)=>void;
@@ -91,7 +95,9 @@ export function OfficePrinterControls({attention=false,stopped=false,showStatus=
  }finally{sending.current=false;setBusy(false);}};
  const requestPause=async()=>{
   // Pausing is reversible, so it is not drawn as a destructive act.
-  const ok=await confirmDialog({title:'Pause the office printer?',body:'Printing stops for everyone after the current label. Labels still waiting stay in line until someone presses Resume.',confirmLabel:'Pause printer'});
+  const ok=await confirmDialog({title:'Pause the office printer?',body:stopped
+   ?'It’s already waiting for a check. Pausing keeps it stopped for everyone after the check too, until someone presses Resume.'
+   :'Printing stops for everyone after the current label. Labels still waiting stay in line until someone presses Resume.',confirmLabel:'Pause printer'});
   if(ok)void send('pause');
  };
  useEffect(()=>{if(readSaved(userId))setCanRetry(true);},[userId]);
@@ -99,7 +105,7 @@ export function OfficePrinterControls({attention=false,stopped=false,showStatus=
  const reportPaused=data && fresh && !pending?(paused ?? null):null;
  useEffect(()=>{onPausedChange?.(reportPaused);},[reportPaused,onPausedChange]);
  const disabled=busy || pending || !data?.canControl || !fresh;
- const actions=(paused===true?['resume']:paused===false?['pause']:['pause','resume']).filter(action=>!(stopped && action==='pause'));
+ const actions=paused===true?['resume']:paused===false?['pause']:['pause','resume'];
  const last=data?.controls[0];
  const statusWord=!data?'Checking the printer…':pending?'Waiting for the printer to confirm…':!fresh?'Office computer not reporting':paused===null?'Printer status unknown':paused?'Paused':attention?'Stopped for a check':'Printing normally';
  const ok=!!data && !pending && fresh && paused===false && !attention;
