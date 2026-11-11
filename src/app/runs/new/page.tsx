@@ -23,6 +23,8 @@ import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
 import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
+import { LongValueWarning } from '@/components/checks/LongValueWarning';
+import { isLongValueIssue, longLabelWords, longValueReason, longValueRows, type LongValueRows } from '@/components/checks/longValues';
 import { barcodeTickLabel, barcodeWaitWords } from '@/lib/runBarcodeTicks';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
 import { stopFixWords, LAYOUT_GO_AHEAD, barcodeIssueStops, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
@@ -42,6 +44,7 @@ import { leaveFieldsOff } from '@/lib/runLeaveOff';
 import { cleanHiddenCharacters, labelsWithBadCharacters } from '@/lib/runCharacterRows';
 import { blankPreviewItems, type PreviewBlankBox } from '@/lib/runPreviewBlanks';
 import { QR_SCAN_INCHES, type BarcodeAutoFix } from '@/lib/barcodeAutoFix';
+import { EXAMPLE_CODE_VALUES } from '@/lib/sampleValues';
 import { applyPlainNumbers, bestCodeColumn, codeFieldTypes, doubledCurrencyRisks, exampleCodeRisks, fieldNameForColumn, type CodeType } from '@/lib/runCodeColumns';
 import { checkRunPrinterCharacters, summarizePrinterCharacterIssues } from '@/lib/printerCharacters';
 import { EXCEL_SAVE_AS_CSV, isOleFile, isZipFile, readXlsx } from '@/lib/xlsx';
@@ -67,6 +70,7 @@ function andList(items: string[]): string {
 }
 
 const PASTE_COLUMN = '__paste__';
+const NO_LONG_ROWS: LongValueRows = { indexes: [], fields: [], stops: false };
 
 /** Open the design with the problem barcode selected, and come back here after. */
 function designerFixHref(templateId: string, elementId?: string): string {
@@ -800,11 +804,17 @@ function NewRunContent() {
   const charSkipped = useMemo(() => (charSkippable && charSkip.key === charBadKey ? charSkip.indexes : []), [charSkippable, charSkip, charBadKey]);
   const skipChars = charSkipped.length > 0;
   const leaveCharsOut = (indexes: ReadonlyArray<number>) => setCharSkip({ key: charBadKey, indexes: Array.from(new Set([...charSkipped, ...indexes])).sort((a, b) => a - b) });
+  // A value too long for its barcode on some labels only (one long SKU): a
+  // problem with those rows, so they can be left out too, like blank rows.
+  const longRows = useMemo<LongValueRows>(() => (inputMode === 'manual' || !checkTemplate ? NO_LONG_ROWS : longValueRows(checkTemplate, format, allCheckData, charFromSheet)), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
+  const longKey = longRows.indexes.join(',');
+  const [longSkip, setLongSkip] = useState<{ key: string; indexes: number[] }>({ key: '', indexes: [] });
+  const longSkipped = useMemo(() => (longKey && longSkip.key === longKey ? longSkip.indexes : []), [longKey, longSkip]);
   const keptRows = useMemo(() => {
-    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...charSkipped]);
+    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...charSkipped, ...longSkipped]);
     if (!skip.size) return null;
     return allDataRows.map((_, index) => index).filter((index) => !skip.has(index));
-  }, [skipRows, skippable, charSkipped, allDataRows]);
+  }, [skipRows, skippable, charSkipped, longSkipped, allDataRows]);
   const dataRows = useMemo(() => (keptRows ? keptRows.map((index) => allDataRows[index]) : allDataRows), [keptRows, allDataRows]);
   // Row numbers in every message stay the ones in the file.
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
@@ -932,9 +942,34 @@ function NewRunContent() {
   // waits until it changes per label or the person says that's right.
   const rowsBacked = inputMode === 'csv' || inputMode === 'manifest';
   const exampleRisks = useMemo(() => exampleCodeRisks(template, rowsBacked ? (inputMode === 'manifest' ? MANIFEST_HEADERS : csvHeaders) : [], rowsBacked ? sourceData : []), [template, rowsBacked, inputMode, csvHeaders, sourceData]);
-  const exampleKey = exampleRisks.map((r) => `${r.elementId}:${r.value}:${r.column ?? ''}`).join('|');
+  // The design's own example ("https://example.com", "123456789") is not a
+  // value: it is never confirmed as "the same on every label". The person
+  // types the real one (or makes it change per label) before it can print.
+  const placeholderRisks = exampleRisks.filter((r) => r.isExample);
+  const confirmRisks = exampleRisks.filter((r) => !r.isExample);
+  const exampleKey = confirmRisks.map((r) => `${r.elementId}:${r.value}:${r.column ?? ''}`).join('|');
   const [exampleConfirmedKey, setExampleConfirmedKey] = useState('');
-  const examplesOk = !exampleRisks.length || exampleConfirmedKey === exampleKey;
+  const examplesOk = !placeholderRisks.length && (!confirmRisks.length || exampleConfirmedKey === exampleKey);
+  const [realValues, setRealValues] = useState<Record<string, string>>({});
+  const [realSaving, setRealSaving] = useState<string | null>(null);
+  const [realNote, setRealNote] = useState<{ elementId: string; tone: 'ok' | 'error'; text: string } | null>(null);
+  const saveRealValue = async (elementId: string) => {
+    const value = (realValues[elementId] ?? '').trim();
+    const el = template?.elements.find((e) => e.id === elementId);
+    if (!template || !el || !value || realSaving) return;
+    const kind = el.type === 'qr' ? 'QR code' : 'barcode';
+    setRealSaving(elementId);
+    setRealNote(null);
+    updateElementLocal(template.id, elementId, { content: value });
+    try {
+      await saveTemplate(template.id);
+      setRealNote({ elementId, tone: 'ok', text: 'Saved to the design.' });
+    } catch {
+      setRealNote({ elementId, tone: 'error', text: `The ${kind} shows it on this page, but the design couldn’t be saved. Check your connection, then try again.` });
+    } finally {
+      setRealSaving(null);
+    }
+  };
   const [flipNote, setFlipNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [flipping, setFlipping] = useState<string | null>(null);
   const flipToPerLabel = async (elementId: string, suggestedName: string) => {
@@ -979,14 +1014,18 @@ function NewRunContent() {
   const undrawn = useMemo(() => {
     const base = previewBlanks.template;
     if (!base || format?.type !== 'thermal') return null;
-    const hits = barcodeCheck.issues.filter((issue) => issue.kind === 'characters' && !issue.fit?.printable && !!issue.elementId && issue.label > feedStart && issue.label <= feedStart + across);
+    // Also any barcode the exact renderer refuses (too long for its box): the
+    // problem is said once, under the picture, never again as a red error here.
+    const hits = barcodeCheck.issues.filter((issue) => ((issue.kind === 'characters' && !issue.fit?.printable) || barcodeIssueStops(issue, format)) && !!issue.elementId && (issue.label === 0 || (issue.label > feedStart && issue.label <= feedStart + across)));
     if (!hits.length) return null;
     const ids = new Set(hits.map((issue) => issue.elementId as string));
     const boxes: PreviewBlankBox[] = [];
     for (const issue of hits) {
       const el = base.elements.find((e) => e.id === issue.elementId);
       if (!el || ((Math.round(el.rotation || 0) % 360) + 360) % 360 !== 0) continue;
-      boxes.push({ lane: issue.label - 1 - feedStart, x: el.x, y: el.y, width: el.width, height: Math.max(1, el.height) });
+      // A fixed barcode (label 0) is the same on every label of the feed.
+      const lanes = issue.label === 0 ? Array.from({ length: across }, (_, lane) => lane) : [issue.label - 1 - feedStart];
+      for (const lane of lanes) if (!boxes.some((b) => b.lane === lane && b.x === el.x && b.y === el.y)) boxes.push({ lane, x: el.x, y: el.y, width: el.width, height: Math.max(1, el.height) });
     }
     return { template: { ...base, elements: base.elements.filter((el) => !ids.has(el.id)) }, boxes };
   }, [previewBlanks.template, format, barcodeCheck.issues, feedStart, across]);
@@ -1028,30 +1067,51 @@ function NewRunContent() {
   // printer, and these designs may be printing today). Only what the exact
   // renderer refuses stops the run: nothing could print.
   const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
-  const barcodeWords = barcodeVerdict(barcodeCheck.issues, barcodeCheck.badLabels, format, fieldIsFromSheet);
-  const barcodeKey = useMemo(() => barcodeCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [barcodeCheck.issues]);
+  // A value too long on some labels only is said apart, as a problem with
+  // those rows (leave them out, or fix the file); the rest are the design's.
+  const designIssues = useMemo(() => barcodeCheck.issues.filter((issue) => !isLongValueIssue(issue, longRows)), [barcodeCheck.issues, longRows]);
+  const longIssues = barcodeCheck.issues.length > designIssues.length;
+  const barcodeWords = barcodeVerdict(designIssues, barcodeCheck.badLabels, format, fieldIsFromSheet);
+  const barcodeKey = useMemo(() => designIssues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [designIssues]);
   // One plain sentence and one "Print anyway" tick per problem, as on the run page.
-  const barcodeItems = useMemo(() => describeBarcodeGroups(barcodeCheck.issues, barcodeCheck.checkedLabels, fieldIsFromSheet, 50, barcodeCheck.fitCounts).items,
+  const barcodeItems = useMemo(() => describeBarcodeGroups(designIssues, barcodeCheck.checkedLabels, fieldIsFromSheet, 50, barcodeCheck.fitCounts).items,
     // fieldIsFromSheet reads inputMode and the mappings, both in runDataForCheck.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [barcodeCheck, inputMode, runDataForCheck]);
+    [designIssues, barcodeCheck, inputMode, runDataForCheck]);
+  // The long values still in this run (not left out for any reason).
+  const runSkipSet = useMemo(() => {
+    if (!keptRows) return new Set<number>();
+    const kept = new Set(keptRows);
+    return new Set(allDataRows.map((_, i) => i).filter((i) => !kept.has(i)));
+  }, [keptRows, allDataRows]);
+  const longFields = useMemo(() => (longIssues ? longRows.fields.map((f) => ({ ...f, indexes: f.indexes.filter((i) => !runSkipSet.has(i)) })).filter((f) => f.indexes.length > 0) : []), [longIssues, longRows, runSkipSet]);
+  const longLeft = useMemo(() => Array.from(new Set(longFields.flatMap((f) => f.indexes))).sort((a, b) => a - b), [longFields]);
+  const longStops = longFields.some((f) => f.stops);
+  const longLeftKey = `${longLeft.join(',')}|${longFields.map((f) => f.field).join(',')}`;
+  const [longTickKey, setLongTickKey] = useState('');
+  const longOk = !longLeft.length || (!longStops && longTickKey === longLeftKey);
+  const leaveLongOut = () => setLongSkip({ key: longKey, indexes: Array.from(new Set([...longSkipped, ...longLeft])).sort((a, b) => a - b) });
   const [barcodeTicks, setBarcodeTicks] = useState<{ key: string; items: string[] }>({ key: '', items: [] });
   const barcodeItemTicked = (item: string) => barcodeTicks.key === barcodeKey && barcodeTicks.items.includes(item);
   const tickBarcodeItem = (item: string, value: boolean) => setBarcodeTicks((current) => {
     const items = current.key === barcodeKey ? current.items : [];
     return { key: barcodeKey, items: value ? [...items.filter((i) => i !== item), item] : items.filter((i) => i !== item) };
   });
-  const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
+  const designGoAhead = !barcodeWords.stops && designIssues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
+  const designOk = designIssues.length === 0 || designGoAhead;
+  // Every problem ticked to print anyway (carried to the run page as one
+  // go-ahead): the design's problems, and any too-long value still in the run.
+  const barcodeGoAhead = barcodeCheck.issues.length > 0 && longOk && (designIssues.length === 0 ? longLeft.length > 0 : designGoAhead);
   const barcodesClear = barcodeCheck.issues.length === 0;
   const barcodesOk = barcodesClear || barcodeGoAhead;
   // "Fix it for me" / "Use a QR code instead" right here, offered only when
   // the changed design prints that barcode whole on every label and lands on
   // nothing. It changes the design's barcode only, is saved, and has Undo.
   const barcodeFixes = useMemo(
-    () => (barcodeCheck.issues.some((issue) => issue.kind === 'too-long' || (issue.kind === 'characters' && barcodeIssueStops(issue, format))) && template && !template.summaryOnly
-      ? runBarcodeFixes(checkTemplate, runDataForCheck, format, barcodeCheck.issues, Math.min(labelCount || 1, 2000))
+    () => (designIssues.some((issue) => issue.kind === 'too-long' || (issue.kind === 'characters' && barcodeIssueStops(issue, format))) && template && !template.summaryOnly
+      ? runBarcodeFixes(checkTemplate, runDataForCheck, format, designIssues, Math.min(labelCount || 1, 2000))
       : null),
-    [barcodeCheck.issues, template, checkTemplate, runDataForCheck, format, labelCount],
+    [designIssues, template, checkTemplate, runDataForCheck, format, labelCount],
   );
   const [runFixNote, setRunFixNote] = useState<{ templateId: string; text: string; before: TemplateElement[]; tone: 'ok' | 'error' } | null>(null);
   const [runFixBusy, setRunFixBusy] = useState(false);
@@ -1100,6 +1160,50 @@ function NewRunContent() {
       setRunFixBusy(false);
     }
   };
+
+  // "Use a QR code instead" for this run only: a copy of the design with the
+  // QR code swapped in, named plainly, so the saved design (and every other
+  // run made from it) stays as it is. A copy made before (a reload) is reused.
+  const [qrCopy, setQrCopy] = useState<{ from: string; to: string; name: string; tone: 'ok' | 'error'; qrInches?: number; keptText?: boolean; droppedText?: boolean } | null>(null);
+  const [qrBusy, setQrBusy] = useState(false);
+  const switchToQrCopy = async (fix: BarcodeAutoFix) => {
+    if (!template || qrBusy) return;
+    const from = template;
+    const name = `${from.name} (QR code)`;
+    setQrBusy(true);
+    try {
+      const existing = useTemplateStore.getState().templates.find((t) => !t.archivedAt && t.name === name && t.formatId === from.formatId && (t.thermalRenderMode ?? 'native-v1') === (from.thermalRenderMode ?? 'native-v1'));
+      const copy = existing ?? await addTemplate({ name, description: from.description, formatId: from.formatId, thermalRenderMode: from.thermalRenderMode, elements: fix.elements });
+      setImagesByTemplate((current) => ({ ...current, [copy.id]: current[from.id] ?? {} }));
+      setTemplateId(copy.id);
+      setQrCopy({ from: from.id, to: copy.id, name, tone: 'ok', qrInches: fix.qrInches, keptText: fix.keptText, droppedText: fix.droppedText });
+    } catch {
+      setQrCopy({ from: from.id, to: from.id, name, tone: 'error' });
+    } finally {
+      setQrBusy(false);
+    }
+  };
+  const undoQrCopy = () => {
+    if (!qrCopy) return;
+    setTemplateId(qrCopy.from);
+    setQrCopy(null);
+  };
+  // Arriving from the run page's "Use a QR code instead": switch once, as soon
+  // as the copied run's design and data are here.
+  const qrIntent = searchParams.get('barcode') === 'qr';
+  const qrIntentDone = useRef(false);
+  const [qrIntentNote, setQrIntentNote] = useState('');
+  const switchToQrCopyRef = useRef(switchToQrCopy);
+  useEffect(() => { switchToQrCopyRef.current = switchToQrCopy; });
+  const duplicateApplied = !!duplicateFrom && didApplyDuplicateRef.current === duplicateFrom;
+  useEffect(() => {
+    if (!qrIntent || qrIntentDone.current || !duplicateApplied) return;
+    if (!template || template.summaryOnly || !format || labelCount === 0) return;
+    qrIntentDone.current = true;
+    const qr = barcodeFixes?.qr ?? (barcodeFixes?.fix?.kind === 'qr' ? barcodeFixes.fix : null);
+    if (qr) void switchToQrCopyRef.current(qr);
+    else if (barcodeCheck.issues.length) setQrIntentNote('A QR code doesn’t fit every label of this design, so nothing was switched. The choices are under Review.');
+  }, [qrIntent, duplicateApplied, template, format, labelCount, barcodeFixes, barcodeCheck.issues.length]);
 
   // Text the thermal printer can't print ("·", accents) would come out as
   // junk: name the label and field so it can be fixed before printing.
@@ -1184,7 +1288,7 @@ function NewRunContent() {
   // Spreadsheet rows and design problems counted apart, so the footer never
   // blames the design for a value in the file.
   const barcodeStopCounts = () => {
-    const stopping = barcodeCheck.issues.filter((issue) => barcodeIssueStops(issue, format));
+    const stopping = designIssues.filter((issue) => barcodeIssueStops(issue, format));
     const rows = new Set(stopping.filter((issue) => issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field)).map((issue) => issue.label)).size;
     const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
     return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
@@ -1197,8 +1301,11 @@ function NewRunContent() {
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : `${blankHeading(blankCheck)}: choose what to do in Review.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
-    !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
+    !examplesOk && (placeholderRisks.length
+      ? (placeholderRisks[0].type === 'qr' ? 'Type the web address the QR code should open, or make it change per label.' : 'Type the number the barcode should hold, or make it change per label.')
+      : `Make the ${confirmRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`),
+    !longOk && longValueReason(longFields, longLeft.length, allDataRows.length, longStops),
+    !designOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
       ? `A barcode can’t print. ${charSkippable ? 'Leave that label out, fix that row' : 'Fix that row'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`
       : `Some barcodes can’t print. ${charSkippable ? 'Leave those labels out, fix those rows' : 'Fix those rows'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`)
       : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
@@ -1631,7 +1738,7 @@ function NewRunContent() {
               <div>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2">
                   <span id={`${formId}-template`} className="field-label whitespace-nowrap">Label design</span>
-                  <div className="flex items-center max-sm:basis-full sm:-mr-[13px]">
+                  <div className="flex items-center max-sm:basis-full">
                     {/* Edit the currently-selected design without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
                     {template && (
@@ -1681,6 +1788,18 @@ function NewRunContent() {
                     })}
                   />
                 )}
+                {qrCopy && template && (qrCopy.tone === 'error' || qrCopy.to === template.id) && (
+                  <p role={qrCopy.tone === 'error' ? 'alert' : 'status'} className={`fold-reveal mt-2 flex items-start gap-1.5 text-sm ${qrCopy.tone === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
+                    {qrCopy.tone === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />}
+                    <span>
+                      {qrCopy.tone === 'error'
+                        ? 'Couldn’t make the QR code copy of the design, so nothing changed. Check your connection, then press “Use a QR code instead” under Review.'
+                        : `Switched to a QR code in a copy of the design, “${qrCopy.name}”. The original is unchanged.${barcodesClear && labelCount > 0 ? ` All ${labelCount.toLocaleString()} label${labelCount === 1 ? '' : 's'} can print.` : ''}${qrCopy.droppedText ? ' The number under the barcode won’t print.' : ''}${qrCopy.qrInches !== undefined && qrCopy.qrInches < QR_SCAN_INCHES ? ` The QR code prints ${qrCopy.qrInches}" wide, small for some phones: test-scan one.` : ''}`}
+                      {qrCopy.tone === 'ok' && <>{' '}<button type="button" className="link" onClick={undoQrCopy}>Undo</button></>}
+                    </span>
+                  </p>
+                )}
+                {qrIntentNote && !qrCopy && <p role="status" className="mt-2 text-sm text-zinc-300">{qrIntentNote}</p>}
               </div>
             </div>
           </section>}
@@ -1715,27 +1834,62 @@ function NewRunContent() {
                   const kind = f.type === 'qr' ? 'QR code' : 'barcode';
                   const columnName = risk?.column ? (inputMode === 'manifest' ? friendlyFieldName(risk.column) : risk.column) : null;
                   const columnWord = inputMode === 'manifest' ? 'detail' : 'column';
+                  const placeholder = !!risk?.isExample;
+                  const what = f.type === 'qr' ? 'address' : 'number';
+                  const real = realValues[f.id] ?? '';
                   return (
-                    <li key={f.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                      <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
-                        The {kind} prints {risk?.isExample ? 'the design’s example ' : ''}“{value || 'nothing'}” on every label.{columnName ? ` Your ${sheetWord} has a “${columnName}” ${columnWord}.` : ''}
-                      </p>
-                      <button
-                        type="button"
-                        disabled={flipping === f.id}
-                        onClick={() => void flipToPerLabel(f.id, f.suggestedName)}
-                        className="btn btn-secondary btn-sm max-w-full shrink-0 self-start sm:self-auto"
-                      >
-                        <span className="truncate">{flipping === f.id ? 'Saving the design…' : columnName ? `Use the ${columnName} ${columnWord}` : 'Change it per label'}</span>
-                      </button>
+                    <li key={f.id} className="space-y-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <p className={`min-w-0 break-words text-sm ${risk ? 'text-amber-300' : 'text-zinc-300'}`}>
+                          {placeholder
+                            ? `The ${kind} still has the design’s sample ${what}${value ? ` “${value}”` : ''}, so it isn’t ready to print.`
+                            : `The ${kind} prints “${value || 'nothing'}” on every label.`}{columnName ? ` Your ${sheetWord} has a “${columnName}” ${columnWord}.` : ''}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={flipping === f.id}
+                          onClick={() => void flipToPerLabel(f.id, f.suggestedName)}
+                          className="btn btn-secondary btn-sm max-w-full shrink-0 self-start sm:self-auto"
+                        >
+                          <span className="truncate">{flipping === f.id ? 'Saving the design…' : columnName ? `Use the ${columnName} ${columnWord}` : 'Change it per label'}</span>
+                        </button>
+                      </div>
+                      {placeholder && (
+                        // The real value, asked for here: the sample is never printed by a tick.
+                        <form className="flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={(e) => { e.preventDefault(); void saveRealValue(f.id); }}>
+                          <div className="min-w-0 flex-1">
+                            <label htmlFor={`${formId}-real-${f.id}`} className="field-label">{f.type === 'qr' ? 'What web address should the QR code open?' : 'What number should the barcode hold?'}</label>
+                            <input
+                              id={`${formId}-real-${f.id}`}
+                              type="text"
+                              inputMode={f.type === 'qr' ? 'url' : 'text'}
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={real}
+                              onChange={(e) => setRealValues((current) => ({ ...current, [f.id]: e.target.value }))}
+                              placeholder={f.type === 'qr' ? 'https://your-shop.com' : ''}
+                              className="field mt-1"
+                            />
+                          </div>
+                          <button type="submit" className="btn btn-primary shrink-0 self-start sm:self-auto" disabled={!real.trim() || EXAMPLE_CODE_VALUES.includes(real.trim()) || realSaving === f.id}>
+                            {realSaving === f.id ? 'Saving…' : `Use this ${what}`}
+                          </button>
+                        </form>
+                      )}
+                      {realNote?.elementId === f.id && (
+                        <p role={realNote.tone === 'error' ? 'alert' : 'status'} className={`flex items-start gap-1.5 text-sm ${realNote.tone === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>
+                          {realNote.tone === 'error' ? <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />}
+                          {realNote.text}
+                        </p>
+                      )}
                     </li>
                   );
                 })}
               </ul>
-              {exampleRisks.length > 0 && (
+              {confirmRisks.length > 0 && (
                 <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-100">
                   <input type="checkbox" className="check" checked={exampleConfirmedKey === exampleKey} onChange={(e) => setExampleConfirmedKey(e.target.checked ? exampleKey : '')} />
-                  <span>Yes, print {exampleRisks.length === 1 ? `this ${exampleRisks[0].type === 'qr' ? 'QR code' : 'barcode'}` : 'these'} the same on every label</span>
+                  <span>Yes, print {confirmRisks.length === 1 ? `this ${confirmRisks[0].type === 'qr' ? 'QR code' : 'barcode'}` : 'these'} the same on every label</span>
                 </label>
               )}
             </section>
@@ -2226,7 +2380,7 @@ function NewRunContent() {
                         choice={blankChoiceNow}
                         onChoiceChange={setBlankChoice}
                         sheetRow={(label) => label + (fileInfo?.headerRow ?? 1)}
-                        showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
+                        showWhenOk={!keptRows && barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
                       />
                     )}
                     {skipRows && skippable && (
@@ -2254,6 +2408,25 @@ function NewRunContent() {
                         <button type="button" className="btn btn-secondary btn-sm max-w-full whitespace-normal text-left max-sm:min-h-11 max-sm:py-2" onClick={() => leaveCharsOut(charAllLeft)}>Leave all {charAllLeft.length.toLocaleString()} out and print the other {(allDataRows.length - charSkipped.length - charAllLeft.length).toLocaleString()}</button>
                       </div>
                     )}
+                    <LongValueWarning
+                      fields={longFields}
+                      labels={longLeft}
+                      total={allDataRows.length}
+                      rest={labelCount - longLeft.length}
+                      mode={inputMode}
+                      stops={longStops}
+                      onLeaveOut={leaveLongOut}
+                      sheetRow={inputMode === 'csv' ? (index) => index + 1 + (fileInfo?.headerRow ?? 1) : undefined}
+                      designHref={template ? designerFixHref(template.id, barcodeCheck.issues.find((issue) => isLongValueIssue(issue, longRows))?.elementId) : undefined}
+                      ticked={longTickKey === longLeftKey}
+                      onTick={(value) => setLongTickKey(value ? longLeftKey : '')}
+                    />
+                    {longSkipped.length > 0 && (
+                      <p className="text-sm text-zinc-400">
+                        {longLabelWords(longSkipped.map((index) => index + 1), allDataRows.length).replace(/^l/, 'L')} {longSkipped.length === 1 ? 'is' : 'are'} left out because {longRows.fields.length === 1 ? `${longSkipped.length === 1 ? 'its' : 'their'} ${friendlyFieldName(longRows.fields[0].field)} ${longSkipped.length === 1 ? 'is' : 'values are'}` : longSkipped.length === 1 ? 'its value is' : 'their values are'} too long for the barcode, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}.{' '}
+                        <button type="button" className="link" onClick={() => setLongSkip({ key: '', indexes: [] })}>Undo</button>
+                      </p>
+                    )}
                     <BarcodeWarning
                       items={barcodeItems}
                       stops={barcodeWords.stops}
@@ -2262,13 +2435,14 @@ function NewRunContent() {
                       onTick={tickBarcodeItem}
                       fix={<>
                         {barcodeFixes?.fix && (
-                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId)}>{barcodeFixes.fix.label}</button>
+                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void (barcodeFixes.fix!.kind === 'qr' ? switchToQrCopy(barcodeFixes.fix!) : applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId))}>{barcodeFixes.fix.label}</button>
                         )}
                         {!barcodeFixes?.fix && barcodeFixes?.qr && (
-                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>
+                          // A QR code changes what the label is: made in a copy for this run, never the saved design.
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void switchToQrCopy(barcodeFixes.qr!)}>{qrBusy ? 'Making a copy…' : barcodeFixes.qr.label}</button>
                         )}
                         {barcodeWords.fixIn !== 'data' && template && (
-                          <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
+                          <FixInDesignerLink href={designerFixHref(template.id, designIssues.find((issue) => issue.elementId)?.elementId)} />
                         )}
                         {barcodeWords.fixIn !== 'design' && charBarcodeButton && leaveOutButton(charBarcodeLeft)}
 

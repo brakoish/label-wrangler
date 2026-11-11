@@ -181,6 +181,10 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
 
   // Who is signed in: the test print's run is named from it (see testPrintRunId).
   const [userId, setUserId] = useState<string | null>(null);
+  // The office couldn't say whether the saved test print arrived (an older
+  // server, or no answer): then the person is the one who knows.
+  const [lookupMissing, setLookupMissing] = useState(false);
+  const [clearedNote, setClearedNote] = useState('');
   useEffect(() => {
     let active = true;
     fetch('/api/office/session', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(d => { if (active && typeof d?.user?.id === 'string') setUserId(d.user.id); }).catch(() => {});
@@ -213,6 +217,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       if (document.visibilityState !== 'hidden') {
         const found = await lookUpTestPrint(userId, pendingKey);
         if (!active) return;
+        setLookupMissing(found === undefined);
         if (found) { let other = false; try { const at = Number(localStorage.getItem(sendingKey)); other = at > 0 && Date.now() - at < SENDING_FRESH_MS; } catch { /* no hint */ } settleRef.current(pendingKey, found, other && !sendingBeforeReloadRef.current); return; }
       }
       looks++;
@@ -232,7 +237,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
   const printer = printers.find(p => p.id === (pending?.printerId ?? selected));
   const submit = async () => {
     if (inFlight.current || !printer || (bitmap && !pending && proofs?.key !== proofKey)) return;
-    inFlight.current = true; setBusy(true); setError(''); setRunId(''); setSentElsewhere(false);
+    inFlight.current = true; setBusy(true); setError(''); setRunId(''); setSentElsewhere(false); setClearedNote('');
     // What this tab shows: a saved test print to resend, or none (a new one).
     const shown = pending;
     try {
@@ -270,6 +275,7 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       // A resend first asks whether the earlier try arrived after all.
       if (resend) {
         const found = await lookUpTestPrint(userId, payload.idempotencyKey);
+        setLookupMissing(found === undefined);
         if (found) { try { localStorage.removeItem(sendingKey); } catch { /* lapses on its own */ } settleSent(payload.idempotencyKey, found, false); return; }
       }
       mark();
@@ -320,10 +326,24 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
     ? '“Send again” resends that same print (not later edits), so it won’t print twice.'
     : pending ? uncertainSendWords(pending.status, pending.code).message.replace('come back to this run', 'come back to this design') : '';
   const sendLabel = busy ? 'Sending…' : shownRefusal && !refusalNeedsSomeoneElse(shownRefusal.reason) ? 'Try again' : quantity === 1 ? 'Send 1 test label' : `Send ${quantity} test labels`;
-  const startOver = async () => {
-    const ok = await confirmDialog({ title: 'Start over?', body: 'Check Runs first. The office may already have this test print, and starting over doesn’t cancel anything already sent.', confirmLabel: 'Start over' });
+  // The same two ways out as a run's saved send: clear it when it came out,
+  // or forget it (asks first, since sending it again later could print twice).
+  const dropSaved = () => {
+    if (!pending) return;
+    forgetSaved(pending.idempotencyKey);
+    try { sessionStorage.removeItem(mineKey); } catch { /* nothing saved */ }
+    setPending(null); setError(''); setLookupMissing(false);
+  };
+  const clearArrived = () => { dropSaved(); setClearedNote('Cleared. Test prints show up in Runs.'); };
+  const forgetSend = async () => {
+    if (!pending) return;
+    const ok = await confirmDialog({ title: 'Forget this send?',
+      body: 'If the office did get this test print, sending it again later prints it twice. “Send again” is the safe way: it can’t print twice.',
+      confirmLabel: 'Forget it', cancelLabel: 'Keep it', danger: true });
+    // The dialog closed the panel; open it again on what was chosen.
+    setOpen(true);
     if (!ok) return;
-    localStorage.removeItem(storageKey); setPending(null); setError('');
+    dropSaved();
   };
   const sentLine = runId && <p role="status" className="flex items-start gap-2 text-emerald-400"><Check className="mt-0.5 size-4 shrink-0 rounded-full animate-success" aria-hidden="true" /><span>{sentElsewhere ? 'Sent from another tab.' : 'Test print sent to the office.'} <Link href={`/runs/${encodeURIComponent(runId)}`} className="link">See it or cancel it</Link></span></p>;
   // Closed panel: one short line beside the button, so the state is seen
@@ -362,10 +382,13 @@ export function OfficePreviewPrint({ template, format, testData }: { template: L
       {elsewhere && <p role="status" className="flex items-center gap-2 text-zinc-300"><Loader2 className="size-4 shrink-0 animate-spin text-amber-400" aria-hidden="true" />{sendingBeforeReload ? 'Sending your last test print…' : 'Sending this test print from another tab…'}</p>}
       {unsure && <Recovery tone="warning" title="We’re not sure the office got your last test print" actions={<>
         <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">Send again</button>
-        <button type="button" onClick={() => void startOver()} className="btn btn-ghost btn-sm">Start over</button>
+        {lookupMissing
+          ? <button type="button" onClick={clearArrived} className="btn btn-ghost btn-sm">They arrived, clear this</button>
+          : <button type="button" onClick={() => void forgetSend()} className="btn btn-ghost btn-sm">Forget this send</button>}
       </>}>
-        <p>{unsureWords} Or <Link href="/runs" className="link">check Runs</Link> first.</p>
+        <p>{unsureWords}{lookupMissing ? ' If it came out of the office printer, press “They arrived, clear this”.' : <> Or <Link href="/runs" className="link">check Runs</Link> first.</>}</p>
       </Recovery>}
+      {clearedNote && !pending && !runId && <p role="status" className="text-zinc-400">{clearedNote}</p>}
       {shownRefusal && !pending && <Recovery role="alert" tone="danger" title="Your last test print wasn’t sent"><p>{shownRefusal.message}</p></Recovery>}
       {(!pending || busy) && <button type="button" disabled={!canSend} onClick={() => void submit()} className="btn btn-primary btn-sm">{busy && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}{sendLabel}</button>}
       {error && <p role="alert" className="text-red-400">{error}</p>}

@@ -483,11 +483,12 @@ function DesignerContent() {
           <TemplateList
             openingName={templateId && openState?.id === templateId && openState.status === 'failed' ? designLabel(templates.find((t) => t.id === templateId)?.name) : undefined}
             onRetryOpen={templateId ? () => void openDesign(templateId) : undefined}
+            missingLink={!!templateId && openState?.id === templateId && openState.status === 'missing'}
             notice={templateId && openState?.id === templateId ? (
               openState.status === 'opening'
                 ? <p role="status" className="mb-4 text-sm text-zinc-400">Opening {designLabel(templates.find((t) => t.id === templateId)?.name)}…</p>
                 : openState.status === 'missing'
-                  ? <p role="alert" className="mb-4 text-sm text-amber-300">That design link doesn’t go to a design any more — it may have been deleted. Pick one below.</p>
+                  ? null
                   : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="link -my-3 inline-block py-3">Try again</button></p>
             ) : null}
             templates={templates}
