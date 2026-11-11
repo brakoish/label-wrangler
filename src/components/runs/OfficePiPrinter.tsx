@@ -1021,7 +1021,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     // One "Send all in parts" per run in this browser: claimed under the lock a
     // single send takes, so a second tab can't start the same parts.
     let markAt={index:start.next,total:start.parts.length,part:start.parts[start.next] ?? start.parts[start.parts.length-1]};
-    const writeMark=()=>{if(!markAt.part)return;try{localStorage.setItem(seriesKey,JSON.stringify({tab:tabId.current,until:Date.now()+SERIES_MARK_MS,index:markAt.index,total:markAt.total,from:markAt.part.from,to:markAt.part.to}));}catch{/* the office still refuses labels it already has */}};
+    // Renewed only while it is still ours: if this tab was slowed down (a
+    // hidden tab's timers) and another tab took the run over, this series
+    // stops before its next part instead of overwriting that tab's mark.
+    let lostMark=false;
+    const writeMark=()=>{if(!markAt.part||lostMark)return;if(readOtherSeries()){lostMark=true;return;}try{localStorage.setItem(seriesKey,JSON.stringify({tab:tabId.current,until:Date.now()+SERIES_MARK_MS,index:markAt.index,total:markAt.total,from:markAt.part.from,to:markAt.part.to}));}catch{/* the office still refuses labels it already has */}};
     const other=await withOfficeSendLock(runId,()=>{const m=readOtherSeries();if(!m)writeMark();return m;});
     if(other){seriesRunning.current=false;seriesLocks.delete(runId);setOtherSeries(other);setError(otherSeriesWords(other));return;}
     const beat=setInterval(writeMark,4000);
@@ -1078,6 +1082,7 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
         }
         setSeries({total:current.parts.length,index:i,part,phase:bitmap && !resend?'checking':'sending'});
         markAt={index:i,total:current.parts.length,part};writeMark();
+        if(lostMark){setError(`Stopped before part ${i+1} of ${current.parts.length}: another tab is sending this run's labels now, so nothing more was sent here. Nothing was sent twice.`);break;}
         if(bitmap && !resend){
           setBusy(true);
           const checked=await drawProof(part,(completed,count)=>setSeries(s=>s?{...s,progress:{completed,total:count}}:s));

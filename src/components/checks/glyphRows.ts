@@ -1,7 +1,7 @@
 import type { LabelFormat, TemplateElement } from '@/lib/types';
 import { checkRunBitmapGlyphs, missingGlyphs, type BitmapGlyphCheck } from '@/lib/runGlyphs';
 import { resolveThermalContent } from '@/lib/thermal/bitmap';
-import { barcodeFit } from '@/lib/barcodeFit';
+import { barcodeValueProblem } from '@/lib/barcodeValue';
 import { friendlyFieldName, spreadsheetRow } from '@/lib/fieldLabels';
 
 /**
@@ -50,8 +50,8 @@ export function wizardGlyphCheck(
   const issues = [...base.issues];
   const missingFor = (el: Extract<TemplateElement, { type: 'barcode' }>, value: string) => {
     if (!value.trim()) return [];
-    const fit = barcodeFit(el, value, format, true);
-    if (fit.level !== 'ok' && fit.reason === 'characters') return [];
+    // Same rule as the run page (runGlyphs): a value the barcode can't hold is the barcode check's.
+    if (barcodeValueProblem(el.barcodeFormat, value)) return [];
     return missingGlyphs(HUMAN_READABLE_FONT, value);
   };
   // A fixed barcode number: every label stops.

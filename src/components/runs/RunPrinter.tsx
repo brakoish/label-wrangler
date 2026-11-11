@@ -441,7 +441,7 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   // Labels after progress that no office send covers: what is still to send (the same rule as the Runs list).
   const stillToSend = office.loaded && office.jobs.length > 0 ? officeUnsentSpans(office.jobs, total, printedCount).reduce((n, s) => n + s.to - s.from + 1, 0) : 0;
   const officeSummary = (office.loaded && office.jobs.length > 0) || officeHeldBy || panel.unsure || panel.refused || panel.paused || panel.sending || panel.held
-    ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed[0], held: officeHeld,
+    ? { heldBy: officeHeldBy, sent: office.summary.sent, onTheWay: office.summary.onTheWay, failed: office.summary.failed.length, failedLabels: office.summary.failedLabels, firstFailed: office.summary.failed.find((part) => part.kind !== 'print-again') ?? office.summary.failed[0], held: officeHeld,
       unchecked: uncheckedLabels, unsure: panel.unsure, refused: panel.refused, printerPaused: panel.paused, sending: panel.sending, stillToSend, heldBack: panel.held ?? null }
     : null;
   // Labels at or sent to the office printer that nobody counted yet: the lighter part of the progress bar,
@@ -948,14 +948,16 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
       const only = startFrom === selectedThrough ? `${startFrom}` : `${startFrom}\u2060–\u2060${selectedThrough}`;
       const choice = await choiceDialog({
         title: `${gap.charAt(0).toUpperCase()}${gap.slice(1)} ${one ? 'isn’t' : 'aren’t'} counted as printed yet`,
-        body: `The next label to print is ${skipped.from}. Start there, or print only ${startFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
-        confirmLabel: `Start at ${skipped.from} instead`,
+        body: `The next label to print is ${skipped.from}. Move the start there and press the button again, or print only ${startFrom === selectedThrough ? 'label' : 'labels'} ${only} now and leave the run’s progress as it is.`,
+        confirmLabel: `Move start to ${skipped.from}`,
         altLabel: `Print only ${only}`,
         extraLabel: `${one ? 'It' : 'They'} already printed…`,
         cancelAlso: true,
       });
-      // Starts right away from the next label to print (the press was the ask).
-      if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); starting.current = false; await startOrResume(skipped.from); return; }
+      // Moves the boxes to the next label to print and stops: the checks above
+      // covered only the typed range, so the next press checks the new one
+      // before anything prints.
+      if (choice === 'confirm') { setFromDraft(String(skipped.from)); setCountDraft(null); return; }
       // Printed apart from the run (its own guard against a second start).
       if (choice === 'alt') { starting.current = false; await handleReprintRange({ from: startFrom, to: selectedThrough }, 'only'); return; }
       if (choice !== 'extra') return;

@@ -61,11 +61,13 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   assert.doesNotMatch(read('src/components/runs/RunPrinter.tsx'), /markQrFrom/);
 }
 
-// #4: USB: a typed printed range prints again without rewinding; "Start at N instead" starts.
+// #4: USB: a typed printed range prints again without rewinding; "Move start to N" moves the boxes (checked on the next press).
 {
   const printer = read('src/components/runs/RunPrinter.tsx');
   assert.match(printer, /if \(plan\.rewind && selectedThrough <= printedCount\) \{[\s\S]{0,900}The run’s progress stays at[\s\S]{0,600}handleReprintRange\(\{ from: startFrom, to: selectedThrough \}, 'reprint'\)/);
-  assert.match(printer, /if \(choice === 'confirm'\) \{ setFromDraft\(String\(skipped\.from\)\); setCountDraft\(null\); starting\.current = false; await startOrResume\(skipped\.from\); return; \}/);
+  // "Move start to N" moves the boxes and stops, so the next press checks labels N on before anything prints.
+  assert.match(printer, /if \(choice === 'confirm'\) \{ setFromDraft\(String\(skipped\.from\)\); setCountDraft\(null\); return; \}/);
+  assert.match(printer, /confirmLabel: `Move start to \$\{skipped\.from\}`/);
   assert.match(printer, /selectedThrough <= printedCount \? `Print \$\{/);
 }
 
@@ -137,3 +139,16 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 }
 
 console.log('PASS run b16: parts skip every counted label, one series across tabs, explicit QR link, USB print-again, blank kept, glyph stop said once, no go-back loop, the holding run never looks done');
+
+// Final re-check: the series mark is renewed only while ours; the part holding the printer leads.
+{
+  const panel = read('src/components/runs/OfficePiPrinter.tsx');
+  assert.match(panel, /const writeMark=\(\)=>\{if\(!markAt\.part\|\|lostMark\)return;if\(readOtherSeries\(\)\)\{lostMark=true;return;\}/, 'never overwrites another tab\'s live series mark');
+  assert.match(panel, /markAt=\{index:i,total:current\.parts\.length,part\};writeMark\(\);\n\s*if\(lostMark\)\{setError\(/, 'stops before the next part once another tab took over');
+  assert.match(read('src/app/api/runs/route.ts'), /summary\.failed\.find\(\(part\) => part\.kind !== 'print-again'\) \?\? summary\.failed\[0\]/);
+  assert.match(read('src/components/runs/RunPrinter.tsx'), /firstFailed: office\.summary\.failed\.find\(\(part\) => part\.kind !== 'print-again'\) \?\? office\.summary\.failed\[0\]/);
+  const { officeHoldsPrinter } = require('../../src/lib/runDisplayStatus.ts');
+  assert.equal(officeHoldsPrinter({ failed: 2, firstFailed: { kind: 'needs-check' } }), true);
+  assert.equal(officeHoldsPrinter({ failed: 1, firstFailed: { kind: 'print-again' } }), false);
+}
+console.log('PASS run b16 final re-check: series mark stays ours, the holding part leads, Move start re-checks');

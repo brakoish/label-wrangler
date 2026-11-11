@@ -107,7 +107,9 @@ async function listExtras(request: NextRequest, rows: Array<{ id: string; status
           if (!jobs?.length) continue;
           const printedSpans = confirmed.get(row.id) ?? [];
           const summary = officeDeliverySummary(jobs, row.totalLabels, { printedCount: row.printedCount ?? 0, printedSpans });
-          const first = summary.failed[0];
+          // The part that holds the printer comes first, so a print-again part
+          // listed before it never makes the run read as finished.
+          const first = summary.failed.find((part) => part.kind !== 'print-again') ?? summary.failed[0];
           const sinceRewind = jobs.filter((job) => job.afterRewind);
           office.set(row.id, { sent: summary.sent, onTheWay: summary.onTheWay, failed: summary.failed.length, failedLabels: summary.failedLabels,
             firstFailed: first ? { from: first.from, to: first.to, reason: first.reason, didNotPrint: first.didNotPrint, kind: first.kind } : null,
