@@ -38,25 +38,28 @@ function ToneIcon({ tone }: { tone: RecoveryTone }) {
   return <AlertCircle className={className} aria-hidden="true" />;
 }
 
-export function Recovery({ tone = 'warning', title, children, actions, role = 'status', icon, className = '' }: {
+export function Recovery({ tone = 'warning', title, children, actions, role = 'status', icon, className = '', titleAs: Title = 'p' }: {
   tone?: RecoveryTone;
   title: ReactNode;
   /** The plain words under the title (what happened, what the buttons do). */
   children?: ReactNode;
   /** The way out: a primary button first, then a quiet one. */
   actions?: ReactNode;
-  /** 'alert' for something that just went wrong; 'status' otherwise. */
-  role?: 'alert' | 'status';
+  /** 'alert' for something that just went wrong; 'status' otherwise; null for a
+   *  state that is just there (an empty list), so nothing is announced. */
+  role?: 'alert' | 'status' | null;
   /** Replaces the tone's icon (a spinner while checking, say). */
   icon?: ReactNode;
   className?: string;
+  /** The title's element: a heading when the block is a page's or a list's state. */
+  titleAs?: 'p' | 'h1' | 'h2' | 'h3';
 }) {
   return (
-    <div role={role} className={`recovery text-sm ${className}`}>
-      <p className={`flex items-start gap-2 font-medium ${TONE[tone]}`}>
+    <div role={role ?? undefined} className={`recovery text-sm ${className}`}>
+      <Title className={`flex items-start gap-2 font-medium ${TONE[tone]}`}>
         {icon ?? <ToneIcon tone={tone} />}
         <span className="min-w-0">{title}</span>
-      </p>
+      </Title>
       {children && <div className="recovery-body">{children}</div>}
       {actions && <RecoveryActions>{actions}</RecoveryActions>}
     </div>
