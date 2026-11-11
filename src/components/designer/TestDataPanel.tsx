@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Circle, Search, X } from 'lucide-react';
+import { useRubberBand } from '@/components/motion/rubberBand';
 import { TemplateElement } from '@/lib/types';
 import { MANIFEST_FIELDS } from '@/lib/manifestFields';
 import { SEARCH_DETAILS_INCOMPLETE } from '@/lib/userMessages';
@@ -16,6 +17,8 @@ interface TestDataPanelProps {
 
 export function TestDataPanel({ elements, testData, onTestDataChange }: TestDataPanelProps) {
   const [manifestSearch, setManifestSearch] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useRubberBand(scrollRef);
   const [manifestRows, setManifestRows] = useState<ManifestRow[]>([]);
   const [selectedManifestKey, setSelectedManifestKey] = useState<string | null>(null);
   const [isSearchingManifest, setIsSearchingManifest] = useState(false);
@@ -116,7 +119,7 @@ export function TestDataPanel({ elements, testData, onTestDataChange }: TestData
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {(
-        <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-1 space-y-3">
+        <div ref={scrollRef} className="min-h-0 overflow-y-auto px-4 pb-4 pt-1 space-y-3">
           <p className="text-sm text-zinc-400">Try your own values. They only change the preview.</p>
           {dynamicFields.map((field) => (
             <label key={field.fieldName} className="block">

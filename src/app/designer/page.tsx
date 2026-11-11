@@ -3,6 +3,7 @@
 import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useRubberBand } from '@/components/motion/rubberBand';
 import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2, Eye } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
 import { useTemplateStore } from '@/lib/templateStore';
@@ -96,6 +97,9 @@ function DesignerContent() {
   // Debounced save timer for arrow-key nudges so holding an arrow doesn't
   // hit the DB on every frame.
   const nudgeSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The design list scrolls with a little stretch at its ends (wheel/trackpad).
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  useRubberBand(listScrollRef);
 
   // Sync template selection FROM the URL only (one-way). When users click the
   // Templates breadcrumb we update the URL first; this effect then clears the
@@ -475,7 +479,7 @@ function DesignerContent() {
     return (
       <AppShell>
         {/* Template List */}
-        <div className="flex-1 overflow-auto">
+        <div ref={listScrollRef} className="flex-1 overflow-auto">
           <TemplateList
             openingName={templateId && openState?.id === templateId && openState.status === 'failed' ? designLabel(templates.find((t) => t.id === templateId)?.name) : undefined}
             onRetryOpen={templateId ? () => void openDesign(templateId) : undefined}
