@@ -23,6 +23,8 @@ import { RunImagePicker } from '@/components/runs/RunImagePicker';
 import { applyRunImages, validateRunImages, type RunImageSelections } from '@/lib/runImages';
 import { BlankSummary, ProblemList, blankHeading, type BlankChoice } from '@/components/checks/RunChecks';
 import { BarcodeWarning, FixInDesignerLink } from '@/components/checks/BarcodeWarning';
+import { LongValueWarning } from '@/components/checks/LongValueWarning';
+import { isLongValueIssue, longLabelWords, longValueReason, longValueRows, type LongValueRows } from '@/components/checks/longValues';
 import { barcodeTickLabel, barcodeWaitWords } from '@/lib/runBarcodeTicks';
 import { blankCheckAllowsPrinting, blankLabelIndexes, checkRunData, rememberBlankChoice } from '@/lib/runDataCheck';
 import { stopFixWords, LAYOUT_GO_AHEAD, barcodeIssueStops, barcodeVerdict, rememberPrintGoAhead, runLayoutIssues, runPrintCheck } from '@/lib/runLayoutCheck';
@@ -67,6 +69,7 @@ function andList(items: string[]): string {
 }
 
 const PASTE_COLUMN = '__paste__';
+const NO_LONG_ROWS: LongValueRows = { indexes: [], fields: [], stops: false };
 
 /** Open the design with the problem barcode selected, and come back here after. */
 function designerFixHref(templateId: string, elementId?: string): string {
@@ -800,11 +803,17 @@ function NewRunContent() {
   const charSkipped = useMemo(() => (charSkippable && charSkip.key === charBadKey ? charSkip.indexes : []), [charSkippable, charSkip, charBadKey]);
   const skipChars = charSkipped.length > 0;
   const leaveCharsOut = (indexes: ReadonlyArray<number>) => setCharSkip({ key: charBadKey, indexes: Array.from(new Set([...charSkipped, ...indexes])).sort((a, b) => a - b) });
+  // A value too long for its barcode on some labels only (one long SKU): a
+  // problem with those rows, so they can be left out too, like blank rows.
+  const longRows = useMemo<LongValueRows>(() => (inputMode === 'manual' || !checkTemplate ? NO_LONG_ROWS : longValueRows(checkTemplate, format, allCheckData, charFromSheet)), [inputMode, checkTemplate, format, allCheckData, charFromSheet]);
+  const longKey = longRows.indexes.join(',');
+  const [longSkip, setLongSkip] = useState<{ key: string; indexes: number[] }>({ key: '', indexes: [] });
+  const longSkipped = useMemo(() => (longKey && longSkip.key === longKey ? longSkip.indexes : []), [longKey, longSkip]);
   const keptRows = useMemo(() => {
-    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...charSkipped]);
+    const skip = new Set<number>([...(skipRows && skippable ? skippable : []), ...charSkipped, ...longSkipped]);
     if (!skip.size) return null;
     return allDataRows.map((_, index) => index).filter((index) => !skip.has(index));
-  }, [skipRows, skippable, charSkipped, allDataRows]);
+  }, [skipRows, skippable, charSkipped, longSkipped, allDataRows]);
   const dataRows = useMemo(() => (keptRows ? keptRows.map((index) => allDataRows[index]) : allDataRows), [keptRows, allDataRows]);
   // Row numbers in every message stay the ones in the file.
   useEffect(() => { setSpreadsheetRowMap(keptRows); }, [keptRows]);
@@ -979,14 +988,18 @@ function NewRunContent() {
   const undrawn = useMemo(() => {
     const base = previewBlanks.template;
     if (!base || format?.type !== 'thermal') return null;
-    const hits = barcodeCheck.issues.filter((issue) => issue.kind === 'characters' && !issue.fit?.printable && !!issue.elementId && issue.label > feedStart && issue.label <= feedStart + across);
+    // Also any barcode the exact renderer refuses (too long for its box): the
+    // problem is said once, under the picture, never again as a red error here.
+    const hits = barcodeCheck.issues.filter((issue) => ((issue.kind === 'characters' && !issue.fit?.printable) || barcodeIssueStops(issue, format)) && !!issue.elementId && (issue.label === 0 || (issue.label > feedStart && issue.label <= feedStart + across)));
     if (!hits.length) return null;
     const ids = new Set(hits.map((issue) => issue.elementId as string));
     const boxes: PreviewBlankBox[] = [];
     for (const issue of hits) {
       const el = base.elements.find((e) => e.id === issue.elementId);
       if (!el || ((Math.round(el.rotation || 0) % 360) + 360) % 360 !== 0) continue;
-      boxes.push({ lane: issue.label - 1 - feedStart, x: el.x, y: el.y, width: el.width, height: Math.max(1, el.height) });
+      // A fixed barcode (label 0) is the same on every label of the feed.
+      const lanes = issue.label === 0 ? Array.from({ length: across }, (_, lane) => lane) : [issue.label - 1 - feedStart];
+      for (const lane of lanes) if (!boxes.some((b) => b.lane === lane && b.x === el.x && b.y === el.y)) boxes.push({ lane, x: el.x, y: el.y, width: el.width, height: Math.max(1, el.height) });
     }
     return { template: { ...base, elements: base.elements.filter((el) => !ids.has(el.id)) }, boxes };
   }, [previewBlanks.template, format, barcodeCheck.issues, feedStart, across]);
@@ -1028,30 +1041,50 @@ function NewRunContent() {
   // printer, and these designs may be printing today). Only what the exact
   // renderer refuses stops the run: nothing could print.
   const fieldIsFromSheet = (field: string) => inputMode === 'csv' && runDataForCheck.fieldMappings[field]?.mode === 'column';
-  const barcodeWords = barcodeVerdict(barcodeCheck.issues, barcodeCheck.badLabels, format, fieldIsFromSheet);
-  const barcodeKey = useMemo(() => barcodeCheck.issues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [barcodeCheck.issues]);
+  // A value too long on some labels only is said apart, as a problem with
+  // those rows (leave them out, or fix the file); the rest are the design's.
+  const designIssues = useMemo(() => barcodeCheck.issues.filter((issue) => !isLongValueIssue(issue, longRows)), [barcodeCheck.issues, longRows]);
+  const longIssues = barcodeCheck.issues.length > designIssues.length;
+  const barcodeWords = barcodeVerdict(designIssues, barcodeCheck.badLabels, format, fieldIsFromSheet);
+  const barcodeKey = useMemo(() => designIssues.map((issue) => `${issue.field}|${issue.label}|${issue.kind}|${issue.fit?.reason ?? ''}`).join('\n'), [designIssues]);
   // One plain sentence and one "Print anyway" tick per problem, as on the run page.
-  const barcodeItems = useMemo(() => describeBarcodeGroups(barcodeCheck.issues, barcodeCheck.checkedLabels, fieldIsFromSheet, 50, barcodeCheck.fitCounts).items,
+  const barcodeItems = useMemo(() => describeBarcodeGroups(designIssues, barcodeCheck.checkedLabels, fieldIsFromSheet, 50, barcodeCheck.fitCounts).items,
     // fieldIsFromSheet reads inputMode and the mappings, both in runDataForCheck.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [barcodeCheck, inputMode, runDataForCheck]);
+    [designIssues, barcodeCheck, inputMode, runDataForCheck]);
+  // The long values still in this run (not left out for any reason).
+  const runSkipSet = useMemo(() => {
+    if (!keptRows) return new Set<number>();
+    const kept = new Set(keptRows);
+    return new Set(allDataRows.map((_, i) => i).filter((i) => !kept.has(i)));
+  }, [keptRows, allDataRows]);
+  const longFields = useMemo(() => (longIssues ? longRows.fields.map((f) => ({ ...f, indexes: f.indexes.filter((i) => !runSkipSet.has(i)) })).filter((f) => f.indexes.length > 0) : []), [longIssues, longRows, runSkipSet]);
+  const longLeft = useMemo(() => Array.from(new Set(longFields.flatMap((f) => f.indexes))).sort((a, b) => a - b), [longFields]);
+  const longStops = longFields.some((f) => f.stops);
+  const longLeftKey = `${longLeft.join(',')}|${longFields.map((f) => f.field).join(',')}`;
+  const [longTickKey, setLongTickKey] = useState('');
+  const longOk = !longLeft.length || (!longStops && longTickKey === longLeftKey);
+  const leaveLongOut = () => setLongSkip({ key: longKey, indexes: Array.from(new Set([...longSkipped, ...longLeft])).sort((a, b) => a - b) });
   const [barcodeTicks, setBarcodeTicks] = useState<{ key: string; items: string[] }>({ key: '', items: [] });
   const barcodeItemTicked = (item: string) => barcodeTicks.key === barcodeKey && barcodeTicks.items.includes(item);
   const tickBarcodeItem = (item: string, value: boolean) => setBarcodeTicks((current) => {
     const items = current.key === barcodeKey ? current.items : [];
     return { key: barcodeKey, items: value ? [...items.filter((i) => i !== item), item] : items.filter((i) => i !== item) };
   });
-  const barcodeGoAhead = !barcodeWords.stops && barcodeCheck.issues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
+  const designGoAhead = !barcodeWords.stops && designIssues.length > 0 && barcodeItems.length > 0 && barcodeItems.every(barcodeItemTicked);
+  const designOk = designIssues.length === 0 || designGoAhead;
+  // Every problem ticked to print anyway (carried to the run page as one go-ahead).
+  const barcodeGoAhead = barcodeCheck.issues.length > 0 && longOk && (designIssues.length === 0 ? longLeft.length > 0 : designGoAhead);
   const barcodesClear = barcodeCheck.issues.length === 0;
-  const barcodesOk = barcodesClear || barcodeGoAhead;
+  const barcodesOk = barcodesClear || (designOk && longOk);
   // "Fix it for me" / "Use a QR code instead" right here, offered only when
   // the changed design prints that barcode whole on every label and lands on
   // nothing. It changes the design's barcode only, is saved, and has Undo.
   const barcodeFixes = useMemo(
-    () => (barcodeCheck.issues.some((issue) => issue.kind === 'too-long' || (issue.kind === 'characters' && barcodeIssueStops(issue, format))) && template && !template.summaryOnly
-      ? runBarcodeFixes(checkTemplate, runDataForCheck, format, barcodeCheck.issues, Math.min(labelCount || 1, 2000))
+    () => (designIssues.some((issue) => issue.kind === 'too-long' || (issue.kind === 'characters' && barcodeIssueStops(issue, format))) && template && !template.summaryOnly
+      ? runBarcodeFixes(checkTemplate, runDataForCheck, format, designIssues, Math.min(labelCount || 1, 2000))
       : null),
-    [barcodeCheck.issues, template, checkTemplate, runDataForCheck, format, labelCount],
+    [designIssues, template, checkTemplate, runDataForCheck, format, labelCount],
   );
   const [runFixNote, setRunFixNote] = useState<{ templateId: string; text: string; before: TemplateElement[]; tone: 'ok' | 'error' } | null>(null);
   const [runFixBusy, setRunFixBusy] = useState(false);
@@ -1184,7 +1217,7 @@ function NewRunContent() {
   // Spreadsheet rows and design problems counted apart, so the footer never
   // blames the design for a value in the file.
   const barcodeStopCounts = () => {
-    const stopping = barcodeCheck.issues.filter((issue) => barcodeIssueStops(issue, format));
+    const stopping = designIssues.filter((issue) => barcodeIssueStops(issue, format));
     const rows = new Set(stopping.filter((issue) => issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field)).map((issue) => issue.label)).size;
     const design = new Set(stopping.filter((issue) => !(issue.kind === 'characters' && issue.label && fieldIsFromSheet(issue.field))).map((issue) => `${issue.elementId ?? issue.field}|${issue.kind}`)).size;
     return `${rows.toLocaleString()} spreadsheet row${rows === 1 ? '' : 's'} and ${design.toLocaleString()} design problem${design === 1 ? '' : 's'} need fixing before anything prints.`;
@@ -1198,7 +1231,8 @@ function NewRunContent() {
       : `${blankHeading(blankCheck)}: choose what to do in Review.`),
     !sameOk && 'Confirm the value that prints on every label, or choose From spreadsheet.',
     !examplesOk && `Make the ${exampleRisks.some((r) => r.type === 'barcode') ? 'barcode' : 'QR code'} change per label, or confirm it prints the same on every label.`,
-    !barcodesOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
+    !longOk && longValueReason(longFields, longLeft.length, allDataRows.length, longStops),
+    !designOk && (barcodeWords.fixIn === 'data' && barcodeWords.stops ? (barcodeCheck.badLabels === 1
       ? `A barcode can’t print. ${charSkippable ? 'Leave that label out, fix that row' : 'Fix that row'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`
       : `Some barcodes can’t print. ${charSkippable ? 'Leave those labels out, fix those rows' : 'Fix those rows'}${barcodeFixes?.qr ? ', or use a QR code' : ''}.`)
       : barcodeWords.fixIn === 'both' && barcodeWords.stops ? barcodeStopCounts()
@@ -2226,7 +2260,7 @@ function NewRunContent() {
                         choice={blankChoiceNow}
                         onChoiceChange={setBlankChoice}
                         sheetRow={(label) => label + (fileInfo?.headerRow ?? 1)}
-                        showWhenOk={barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
+                        showWhenOk={!keptRows && barcodesClear && charactersOk && examplesOk && sameOk && !barcodeCheck.warnings.length && !currencyRisks.length && !layoutIssues.length}
                       />
                     )}
                     {skipRows && skippable && (
@@ -2254,6 +2288,25 @@ function NewRunContent() {
                         <button type="button" className="btn btn-secondary btn-sm max-w-full whitespace-normal text-left max-sm:min-h-11 max-sm:py-2" onClick={() => leaveCharsOut(charAllLeft)}>Leave all {charAllLeft.length.toLocaleString()} out and print the other {(allDataRows.length - charSkipped.length - charAllLeft.length).toLocaleString()}</button>
                       </div>
                     )}
+                    <LongValueWarning
+                      fields={longFields}
+                      labels={longLeft}
+                      total={allDataRows.length}
+                      rest={labelCount - longLeft.length}
+                      mode={inputMode}
+                      stops={longStops}
+                      onLeaveOut={leaveLongOut}
+                      sheetRow={inputMode === 'csv' ? (index) => index + 1 + (fileInfo?.headerRow ?? 1) : undefined}
+                      designHref={template ? designerFixHref(template.id, barcodeCheck.issues.find((issue) => isLongValueIssue(issue, longRows))?.elementId) : undefined}
+                      ticked={longTickKey === longLeftKey}
+                      onTick={(value) => setLongTickKey(value ? longLeftKey : '')}
+                    />
+                    {longSkipped.length > 0 && (
+                      <p className="text-sm text-zinc-400">
+                        {longLabelWords(longSkipped.map((index) => index + 1), allDataRows.length).replace(/^l/, 'L')} {longSkipped.length === 1 ? 'is' : 'are'} left out because {longRows.fields.length === 1 ? `${longSkipped.length === 1 ? 'its' : 'their'} ${friendlyFieldName(longRows.fields[0].field)} ${longSkipped.length === 1 ? 'is' : 'values are'}` : longSkipped.length === 1 ? 'its value is' : 'their values are'} too long for the barcode, so this run has {labelCount.toLocaleString()} label{labelCount === 1 ? '' : 's'}.{' '}
+                        <button type="button" className="link" onClick={() => setLongSkip({ key: '', indexes: [] })}>Undo</button>
+                      </p>
+                    )}
                     <BarcodeWarning
                       items={barcodeItems}
                       stops={barcodeWords.stops}
@@ -2268,7 +2321,7 @@ function NewRunContent() {
                           <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy} onClick={() => void applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId)}>{barcodeFixes.qr.label}</button>
                         )}
                         {barcodeWords.fixIn !== 'data' && template && (
-                          <FixInDesignerLink href={designerFixHref(template.id, barcodeCheck.issues.find((issue) => issue.elementId)?.elementId)} />
+                          <FixInDesignerLink href={designerFixHref(template.id, designIssues.find((issue) => issue.elementId)?.elementId)} />
                         )}
                         {barcodeWords.fixIn !== 'design' && charBarcodeButton && leaveOutButton(charBarcodeLeft)}
 

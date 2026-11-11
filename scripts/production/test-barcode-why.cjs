@@ -27,4 +27,34 @@ assert.match(why(cases[1]), /move it in the design so all of it sits on the labe
 assert.doesNotMatch(why(cases[2]), /prints over Batch/);
 // Something it doesn't recognise keeps the measured words.
 assert.equal(plainBarcodeWhy('Something new.', 'measured', ''), 'measured');
+
+// A value too long for its barcode on some labels only is a problem with
+// those rows (leave them out), not the design; on every label it is the design.
+{
+  const { longValueRows, isLongValueIssue } = require('../../src/components/checks/longValues.ts');
+  const { longValueSentence, longValueReason } = require('../../src/components/checks/longValues.ts');
+  const format = { id: 'f', name: 'f', type: 'thermal', width: 2, height: 1, dpi: 203, labelsAcross: 1 };
+  const bar = { id: 'sku', type: 'barcode', fieldName: 'SKU', isStatic: false, barcodeFormat: 'CODE128', showText: true, x: 8, y: 60, width: 240, height: 80, rotation: 0, zIndex: 2 };
+  const rows = Array.from({ length: 20 }, (_, i) => ({ SKU: `SKU-${100 + i}` }));
+  rows[11] = { SKU: 'X'.repeat(40) };
+  const run = { sourceData: rows, fieldMappings: { SKU: { mode: 'column', csvColumn: 'SKU' } }, staticValues: {} };
+  const sheet = () => true;
+  for (const mode of ['bitmap-v1', 'native-v1']) {
+    const found = longValueRows({ elements: [bar], thermalRenderMode: mode }, format, run, sheet);
+    assert.deepEqual(found.indexes, [11], mode);
+    assert.equal(found.fields[0].longest, 40);
+    assert.equal(found.fields[0].othersLongest, 7);
+    assert.equal(found.stops, mode === 'bitmap-v1', mode);
+    assert.ok(isLongValueIssue({ kind: 'too-long', field: 'SKU', label: 12, fit: { reason: mode === 'bitmap-v1' ? 'box-too-small' : 'off-label' } }, found));
+    assert.ok(!isLongValueIssue({ kind: 'characters', field: 'SKU', label: 12, fit: { reason: 'characters' } }, found));
+  }
+  const found = longValueRows({ elements: [bar], thermalRenderMode: 'bitmap-v1' }, format, run, sheet);
+  assert.equal(longValueSentence(found.fields[0], 20, (i) => i + 2), 'Label 12’s SKU (spreadsheet row 13) is too long for its barcode: 40 characters, where the other labels have 7 or fewer.');
+  assert.equal(longValueReason(found.fields, 1, 20, true), 'Label 12’s SKU is too long for its barcode. Leave that label out or fix that row.');
+  // Too long on every label: the design's problem, not listed.
+  const allLong = { ...run, sourceData: rows.map(() => ({ SKU: 'X'.repeat(40) })) };
+  assert.deepEqual(longValueRows({ elements: [bar], thermalRenderMode: 'bitmap-v1' }, format, allLong, sheet).indexes, []);
+  // A typed value (not from the spreadsheet) is never a row problem.
+  assert.deepEqual(longValueRows({ elements: [bar], thermalRenderMode: 'bitmap-v1' }, format, run, () => false).indexes, []);
+}
 console.log('barcode why: ok');
