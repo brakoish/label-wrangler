@@ -22,11 +22,13 @@ const replacesKey = (runId: string) => `${REPLACES_PREFIX}${runId}`;
 
 const local = () => (typeof window !== 'undefined' ? window.localStorage : null);
 
-/** The old run's id this run replaces: a plain id saved by the new-run page, nothing else. */
+/** The old run's id this run replaces: the plain id the new-run page saves (or a record with that id). */
 export function readQrReplaces(storage: Pick<Storage, 'getItem'> | null, runId: string): string | null {
   try {
     const raw = storage?.getItem(replacesKey(runId));
-    const id = typeof raw === 'string' ? raw.trim() : '';
+    let id = typeof raw === 'string' ? raw.trim() : '';
+    // A plain id is what the new-run page saves; a {"id": …} record is read the same way.
+    if (id.startsWith('{')) { try { const data = JSON.parse(id) as { id?: unknown }; id = typeof data?.id === 'string' ? data.id.trim() : ''; } catch { id = ''; } }
     return id && id !== runId && /^[A-Za-z0-9_-]{1,100}$/.test(id) ? id : null;
   } catch { return null; }
 }
