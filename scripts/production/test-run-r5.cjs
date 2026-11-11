@@ -113,16 +113,16 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   assert.match(panel,/:sendingHeld && plan\.kind!=='reprint'\?`Send \$\{fromNumber===toNumber/,'B13: after the reprint, "Send labels 76–150": one press checks and sends');
   assert.match(panel,/if\(!pending && !proofCurrent\)\{\s*if\(printAllowed && plan\.kind!=='wait'\)void sendNow\(\{from:fromNumber,to:toNumber\}/,'B13: an exact design checks and sends in one tap (sendNow: check, then the one POST with the digest)');
   assert.doesNotMatch(panel,/`Check \$\{plural\(sendCount\)\}`/,'B13: no check-only main button');
-  assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:suggestOfficeRange\(/,'the held range is suggested before the rest of the run');
+  assert.match(panel,/heldFrom!==undefined && heldTo!==undefined\?\{from:heldFrom,to:heldTo\}:gapSuggestion\(jobs,total,printedCount,toGoSpans\)/,'the held range is suggested before the rest of the run (then the first gap left to print)');
   assert.match(panel,/window\.addEventListener\('beforeunload',warn\)/,'leaving mid-series asks first');
   assert.match(panel,/setOfficeSeriesRunning\(true,\(leaving\)=>\{\s*stopSeries\.current=true;/,'in-app links ask too, and can stop after this part');
   assert.match(panel,/return\(\)=>\{window\.removeEventListener\('beforeunload',warn\);setOfficeSeriesRunning\(false\);\}/,'B14: the leave warning is removed before the page leaves after the part');
-  assert.match(panel,/const ok=await confirmDialog\(\{title:`Send \$\{plural\(sendCount\)\} in \$\{parts\.length\} parts\?`/,'one confirm before a multi-part send');
+  assert.match(panel,/const ok=await confirmDialog\(\{title:`Send \$\{plural\(count\)\} in \$\{list\.length\} parts\?`/,'one confirm before a multi-part send');
   assert.match(panel,/if\(!resend\)\{\s*const after=partsAfterPrinted\(\[part\],printedRef\.current\);/,'a new part leaves out labels printed meanwhile; an unsure part resends exactly what it saved');
   assert.match(panel,/seriesLocks\.has\(runId\)/,'one series per run');
-  assert.match(panel,/const parts=fresh\?leftParts\.filter\(p=>officeSendPlan\(fresh,p\.from,p\.to\)\.kind==='new'\):leftParts;[\s\S]{0,400}void runSeries\(\{\.\.\.partsPlan,parts,next:0\}\)/,'"Send the remaining parts" reads the queue again and sends only what is left');
+  assert.match(panel,/let parts=fresh\?leftParts\.filter\(p=>officeSendPlan\(fresh,p\.from,p\.to\)\.kind==='new'\):leftParts;[\s\S]{0,1600}void runSeries\(\{\.\.\.partsPlan,parts,next:0/,'"Send the remaining parts" reads the queue again and sends only what is left');
   assert.doesNotMatch(panel,/This plan is saved on this device only/,'no storage jargon');
-  assert.match(panel,/const scanned=scannedSkipPlan\(fromNumber,toNumber,scannedLabels\);/,'scanned labels are offered to leave out');
+  assert.match(panel,/const here=rangeGaps\(fromNumber,toNumber,toGoSpans,skipSpans\);/,'scanned (and office-confirmed) labels are offered to leave out');
   assert.equal((panel.match(/method:'POST',body:JSON\.stringify\(payload\)/g)||[]).length,1,'one POST site for jobs');
   assert.ok(panel.indexOf('try{localStorage.setItem(storageKey,JSON.stringify(payload));}')<panel.indexOf("api('/api/office/jobs',{method:'POST'"),'the key is saved before the POST');
 }
@@ -214,7 +214,7 @@ console.log('PASS run r5: held labels offered on their own, parts trimmed by pro
   assert.match(office, /\{markShown && <div/);
   const list = read('src/app/runs/page.tsx');
   // Round 11: the list gives runDisplayStatus the same hold the run page does; only labels waiting there make it "Paused".
-  assert.match(list, /const heldBy = holdRun && holdRun\.runId !== run\.id && unfinished && !printingElsewhere \? holdRun : null;/, 'the station hold reaches every unfinished office run, like the run header (not one printing elsewhere with no office work)');
+  assert.match(list, /const heldBy = thermal && holdRun && holdRun\.runId !== run\.id && unfinished && !printingElsewhere \? holdRun : null;/, 'the station hold reaches every unfinished office run, like the run header (not one printing elsewhere with no office work, nor a sheet run)');
   assert.match(list, /const printingElsewhere = !run\.office && run\.status === 'printing' && lastPrinterIsLocal\(\);/);
   assert.doesNotMatch(list, /officeDefault && leftToSend/);
   assert.match(list, /some of its labels are still on their way to the office printer/, 'bulk mark names a run left out for labels still on their way');

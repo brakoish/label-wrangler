@@ -60,3 +60,13 @@ export function countedEventSpans(events: ReadonlyArray<CountedEventLike>, total
 export function printedLabelCount(printedCount: number, counted: ReadonlyArray<OfficeSpan>, total: number): number {
   return printedSpans(Math.max(0, Math.floor(printedCount) || 0), counted, total).reduce((n, s) => n + s.to - s.from + 1, 0);
 }
+
+/**
+ * One colour rule for every progress bar (run page and Runs list): printed
+ * labels in the accent, green once all are printed, grey on a cancelled or
+ * finished-and-quiet run; labels at the office not counted yet in a lighter
+ * tint of the same accent (the words beside the bar say which).
+ */
+export type ProgressTone = 'active' | 'done' | 'muted';
+export const PROGRESS_FILL: Record<ProgressTone, string> = { active: 'bg-amber-500', done: 'bg-emerald-400', muted: 'bg-zinc-500' };
+export const PROGRESS_OFFICE_TINT: Record<ProgressTone, string> = { active: 'bg-amber-500/40', done: 'bg-amber-500/40', muted: 'bg-zinc-600' };

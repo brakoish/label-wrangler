@@ -181,6 +181,33 @@ export function describeBlankSummary(check: RunDataCheck): string {
   return `${n.toLocaleString()} label${n === 1 ? ' is' : 's are'} missing a value`;
 }
 
+/** "Product name" reads "product name" inside a sentence; "SKU" stays "SKU". */
+function inSentence(name: string): string {
+  return /^[A-Z][a-z]/.test(name) ? name[0].toLowerCase() + name.slice(1) : name;
+}
+
+/**
+ * The whole check in one line, e.g. "3 labels have no product name. They’ll
+ * print blank there." Several fields read as the headline ("5 labels are
+ * missing a value."), with the detail behind "Show which".
+ */
+export function describeBlankLine(check: RunDataCheck, displayName: (field: string) => string = (field) => field): string {
+  if (!check.issues.length) return '';
+  if (check.issues.length > 1) return `${describeBlankSummary(check)}.`;
+  const issue = check.issues[0];
+  const total = check.checkedLabels;
+  const n = issue.kind === 'no-value' ? total : issue.count;
+  const all = n >= total;
+  const one = n === 1;
+  const field = inSentence(displayName(issue.field));
+  const who = all && total === 1 ? 'This label has' : all ? `All ${total.toLocaleString()} labels have` : `${n.toLocaleString()} label${one ? ' has' : 's have'}`;
+  const they = one ? 'It' : 'They';
+  const outcome = issue.outcome === 'sample' ? `${they}’d print the design’s sample “${issue.sample}” there.`
+    : issue.outcome === 'error' ? 'A barcode or QR code can’t print without one.'
+      : `${they}’ll print blank there.`;
+  return `${who} no ${field}. ${outcome}`;
+}
+
 /** What to do about it, chosen by whether "leave blank" is a real option. */
 export function blankRemedy(check: RunDataCheck): string {
   if (!check.issues.length) return '';

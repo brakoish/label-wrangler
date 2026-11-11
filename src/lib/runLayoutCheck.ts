@@ -1,10 +1,11 @@
 import type { LabelFormat, LabelTemplate, Run } from './types';
 import { layoutProblems, withAllEdges, type LayoutProblem } from './designerLayout';
 import { previewLabelValues } from './runBuilder';
-import { checkRunBarcodes, describeBarcodeGroups, issueStopsRenderer, type BarcodeIssue } from './barcodeCheck';
+import { checkRunBarcodes, describeBarcodeGroups, issueStopsRenderer, rendererStopLabels, rowStopLine, type BarcodeIssue } from './barcodeCheck';
 import { fieldItemWords, friendlyFieldName, placeholderDescription } from './fieldLabels';
 import { NOT_AS_WRITTEN_NOTE } from './barcodeValue';
 import { barcodeFitProblem } from './barcodeFit';
+import { checkRunBitmapGlyphs, glyphStopWords } from './runGlyphs';
 
 /** The run data the checks read (a Run, or the new-run wizard's data before the run exists). */
 export interface RunCheckData {
@@ -275,48 +276,74 @@ export interface RunSendCheck {
 /**
  * The whole-run check (`base`, the first 2,000 labels) narrowed to the labels
  * a print or send really covers. A label the exact renderer refuses stops only
- * the sends that include it, and labels past the first 2,000 are checked when
- * they are the ones being sent. Everything the printer can produce still needs
- * the same explicit go-ahead. Stops are found in full (never from the capped
- * list of problems), so a send with many printable problems is never blocked
- * by a refused label somewhere else in the run.
+ * the sends that include it. Those stops are found over the whole send, with
+ * no cap (the cheap stop-only pass), so a 3,000-label "Send all in parts"
+ * learns about label 2,600 before its first part goes; the list of printable
+ * problems (each needing its go-ahead) still covers the first `limit` labels
+ * of the send. Stops are never decided from the capped list of problems.
+ * `skip`: labels the person chose to leave out (they are not sent), so they
+ * neither stop nor ask anything.
  */
-export function runSendCheck(base: RunPrintCheck, run: Run | null | undefined, template: LabelTemplate | null | undefined, format: LabelFormat | null | undefined, send: { from: number; to: number } | null | undefined, limit = 2000): RunSendCheck {
+export function runSendCheck(base: RunPrintCheck, run: Run | null | undefined, template: LabelTemplate | null | undefined, format: LabelFormat | null | undefined, send: { from: number; to: number } | null | undefined, limit = 2000, skip: ReadonlyArray<number> = []): RunSendCheck {
   const plain: RunSendCheck = { check: base, stopsHere: [], before: null, after: null, stopsElsewhere: [], checkedTo: null };
   if (!run || !template || !format || !send || !Number.isInteger(send.from) || !Number.isInteger(send.to) || send.from < 1 || send.to < send.from) return plain;
   const runTotal = Math.max(1, run.totalLabels || run.sourceData.length || 1);
   const baseChecked = Math.min(runTotal, limit);
   const stopLabels = base.stopLabels ?? [];
-  if (!base.verdict.stops && send.to <= baseChecked) return plain;
   if (stopLabels.includes(0)) return { ...plain, stopsHere: [0] };
-  const to = Math.min(send.to, runTotal, send.from + limit - 1);
+  const end = Math.min(send.to, runTotal);
+  const skipped = new Set(skip);
+  // The stop-only pass over the labels past what the base check covered.
+  const lateStops = send.to > baseChecked ? rendererStopLabels(template, run, format, Math.max(send.from, baseChecked + 1), end) : [];
+  if (lateStops.includes(0)) return { ...plain, stopsHere: [0] };
+  if (!base.verdict.stops && send.to <= baseChecked) return plain;
+  const to = Math.min(end, send.from + limit - 1);
   const data = { sourceData: run.sourceData.slice(send.from - 1, to), fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField };
   const found = checkRunBarcodes(template, data, format);
   for (const issue of [...found.issues, ...found.warnings]) if (issue.label > 0) issue.label += send.from - 1;
+  // Stops past the first `limit` labels of the send: each one's own line (at most 50).
+  const extra: BarcodeIssue[] = [];
+  for (const label of lateStops.filter((n) => n > to && !skipped.has(n)).slice(0, 50)) {
+    const one = checkRunBarcodes(template, { ...data, sourceData: run.sourceData.slice(label - 1, label) }, format);
+    for (const issue of one.issues) if (issue.label > 0) extra.push({ ...issue, label: issue.label + label - 1 });
+  }
+  const issues = [...found.issues, ...extra].filter((issue) => !skipped.has(issue.label));
   // found.stopLabels counts from the start of the slice.
-  const stopsHere = Array.from(new Set((found.stopLabels ?? []).map((label) => (label > 0 ? label + send.from - 1 : label)))).sort((a, b) => a - b);
+  const stopsHere = Array.from(new Set([...(found.stopLabels ?? []).map((label) => (label > 0 ? label + send.from - 1 : label)), ...lateStops]))
+    .filter((label) => !skipped.has(label)).sort((a, b) => a - b);
   const sheet = run.dataSource === 'csv';
   const fromSheet = (field: string) => sheet && run.fieldMappings?.[field]?.mode === 'column';
-  const blocking = describeBarcodeGroups(found.issues, found.checkedLabels, fromSheet, 50, found.fitCounts).items;
+  // A stop on a few spreadsheet rows is about those rows' values, not the
+  // design: "Label 2,600’s SKU is too long for this label (44 characters)".
+  const stopping = issues.filter((issue) => barcodeIssueStops(issue, format));
+  const fewRows = stopsHere.length > 0 && !stopsHere.includes(0) && stopsHere.length <= 3 && stopping.length > 0
+    && stopping.every((issue) => issue.label > 0 && fromSheet(issue.field) && rowStopLine(issue) !== null);
+  const rowLines = fewRows ? stopping.map((issue) => rowStopLine(issue)!) : [];
+  const rest = fewRows ? issues.filter((issue) => !stopping.includes(issue)) : issues;
+  const badLabels = Math.max(0, found.badLabels - found.issues.filter((issue) => skipped.has(issue.label)).length) + extra.length;
+  const blocking = [...rowLines, ...describeBarcodeGroups(rest, found.checkedLabels, fromSheet, 50, found.fitCounts).items];
+  const verdict = barcodeVerdict(issues, badLabels, format, fromSheet);
+  const shownVerdict: BarcodeVerdict = fewRows && verdict.stops
+    ? { ...verdict, fixIn: 'data', waitReason: `${rowLines.length === 1 ? 'One label' : `${rowLines.length} labels`} can’t print, so nothing can go until ${rowLines.length === 1 ? 'it’s' : 'they’re'} fixed or left out.` }
+    : verdict;
   const check: RunPrintCheck = {
     ...base,
     blocking,
-    verdict: barcodeVerdict(found.issues, found.badLabels, format, fromSheet),
+    verdict: shownVerdict,
     blockingKey: blocking.join('\n'),
-    barcodeElementIds: Array.from(new Set(found.issues.map((issue) => issue.elementId).filter((id): id is string => !!id))),
+    barcodeElementIds: Array.from(new Set(issues.map((issue) => issue.elementId).filter((id): id is string => !!id))),
     stopLabels: stopsHere,
   };
   const first = stopsHere[0];
   let last = first ?? 0;
   while (stopsHere.includes(last + 1)) last++;
-  const lastChecked = to;
   return {
     check,
     stopsHere,
     before: first !== undefined && first > send.from ? { from: send.from, to: first - 1 } : null,
-    after: first === send.from && stopsHere.every((label) => label <= last) && last < lastChecked ? { from: last + 1, to: lastChecked } : null,
-    stopsElsewhere: stopLabels.filter((label) => label < send.from || label > send.to),
-    checkedTo: to < Math.min(send.to, runTotal) ? to : null,
+    after: first === send.from && stopsHere.every((label) => label <= last) && last < end ? { from: last + 1, to: end } : null,
+    stopsElsewhere: stopLabels.filter((label) => (label < send.from || label > send.to) && !skipped.has(label)),
+    checkedTo: to < end ? to : null,
   };
 }
 
@@ -344,4 +371,44 @@ export function printCheckAllows(check: RunPrintCheck, goAhead: PrintGoAhead): b
   if (check.blocking.length && goAhead.barcode !== check.blockingKey) return false;
   if (check.layout.length && goAhead.layout !== check.layoutKey) return false;
   return true;
+}
+
+/**
+ * Labels the exact renderer refuses, said plainly and only those labels
+ * (2,600, never the 8-label batch it was drawn in): one spreadsheet row's
+ * value says it is too long for this label; anything else says the barcode
+ * on it can't be drawn. Empty when there are none.
+ */
+export function stopLabelWords(run: Run | null | undefined, template: LabelTemplate | null | undefined, format: LabelFormat | null | undefined, labels: ReadonlyArray<number>): string {
+  if (!labels.length) return '';
+  const n = (x: number) => x.toLocaleString('en-US');
+  // Text the picture renderer can't draw (a character its font lacks) is said as that.
+  if (run && template && format) {
+    const glyphs = checkRunBitmapGlyphs(template, format, { sourceData: run.sourceData, fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField });
+    const mine = labels.filter((label) => glyphs.labels.includes(label) || (label > 0 && glyphs.labels.includes(0)));
+    if (mine.length === labels.length) return glyphStopWords(glyphs, glyphs.labels.includes(0) ? [0] : mine, (field) => run.dataSource === 'csv' && run.fieldMappings?.[field]?.mode === 'column');
+  }
+  if (labels.includes(0)) return 'A barcode on every label can’t be drawn, so nothing can print. Fix the design first.';
+  const which = labels.length === 1 ? `Label ${n(labels[0])}` : `Labels ${labels.slice(0, 3).map(n).join(', ')}${labels.length > 3 ? ` and ${n(labels.length - 3)} more` : ''}`;
+  if (run && template && format && labels.length === 1) {
+    const data = { sourceData: run.sourceData.slice(labels[0] - 1, labels[0]), fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField };
+    const issue = checkRunBarcodes(template, data, format).issues.find((i) => barcodeIssueStops(i, format));
+    const sheet = run.dataSource === 'csv' && !!issue?.field && run.fieldMappings?.[issue.field]?.mode === 'column';
+    if (issue && sheet && issue.kind === 'too-long') return `${which}’s ${friendlyFieldName(issue.field)} is too long for this label (${n(Array.from(issue.value).length)} characters), so it can’t print.`;
+    if (issue && sheet && issue.kind === 'characters') return `${which}’s ${friendlyFieldName(issue.field)} has characters its barcode can’t hold, so it can’t print.`;
+  }
+  return `${which} can’t print: a barcode on ${labels.length === 1 ? 'it' : 'them'} can’t be drawn.`;
+}
+
+/** Labels from..to (each span) the exact renderer refuses, leaving out `skip`. */
+export function stopLabelsIn(run: Run | null | undefined, template: LabelTemplate | null | undefined, format: LabelFormat | null | undefined, spans: ReadonlyArray<{ from: number; to: number }>, skip: ReadonlyArray<number> = []): number[] {
+  if (!run || !template || !format) return [];
+  const data = { sourceData: run.sourceData, fieldMappings: run.fieldMappings, staticValues: run.staticValues, mappedField: run.mappedField };
+  const out = new Set<number>();
+  for (const span of spans) for (const label of rendererStopLabels(template, data, format, span.from, span.to)) if (!skip.includes(label)) out.add(label);
+  // And labels whose text the picture renderer can't draw.
+  const glyphs = checkRunBitmapGlyphs(template, format, data).labels;
+  if (glyphs.includes(0)) return [0];
+  for (const label of glyphs) if (!skip.includes(label) && spans.some((span) => label >= span.from && label <= span.to)) out.add(label);
+  return [...out].sort((a, b) => a - b);
 }

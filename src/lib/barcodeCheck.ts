@@ -211,6 +211,44 @@ export function checkRunBarcodes(template: Pick<LabelTemplate, 'elements'> & Par
   return { issues, badLabels, warnings, checkedLabels: total, fitCounts, stopLabels };
 }
 
+/**
+ * The cheap stop-only pass: every label from..to (1-based, of the whole run)
+ * that the exact (bitmap) renderer refuses for a barcode, with no cap and no
+ * issue list. Fit maths only, no drawing, so a 10,000-label series is checked
+ * before its first part goes. [0] when a fixed barcode stops every label.
+ */
+export function rendererStopLabels(template: Pick<LabelTemplate, 'elements'> & Partial<Pick<LabelTemplate, 'thermalRenderMode'>>, run: RunData, format: FitFormat | null | undefined, from: number, to: number): number[] {
+  if (template.thermalRenderMode !== 'bitmap-v1' || format?.type !== 'thermal') return [];
+  const barcodes = template.elements.filter((el): el is BarcodeElement => el.type === 'barcode');
+  for (const el of barcodes.filter((b) => b.isStatic)) {
+    const found = issueFor(el, 0, printedValue(el, {}), format, true);
+    if (found && found.kind !== 'tight' && issueStopsRenderer(found, format)) return [0];
+  }
+  const dynamic = barcodes.filter((b) => !b.isStatic);
+  const out: number[] = [];
+  const last = Math.min(to, Math.max(1, run.sourceData.length));
+  for (let label = Math.max(1, from); label <= last && dynamic.length; label++) {
+    const values = valuesFor(run, label - 1);
+    for (const el of dynamic) {
+      const found = issueFor(el, label, printedValue(el, values), format, true);
+      if (found && found.kind !== 'tight' && issueStopsRenderer(found, format)) { out.push(label); break; }
+    }
+  }
+  return out;
+}
+
+/**
+ * A stop on one spreadsheet row, said about the data, not the design:
+ * "Label 2,600’s SKU is too long for this label (44 characters), so it
+ * can’t print." Null when it isn't one row's value (a fixed barcode, or a
+ * value the barcode type can't hold, which already names its row).
+ */
+export function rowStopLine(issue: BarcodeIssue): string | null {
+  if (!issue.label || issue.kind !== 'too-long' || !issue.field) return null;
+  const length = Array.from(issue.value).length;
+  return `Label ${issue.label.toLocaleString('en-US')}’s ${friendlyFieldName(issue.field)} is too long for this label (${length.toLocaleString('en-US')} characters), so it can’t print. Fix row ${spreadsheetRow(issue.label).toLocaleString('en-US')} in your spreadsheet, or leave label ${issue.label.toLocaleString('en-US')} out.`;
+}
+
 function shorten(value: string, max = 24): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }

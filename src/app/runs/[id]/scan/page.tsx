@@ -17,6 +17,8 @@ import { friendlyFieldName } from '@/lib/fieldLabels';
 import { defaultScanField, scanCanLookUpRow, scanCheckData, scanLabelValues } from '@/lib/runFieldSetup';
 import { barcodeValueProblem } from '@/lib/barcodeCheck';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
+import { plainServerError } from '@/lib/runErrors';
+import { RawDetails } from '@/components/runs/RawDetails';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
 import { dynamicFieldsForTemplate } from '@/lib/runBuilder';
 import {
@@ -302,12 +304,13 @@ export default function ScanModePage({ params }: { params: Promise<{ id: string 
       <div className="space-y-5">
         <h1 className="text-xl sm:text-2xl font-semibold text-zinc-100">Scan to print</h1>
         <Recovery role="alert" tone="warning"
-          title={missing ? 'We couldn’t find that run' : 'We couldn’t load that run'}
+          title={missing ? 'We couldn’t find this run' : 'We couldn’t load this run'}
           actions={<>
             {!missing && <button type="button" onClick={() => void useRunStore.getState().fetchRun(id)} className="btn btn-primary">Try again</button>}
             <Link href="/runs" className={missing ? 'btn btn-primary' : 'btn btn-ghost'}><ArrowLeft className="size-4" aria-hidden="true" /> Back to runs</Link>
           </>}>
-          <p>{missing ? 'It may have been deleted, or the link is wrong.' : friendlyError(loadError.message)}</p>
+          <p>{missing ? 'It may have been deleted, or the link is wrong.' : plainServerError(loadError.message).text}</p>
+          {!missing && plainServerError(loadError.message).details && <RawDetails text={plainServerError(loadError.message).details} />}
         </Recovery>
       </div>
     ));

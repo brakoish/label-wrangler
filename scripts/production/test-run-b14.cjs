@@ -80,9 +80,9 @@ const allowedWithTicks = (s) => printCheckAllows(s.check, { barcode: s.check.blo
   const why = barcodeRunWhy(long);
   assert.doesNotMatch(why, /\d"/, 'no inches');
   assert.doesNotMatch(why, /design it started with/);
-  assert.match(why, /^The code is too long to fit this label\. In the designer, press “Make a picture copy”: it draws thinner bars that fit\./);
-  assert.match(why, /new run with the same data/);
-  assert.match(barcodeRunWhy(long, true), /labels already printed/);
+  // Round 15 (#12): the wizard's one sentence for a long code, no picture-copy or new-run jargon.
+  assert.equal(why, 'This code is too long to scan at this size. Print it as a QR code, or use a bigger label.');
+  assert.doesNotMatch(why, /picture copy|new run with the same data/);
 }
 
 // Source checks: the office panel and run page fixes stay in place.
