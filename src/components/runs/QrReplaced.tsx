@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Run } from '@/lib/types';
+import { qrOldRunOpen, readQrReplacedBy, readQrReplaces, replacesKey } from '@/lib/runQrLink';
 import { useRunStore } from '@/lib/runStore';
 import { confirmDialog } from '@/components/ui/feedback';
 import { readOfficeJobs } from './officeCancel';
@@ -17,41 +18,7 @@ import { readOfficeJobs } from './officeCancel';
  * old run's page say a QR run replaced it. No clock guesses: a run made
  * any other way never offers to cancel another run.
  */
-const REPLACES_PREFIX = 'lw:qr-replaces:';
-const replacesKey = (runId: string) => `${REPLACES_PREFIX}${runId}`;
-
 const local = () => (typeof window !== 'undefined' ? window.localStorage : null);
-
-/** The old run's id this run replaces: the plain id the new-run page saves (or a record with that id). */
-export function readQrReplaces(storage: Pick<Storage, 'getItem'> | null, runId: string): string | null {
-  try {
-    const raw = storage?.getItem(replacesKey(runId));
-    let id = typeof raw === 'string' ? raw.trim() : '';
-    // A plain id is what the new-run page saves; a {"id": …} record is read the same way.
-    if (id.startsWith('{')) { try { const data = JSON.parse(id) as { id?: unknown }; id = typeof data?.id === 'string' ? data.id.trim() : ''; } catch { id = ''; } }
-    return id && id !== runId && /^[A-Za-z0-9_-]{1,100}$/.test(id) ? id : null;
-  } catch { return null; }
-}
-
-/** The runs that say they replace `runId` (normally one). */
-export function readQrReplacedBy(storage: Pick<Storage, 'length' | 'key' | 'getItem'> | null, runId: string): string[] {
-  const out: string[] = [];
-  try {
-    if (!storage) return out;
-    for (let i = 0; i < storage.length; i++) {
-      const key = storage.key(i);
-      if (!key || !key.startsWith(REPLACES_PREFIX)) continue;
-      const newId = key.slice(REPLACES_PREFIX.length);
-      if (newId && readQrReplaces(storage, newId) === runId) out.push(newId);
-    }
-  } catch { /* storage off: nothing to say */ }
-  return out;
-}
-
-/** Whether the old run can still print labels the new run prints too: it exists, isn't printing, isn't finished or cancelled. */
-export function qrOldRunOpen(old: Pick<Run, 'status' | 'printedCount' | 'totalLabels'> | null | undefined): boolean {
-  return !!old && old.status !== 'printing' && old.status !== 'cancelled' && old.status !== 'completed' && (old.printedCount || 0) < old.totalLabels;
-}
 
 export function QrReplaced({ run }: { run: Run }) {
   const { runs, fetchRun, setRunStatus } = useRunStore();
