@@ -573,7 +573,7 @@ textarea:focus-visible,
 }
 
 /* One page container ---------------------------------------------------
- * Every page (Runs, a run, New run, Designs, Scan, Label sizes, Nabis) sits
+ * Every page (Runs, a run, New run, Designs, Scan, Label sizes) sits
  * in the same frame: the same width, side gutter and top space, so page
  * edges and titles line up. In the components layer, so a page can still
  * change its bottom space with a utility (pb-48). The designer's editor

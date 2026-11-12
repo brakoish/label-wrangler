@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Search } from 'lucide-react';
 
 /**
- * The top of a list page, the same on Runs, Designs, Label sizes and Nabis:
+ * The top of a list page, the same on Runs, Designs and Label sizes:
  * the title, one short line under it, and the page's main action lined up
  * with the bottom of the two on wider screens.
  */

@@ -37,7 +37,6 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   // Runs is the new home. Formats moved from '/' to '/formats'. Designer
   // stays at /designer. Nav order reflects day-to-day usage.
   const isRuns = pathname === '/' || pathname === '/runs' || pathname.startsWith('/runs');
-  const isNabis = pathname === '/nabis' || pathname.startsWith('/nabis');
   const isDesigner = pathname === '/designer' || pathname.startsWith('/designer');
   const isFormats = pathname === '/formats' || pathname.startsWith('/formats');
   useRegisterShell();
@@ -106,7 +105,6 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
 
   const navItems: Array<{ href: string; label: string; active: boolean }> = [
     { href: '/runs', label: 'Runs', active: isRuns },
-    { href: '/nabis', label: 'Nabis', active: isNabis },
     { href: '/designer', label: 'Designs', active: isDesigner },
     { href: '/formats', label: 'Label sizes', active: isFormats },
   ];
