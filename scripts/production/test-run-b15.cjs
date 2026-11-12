@@ -135,10 +135,12 @@ const has = (src, re) => assert.ok(re.test(src), `source check: ${re}`);
   const panel = read('src/components/runs/OfficePiPrinter.tsx');
   const printer = read('src/components/runs/RunPrinter.tsx');
   const list = read('src/app/runs/page.tsx');
-  // #1: the already-printed check names the gaps; a reprint is a choice of its own.
-  has(panel, /\$\{one\?'was':'were'\} already printed/);
-  has(panel, /extraLabel:`Print \$\{them\} again too`/);
-  has(printer, /already printed on the office printer/);
+  // #1 (owner: "i should be able to reprint as i please, just needs to be
+  // tracked"): labels that already printed print again with no question, on
+  // either printer.
+  assert.doesNotMatch(panel, /already printed`,/, 'the office panel asks nothing about labels already printed');
+  assert.doesNotMatch(panel, /extraLabel:`Print \$\{them\} again too`/);
+  assert.doesNotMatch(printer, /already printed on the office printer/);
   // #2: Send all checks the whole series first; the last part always says why.
   has(panel, /Send the rest without \$\{which\}\?/);
   has(panel, /Nothing was sent\./);
@@ -150,8 +152,9 @@ const has = (src, re) => assert.ok(re.test(src), `source check: ${re}`);
   has(list, /if \(!thermal && !run\.office\) return null;/);
   // #7: the office queue pads back in for the ghost inset.
   has(panel, /className="-ml-\[calc\(0\.75rem\+1px\)\]"/);
-  // #8: the go-back names the labels that print twice.
-  has(printer, /already printed, so \$\{twiceOne \? 'it prints' : 'they print'\} a second time/);
+  // #8: a From among printed labels no longer goes back: they print again as a reprint.
+  assert.doesNotMatch(printer, /twiceOne/);
+  has(printer, /const reprint = planStartReprints\(printedCount, startFrom, selectedThrough,/);
   // #9: the QR run offers to cancel the old run.
   has(read('src/components/runs/QrReplaced.tsx'), /Cancel the old run/);
   // #11: the bulk mark rebuilds its plan fresh.

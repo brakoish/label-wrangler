@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 const {spawnSync}=require('node:child_process');
 for(const file of [
  'scripts/production/test-reliability.cjs',
@@ -44,6 +45,7 @@ for(const file of [
  'scripts/production/test-run-b14.cjs',
  'scripts/production/test-run-b15.cjs',
  'scripts/production/test-run-b16.cjs',
+ 'scripts/production/test-run-reprints.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',
