@@ -221,7 +221,12 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
 
     const preview = template.thermalRenderMode === 'bitmap-v1'
       ? getBitmapProof(template, format, sampleData, true).then(result => {
-          if (active) setDraftWarning(result.warnings?.[0]?.message || '');
+          // Only a problem that shows on every label: an item whose value is
+          // fixed. Items filled per label are drawn with made-up samples here,
+          // so their warnings say nothing about real labels (each run checks
+          // its own values before printing).
+          const fixed = new Set(template.elements.filter((el) => el.isStatic).map((el) => el.id));
+          if (active) setDraftWarning(result.warnings?.find((w) => fixed.has(w.elementId))?.message || '');
           return result.proof;
         })
       : generateZPLWithImages(template, format, sampleData).then(zpl => renderZplToDataUrl(zpl, format));
@@ -246,7 +251,7 @@ function MiniPreview({ template, format }: { template: LabelTemplate; format?: L
           className={round ? 'h-full w-auto max-w-full rounded-full object-contain' : 'h-full w-full object-contain'}
           style={{ imageRendering: 'pixelated' }}
         />
-        {draftWarning && <span title={draftWarning} className="absolute bottom-1 left-1 rounded bg-zinc-950 px-1 text-xs text-amber-300">Needs a fix</span>}
+        {draftWarning && <span title={draftWarning} className="absolute inset-x-1 bottom-1 line-clamp-2 rounded bg-zinc-950/95 px-1.5 py-0.5 text-xs text-amber-300">Needs a fix: {draftWarning}</span>}
       </div>
     );
   }
