@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 // Round 10 fixes to the office panel's words and the jobs list:
 // - a page that finds a saved send it didn't make asks the office first (by
 //   the request's own key) and never claims "the connection dropped";
@@ -68,7 +69,7 @@ const {runDisplayStatus}=require('../../src/lib/runDisplayStatus.ts');
  assert.doesNotMatch(panel,/lw:office-pending:[^`]*`[^;]*tab:/,'nothing new in the saved request');
  // Start reads the count the server saved: another device ahead pauses with a word, nothing prints twice.
  const runPage=fs.readFileSync(path.join(__dirname,'../../src/components/runs/RunPrinter.tsx'),'utf8');
- assert.match(runPage,/if \(!plan\.rewind && Number\.isFinite\(serverCount\) && serverCount > startCount\) \{\s*setStatus\('paused'\); setPrintedCount\(serverCount\); clearRangeDrafts\(\); setStopAt\(0\);\s*setErrorMsg\(`Another device already printed up to label/);
+ assert.match(runPage,/if \(Number\.isFinite\(serverCount\) && serverCount > startCount\) \{\s*setStatus\('paused'\); setPrintedCount\(serverCount\); clearRangeDrafts\(\); setStopAt\(0\);\s*setErrorMsg\(`Another device already printed up to label/);
  // Pause/resume on a shared device: an older build's device-wide request is never taken over silently.
  {
   const P=require('../../src/lib/officeControlPending.ts');

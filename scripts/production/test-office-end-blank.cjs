@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 // The owner's "blank label at the end" (main afa3c52/50ea233) in this build's
 // office panel: the choice is saved with the request (and its key) before the
 // one POST and reused unchanged on a resend; only the last part of a "Send all
@@ -102,7 +103,7 @@ const read=(file)=>fs.readFileSync(path.join(__dirname,'../..',file),'utf8');
   // B13: a "too big" split keeps the blank due for the send that ends the range.
   assert.match(src,/if\(again\.endBlank===true && end<again\.to\)saveBlankDue\(again\.to\);/,'the split remembers where the blank is due');
   assert.match(src,/if\(blankDueAt!==null && payload\.to===blankDueAt\)saveBlankDue\(null\);/,'the send ending there clears it');
-  assert.match(src,/body:`\$\{end-part\.from===0\?'It prints':'They print'\} once more on the office printer\. The run’s progress doesn’t change\.`/,'a one-confirm reprint has no blank');
+  assert.match(src,/const printAgainNow=async\(part:OfficeFailedPart\)=>\{\s*const end=Math\.min\(part\.to,part\.from\+cap-1\);\s*if\(end<part\.to\)[^\n]*\n\s*else void sendNow\(\{from:part\.from,to:end\},part\.requestId \?\? undefined\);/,'a one-tap reprint asks nothing and has no blank');
   // No room for the blank: a new request without it, never the refused payload again.
   assert.match(src,/refusalStep==='without-blank'[\s\S]{0,400}sendNow\(\{from:again\.from,to:Math\.min\(again\.to,again\.from\+cap-1\)\},undefined,false,false\)/);
   // While the single POST is on its way, the panel doesn't say "not sure".

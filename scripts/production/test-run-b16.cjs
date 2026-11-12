@@ -64,7 +64,9 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 // #4: USB: a typed printed range prints again without rewinding; "Move start to N" moves the boxes (checked on the next press).
 {
   const printer = read('src/components/runs/RunPrinter.tsx');
-  assert.match(printer, /if \(plan\.rewind && selectedThrough <= printedCount\) \{[\s\S]{0,900}The run’s progress stays at[\s\S]{0,600}handleReprintRange\(\{ from: startFrom, to: selectedThrough \}, 'reprint'\)/);
+  // No question first: the range goes straight to the reprint path (logged, progress unchanged).
+  assert.match(printer, /if \(selectedThrough <= printedCount\) \{\s*starting\.current = false;\s*await handleReprintRange\(\{ from: startFrom, to: selectedThrough \}, 'reprint'\);\s*return;\s*\}/);
+  assert.doesNotMatch(printer, /The run’s progress stays at/);
   // "Move start to N" moves the boxes and stops, so the next press checks labels N on before anything prints.
   assert.match(printer, /if \(choice === 'confirm'\) \{ setFromDraft\(String\(skipped\.from\)\); setCountDraft\(null\); return; \}/);
   assert.match(printer, /confirmLabel: `Move start to \$\{skipped\.from\}`/);
@@ -105,7 +107,9 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   assert.match(printer, /lw:go-back-refused/);
   assert.match(printer, /Going back to an earlier label can’t be done right now\. Nothing was changed\./);
   assert.doesNotMatch(printer, /This page is out of date/, 'no reload loop');
-  assert.match(printer, /if \(plan\.rewind && goBackOff\) \{ setGoBackRefusedHere\(true\); return; \}/);
+  // Print never goes back now (a From among printed labels reprints them), so only "Go back to label N" can be refused.
+  assert.match(printer, /if \(goBackOff\) \{ setGoBackRefusedHere\(true\); return; \}/);
+  assert.doesNotMatch(printer, /plan\.rewind/);
   assert.match(printer, /!goBackOff && reprintValid && reprintFrom <= printedCount/);
   assert.match(printer, /fetch\('\/api\/version'/, 'turned back on by the build route, never by a database read');
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 // Round 5 run page rules: labels a "Print in order" fix held back are offered
 // on their own afterwards, scanned labels can be left out, one tick per
 // barcode problem (never carried over from the wizard for a barcode that
@@ -122,14 +123,16 @@ const panel=read('src/components/runs/OfficePiPrinter.tsx');
   assert.match(panel,/seriesLocks\.has\(runId\)/,'one series per run');
   assert.match(panel,/let parts=fresh\?leftParts\.filter\(p=>officeSendPlan\(fresh,p\.from,p\.to\)\.kind==='new'\):leftParts;[\s\S]{0,1600}void runSeries\(\{\.\.\.partsPlan,parts,next:0/,'"Send the remaining parts" reads the queue again and sends only what is left');
   assert.doesNotMatch(panel,/This plan is saved on this device only/,'no storage jargon');
-  assert.match(panel,/const here=rangeGaps\(fromNumber,toNumber,toGoSpans,skipSpans\);/,'scanned (and office-confirmed) labels are offered to leave out');
+  // Owner: "i should be able to reprint as i please, just needs to be tracked": no question before sending labels that already printed.
+  assert.doesNotMatch(panel,/const here=rangeGaps\(/,'scanned (and office-confirmed) labels print again with no question');
   assert.equal((panel.match(/method:'POST',body:JSON\.stringify\(payload\)/g)||[]).length,1,'one POST site for jobs');
   assert.ok(panel.indexOf('try{localStorage.setItem(storageKey,JSON.stringify(payload));}')<panel.indexOf("api('/api/office/jobs',{method:'POST'"),'the key is saved before the POST');
 }
 // --- Source checks: run page ---
 const page=read('src/components/runs/RunPrinter.tsx');
-assert.match(page,/confirmLabel: scanned\.keep\.length \? `Skip \$\{one \? 'it' : 'them'\}` : 'Don’t print',\s*altLabel: 'Print them again'/,'skipping scanned labels is the primary button');
-assert.match(page,/feedsDone >= feedEnds\.length \? printRange\.to/,'skipped labels at the end still count as printed when the batch finishes');
+// Scanned labels print again by default, with no question, and are logged as a reprint.
+assert.doesNotMatch(page,/altLabel: 'Print them again'/,'no question before printing scanned labels again');
+assert.match(page,/planStartReprints\(printedCount, startFrom, selectedThrough, \[\.\.\.scannedLabels, \.\.\.outOfOrder, \.\.\.confirmedHere\]\)/,'scanned, "Print only" and office-confirmed labels are reprints');
 assert.doesNotMatch(page,/<PrintCheckList/,'the run page has its own one-tick-per-problem check');
 assert.match(page,/barcodeTicksAllow\(shownCheck\.blocking, barcodeTicks, wizardBarcodeGoAhead\)/);
 assert.match(page,/const calm = \(runFinished \|\| run\.status === 'cancelled' \|\| status === 'cancelled'\) && !woken && status !== 'running'/,'finished and cancelled runs are a calm summary');

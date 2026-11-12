@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Node regression harness */
 // Office printing in the browser. Office deliveries are shown ("Sent to
 // office printer: X of N") but never written into the run's progress; a
 // person marks them printed. Failed parts are named with a reason and a
@@ -351,7 +352,9 @@ console.log('PASS field display names');
   assert.match(page, /confirmLabel: `Yes, \$\{one \? 'it' : 'they'\} printed`/, 'counting skipped labels as printed needs the person to say they printed');
   assert.match(page, /confirmLabel: `Keep progress at \$\{printedCount\}`,\s*altLabel: 'Count them too'/, 'keeping progress honest is the primary button');
   assert.match(page, /resetProgress: true, expectedPrintedCount: before/, 'a rewind says which count it expects');
-  assert.match(page, /\.\.\.\(plan\.rewind \? \{ expectedPrintedCount: printedCount \} : \{\}\)/);
+  // Printing never goes back: progress saved at the start is what is printed already.
+  assert.match(page, /started = await setRunStatus\(run\.id, 'printing', startCount, \{ onSetAside: /);
+  assert.doesNotMatch(page, /resetProgress: plan\./);
   assert.doesNotMatch(page, /label: 'Scan mode'/, 'scan mode is not offered in the menu where it cannot work');
   assert.match(page, /officeMarkPlan\(/, 'mark printed offers every sent stretch');
 

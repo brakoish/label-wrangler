@@ -10,9 +10,9 @@ import { Dialog } from '@/components/ui/Dialog';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { Fold, FoldToggle } from '@/components/ui/Fold';
 import { Recovery } from '@/components/ui/Recovery';
-import { choiceDialog, confirmDialog } from '@/components/ui/feedback';
+import { confirmDialog } from '@/components/ui/feedback';
 import { keepSeriesGoing, setOfficeSeriesRunning } from '@/lib/printNavigation';
-import { gapSuggestion, labelsToSpans, mergeSpans, partsAfterCounted, partsForSpans, rangeGaps, spanCount, spanListWords, spansWithin, spansWithout } from '@/lib/runGaps';
+import { gapSuggestion, labelsToSpans, mergeSpans, partsAfterCounted, partsForSpans, spanCount, spansWithin, spansWithout } from '@/lib/runGaps';
 import { friendlyError, friendlyRenderError } from '@/lib/userMessages';
 import { drawFailureWords } from '@/lib/officeSendOutcome';
 import { parseLabelList, OFFICE_IN_PROGRESS, officeQueuedRequestIds, capAfterSizeError, firstUnsentLabel, isValidOfficeRange, officeProofKey, officeSendCap, officeSendPlan, officeUnsentSpans, officeWaitingSpans, partCarriesEndBlank, readPartsPlan, readHeldSpans, heldStillUnsent, remainingParts, spanWords, OFFICE_BITMAP_LABELS_PER_SEND, OFFICE_MAX_LABELS, type OfficeDeliverySummary, type OfficeFailedPart, type OfficePartsPlan, type OfficeSendPlan, type OfficeSpan } from '@/lib/officeRange';
@@ -791,8 +791,6 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
   const sendSpans=useMemo(()=>rangeValid?spansWithout(fromNumber,toNumber,skipSpans):[],[rangeValid,fromNumber,toNumber,skipSpans]);
   const goCount=skipSplit?spanCount(sendSpans):sendCount;
   const parts=useMemo(()=>(tooBig || skipSplit) && plan.kind==='new'?partsForSpans(sendSpans,cap,across):[],[tooBig,skipSplit,plan.kind,sendSpans,cap,across]);
-  const [askedKey,setAskedKey]=useState('');
-  const rangeKey=`${proofKey}|${plan.kind}`;
 
   /** A request saved on this device that hasn't been answered yet, or null. */
   const savedRequest=()=>{
@@ -1376,53 +1374,11 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(pending && pendingInPlan && partsPlan){void runSeries(partsPlan);return;}
     if(!pending){
       if(plan.kind==='wait' || !rangeValid)return;
-      // Ask once per range before anything long starts: printing labels the
-      // office already got again. Barcode and layout problems are checked on
-      // the run page first (printAllowed), with the same words as the wizard.
-      if(askedKey!==rangeKey){
-        if(plan.kind==='reprint' && fixedRange.current!==`${fromNumber}-${toNumber}`){
-          const one=fromNumber===toNumber;
-          const ok=await confirmDialog({title:`Print ${range(fromNumber,toNumber)} again?`,body:`${Range(plan.overlap.from,plan.overlap.to)} went to the office printer before. ${one?'It prints':'They print'} again. The run’s progress doesn’t change.`,confirmLabel:'Print again'});
-          if(!ok)return;
-        }
-        // Labels already printed anywhere (confirmed at the office, printed by
-        // scanning or counted in the progress) would come out twice: the true
-        // gaps are the one-tap choices, and printing them again is its own,
-        // explicit choice. A reprint just confirmed above (or chosen in the fix
-        // dialog) isn't asked about twice.
-        const chosenAgain=fixedRange.current===`${fromNumber}-${toNumber}`?[{from:fromNumber,to:toNumber}]:plan.kind==='reprint'?[plan.overlap]:[];
-        const here=rangeGaps(fromNumber,toNumber,toGoSpans,skipSpans);
-        const printedHere=chosenAgain.length?here.printed.flatMap(p=>chosenAgain.reduce<OfficeSpan[]>((left,c)=>left.flatMap(l=>spansWithout(l.from,l.to,[c])),[p])):here.printed;
-        if(printedHere.length){
-          const one=single(printedHere);
-          const them=one?'it':'them';
-          const gaps=here.gaps;
-          const gapParts=gaps.length>1?partsForSpans(gaps,cap,across):[];
-          const gapCount=spanCount(gaps);
-          const first=gaps[0];
-          const answer=await choiceDialog({title:`${capitalise(spanWords(printedHere))} ${one?'was':'were'} already printed`,
-            body:!gaps.length?`Sending ${range(fromNumber,toNumber)} prints ${them} a second time.`
-              :gaps.length>1?`Sending ${range(fromNumber,toNumber)} prints ${them} a second time. The ${plural(gapCount)} still to go can go in ${gapParts.length} parts, one after another. Keep this page open until the last part is queued.`
-              :`Sending ${range(fromNumber,toNumber)} prints ${them} a second time.`,
-            confirmLabel:!gaps.length?'Don’t send':gaps.length>1?`Send ${spanListWords(gaps)}`:`Send ${nums(first.from,first.to)} only`,
-            ...(gaps.length>1?{altLabel:`Send ${nums(first.from,first.to)} only`,extraLabel:`Print ${them} again too`}:{altLabel:`Print ${them} again too`})});
-          if(answer===null)return;
-          const reprintChoice=gaps.length>1?answer==='extra':answer==='alt';
-          if(!reprintChoice){
-            if(!gaps.length)return;
-            // The blank asked for after the last label stays with the send that ends there.
-            const lastGap=gaps[gaps.length-1];
-            if(gaps.length>1 && answer==='confirm'){void startSeries(gapParts,{endBlankAt:endBlank && lastGap.to===toNumber?toNumber:undefined,count:gapCount,asked:true});return;}
-            const keep=first;
-            const blankHere=endBlank && keep.to===toNumber;
-            if(endBlank && !blankHere && lastGap.to===toNumber)saveBlankDue(toNumber);
-            if(keep.to-keep.from+1>cap || !printAllowed){rangeEdited.current=true;setFrom(String(keep.from));setTo(String(keep.to));if(!blankHere)setEndBlank(false);setNotice({text:`${capitalise(spanWords(printedHere))} left out. Check the range, then send.`,at:Date.now(),tone:'next'});return;}
-            void sendNow(keep,undefined,false,blankHere);
-            return;
-          }
-        }
-        setAskedKey(rangeKey);
-      }
+      // Labels that already printed (at the office, by scanning or counted in
+      // the progress) print again with no question: the office keeps a send
+      // over labels it already had as a reprint of the earlier send, and the
+      // run's progress doesn't change. Labels still on their way wait (plan
+      // "wait" above), because the office would refuse them.
       if(tooBig || skipSplit){
         if(parts.length>1)void startSeries();
         // Only the labels around a left-out one, in one send.
@@ -1483,11 +1439,9 @@ export function OfficePiPrinter({runId,total,connectionTarget,run,template,forma
     if(part.kind==='print-again'){void printAgainNow(part);return;}
     setFixNoteOpen(false);setFix({part,seen:'',againText:'',note:'',order:'in-order',blank:null});
   };
-  /** "Print 51–100 again": one confirm, then the check and the send in the same tap. */
+  /** "Print 51–100 again": no question, the check and the send in the same tap (kept as a reprint; progress doesn't change). */
   const printAgainNow=async(part:OfficeFailedPart)=>{
     const end=Math.min(part.to,part.from+cap-1);
-    const ok=await confirmDialog({title:`Print ${range(part.from,end)} again?`,body:`${end-part.from===0?'It prints':'They print'} once more on the office printer. The run’s progress doesn’t change.`,confirmLabel:`Print ${nums(part.from,end)} again`});
-    if(!ok)return;
     if(end<part.to)chooseReprint(part,`The office printer takes up to ${plural(cap)} of this design at a time. Send ${range(part.from,end)} first.`);
     else void sendNow({from:part.from,to:end},part.requestId ?? undefined);
   };
