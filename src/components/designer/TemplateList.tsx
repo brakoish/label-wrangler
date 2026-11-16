@@ -21,6 +21,7 @@ import { Menu } from '@/components/ui/Menu';
 import { EmptyState, ErrorState, StateActions } from '@/components/EmptyState';
 import { FIX_IN_DESIGNER } from '@/lib/runBarcodeTicks';
 import { friendlyError, friendlyRenderFailure } from '@/lib/userMessages';
+import { KioskDesignControls, type KioskControls } from '@/components/kiosk/KioskDesignControls';
 
 interface TemplateListProps {
   templates: LabelTemplate[];
@@ -39,6 +40,8 @@ interface TemplateListProps {
   onRetryOpen?: () => void;
   /** The empty state's actions when there are no designs yet (load the sample; admins can import). */
   extra?: ReactNode;
+  /** "Use on kiosk" and categories on each card (accounts that can edit, once kiosk mode is set up). */
+  kiosk?: KioskControls;
 }
 
 export function TemplateList({
@@ -54,6 +57,7 @@ export function TemplateList({
   missingLink = false,
   openingName,
   onRetryOpen,
+  kiosk,
 }: TemplateListProps) {
   const { formats } = useFormatStore();
   const listHydrated = useTemplateStore((state) => state.hydrated);
@@ -117,6 +121,7 @@ export function TemplateList({
         {isFiltered && <button onClick={() => { setQuery(''); setFormatFilter(''); }} className="btn btn-ghost">Clear filters</button>}
       </div>}
       {error && <p role="alert" className="text-red-400 mb-4">{error}</p>}
+      {kiosk?.error && <p role="alert" className="text-red-400 mb-4">{kiosk.error}</p>}
       {!listHydrated && templates.length === 0 ? (
         <div role="status" aria-label="Loading designs" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[0, 1, 2].map((i) => <div key={i} className="min-h-[220px] rounded-xl bg-zinc-900 animate-pulse" />)}
@@ -149,6 +154,7 @@ export function TemplateList({
                 pending={pendingId !== null}
                 onDuplicate={onDuplicateTemplate ? () => onDuplicateTemplate(template) : undefined}
                 onRename={onRenameTemplate ? () => onRenameTemplate(template) : undefined}
+                kiosk={kiosk}
               />
             );
           })}
@@ -285,6 +291,7 @@ function TemplateCard({
   pending,
   onDuplicate,
   onRename,
+  kiosk,
 }: {
   template: LabelTemplate;
   format?: LabelFormat;
@@ -293,6 +300,7 @@ function TemplateCard({
   pending: boolean;
   onDuplicate?: () => void;
   onRename?: () => void;
+  kiosk?: KioskControls;
 }) {
   const dynamicCount = template.dynamicCount ?? template.elements.filter((e) => !e.isStatic).length;
   const formatName = format?.name || 'Unknown label size';
@@ -339,6 +347,7 @@ function TemplateCard({
         <p className="mt-0.5 text-xs text-zinc-400">
           {partCount} {partCount === 1 ? 'item' : 'items'}{dynamicCount > 0 ? `, ${dynamicCount === partCount && partCount > 1 ? 'all' : dynamicCount} changing per label` : ''}
         </p>
+        {kiosk && <KioskDesignControls templateId={template.id} name={template.name} thermal={format?.type === 'thermal'} archived={!!template.archivedAt} controls={kiosk} />}
       </div>
     </div>
   );

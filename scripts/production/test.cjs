@@ -47,6 +47,7 @@ for(const file of [
  'scripts/production/test-run-b16.cjs',
  'scripts/production/test-run-reprints.cjs',
  'scripts/production/test-run-layout.cjs',
+ 'scripts/production/test-kiosk.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',

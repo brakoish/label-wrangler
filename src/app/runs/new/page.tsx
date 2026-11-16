@@ -57,6 +57,8 @@ import { plainServerError } from '@/lib/runErrors';
 import { clearRunDraft, lastRunSource, readRunDraft, rememberRunSource, saveRunDraft, type RunDraft } from '@/lib/runDraft';
 import { isRunLayoutId, layoutOverrideFor, runLayoutId } from '@/lib/runLayout';
 import { clearAllRunLayouts, clearRunLayout, readRunLayout, runLayoutDiffers, saveRunLayout, startRunLayout, type RunLayoutDraft } from '@/lib/runLayoutDraft';
+import { useKioskDesigns } from '@/components/kiosk/useKioskDesigns';
+import { designsInCategoryFirst, productCategory } from '@/lib/kiosk/plan';
 
 /** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
 function runFixWords(before: TemplateElement, after: TemplateElement, ahead = false): string {
@@ -922,6 +924,19 @@ function NewRunContent() {
     () => manifestPackageSummaries.find(({ row }) => manifestPackageKey(row) === selectedManifestPackageKey) ?? null,
     [manifestPackageSummaries, selectedManifestPackageKey],
   );
+
+  // Designs the owner put in this product's category come first (Designs >
+  // the design's categories). "Show all designs" lists every design.
+  const designCategories = useKioskDesigns().categories;
+  const [showAllDesigns, setShowAllDesigns] = useState(false);
+  const productKind = inputMode === 'manifest' ? productCategory(selectedManifestPackageSummary?.row) : null;
+  const designChoices = useMemo(() => {
+    const live = templates.filter((t) => !isRunLayoutId(t.id) && (!t.archivedAt || t.id === templateId));
+    const { matching, rest } = designsInCategoryFirst(live, designCategories, productKind);
+    if (!matching.length) return { list: live, kind: null, hidden: 0 };
+    const list = showAllDesigns ? [...matching, ...rest] : [...matching, ...rest.filter((t) => t.id === templateId)];
+    return { list, kind: productKind, hidden: live.length - list.length };
+  }, [templates, templateId, designCategories, productKind, showAllDesigns]);
 
   useEffect(() => {
     if (inputMode !== 'manifest' || !selectedManifestPackageSummary) return;
@@ -2010,7 +2025,7 @@ function NewRunContent() {
                     value={templateId}
                     onChange={setTemplateId}
                     placeholder="Choose a label design…"
-                    options={templates.filter((t) => !isRunLayoutId(t.id) && (!t.archivedAt || t.id === templateId)).map((t) => {
+                    options={designChoices.list.map((t) => {
                       const f = formats.find((x) => x.id === t.formatId);
                       return {
                         value: t.id,
@@ -2020,6 +2035,12 @@ function NewRunContent() {
                       };
                     })}
                   />
+                )}
+                {designChoices.kind && (designChoices.hidden > 0 || showAllDesigns) && (
+                  <p className="mt-1 text-sm text-zinc-400">
+                    {showAllDesigns ? `${designChoices.kind} designs first.` : `Showing ${designChoices.kind} designs.`}{' '}
+                    <button type="button" className="link" onClick={() => setShowAllDesigns((v) => !v)}>{showAllDesigns ? `Show only ${designChoices.kind} designs` : `Show all designs (${designChoices.hidden} more)`}</button>
+                  </p>
                 )}
                 {qrCopy && template && (qrCopy.tone === 'error' || qrCopy.to === template.id) && (
                   <p role={qrCopy.tone === 'error' ? 'alert' : 'status'} className={`fold-reveal mt-2 flex items-start gap-1.5 text-sm ${qrCopy.tone === 'error' ? 'text-red-400' : 'text-zinc-300'}`}>

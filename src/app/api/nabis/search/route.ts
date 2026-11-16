@@ -58,6 +58,8 @@ type ManifestPackage = {
   numberOfDoses?: number | string | null;
   servingCount?: number | string | null;
   servingsPerPackage?: number | string | null;
+  /** Metrc's product category name ("Infused Edible - Each"), from the Manifest database only. */
+  category?: string | null;
   units?: ManifestLabelUnit[] | null;
 };
 
@@ -352,6 +354,8 @@ function normalizePackage(pkg: ManifestPackage) {
     servingCount,
     numberOfDoses: servingCount,
     servingsPerPackage: servingCount,
+    // Which kind of product (kiosk and New run show that kind's designs first). Empty from the Metrc fallback.
+    category: cleanText(pkg.category),
   };
 }
 
@@ -806,7 +810,8 @@ async function searchManifestDatabase(search: string) {
       mp.test_performed_date AS "testPerformedDate",
       mp.coa_document_id AS "coaDocumentId",
       mi.serving_size AS "servingSize",
-      mi.number_of_doses AS "numberOfDoses"
+      mi.number_of_doses AS "numberOfDoses",
+      mi.product_category_name AS "category"
     FROM metrc_packages mp
     LEFT JOIN metrc_items mi
       ON mp.product_id = mi.metrc_item_id
