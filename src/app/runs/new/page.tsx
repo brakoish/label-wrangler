@@ -224,7 +224,7 @@ const SOURCES: ReadonlyArray<{ value: RunInputMode; label: string; Icon: typeof 
   { value: 'manual', label: 'Type', Icon: Pencil },
   { value: 'paste', label: 'Paste', Icon: Clipboard },
   { value: 'csv', label: 'Spreadsheet', Icon: FileSpreadsheet },
-  { value: 'manifest', label: 'Nabis', Icon: Search },
+  { value: 'manifest', label: 'Manifest', Icon: Search },
 ];
 
 /**
@@ -472,7 +472,7 @@ function NewRunContent() {
     return manifestRows.filter((row) => manifestPackageKey(row) === selectedManifestPackageKey);
   }, [manifestRows, selectedManifestPackageKey, savedManifestRows]);
 
-  // A Nabis search cut short (time limit, or Metrc busy) leaves rows without
+  // A Manifest search cut short (time limit, or Metrc busy) leaves rows without
   // their retail IDs or lab potency: Start waits until the person searches
   // again or ticks to leave those parts off (named), so neither the sample
   // nor a blank prints in their place.
@@ -491,10 +491,10 @@ function NewRunContent() {
   const nabisOk = !nabisGap.labels.length || nabisTicked;
   const nabisGapWhat = missingDetailsWords(nabisGap.missing);
 
-  // Parts left off this run: picked by the person, or left off by the Nabis
+  // Parts left off this run: picked by the person, or left off by the Manifest
   // tick above. They are not filled, checked or drawn, and the run's saved
   // design leaves them out, so nothing prints there.
-  // Keyed by the names, not the array: the Nabis auto-mapping effect re-runs
+  // Keyed by the names, not the array: the Manifest auto-mapping effect re-runs
   // whenever dynamicFields changes identity, so it must only change with them.
   const leftOffKey = Array.from(new Set([...hiddenRunFields, ...(nabisTicked ? nabisGapFields : [])].filter((field) => allDynamicFields.includes(field)))).sort().join('\n');
   const leftOffFields = useMemo(() => new Set(leftOffKey ? leftOffKey.split('\n') : []), [leftOffKey]);
@@ -724,16 +724,16 @@ function NewRunContent() {
     try {
       const res = await fetch(`/api/nabis/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Couldn’t search Nabis');
+      if (!res.ok) throw new Error(data.error || 'Couldn’t search Manifest');
       const rows = Array.isArray(data.packages) ? data.packages as ManifestRow[] : [];
       setManifestRows(rows);
       setSelectedManifestPackageKey(rows[0] ? manifestPackageKey(rows[0]) : null);
       setPreviewIndex(0);
       applyAutoColumnMapping(MANIFEST_HEADERS, rows);
-      if (data.error) setManifestError(plainServerError(String(data.error), 'Couldn’t search Nabis just now. Try again in a minute.'));
+      if (data.error) setManifestError(plainServerError(String(data.error), 'Couldn’t search Manifest just now. Try again in a minute.'));
       else if (data.detailsIncomplete) setManifestError({ text: SEARCH_DETAILS_INCOMPLETE, details: '' });
     } catch (error) {
-      setManifestError(plainServerError(error, 'Couldn’t search Nabis just now. Try again in a minute.'));
+      setManifestError(plainServerError(error, 'Couldn’t search Manifest just now. Try again in a minute.'));
       setManifestRows([]);
       setSelectedManifestPackageKey(null);
     } finally {
@@ -1070,9 +1070,9 @@ function NewRunContent() {
       setFlipNote({
         tone: 'ok',
         text: column
-          ? `The ${kind} now changes per label, from your “${inputMode === 'manifest' ? friendlyFieldName(column) : column}” ${inputMode === 'manifest' ? 'Nabis detail' : 'column'}. This is saved to the design.`
+          ? `The ${kind} now changes per label, from your “${inputMode === 'manifest' ? friendlyFieldName(column) : column}” ${inputMode === 'manifest' ? 'Manifest detail' : 'column'}. This is saved to the design.`
           : rowsBacked
-            ? `The ${kind} now changes per label. Choose its ${inputMode === 'manifest' ? 'Nabis detail' : 'column'} under “${friendlyFieldName(fieldName)}” below. This is saved to the design.`
+            ? `The ${kind} now changes per label. Choose its ${inputMode === 'manifest' ? 'Manifest detail' : 'column'} under “${friendlyFieldName(fieldName)}” below. This is saved to the design.`
             : `The ${kind} now changes per label. Fill in “${friendlyFieldName(fieldName)}” below. This is saved to the design.`,
       });
     } catch {
@@ -1411,14 +1411,14 @@ function NewRunContent() {
           : inputMode === 'manual' && !dynamicFields.every((f) => (staticValues[f] ?? '').trim().length > 0)
             ? 'Fill in every field to start.'
             : inputMode !== 'manual' && labelCount === 0
-              ? inputMode === 'csv' ? 'Upload a spreadsheet to start.' : inputMode === 'paste' ? 'Paste at least one value to start.' : 'Search and pick a Nabis package to start.'
+              ? inputMode === 'csv' ? 'Upload a spreadsheet to start.' : inputMode === 'paste' ? 'Paste at least one value to start.' : 'Search and pick a Manifest package to start.'
               : (inputMode === 'csv' || inputMode === 'manifest') && variableFields.length === 0
                 ? 'Pick a spreadsheet column for at least one field.'
                 : inputMode === 'paste' && !pasteField
                   ? 'Choose which field the pasted values fill.'
                   : null;
 
-  // The parts Nabis didn't send are said once, in the Nabis notice with its
+  // The parts Manifest didn't send are said once, in the Manifest notice with its
   // own Search again and Leave off: not again as "pick another package".
   const nabisCoversBlanks = !nabisOk && blankCheck.issues.length > 0 && blankCheck.issues.every((issue) => nabisGapFields.includes(issue.field));
   const reviewProblems = [
@@ -1437,7 +1437,7 @@ function NewRunContent() {
     // Problems shown in Review are said there, once, with their fixes; the
     // footer only points to them.
     reviewProblems > 0 && (reviewProblems === 1 ? 'Sort out the problem in Review to start.' : `Sort out the ${reviewProblems} problems in Review to start.`),
-    !nabisOk && `Nabis didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, manifestSelectedRows.length)}. Search again, or tick ${nabisGapFields.length ? `to leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off` : 'to print without them'}.`,
+    !nabisOk && `Manifest didn’t send the ${nabisGapWhat} for ${labelsWords(nabisGap.labels, manifestSelectedRows.length)}. Search again, or tick ${nabisGapFields.length ? `to leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off` : 'to print without them'}.`,
   ].filter((reason): reason is string => !!reason);
   const previewReason = setupReason || !format || checkReasons.length ? null
     : format.type === 'thermal' && previewState.status === 'error'
@@ -1809,7 +1809,7 @@ function NewRunContent() {
     : previewState.status === 'error' && checkTemplate
       ? friendlyRenderError(previewState.message, checkTemplate.elements, format?.labelsAcross || 1, previewValues, format ?? undefined)
       : '';
-  const sheetWord = inputMode === 'manifest' ? 'Nabis data' : 'spreadsheet';
+  const sheetWord = inputMode === 'manifest' ? 'Manifest data' : 'spreadsheet';
   // A workbook with several sheets: pick the labels' sheet here (no reordering in Excel).
   const sheetNames = fileInfo?.sheetNames ?? [];
   const sheetPicker = sheetNames.length > 1 && lastFile.current ? (
@@ -2329,7 +2329,7 @@ function NewRunContent() {
                           if (e.key === 'Enter') void handleManifestSearch();
                         }}
                         placeholder="Package tag, item or batch"
-                        aria-label="Search Nabis packages"
+                        aria-label="Search Manifest packages"
                         className="field min-w-0 flex-1"
                       />
                       <button
@@ -2387,7 +2387,7 @@ function NewRunContent() {
                       </div>
                     )}
                     {!isSearchingManifest && hasSearchedManifest && manifestRows.length === 0 && !manifestError && (
-                      <p className="text-sm text-zinc-400">No Nabis packages found.</p>
+                      <p className="text-sm text-zinc-400">No Manifest packages found.</p>
                     )}
                   </div>
                 )}
@@ -2395,7 +2395,7 @@ function NewRunContent() {
                 {/* Matching fields to columns, for row-backed sources. */}
                 {(inputMode === 'csv' || inputMode === 'manifest') && rowHeaders.length > 0 && labelCount > 0 && (
                   <div className="space-y-3 pt-2">
-                    <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Nabis detail' : 'column'}</h3>
+                    <h3 className="text-sm font-semibold text-zinc-100">Match each part of the label to a {inputMode === 'manifest' ? 'Manifest detail' : 'column'}</h3>
                     {inputMode === 'csv' && justLeftOff.filter((f) => leftOffFields.has(f)).map((field) => {
                       const code = codeKind(field);
                       return (
@@ -2456,7 +2456,7 @@ function NewRunContent() {
                                   onClick={() => setFieldMappings((m) => ({ ...m, [field]: { mode: 'column', csvColumn: mapping.csvColumn || lastColumns[field] || findBestHeaderForField(field, rowHeaders, sourceData, codeTypes[field]) || '' } }))}
                                   data-active={mapping.mode === 'column'}
                                 >
-                                  {inputMode === 'manifest' ? 'From Nabis' : 'From spreadsheet'}
+                                  {inputMode === 'manifest' ? 'From Manifest' : 'From spreadsheet'}
                                 </button>
                               </div>
                               {mapping.mode === 'column' ? (
@@ -2538,7 +2538,7 @@ function NewRunContent() {
                           key={field}
                           type="button"
                           onClick={() => (byNabis ? setNabisGapOkKey('') : toggleRunFieldVisibility(field))}
-                          title={byNabis ? `Left off because Nabis didn’t send it. Select to fill ${friendlyFieldName(field)} again` : hidden ? `Fill ${friendlyFieldName(field)} in this run` : `Leave ${friendlyFieldName(field)} off this run`}
+                          title={byNabis ? `Left off because Manifest didn’t send it. Select to fill ${friendlyFieldName(field)} again` : hidden ? `Fill ${friendlyFieldName(field)} in this run` : `Leave ${friendlyFieldName(field)} off this run`}
                           aria-pressed={!hidden}
                           className={`btn btn-sm ${hidden ? 'btn-ghost text-zinc-400 line-through' : 'btn-secondary'}`}
                         >
@@ -2620,7 +2620,7 @@ function NewRunContent() {
                       <div role="alert" className="space-y-1 text-sm">
                         <p className="flex items-start gap-1.5 text-zinc-100">
                           <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" aria-hidden="true" />
-                          <span>Nabis didn’t send the {nabisGapWhat} for {labelsWords(nabisGap.labels, manifestSelectedRows.length)}.{nabisGap.missing.includes('retailIds') ? ' Without retail IDs the package prints as one label, not one per unit.' : ''} Search again in a moment, or {nabisGapFields.length ? `leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off this run` : 'print without them'}.</span>
+                          <span>Manifest didn’t send the {nabisGapWhat} for {labelsWords(nabisGap.labels, manifestSelectedRows.length)}.{nabisGap.missing.includes('retailIds') ? ' Without retail IDs the package prints as one label, not one per unit.' : ''} Search again in a moment, or {nabisGapFields.length ? `leave ${andList(nabisGapFields.map((field) => friendlyFieldName(field)))} off this run` : 'print without them'}.</span>
                         </p>
                         <div className="flex flex-wrap items-center gap-x-4 pl-5.5">
                           <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={isSearchingManifest || manifestSearch.trim().length < 2} onClick={() => void handleManifestSearch()}>

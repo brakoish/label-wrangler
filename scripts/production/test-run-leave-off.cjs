@@ -76,7 +76,7 @@ const template = {
   assert.equal(blankCheckAllowsPrinting(blank, true), false, 'a blank THC would print the sample 25%');
   const ticked = checkRunData(leaveFieldsOff(nabisDesign, ['THC', 'QR']), { sourceData: nabisRows, fieldMappings: { Strain: nabisMap.Strain } });
   assert.equal(ticked.issues.length, 0, 'ticked: nothing missing, so Start can unlock');
-  console.log('PASS Nabis tick leaves the missing parts off, so Start unlocks and no sample prints');
+  console.log('PASS Manifest tick leaves the missing parts off, so Start unlocks and no sample prints');
 
   // The picture never shows the sample for a part with no value.
   const shown = blankPreviewItems(template, [{ Product: 'A', Packaged: '', 'Lab Results Link': 'https://a' }], ['Product', 'Packaged', 'Lab Results Link']);
