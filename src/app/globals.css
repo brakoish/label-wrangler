@@ -162,6 +162,16 @@ textarea:focus-visible,
   .btn svg {
     flex-shrink: 0;
   }
+  /* Kiosk: big touch targets for a shared screen (the kiosk page only). */
+  .kiosk-btn {
+    min-height: 3.5rem;
+    padding-inline: 1.5rem;
+    border-radius: var(--radius-xl);
+    font-size: var(--text-lg);
+    line-height: 1.5rem;
+    white-space: normal;
+    text-align: center;
+  }
   .btn-sm {
     min-height: var(--control-h-sm);
     padding-inline: 0.75rem;

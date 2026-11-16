@@ -21,6 +21,7 @@ import { LabelPreview, type InkOffset } from '@/components/designer/LabelPreview
 import { PropertyPanel } from '@/components/designer/PropertyPanel';
 import { ElementList } from '@/components/designer/ElementList';
 import { TemplateList, NewTemplateDialog, DuplicateTemplateDialog, RenameTemplateDialog } from '@/components/designer/TemplateList';
+import { useKioskDesigns } from '@/components/kiosk/useKioskDesigns';
 import { AddElementMenu } from '@/components/designer/AddElementMenu';
 import { LayoutPreview } from '@/components/designer/LayoutPreview';
 import { ZPLPreview } from '@/components/designer/ZPLPreview';
@@ -386,6 +387,7 @@ function DesignerContent() {
 
   const [recovery, setRecovery] = useState<Array<TemplateDraft & {key:string}>>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const kioskDesigns = useKioskDesigns();
   useEffect(() => {
     let active = true;
     fetch('/api/office/session').then((r) => (r.ok ? r.json() : null)).then((d) => { if (active) setIsAdmin(!!d?.user?.is_admin); }).catch(() => {});
@@ -492,6 +494,7 @@ function DesignerContent() {
                   : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="link -my-3 inline-block py-3">Try again</button></p>
             ) : null}
             templates={templates}
+            kiosk={kioskDesigns.canEdit && (kioskDesigns.ready || kioskDesigns.categoriesReady) ? kioskDesigns : undefined}
             onSelectTemplate={(id) => {
               selectTemplate(id);
               router.push(`/designer?id=${id}`);

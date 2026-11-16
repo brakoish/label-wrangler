@@ -8,6 +8,7 @@ import { pageHasOwnTitle } from '@/components/PageTitle';
 import { canLeaveLocalPrint } from '@/lib/printNavigation';
 import { useRegisterShell, useShellBanners } from '@/components/ui/shellSlot';
 import { NewVersionNotice } from '@/components/NewVersionNotice';
+import { signOutEverywhere, useKioskStatus } from '@/components/kiosk/useKioskStatus';
 
 type NavBox = { left: number; width: number };
 /**
@@ -41,6 +42,10 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   const isFormats = pathname === '/formats' || pathname.startsWith('/formats');
   useRegisterShell();
   const banners = useShellBanners();
+  // The kiosk account sees only the kiosk: its nav has nothing else, and any
+  // other page sends it to /kiosk (the proxy usually does that first).
+  const isKiosk = useKioskStatus()?.kiosk === true;
+  useEffect(() => { if (isKiosk) router.replace('/kiosk'); }, [isKiosk, router]);
   const navRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<NavBox | null>(null);
   const indicatorRef = useRef<HTMLSpanElement>(null);
@@ -103,7 +108,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
     ], { duration: slide.ms, easing: slide.easing });
   }, [indicator]);
 
-  const navItems: Array<{ href: string; label: string; active: boolean }> = [
+  const navItems: Array<{ href: string; label: string; active: boolean }> = isKiosk ? [{ href: '/kiosk', label: 'Kiosk', active: false }] : [
     { href: '/runs', label: 'Runs', active: isRuns },
     { href: '/designer', label: 'Designs', active: isDesigner },
     { href: '/formats', label: 'Label sizes', active: isFormats },
@@ -155,7 +160,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
       }}>
         <div className="max-w-[1600px] mx-auto h-14 px-2 sm:px-6 flex items-center gap-1 sm:gap-6">
           {/* On the narrowest phones the nav needs the room; Runs is the home link there. */}
-          <Link href="/runs" aria-label="Label Wrangler, go to Runs" className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 max-[399px]:hidden sm:p-0">
+          <Link href={isKiosk ? '/kiosk' : '/runs'} aria-label={isKiosk ? 'Label Wrangler, go to the kiosk' : 'Label Wrangler, go to Runs'} className="shrink-0 flex items-center gap-2.5 rounded-lg p-1.5 max-[399px]:hidden sm:p-0">
             <img
               src="/logo.png"
               alt=""
@@ -192,8 +197,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
           <button type="button" className="press inline-flex h-control-sm shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 max-sm:size-control-sm max-sm:px-0" onClick={async()=>{
             if (!canLeaveLocalPrint()) return;
             if (beforeLeave && !await beforeLeave()) return;
-            const result=await fetch('/api/office/session',{method:'DELETE'});
-            if(result.ok)window.location.assign('/login');
+            if(await signOutEverywhere())window.location.assign('/login');
           }}><LogOut className="w-4 h-4 sm:hidden" aria-hidden="true" /><span className="max-sm:sr-only">Sign out</span></button>
           {/* Page-specific action button */}
           {headerAction && <div className="shrink-0">{headerAction}</div>}
