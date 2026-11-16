@@ -2,7 +2,7 @@ import { detectUrlColumn } from '../csv';
 import { bestCodeColumn, type CodeType } from '../runCodeColumns';
 
 /**
- * How New run matches a design's parts to Nabis details, copied from
+ * How New run matches a design's parts to Manifest details, copied from
  * src/app/runs/new/page.tsx (findBestHeaderForField and its alias table) so
  * the kiosk fills a design exactly the way New run's automatic matching does.
  * New run keeps its own copy; this file changes nothing there.

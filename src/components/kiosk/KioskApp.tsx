@@ -191,7 +191,7 @@ function StartStep({ onPick, onOpenRun, refreshKey }: { onPick: (product: Produc
       for (const row of rows) { const key = packageKey(row); if (!key) continue; groups.set(key, [...(groups.get(key) ?? []), row]); }
       setProducts(Array.from(groups, ([key, list]) => ({ key, rows: list, name: nameOf(list[0]), category: productCategory(list[0]), rawCategory: String(list[0].category ?? '') })));
       setSearched(q);
-      if (data.error) setError('Nabis didn’t answer fully just now. If your product isn’t here, search again in a moment.');
+      if (data.error) setError('Manifest didn’t answer fully just now. If your product isn’t here, search again in a moment.');
     } catch (e) {
       setProducts([]); setSearched('');
       setError(friendlyError(e, 'Couldn’t search just now. Try again in a minute.').replace(/^search$/, 'Couldn’t search just now. Try again in a minute.'));

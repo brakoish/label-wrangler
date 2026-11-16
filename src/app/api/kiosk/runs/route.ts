@@ -85,7 +85,7 @@ interface ListRow { id: string; name: string; template_name: string | null; form
 
 /**
  * GET ?product=KEY&name=ITEM: what's been run for a product (kiosk prints of
- * it, and runs made from its Nabis data in New run). Without a product: this
+ * it, and runs made from its Manifest data in New run). Without a product: this
  * kiosk's prints since `since` (default the last day). Each with what the
  * office printer did, read-only.
  */

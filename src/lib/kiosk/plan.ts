@@ -78,7 +78,7 @@ export function plainCategory(name: string | null | undefined): KioskCategory {
   return 'Other';
 }
 
-/** The product's plain category, or null when Nabis didn't say (then nothing is filtered). */
+/** The product's plain category, or null when Manifest didn't say (then nothing is filtered). */
 export function productCategory(row: Record<string, string> | null | undefined): KioskCategory | null {
   const raw = String(row?.category ?? '').trim();
   return raw ? plainCategory(raw) : null;
@@ -119,13 +119,13 @@ const HEADERS: string[] = [...MANIFEST_FIELDS];
 /** Details that are different on every unit of a package (Metrc retail IDs). */
 const PER_UNIT_COLUMNS = new Set(['retailId', 'unitIndex']);
 
-/** A Nabis package's identity, as New run groups its rows. */
+/** A Manifest package's identity, as New run groups its rows. */
 export function packageKey(row: Record<string, string> | null | undefined): string {
   if (!row) return '';
   return row.packageTag || row.tag || row.id || `${row.itemName ?? ''}-${row.batch ?? ''}`;
 }
 
-/** Each part of the design matched to a Nabis detail, the way New run matches them automatically. */
+/** Each part of the design matched to a Manifest detail, the way New run matches them automatically. */
 export function kioskMappings(template: Pick<LabelTemplate, 'elements'>, rows: Record<string, string>[]): Record<string, FieldMapping> {
   const types = codeFieldTypes(template);
   const out: Record<string, FieldMapping> = {};
@@ -161,7 +161,7 @@ export interface KioskDesignCheck {
   leftBlank: string[];
   /** Each label needs its own unit (a code that's different on every unit). */
   perUnit: boolean;
-  /** Units in the package (Nabis sends one row per unit). */
+  /** Units in the package (Manifest sends one row per unit). */
   units: number;
   mappings: Record<string, FieldMapping>;
 }
