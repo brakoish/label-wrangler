@@ -4,9 +4,10 @@ import { readDrafts, type TemplateDraft } from '@/lib/templateDrafts';
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useRubberBand } from '@/components/motion/rubberBand';
-import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2, Eye } from 'lucide-react';
+import { Undo2, Redo2, Pencil, ChevronLeft, Plus, CheckCircle2, Eye, Info } from 'lucide-react';
 import { SegmentedIndicator } from '@/components/ui/Segmented';
-import { useTemplateStore } from '@/lib/templateStore';
+import { forgetRunLayoutsInStore, useTemplateStore } from '@/lib/templateStore';
+import { isRunLayoutId, runLayoutSource } from '@/lib/runLayout';
 import { useFormatStore } from '@/lib/store';
 import { useGlobalElementStore } from '@/lib/globalStore';
 import { arrangeElements, type AlignAction } from '@/lib/thermal/editorGeometry';
@@ -51,6 +52,9 @@ type NewTemplateElement = TemplateElement extends infer T
 
 type ThermalEditorOrientation = 'printer' | 'upright';
 
+/** Sample values and the view choice of a run's own layout follow its saved design. */
+const designKey = (id: string) => runLayoutSource(id) ?? id;
+
 function designLabel(name?: string) {
   return name ? `‘${name}’` : 'this design';
 }
@@ -65,7 +69,16 @@ function DesignerContent() {
   // Only allow same-origin paths to avoid open-redirect mischief.
   // Resolved the way the browser would ("/\\evil.com" becomes another site),
   // against a stand-in origin: only a path on this site is kept.
-  const returnTo = safeNextPath(searchParams.get('returnTo'), 'https://label-wrangler.invalid', '') || null;
+  const askedReturnTo = safeNextPath(searchParams.get('returnTo'), 'https://label-wrangler.invalid', '') || null;
+  // "Adjust for this run" (?id=rundraft:<design id>): the new run's own copy
+  // of a design. Changes are kept for that run only (in this tab, never on the
+  // server) and the saved design stays as it is, so everything that would
+  // change the saved design or make a new one is left out, and Done goes back
+  // to the new run.
+  const runOnlySource = runLayoutSource(templateId);
+  const runOnly = !!runOnlySource;
+  const returnTo = askedReturnTo ?? (runOnly ? '/runs/new' : null);
+  useEffect(() => () => forgetRunLayoutsInStore(), []);
 
   const {
     templates,
@@ -115,6 +128,9 @@ function DesignerContent() {
 
   const currentTemplate = selectedTemplateId ? getTemplateById(selectedTemplateId) : null;
   const currentFormat = currentTemplate ? getFormatById(currentTemplate.formatId) : null;
+  // A test print of a run's own layout prints exactly what is on screen, filed
+  // under its saved design (a test print needs a saved design to belong to).
+  const printTemplate = useMemo(() => (currentTemplate && runOnlySource ? { ...currentTemplate, id: runOnlySource } : currentTemplate), [currentTemplate, runOnlySource]);
   const gesture = useRef<{ id: string; elements: TemplateElement[]; formatId: string } | null>(null);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -177,7 +193,13 @@ function DesignerContent() {
       if (saved === null) return false;
       if (saved === true) return true;
       const template = useTemplateStore.getState().getTemplateById(currentTemplate.id) ?? currentTemplate;
-      const choice = await choiceDialog({
+      // A run's own layout never becomes a saved design: no "Save as a copy".
+      const choice = await choiceDialog(runOnly ? {
+        title: 'Your last change isn’t kept',
+        body: designSaveProblem(saved, template.elements),
+        confirmLabel: 'Try again',
+        altLabel: 'Leave without it',
+      } : {
         title: 'Your last change isn’t saved',
         body: designSaveProblem(saved, template.elements),
         confirmLabel: 'Try saving again',
@@ -185,6 +207,10 @@ function DesignerContent() {
         extraLabel: 'Leave without it',
       });
       if (choice === 'confirm') continue;
+      if (runOnly) {
+        if (choice === 'alt') { unsavedChanges.current = false; return true; }
+        return false;
+      }
       if (choice === 'alt') {
         try {
           await addTemplate({ name: `${template.name} (copy)`, description: template.description, formatId: template.formatId, elements: template.elements, thermalRenderMode: template.thermalRenderMode });
@@ -222,7 +248,7 @@ function DesignerContent() {
   }, []);
   useEffect(() => {
     if (!currentTemplate?.id) return;
-    try { setTestData(JSON.parse(localStorage.getItem(`lw:test-data:${currentTemplate.id}`) || '{}')); } catch { setTestData({}); }
+    try { setTestData(JSON.parse(localStorage.getItem(`lw:test-data:${designKey(currentTemplate.id)}`) || '{}')); } catch { setTestData({}); }
   }, [currentTemplate?.id]);
   // "Readable" only means something when text is printed sideways: it turns
   // the view so that text reads left to right.
@@ -234,7 +260,7 @@ function DesignerContent() {
   const showThermalOrientationPicker = currentFormat?.type === 'thermal' && (sidewaysText.ccw + sidewaysText.cw) > 0;
   const uprightTurn: 'ccw' | 'cw' = sidewaysText.cw > sidewaysText.ccw ? 'cw' : 'ccw';
   const thermalEditorOrientationKey = currentTemplate
-    ? `label-wrangler:thermal-editor-orientation:${currentTemplate.id}`
+    ? `label-wrangler:thermal-editor-orientation:${designKey(currentTemplate.id)}`
     : null;
 
   useEffect(() => {
@@ -401,7 +427,7 @@ function DesignerContent() {
   }, []);
   useEffect(() => {
     if (templateId) void openDesign(templateId);
-    try { setRecovery(templateId ? readDrafts(templateId) : []); } catch { setSaveError('Draft recovery storage is unavailable. Keep this tab open until changes save.'); }
+    try { setRecovery(templateId && !isRunLayoutId(templateId) ? readDrafts(templateId) : []); } catch { setSaveError('Draft recovery storage is unavailable. Keep this tab open until changes save.'); }
   }, [templateId, openDesign]);
   const recoverCopy = async (draft: LabelTemplate) => {
     try {
@@ -435,7 +461,8 @@ function DesignerContent() {
     ));
   }, [currentTemplate, currentFormat, previewValues, measured]);
   // A barcode that only fits as a picture copy gets that action right in the notice.
-  const canExactCopy = currentFormat?.type === 'thermal' && designProblems.some((p) => p.barcodeFit?.fixes.includes('exact-copy'));
+  // A picture copy is a new saved design: not offered while adjusting one run.
+  const canExactCopy = !runOnly && currentFormat?.type === 'thermal' && designProblems.some((p) => p.barcodeFit?.fixes.includes('exact-copy'));
   const [exactCopyRequest, setExactCopyRequest] = useState(0);
   // A barcode that won't print whole: a safe change to this design only
   // (move or turn it, or a QR code in its place), checked before it is offered.
@@ -474,6 +501,33 @@ function DesignerContent() {
     return [...designProblems, ...characters];
   }, [currentTemplate, currentFormat, designProblems, previewValues]);
 
+  // A run's own layout that isn't open (yet): say so, with the way back to the run, never the design list.
+  if (runOnly && (!currentTemplate || currentTemplate.summaryOnly || !currentFormat)) {
+    const status = templateId && openState?.id === templateId ? openState.status : 'opening';
+    return (
+      <AppShell>
+        <PageTitle title="Adjust for this run" />
+        <div className="flex-1 overflow-auto">
+          <div className="page-container space-y-3">
+            {status === 'opening' ? (
+              <p role="status" className="text-sm text-zinc-400">Opening the label for this run…</p>
+            ) : (
+              <>
+                <p role="alert" className="text-sm text-red-400">
+                  {status === 'missing' ? 'Couldn’t open the label for this run: its design isn’t there any more.' : 'Couldn’t open the label for this run. Check your connection and try again.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {status !== 'missing' && templateId && <button type="button" className="btn btn-primary" onClick={() => void openDesign(templateId)}>Try again</button>}
+                  <button type="button" className="btn btn-secondary" onClick={() => router.push(returnTo ?? '/runs/new')}><ChevronLeft className="size-4" aria-hidden="true" />Back to the run</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
   // If no template is selected, show template list view
   if (!currentTemplate || currentTemplate.summaryOnly || !currentFormat) {
     return (
@@ -491,7 +545,7 @@ function DesignerContent() {
                   ? null
                   : <p role="alert" className="mb-4 text-sm text-red-400">Couldn’t open {designLabel(templates.find((t) => t.id === templateId)?.name)}. <button type="button" onClick={() => void openDesign(templateId)} className="link -my-3 inline-block py-3">Try again</button></p>
             ) : null}
-            templates={templates}
+            templates={templates.filter((t) => !isRunLayoutId(t.id))}
             onSelectTemplate={(id) => {
               selectTemplate(id);
               router.push(`/designer?id=${id}`);
@@ -869,12 +923,18 @@ function DesignerContent() {
 
   return (
     <AppShell beforeLeave={saveBeforeLeaving}>
-      <PageTitle title={`${currentTemplate.name} · Designer`} />
-      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">Your last change isn’t saved. {designSaveProblem(saveError, currentTemplate.elements)} <button type="button" className="link" onClick={() => persistEdits(currentTemplate.id)}>Try saving again</button></p>}
+      <PageTitle title={`${currentTemplate.name} · ${runOnly ? 'Adjust for this run' : 'Designer'}`} />
+      {runOnly && (
+        <div role="status" className="flex items-start gap-2 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <p><span className="font-medium">Changes here are for this run only.</span> Your saved design “{currentTemplate.name}” stays the same.</p>
+        </div>
+      )}
+      {saveError && <p role="alert" className="px-4 py-2 text-sm text-red-400">Your last change isn’t {runOnly ? 'kept' : 'saved'}. {designSaveProblem(saveError, currentTemplate.elements)} <button type="button" className="link" onClick={() => persistEdits(currentTemplate.id)}>{runOnly ? 'Try again' : 'Try saving again'}</button></p>}
       {recovery.length > 0 && <div role="alert" className="px-4 py-2 text-amber-300 text-sm">We found unsaved changes from an earlier visit. Recovering them makes a separate copy, so the saved design is not overwritten.
         {recovery.map(draft=><div key={draft.key}>{new Date(draft.savedAt).toLocaleString()} <button type="button" className="link" onClick={()=>void recoverCopy(draft.template)}>Recover as copy</button> <button type="button" className="link ml-3" onClick={()=>{window.localStorage.removeItem(draft.key);setRecovery(items=>items.filter(item=>item.key!==draft.key));}}>Discard this draft</button></div>)}
       </div>}
-      {saveError && <button type="button" className="link px-4 pb-2 text-left text-sm" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
+      {saveError && !runOnly && <button type="button" className="link px-4 pb-2 text-left text-sm" onClick={()=>void recoverCopy(currentTemplate)}>Save my changes as a separate copy</button>}
       <div className="lg:hidden px-4 py-2">
       <div role="tablist" aria-label="Designer panes" className="segmented segmented-fit [&>button]:px-1.5">
         <SegmentedIndicator fit index={phoneTabs.findIndex(([pane]) => pane === shownPane)} count={phoneTabs.length} />
@@ -912,7 +972,7 @@ function DesignerContent() {
             onMoveElement={handleMoveElement}
             onAddElement={() => setShowAddElementMenu(true)}
             onInsertGlobal={() => setShowGlobalPicker(true)}
-            onSaveAsGlobal={() => setShowGlobalSave(true)}
+            onSaveAsGlobal={runOnly ? undefined : () => setShowGlobalSave(true)}
           />
           </div>
           <div className={shownPanel === 'data' ? 'flex flex-col flex-1 min-h-0' : 'hidden'}>
@@ -920,7 +980,7 @@ function DesignerContent() {
             key={currentTemplate.id}
             elements={currentTemplate.elements}
             testData={testData}
-            onTestDataChange={(field, value) => setTestData((prev) => { const next = { ...prev, [field]: value }; localStorage.setItem(`lw:test-data:${currentTemplate.id}`, JSON.stringify(next)); return next; })}
+            onTestDataChange={(field, value) => setTestData((prev) => { const next = { ...prev, [field]: value }; localStorage.setItem(`lw:test-data:${designKey(currentTemplate.id)}`, JSON.stringify(next)); return next; })}
           />
           </div>
         </div>
@@ -937,7 +997,7 @@ function DesignerContent() {
                 onClick={e => { e.preventDefault(); void leaveEditor(); }}
                 className="btn btn-primary btn-sm pl-2"
               >
-                <ChevronLeft className="size-4" aria-hidden="true" /> Done editing
+                <ChevronLeft className="size-4" aria-hidden="true" /> {runOnly ? 'Done' : 'Done editing'}
               </a>
             ) : (
               <a
@@ -949,6 +1009,12 @@ function DesignerContent() {
               </a>
             )}
             <span className={`text-zinc-400 ${returnTo ? '' : 'max-sm:hidden'}`} aria-hidden="true">/</span>
+            {runOnly ? (
+              <h1 className="flex min-h-control-sm min-w-0 max-w-[min(100%,24rem)] items-center text-sm font-semibold text-zinc-100">
+                <span className="truncate">{currentTemplate.name}</span>
+                <span className="ml-1.5 shrink-0 font-normal text-zinc-400">· this run only</span>
+              </h1>
+            ) : (
             <h1 className="min-w-0 max-w-[min(100%,24rem)] text-sm font-semibold text-zinc-100">
               <button
                 onClick={() => setRenameSource(currentTemplate)}
@@ -959,7 +1025,9 @@ function DesignerContent() {
                 <Pencil className="w-3.5 h-3.5 shrink-0 text-zinc-400 group-hover:text-zinc-100" aria-hidden="true" />
               </button>
             </h1>
-            {compatibleFormats.length > 1 && (
+            )}
+            {/* One run keeps its design's label size. */}
+            {!runOnly && compatibleFormats.length > 1 && (
               <div className="w-44 shrink-0 max-sm:hidden">
                 <CustomSelect
                   value={currentFormat.id}
@@ -974,7 +1042,7 @@ function DesignerContent() {
             )}
 
             {/* Saving is automatic: just say where it stands. */}
-            <span role="status" aria-live="polite" className={`inline-flex min-h-control-sm items-center gap-1.5 ${saveError ? 'text-red-400' : 'text-zinc-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full ${saveError ? 'bg-red-400' : saving ? 'bg-zinc-500' : 'bg-emerald-400 animate-success'}`} />{saveError ? 'Not saved' : saving ? 'Saving…' : 'Saved'}</span>
+            <span role="status" aria-live="polite" className={`inline-flex min-h-control-sm items-center gap-1.5 ${saveError ? 'text-red-400' : 'text-zinc-400'}`}><span key={saveError ? 'error' : saving ? 'saving' : 'saved'} aria-hidden="true" className={`size-1.5 rounded-full ${saveError ? 'bg-red-400' : saving ? 'bg-zinc-500' : 'bg-emerald-400 animate-success'}`} />{saveError ? (runOnly ? 'Not kept' : 'Not saved') : saving ? 'Saving…' : runOnly ? 'Kept for this run' : 'Saved'}</span>
 
             {/* Phone: one button in the title row goes to the other view (no
                 second row of tabs under the pane tabs). */}
@@ -1037,7 +1105,7 @@ function DesignerContent() {
               >
                 <Redo2 className="w-4 h-4" />
               </button>
-              {currentFormat.type === 'thermal' && <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} closeKey={canvasProblems.map((p) => `${p.kind}:${p.ids.join(',')}`).join('|')} onShowCode={isAdmin ? () => setShowCode(true) : undefined} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />}
+              {currentFormat.type === 'thermal' && !runOnly && <BitmapTemplateActions source={currentTemplate} format={currentFormat} values={previewValues} requestCopy={exactCopyRequest} closeKey={canvasProblems.map((p) => `${p.kind}:${p.ids.join(',')}`).join('|')} onShowCode={isAdmin ? () => setShowCode(true) : undefined} onCreated={(id) => { selectTemplate(id); router.push(`/designer?id=${id}`); }} />}
               </div>
             </div>
           </div>
@@ -1085,7 +1153,7 @@ function DesignerContent() {
           </div>
           {placeNotice && currentTemplate.elements.some((e) => e.id === placeNotice.id && e.x === placeNotice.x && e.y === placeNotice.y) && <p role="status" className="px-4 pb-2 text-sm text-amber-300">{placeNotice.text}</p>}
           {currentFormat.type === 'thermal' ? (exactView && (
-            <ZPLPreview format={currentFormat} template={currentTemplate} testData={previewValues} active={exactView} zoom={zoom} onZoomChange={setZoom} problemsShown={canvasProblems.length > 0} notice={canvasProblems.length > 0 ? <DesignNotice problems={canvasProblems} action={noticeAction} /> : null} />
+            <ZPLPreview format={currentFormat} template={printTemplate ?? currentTemplate} testData={previewValues} active={exactView} zoom={zoom} onZoomChange={setZoom} problemsShown={canvasProblems.length > 0} notice={canvasProblems.length > 0 ? <DesignNotice problems={canvasProblems} action={noticeAction} /> : null} />
           )) : (
             <LayoutPreview format={currentFormat} elements={currentTemplate.elements} testData={previewValues} />
           )}

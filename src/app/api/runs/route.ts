@@ -1,6 +1,7 @@
 import { resolveRunImages } from '@/lib/runImages.server';
 import { captureDesign } from '@/lib/runDesign.server';
 import { leaveFieldsOff } from '@/lib/runLeaveOff';
+import { applyLayoutOverride } from '@/lib/runLayout';
 import { validatedBody, OfficeError } from '@/lib/validation';
 import { randomUUID } from 'node:crypto';
 import { withOfficeAuth, officeUserFor } from "@/lib/office/guard";
@@ -181,6 +182,10 @@ async function handlePOST(request: NextRequest) {
     const now = new Date().toISOString();
     const id = `run-${randomUUID()}`;
     const design = await captureDesign(String(body.templateId));
+    // "Adjust for this run": this run's own layout of the design's items (the
+    // saved design is not changed). Applied first, so chosen pictures and
+    // left-off parts still apply; the design id, name and label size stay.
+    if (body.layoutOverride) { design.template = applyLayoutOverride(design.template, body.layoutOverride); design.adjusted = true; }
     if (body.imageSelections) design.template = await resolveRunImages(design.template, body.imageSelections);
     // Parts the person left off this run print nothing: their items are not in the run's design.
     if (body.leaveOff?.length) design.template = leaveFieldsOff(design.template, body.leaveOff);

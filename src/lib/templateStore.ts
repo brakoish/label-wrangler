@@ -1,5 +1,8 @@
 import { apiJson } from './apiClient';
 import { storeDraft, clearDraft } from './templateDrafts';
+import { isRunLayoutId, runLayoutSource } from './runLayout';
+import { readRunLayout, saveRunLayout, startRunLayout } from './runLayoutDraft';
+import { validate } from './validation';
 import { create } from 'zustand';
 import { useFormatStore } from './store';
 import { LabelTemplate, LabelFormat, TemplateElement } from './types';
@@ -42,7 +45,30 @@ interface TemplateStore {
 const draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const saveQueues = new Map<string, Promise<void>>();
 
+/**
+ * "Adjust for this run": a run's own copy of a design (id `rundraft:<design
+ * id>`) is kept in this tab only (runLayoutDraft.ts), never sent to
+ * /api/templates. Only its items can change: not its name, label size or
+ * anything else, which stay the saved design's.
+ */
+const RUN_LAYOUT_ONLY_ITEMS = 'This layout is for one run only, so only the items on the label can change here. To rename the design or change its label size, edit the saved design.';
+async function persistRunLayout(id: string, changes: Partial<LabelTemplate>): Promise<LabelTemplate> {
+  const base = useTemplateStore.getState().templates.find(t => t.id === id);
+  const source = runLayoutSource(id);
+  if (!base || !source) throw new Error('Template not found');
+  for (const [key, value] of Object.entries(changes)) {
+    if (key === 'elements' || (key === 'formatId' && value === base.formatId)) continue;
+    throw new Error(RUN_LAYOUT_ONLY_ITEMS);
+  }
+  const next = changes.elements ? { ...base, elements: changes.elements } : base;
+  // The same rules a saved design's items meet, so the run can be made from them.
+  validate({ elements: structuredClone(next.elements) }, 'template');
+  saveRunLayout(next, source);
+  return next;
+}
+
 async function persistTemplate(id: string, changes: Partial<LabelTemplate>): Promise<LabelTemplate> {
+  if (isRunLayoutId(id)) return persistRunLayout(id, changes);
   let result!: LabelTemplate;
   const previous = saveQueues.get(id) ?? Promise.resolve();
   const save = previous.catch(() => {}).then(async () => {
@@ -76,6 +102,30 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
   },
 
   fetchTemplate: async (id, options) => {
+    const source = runLayoutSource(id);
+    if (source) {
+      // A run's own copy: always this tab's kept copy (never a cached one), or
+      // a new copy of the saved design, which is only read here.
+      let draft = readRunLayout(source);
+      if (!draft) {
+        const read = await get().fetchTemplate(source, options);
+        if (read !== 'ok') return read;
+        const saved = get().templates.find(t => t.id === source && !t.summaryOnly);
+        if (!saved) return 'failed';
+        try { draft = startRunLayout(saved); } catch (error) { if (!options?.quiet) set({ error: (error as Error).message }); return 'failed'; }
+      } else if (!useFormatStore.getState().formats.some(f => f.id === draft!.template.formatId)) {
+        try {
+          const format = await apiJson<LabelFormat>(`/api/formats/${draft.template.formatId}`);
+          useFormatStore.setState(state => ({ formats: [...state.formats.filter(f => f.id !== format.id), format] }));
+        } catch (error) {
+          if (!options?.quiet) set({ error: (error as Error).message });
+          return 'failed';
+        }
+      }
+      const copy = draft.template;
+      set(state => ({ templates: [...state.templates.filter(t => t.id !== id), copy] }));
+      return 'ok';
+    }
     try {
       const cached = get().templates.find(t=>t.id===id && !t.summaryOnly);
       const template = cached ?? await apiJson<LabelTemplate>(`/api/templates/${id}`);
@@ -116,6 +166,7 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
   },
 
   deleteTemplate: async (id) => {
+    if (isRunLayoutId(id)) throw new Error(RUN_LAYOUT_ONLY_ITEMS);
     const res = await fetch(`/api/templates/${id}`, {
       method: 'DELETE',
     });
@@ -193,7 +244,9 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     if (!draftTimers.has(templateId)) draftTimers.set(templateId, setTimeout(() => {
       draftTimers.delete(templateId);
       const template = get().templates.find(t=>t.id===templateId);
-      if (template) try { storeDraft(template,template.updatedAt); } catch { set({error:'Draft recovery storage is full. Keep this tab open until your edits save.'}); }
+      const source = runLayoutSource(templateId);
+      if (template && source) try { saveRunLayout(template, source); } catch (error) { set({error:(error as Error).message}); }
+      else if (template) try { storeDraft(template,template.updatedAt); } catch { set({error:'Draft recovery storage is full. Keep this tab open until your edits save.'}); }
     },250));
 
   },
@@ -204,6 +257,8 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     if (!template) return;
 
     const timer=draftTimers.get(templateId); if(timer) { clearTimeout(timer); draftTimers.delete(templateId); }
+    // A run's own copy is kept in this tab already: no recovery copy for it.
+    if (isRunLayoutId(templateId)) { await persistTemplate(templateId, { elements: template.elements, formatId: template.formatId }); return; }
     storeDraft(template, template.updatedAt);
     await persistTemplate(templateId, { elements: template.elements, formatId: template.formatId });
     const current = get().templates.find(t => t.id === templateId);
@@ -291,3 +346,10 @@ export const useTemplateStore = create<TemplateStore>()((set, get) => ({
     }));
   },
 }));
+
+/** Leaving the designer: a run's own copy stays kept in this tab, not in the design list. */
+export function forgetRunLayoutsInStore() {
+  useTemplateStore.setState(state => (state.templates.some(t => isRunLayoutId(t.id))
+    ? { templates: state.templates.filter(t => !isRunLayoutId(t.id)) }
+    : state));
+}

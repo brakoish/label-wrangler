@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, Suspense, useCallback, useId } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight, RotateCcw, Info } from 'lucide-react';
+import { Upload, Clipboard, Play, AlertCircle, FileSpreadsheet, Download, Plus, Pencil, Search, CheckCircle2, Circle, Eye, EyeOff, ChevronRight, RotateCcw, Info, Move } from 'lucide-react';
 import { AppShell } from '@/components/AppShell';
 import { PageTitle } from '@/components/PageTitle';
 import { IconSwap } from '@/components/motion/IconSwap';
@@ -55,6 +55,8 @@ import { PopLayer, useDismiss } from '@/components/ui/PopLayer';
 import { ServerDetails } from '@/components/ui/DetailsFold';
 import { plainServerError } from '@/lib/runErrors';
 import { clearRunDraft, lastRunSource, readRunDraft, rememberRunSource, saveRunDraft, type RunDraft } from '@/lib/runDraft';
+import { isRunLayoutId, layoutOverrideFor, runLayoutId } from '@/lib/runLayout';
+import { clearAllRunLayouts, clearRunLayout, readRunLayout, runLayoutDiffers, saveRunLayout, startRunLayout, type RunLayoutDraft } from '@/lib/runLayoutDraft';
 
 /** “Moved and resized the barcode”: what “Fix it for me” changes, in plain words. */
 function runFixWords(before: TemplateElement, after: TemplateElement, ahead = false): string {
@@ -442,8 +444,22 @@ function NewRunContent() {
     }
   }, [duplicateFrom, fetchRun, runs, duplicateTry]);
 
-  useEffect(() => { if (templateId) void useTemplateStore.getState().fetchTemplate(templateId); }, [templateId]);
-  const template = useMemo(() => templates.find((t) => t.id === templateId && !t.summaryOnly) ?? null, [templates, templateId]);
+  useEffect(() => { if (templateId && !isRunLayoutId(templateId)) void useTemplateStore.getState().fetchTemplate(templateId); }, [templateId]);
+  // The saved design, as it is in the library.
+  const savedTemplate = useMemo(() => (isRunLayoutId(templateId) ? null : templates.find((t) => t.id === templateId && !t.summaryOnly) ?? null), [templates, templateId]);
+  // "Adjust for this run": this run's own copy of the design's items, kept in
+  // this tab (runLayoutDraft.ts). Only ever the copy of this design.
+  const [runLayout, setRunLayout] = useState<RunLayoutDraft | null>(null);
+  useEffect(() => { setRunLayout(templateId ? readRunLayout(templateId) : null); }, [templateId]);
+  const layoutAdjusted = !!savedTemplate && !!runLayout && runLayout.templateId === savedTemplate.id && runLayoutDiffers(runLayout, savedTemplate);
+  // The saved design changed after the copy was taken (in the designer, another
+  // tab or this page): nothing is made until the person keeps or drops it.
+  const layoutStale = layoutAdjusted && runLayout!.template.updatedAt !== savedTemplate!.updatedAt;
+  // A new label size: the adjusted items no longer fit it, so only dropping them is offered.
+  const layoutWrongSize = layoutAdjusted && runLayout!.template.formatId !== savedTemplate!.formatId;
+  // What this run prints: the saved design, or its adjusted layout. Every
+  // preview and check below reads this one.
+  const template = useMemo(() => (savedTemplate && layoutAdjusted && runLayout ? { ...savedTemplate, elements: runLayout.template.elements } : savedTemplate), [savedTemplate, layoutAdjusted, runLayout]);
   const imageSelections = useMemo(() => imagesByTemplate[templateId] ?? {}, [imagesByTemplate, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
   const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
@@ -487,7 +503,11 @@ function NewRunContent() {
     [allDynamicFields, leftOffFields],
   );
   const visibleTemplate = useMemo(() => (template ? leaveFieldsOff(template, leftOffFields) : null), [template, leftOffFields]);
-  const previewTemplate = useMemo(() => visibleTemplate ? applyRunImages(visibleTemplate, Object.fromEntries(Object.entries(imageSelections).filter(([id]) => visibleTemplate.elements.some(e => e.id === id && e.type === 'image' && e.runSelectable)))) : null, [visibleTemplate, imageSelections]);
+  // "Fix in the designer" opens what this run prints: its adjusted layout while there is one.
+  const fixDesignId = (id: string) => (layoutAdjusted && savedTemplate?.id === id ? runLayoutId(id) : id);
+  // Pictures chosen for slots this run still has (an adjusted layout can drop one).
+  const runImageSelections = useMemo(() => (template ? Object.fromEntries(Object.entries(imageSelections).filter(([id]) => template.elements.some(e => e.id === id && e.type === 'image' && e.runSelectable))) : {}), [template, imageSelections]);
+  const previewTemplate = useMemo(() => visibleTemplate ? applyRunImages(visibleTemplate, runImageSelections) : null, [visibleTemplate, runImageSelections]);
   const visibleFieldSet = useMemo(() => new Set(dynamicFields), [dynamicFields]);
   const visibleStaticValues = useMemo(() => {
     const next: Record<string, string> = {};
@@ -549,6 +569,23 @@ function NewRunContent() {
     return el?.type === 'qr' ? 'QR code' : el?.type === 'barcode' ? 'barcode' : null;
   };
 
+  /**
+   * A change this page saves to the design itself (naming parts, a code's
+   * value, "changes per label") is made in this run's adjusted layout too,
+   * and a layout that was up to date with the design stays so: no "your
+   * design changed" question for a change made right here.
+   */
+  const saveDesignAlsoInRunLayout = async (designId: string, change: (elements: TemplateElement[]) => TemplateElement[], save: () => Promise<void>) => {
+    const kept = readRunLayout(designId);
+    const base = useTemplateStore.getState().templates.find((t) => t.id === designId)?.updatedAt;
+    await save();
+    if (!kept) return;
+    const now = useTemplateStore.getState().templates.find((t) => t.id === designId);
+    if (!now) return;
+    const updatedAt = kept.template.updatedAt === base ? now.updatedAt : kept.template.updatedAt;
+    try { setRunLayout(saveRunLayout({ ...kept.template, elements: change(kept.template.elements), updatedAt }, designId)); } catch { /* the "design changed" question covers it */ }
+  };
+
   // Older templates can have dynamic elements without a fieldName, so they do
   // not show up in the field picker. Naming them changes the shared design, so
   // it is an explicit action (button below) rather than a silent save on open,
@@ -561,14 +598,16 @@ function NewRunContent() {
     const named: { fieldName?: string }[] = template.elements.filter((el) => el.fieldName?.trim());
     setNamingFields(true); setNamingError(null);
     try {
+      const names = new Map<string, string>();
       for (const el of unnamedDynamic) {
         // A plain, unique name such as "Barcode 1" that also works as a
         // spreadsheet heading.
         const candidate = nextFieldName(el.type, named);
         named.push({ fieldName: candidate });
+        names.set(el.id, candidate);
         updateElementLocal(template.id, el.id, { fieldName: candidate });
       }
-      await saveTemplate(template.id);
+      await saveDesignAlsoInRunLayout(template.id, (elements) => elements.map((el) => (names.has(el.id) ? { ...el, fieldName: names.get(el.id) } : el)), () => saveTemplate(template.id));
     } catch (error) {
       setNamingError(plainServerError(error, 'Could not save the design. Try again.'));
     } finally {
@@ -1002,7 +1041,7 @@ function NewRunContent() {
     setRealNote(null);
     updateElementLocal(template.id, elementId, { content: value });
     try {
-      await saveTemplate(template.id);
+      await saveDesignAlsoInRunLayout(template.id, (elements) => elements.map((e) => (e.id === elementId ? { ...e, content: value } as TemplateElement : e)), () => saveTemplate(template.id));
       setRealNote({ elementId, tone: 'ok', text: 'Saved to the design.' });
     } catch {
       setRealNote({ elementId, tone: 'error', text: `The ${kind} shows it on this page, but the design couldn’t be saved. Check your connection, then try again.` });
@@ -1023,10 +1062,11 @@ function NewRunContent() {
     const fieldName = fieldNameForColumn(column && inputMode === 'manifest' ? friendlyFieldName(column) : column, suggestedName, taken);
     setFlipping(elementId);
     setFlipNote(null);
-    updateElementLocal(template.id, elementId, contentModeUpdates({ ...current, fieldName: '' }, false, () => fieldName));
+    const perLabel = contentModeUpdates({ ...current, fieldName: '' }, false, () => fieldName);
+    updateElementLocal(template.id, elementId, perLabel);
     setFieldMappings((m) => ({ ...m, [fieldName]: rowsBacked ? { mode: 'column', csvColumn: column ?? '' } : { mode: 'static' } }));
     try {
-      await saveTemplate(template.id);
+      await saveDesignAlsoInRunLayout(template.id, (elements) => elements.map((e) => (e.id === elementId ? { ...e, ...perLabel } as TemplateElement : e)), () => saveTemplate(template.id));
       setFlipNote({
         tone: 'ok',
         text: column
@@ -1153,7 +1193,8 @@ function NewRunContent() {
       : null),
     [designIssues, template, checkTemplate, runDataForCheck, format, labelCount],
   );
-  const [runFixNote, setRunFixNote] = useState<{ templateId: string; text: string; before: TemplateElement[]; tone: 'ok' | 'error' } | null>(null);
+  // `runOnly`: made in this run's adjusted layout, not the saved design.
+  const [runFixNote, setRunFixNote] = useState<{ templateId: string; text: string; before: TemplateElement[]; tone: 'ok' | 'error'; runOnly?: boolean } | null>(null);
   const [runFixBusy, setRunFixBusy] = useState(false);
   const applyRunFix = async (fix: BarcodeAutoFix, elementId: string) => {
     if (!template || runFixBusy) return;
@@ -1168,6 +1209,26 @@ function NewRunContent() {
       fix.keptText ? 'The number under the barcode prints next to the QR code.' : fix.droppedText ? 'There’s no room for the number under the barcode, so it won’t print. If the label needs it, choose Not now and fix the design or pick a bigger label.' : '',
       fix.qrInches !== undefined && fix.qrInches < QR_SCAN_INCHES ? `The QR code prints ${fix.qrInches}" wide; many phones need ${QR_SCAN_INCHES}" to read it. Test-scan one, or pick a bigger label.` : '',
     ].filter(Boolean).join(' ') : '';
+    // Adjusting this run's layout: the fix goes there too, and the saved design stays as it is.
+    if (layoutAdjusted && runLayout && savedTemplate) {
+      const fixHere = await confirmDialog({
+        title: 'Fix it for this run?',
+        body: `${runFixWords(was, changed, true)} on this run’s label only. Your saved design “${template.name}” stays the same. ${qrNotes ? `${qrNotes} ` : ''}You can undo it right after.`,
+        confirmLabel: 'Fix it for this run',
+        cancelLabel: 'Not now',
+      });
+      if (!fixHere) return;
+      const kept = readRunLayout(savedTemplate.id) ?? runLayout;
+      const before = kept.template.elements;
+      const added = fix.elements.filter((el) => !before.some((b) => b.id === el.id));
+      try {
+        setRunLayout(saveRunLayout({ ...kept.template, elements: [...before.map((el) => (el.id === elementId ? changed : el)), ...added] }, savedTemplate.id));
+        setRunFixNote({ templateId: savedTemplate.id, text: `${what} on this run’s label only${fix.keptText ? ', with its number next to it' : ''}. Your saved design stays the same.${fix.qrInches !== undefined && fix.qrInches < QR_SCAN_INCHES ? ` The QR code prints ${fix.qrInches}" wide, small for some phones: test-scan one.` : ''}`, before, tone: 'ok', runOnly: true });
+      } catch (error) {
+        setRunFixNote({ templateId: savedTemplate.id, text: (error as Error).message, before, tone: 'error', runOnly: true });
+      }
+      return;
+    }
     const ok = await confirmDialog({
       title: `Change the design “${template.name}”?`,
       body: `${runFixWords(was, changed, true)} in the design itself, so every run made from it from now on gets this change too. ${qrNotes ? `${qrNotes} ` : ''}You can undo it right after.`,
@@ -1190,6 +1251,16 @@ function NewRunContent() {
   };
   const undoRunFix = async () => {
     if (!runFixNote || runFixBusy) return;
+    if (runFixNote.runOnly) {
+      const kept = readRunLayout(runFixNote.templateId);
+      try {
+        if (kept) setRunLayout(saveRunLayout({ ...kept.template, elements: runFixNote.before }, runFixNote.templateId));
+        setRunFixNote(null);
+      } catch (error) {
+        setRunFixNote({ ...runFixNote, text: (error as Error).message, tone: 'error' });
+      }
+      return;
+    }
     setRunFixBusy(true);
     try {
       await updateTemplate(runFixNote.templateId, { elements: runFixNote.before });
@@ -1310,6 +1381,7 @@ function NewRunContent() {
 
   const canCreate =
     !imageBusy &&
+    !layoutStale &&
     nabisOk &&
     name.trim().length > 0 &&
     !!template &&
@@ -1354,6 +1426,7 @@ function NewRunContent() {
     !longOk, !designOk, !charactersOk, !glyphsOk, !layoutOk,
   ].filter(Boolean).length;
   const checkReasons = setupReason || !format ? [] : [
+    layoutStale && (layoutWrongSize ? 'This run’s adjustments no longer fit the design’s label size. Choose Use the saved design under Name and design.' : 'Your design changed after you adjusted this run. Keep your adjustments or use the saved design, under Name and design.'),
     !blanksOk && !nabisCoversBlanks && (blankCheck.issues.every((issue) => issue.kind === 'no-value')
       ? `Give ${andList(blankCheck.issues.map((issue) => friendlyFieldName(issue.field)))} a column or one value above.`
       : false),
@@ -1483,16 +1556,61 @@ function NewRunContent() {
     if (formDirty && draftOffer && !draftDecided.current) {
       draftDecided.current = true;
       setDraftOffer(null);
+      clearAllRunLayouts();
     }
   }, [formDirty, draftOffer]);
-  useEffect(() => {
+  const flushRunDraft = useCallback(() => {
     if (!formDirty || !draftDecided.current) return;
-    const timer = setTimeout(() => saveRunDraft({
+    saveRunDraft({
       name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField,
       csvHeaders, csvRows: csvRows.length <= 5000 ? csvRows : [], csvPlainRows: csvRows.length <= 5000 ? csvPlainRows : null, csvFileName, manualQty, savedAt: Date.now(),
-    }), 400);
+    });
+  }, [formDirty, name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField, csvHeaders, csvRows, csvPlainRows, csvFileName, manualQty]);
+  useEffect(() => {
+    if (!formDirty || !draftDecided.current) return;
+    const timer = setTimeout(flushRunDraft, 400);
     return () => clearTimeout(timer);
-  }, [formDirty, draftOffer, name, templateId, inputMode, staticValues, fieldMappings, hiddenRunFields, pasteText, pasteField, csvHeaders, csvRows, csvPlainRows, csvFileName, manualQty]);
+  }, [formDirty, draftOffer, flushRunDraft]);
+
+  // "Adjust for this run": open this run's own copy of the design in the
+  // designer (the copy kept from before, else a new one). The unfinished run
+  // is kept first, so "Continue" brings everything back.
+  const [layoutError, setLayoutError] = useState('');
+  const adjustForThisRun = () => {
+    if (!savedTemplate) return;
+    setLayoutError('');
+    try { startRunLayout(savedTemplate); } catch (error) { setLayoutError((error as Error).message); return; }
+    flushRunDraft();
+    router.push(`/designer?id=${encodeURIComponent(runLayoutId(savedTemplate.id))}&returnTo=${encodeURIComponent('/runs/new')}`);
+  };
+  // The saved design changed after the copy was taken: keep the copy as it is.
+  const keepAdjustments = () => {
+    if (!runLayout || !savedTemplate) return;
+    setLayoutError('');
+    try { setRunLayout(saveRunLayout({ ...runLayout.template, updatedAt: savedTemplate.updatedAt }, savedTemplate.id)); } catch (error) { setLayoutError((error as Error).message); }
+  };
+  const undoAdjustments = async (ask: boolean) => {
+    if (!savedTemplate) return;
+    if (ask && !await confirmDialog({
+      title: 'Undo this run’s adjustments?',
+      body: `This run goes back to your saved design “${savedTemplate.name}”. The adjustments can’t be brought back.`,
+      confirmLabel: 'Undo adjustments',
+      cancelLabel: 'Keep them',
+      focusCancel: true,
+    })) return;
+    clearRunLayout(savedTemplate.id);
+    setRunLayout(null);
+    setLayoutError('');
+    setRunFixNote((note) => (note?.runOnly ? null : note));
+  };
+  // A copy that is the same as the saved design adjusts nothing: let it go,
+  // so it follows the design (and never asks about a change made elsewhere).
+  useEffect(() => {
+    if (savedTemplate && runLayout && runLayout.templateId === savedTemplate.id && !runLayoutDiffers(runLayout, savedTemplate)) {
+      clearRunLayout(savedTemplate.id);
+      setRunLayout(null);
+    }
+  }, [savedTemplate, runLayout]);
 
   // A new run is named after its design and today's date until the person
   // types a name of their own.
@@ -1552,7 +1670,9 @@ function NewRunContent() {
       const run = await createRun({
         name: name.trim(),
         templateId: template.id,
-        imageSelections,
+        imageSelections: runImageSelections,
+        // "Adjust for this run": the run is made with this layout; the saved design is not changed.
+        ...(layoutAdjusted && runLayout && savedTemplate ? { layoutOverride: layoutOverrideFor(runLayout.template.elements, savedTemplate) } : {}),
         presetId: presetId ?? null,
         // Typed values only for "Same on every label" fields: a per-label
         // field never carries one value that other labels could pick up.
@@ -1572,6 +1692,8 @@ function NewRunContent() {
         try { window.localStorage.setItem(`lw:qr-replaces:${run.id}`, duplicateFrom); } catch { /* storage off: no offer */ }
       }
       clearRunDraft();
+      clearAllRunLayouts();
+      setRunLayout(null);
       rememberRunSource(inputMode);
       if (blankCheck.issues.length && leaveBlank) rememberBlankChoice(typeof window !== 'undefined' ? window.localStorage : null, run.id, blankCheck.signature);
       // The go-ahead given here carries to the run page, for the same problems.
@@ -1814,7 +1936,7 @@ function NewRunContent() {
               <p className="text-sm text-zinc-100">We kept your unfinished run{draftOffer.name.trim() ? <> “{draftOffer.name.trim()}”</> : ''}.</p>
               <div className="flex gap-2">
                 <button type="button" className="btn btn-primary btn-sm" onClick={() => restoreDraft(draftOffer)}>Continue</button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { clearRunDraft(); setDraftOffer(null); draftDecided.current = true; }}>Start fresh</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { clearRunDraft(); clearAllRunLayouts(); setDraftOffer(null); draftDecided.current = true; }}>Start fresh</button>
               </div>
             </section>
           )}
@@ -1837,7 +1959,7 @@ function NewRunContent() {
               <div>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2">
                   <span id={`${formId}-template`} className="field-label whitespace-nowrap">Label design</span>
-                  <div className="flex items-center max-sm:basis-full">
+                  <div className="flex flex-wrap items-center max-sm:basis-full">
                     {/* Edit the currently-selected design without losing
                         your spot in the wizard — round-trips via ?returnTo. */}
                     {template && (
@@ -1848,6 +1970,18 @@ function NewRunContent() {
                       >
                         <Pencil className="size-4" aria-hidden="true" /> Edit design
                       </Link>
+                    )}
+                    {/* Move or change items on the label for this run only:
+                        the saved design stays exactly as it is. */}
+                    {savedTemplate && (
+                      <button
+                        type="button"
+                        onClick={adjustForThisRun}
+                        className="btn btn-ghost btn-sm"
+                        title="Move or change items on the label for this run only. Your saved design stays the same."
+                      >
+                        <Move className="size-4" aria-hidden="true" /> Adjust for this run
+                      </button>
                     )}
                     {!(templates.length === 0 && templatesHydrated && !templatesLoadError) && <button
                       type="button"
@@ -1876,7 +2010,7 @@ function NewRunContent() {
                     value={templateId}
                     onChange={setTemplateId}
                     placeholder="Choose a label design…"
-                    options={templates.filter((t) => !t.archivedAt || t.id === templateId).map((t) => {
+                    options={templates.filter((t) => !isRunLayoutId(t.id) && (!t.archivedAt || t.id === templateId)).map((t) => {
                       const f = formats.find((x) => x.id === t.formatId);
                       return {
                         value: t.id,
@@ -1899,6 +2033,31 @@ function NewRunContent() {
                   </p>
                 )}
                 {qrIntentNote && !qrCopy && <p role="status" className="mt-2 text-sm text-zinc-300">{qrIntentNote}</p>}
+                {layoutError && (
+                  <p role="alert" className="fold-reveal mt-2 flex items-start gap-1.5 text-sm text-red-400">
+                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>{layoutError}</span>
+                  </p>
+                )}
+                {layoutAdjusted && !layoutStale && (
+                  <p role="status" className="fold-reveal mt-2 flex items-start gap-1.5 text-sm text-zinc-300">
+                    <Move className="mt-0.5 size-4 shrink-0 text-amber-400" aria-hidden="true" />
+                    <span>Layout adjusted for this run. Your saved design stays the same.{' '}<button type="button" className="link" onClick={() => void undoAdjustments(true)}>Undo adjustments</button></span>
+                  </p>
+                )}
+                {layoutStale && savedTemplate && (
+                  <div role="alert" className="fold-reveal mt-2 space-y-2 text-sm">
+                    <p className="flex items-start gap-1.5 text-amber-300">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      <span>{layoutWrongSize
+                        ? `The design “${savedTemplate.name}” now uses a different label size, so this run’s adjustments no longer fit. Use the saved design, then adjust it again if you need to.`
+                        : `The design “${savedTemplate.name}” was changed after you adjusted this run. Keep your adjustments (this run won’t get the newer changes), or use the design as it is now.`}</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {!layoutWrongSize && <button type="button" className="btn btn-secondary btn-sm" onClick={keepAdjustments}>Keep my adjustments</button>}
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => void undoAdjustments(false)}>Use the saved design</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </section>}
@@ -2425,6 +2584,7 @@ function NewRunContent() {
                       <span className="text-sm text-zinc-400">Showing the design’s sample text</span>
                     )}
                   </div>
+                  {layoutAdjusted && <p className="-mt-2 flex items-center gap-1.5 text-sm text-zinc-400"><Move className="size-4 shrink-0 text-amber-400" aria-hidden="true" />Layout adjusted for this run.</p>}
                   <div className="flex justify-center">
                     {format.type === 'sheet' ? (
                       // Sheets don't go through the printer language: show
@@ -2520,7 +2680,7 @@ function NewRunContent() {
                       stops={longStops}
                       onLeaveOut={leaveLongOut}
                       sheetRow={inputMode === 'csv' ? (index) => index + 1 + (fileInfo?.headerRow ?? 1) : undefined}
-                      designHref={template ? designerFixHref(template.id, barcodeCheck.issues.find((issue) => isLongValueIssue(issue, longRows))?.elementId) : undefined}
+                      designHref={template ? designerFixHref(fixDesignId(template.id), barcodeCheck.issues.find((issue) => isLongValueIssue(issue, longRows))?.elementId) : undefined}
                       ticked={longTickKey === longLeftKey}
                       onTick={(value) => setLongTickKey(value ? longLeftKey : '')}
                     />
@@ -2538,14 +2698,15 @@ function NewRunContent() {
                       onTick={tickBarcodeItem}
                       fix={<>
                         {barcodeFixes?.fix && (
-                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void (barcodeFixes.fix!.kind === 'qr' ? switchToQrCopy(barcodeFixes.fix!) : applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId))}>{barcodeFixes.fix.label}</button>
+                          <button type="button" className="btn btn-primary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void (barcodeFixes.fix!.kind === 'qr' && !layoutAdjusted ? switchToQrCopy(barcodeFixes.fix!) : applyRunFix(barcodeFixes.fix!, barcodeFixes.elementId))}>{barcodeFixes.fix.label}</button>
                         )}
                         {!barcodeFixes?.fix && barcodeFixes?.qr && (
-                          // A QR code changes what the label is: made in a copy for this run, never the saved design.
-                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void switchToQrCopy(barcodeFixes.qr!)}>{qrBusy ? 'Making a copy…' : barcodeFixes.qr.label}</button>
+                          // A QR code changes what the label is: made in a copy for this run, never the saved design
+                          // (or, while this run's layout is adjusted, in that layout).
+                          <button type="button" className="btn btn-secondary btn-sm max-sm:min-h-11" disabled={runFixBusy || qrBusy} onClick={() => void (layoutAdjusted ? applyRunFix(barcodeFixes.qr!, barcodeFixes.elementId) : switchToQrCopy(barcodeFixes.qr!))}>{qrBusy ? 'Making a copy…' : barcodeFixes.qr.label}</button>
                         )}
                         {barcodeWords.fixIn !== 'data' && template && (
-                          <FixInDesignerLink href={designerFixHref(template.id, designIssues.find((issue) => issue.elementId)?.elementId)} />
+                          <FixInDesignerLink href={designerFixHref(fixDesignId(template.id), designIssues.find((issue) => issue.elementId)?.elementId)} />
                         )}
                         {barcodeWords.fixIn !== 'design' && charBarcodeButton && leaveOutButton(charBarcodeLeft)}
 
@@ -2588,7 +2749,7 @@ function NewRunContent() {
                       more={characterSummary.more}
                       actions={<>
                         {charTextButton && leaveOutButton(charTextLeft)}
-                        {characterCheck.issues.some((issue) => !issue.label) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}
+                        {characterCheck.issues.some((issue) => !issue.label) && template && <FixInDesignerLink href={designerFixHref(fixDesignId(template.id))} />}
                         {lastFile.current && characterCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) && <span className="text-zinc-400">Or fix them in your spreadsheet, then use “Choose another file” at the top.</span>}
                       </>}
                       confirmLabel="Print anyway: those characters come out as junk"
@@ -2602,7 +2763,7 @@ function NewRunContent() {
                       more={glyphItems.more}
                       actions={<>
                         {glyphLeaveOut}
-                        {glyphCheck.labels.includes(0) && template && <FixInDesignerLink href={designerFixHref(template.id)} />}
+                        {glyphCheck.labels.includes(0) && template && <FixInDesignerLink href={designerFixHref(fixDesignId(template.id))} />}
                         {lastFile.current && glyphCheck.issues.some((issue) => fieldIsFromSheet(issue.field)) && <span className="text-zinc-400">Or fix them in your spreadsheet, then use “Choose another file” at the top.</span>}
                       </>}
                     />

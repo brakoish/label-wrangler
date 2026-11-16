@@ -236,7 +236,9 @@ export type RunDataSource = 'paste' | 'csv' | 'manual' | 'manifest';
 export type RunPrintEventType = 'opened' | 'sent' | 'confirmed' | 'failed' | 'cancelled' | 'rewind';
 export type RunPrintOutput = 'roll-zpl' | 'sheet-pdf' | 'roll-pdf' | 'scan' | 'office-pi';
 
-export interface RunDesign { template: LabelTemplate; format: LabelFormat; capturedAt: string; legacy?: boolean }
+export interface RunDesign { template: LabelTemplate; format: LabelFormat; capturedAt: string; legacy?: boolean;
+  /** The items were moved or changed for this run only ("Adjust for this run"); the saved design was not. */
+  adjusted?: boolean }
 
 /** One execution of a print run. */
 export interface Run {

@@ -1,5 +1,6 @@
 import { validateRunImages, type RunImageSelections } from './runImages';
 import type { LabelTemplate, LabelFormat, Run, RunPreset, GlobalElement } from './types';
+import type { LayoutOverride } from './runLayout';
 import { body, OfficeError } from './office/http';
 export { OfficeError };
 type Data = Record<string, unknown>;
@@ -52,7 +53,9 @@ function cssFontWeight(value: unknown) {
  * not escaped, so command and parameter separators are refused. Empty prints
  * as M. Any other value is kept so the printed bytes don't change. */
 const ZPL_SEPARATORS = /[\^~,\r\n]/;
-function elements(value: unknown) {
+/** `designPictures`: a new run's adjusted layout (runLayout.ts) may send a
+ * picture without its data, meaning the design's own picture with that id. */
+function elements(value: unknown, designPictures = false) {
   if (!Array.isArray(value) || value.length > 500) invalid('elements');
   const ids = new Set();
   for (const raw of value) {
@@ -79,18 +82,18 @@ function elements(value: unknown) {
       if (v !== null && typeof v === 'object') invalid(k);
     }
     if (e.runSelectable !== undefined && (e.type !== 'image' || typeof e.runSelectable !== 'boolean')) invalid('run-selectable image');
-    if (e.type === 'image' && (typeof e.src !== 'string' || !/^data:image\/(png|jpeg|webp|gif|svg\+xml);/i.test(e.src))) invalid('image source');
+    if (e.type === 'image' && !(designPictures && e.src === undefined) && (typeof e.src !== 'string' || !/^data:image\/(png|jpeg|webp|gif|svg\+xml);/i.test(e.src))) invalid('image source');
   }
 }
 const fields = {
   template: ['name','description','formatId','elements','thermalRenderMode','archivedAt','expectedUpdatedAt'],
   format: ['name','description','type','width','height','dpi','labelsAcross','linerWidth','horizontalGapThermal','sideMarginThermal','labelGap','sheetWidth','sheetHeight','columns','rows','labelsPerSheet','topMargin','sideMargin','horizontalGap','verticalGap'],
-  run: ['imageSelections','leaveOff','name','templateId','presetId','staticValues','fieldMappings','dataSource','sourceData','mappedField','status','totalLabels','printedCount','notes','completedAt','pinnedAt','pinned','progressOnly','resetProgress','expectedPrintedCount'],
+  run: ['imageSelections','leaveOff','layoutOverride','name','templateId','presetId','staticValues','fieldMappings','dataSource','sourceData','mappedField','status','totalLabels','printedCount','notes','completedAt','pinnedAt','pinned','progressOnly','resetProgress','expectedPrintedCount'],
   preset: ['name','templateId','staticDefaults','fieldMappings','mappedField','csvColumn','touch'],
   global: ['name','description','elements'],
 } as const;
 export type Entity = keyof typeof fields;
-type Shapes = { template: LabelTemplate & { expectedUpdatedAt?: string }; format: LabelFormat; run: Run & { imageSelections?: RunImageSelections; leaveOff?: string[]; pinned?: boolean; progressOnly?: boolean; resetProgress?: boolean; expectedPrintedCount?: number }; preset: RunPreset & { touch?: boolean }; global: GlobalElement };
+type Shapes = { template: LabelTemplate & { expectedUpdatedAt?: string }; format: LabelFormat; run: Run & { imageSelections?: RunImageSelections; leaveOff?: string[]; layoutOverride?: LayoutOverride; pinned?: boolean; progressOnly?: boolean; resetProgress?: boolean; expectedPrintedCount?: number }; preset: RunPreset & { touch?: boolean }; global: GlobalElement };
 export async function validatedBody<E extends Entity>(req: Request, entity: E, create = false): Promise<Shapes[E]> {
   return validate(await body(req, 4_000_000), entity, create) as unknown as Shapes[E];
 }
@@ -119,6 +122,14 @@ export function validate(data: Data, entity: Entity, create = false): Data {
     if (!create) invalid('parts left off: saved run designs are immutable');
     if (!Array.isArray(data.leaveOff) || data.leaveOff.length > 500) invalid('parts left off');
     for (const field of data.leaveOff) text(field, 'part left off', 200);
+  }
+  // "Adjust for this run": the new run's own layout of the design's items,
+  // checked exactly like a design's items. Only when a run is made.
+  if (data.layoutOverride !== undefined) {
+    if (!create) invalid('layout for this run: saved run designs are immutable');
+    const layout = object(data.layoutOverride, 'layout for this run');
+    for (const k of Object.keys(layout)) if (k !== 'elements') invalid(`layout for this run field ${k}`);
+    elements(layout.elements, true);
   }
   if (data.elements !== undefined) elements(data.elements);
   for (const k of ['staticValues','staticDefaults']) if (data[k] !== undefined) strings(data[k],k);

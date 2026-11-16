@@ -2276,6 +2276,8 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
                 <LocalZplPreview zpl={previewZpl} format={format} showOutlines={showOutlines} />
               )}
             </div>
+            {/* Made with "Adjust for this run" on New run. */}
+            {run.designSnapshot?.adjusted && <p className="text-xs text-zinc-400">Layout adjusted for this run. The saved design wasn’t changed.</p>}
             {/* Said once: the barcode check above says it when it shows. */}
             {(calm || printCheck.blocking.length === 0 || !!run.designSnapshot?.legacy) && <p className="text-xs text-zinc-400">This run keeps the design it started with.{run.designSnapshot?.legacy ? ' (Older run: the design was saved during an update, not when the run was made.)' : ''}</p>}
           </div>

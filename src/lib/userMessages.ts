@@ -172,7 +172,7 @@ export function designSaveProblem(message: string, elements: TemplateElement[]):
     if (/can’t be used/.test(named)) return named;
   }
   if (/^(Failed to fetch\s*$|NetworkError|Load failed)|network/i.test(message)) return OFFLINE_MESSAGE;
-  if (/Session expired|changed in another tab|Draft recovery storage/i.test(message)) return message;
+  if (/Session expired|changed in another tab|Draft recovery storage|couldn’t keep this run’s layout|for one run only/i.test(message)) return message;
   return 'Label Wrangler couldn’t save that just now.';
 }
 
