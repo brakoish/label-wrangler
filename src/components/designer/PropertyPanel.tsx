@@ -248,18 +248,18 @@ export function PropertyPanel({ element, selectedElements = [], format, onUpdate
           <div className="space-y-1.5">
             <ColumnPicker element={element} columns={columnList} fileName={lastColumns.fileName} onUpdate={onUpdate} placeholderName={() => nextFieldName(element.type, allElements.filter((e) => e.id !== element.id))} />
             {(showManifest || readsNabis(element)) ? (
-              <StackedField label="Or a Nabis detail">
+              <StackedField label="Or a Manifest detail">
                 {(id) => <CustomSelect
                   compact
                   id={id}
                   value={MANIFEST_FIELD_OPTIONS.some((option) => option.value === element.fieldName) ? element.fieldName || '' : ''}
                   onChange={(v) => { if (v) onUpdate({ fieldName: v }); }}
-                  placeholder="Pick a Nabis detail"
+                  placeholder="Pick a Manifest detail"
                   options={MANIFEST_FIELD_OPTIONS}
                 />}
               </StackedField>
             ) : (
-              <button type="button" className="link inline-flex min-h-control-sm items-center text-left text-sm" onClick={() => setShowManifest(true)}>Use a Nabis detail instead</button>
+              <button type="button" className="link inline-flex min-h-control-sm items-center text-left text-sm" onClick={() => setShowManifest(true)}>Use a Manifest detail instead</button>
             )}
             <StackedField label="Sample for the preview">
               {(id) => <input id={id} type="text" className="field field-sm w-full" value={element.defaultValue || ''} onChange={(e) => onUpdate({ defaultValue: e.target.value })} placeholder={element.type === 'barcode' ? 'e.g. 850010001234' : element.type === 'qr' ? 'e.g. https://lab.example/123' : 'Only shown here, never printed'} />}
@@ -580,7 +580,7 @@ function ColumnPicker({ element, columns, fileName, onUpdate, placeholderName }:
   );
 }
 
-/** Show the Nabis picker for an item that already reads a Nabis detail (others get a link). */
+/** Show the Manifest picker for an item that already reads a Manifest detail (others get a link). */
 function readsNabis(current: TemplateElement): boolean {
   return !!current.fieldName && MANIFEST_FIELD_OPTIONS.some((o) => o.value === current.fieldName);
 }
