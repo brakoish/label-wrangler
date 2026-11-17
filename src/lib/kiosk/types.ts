@@ -4,6 +4,8 @@ import type { KioskCategory } from './plan';
 /** A run in the kiosk's lists (GET /api/kiosk/runs). */
 export interface KioskRunListItem {
   id: string; name: string; designName: string;
+  /** The design the run was made from (null for a run whose design is gone). */
+  templateId: string | null;
   /** A roll label design: it can print on the office printer. */
   thermal: boolean;
   totalLabels: number; status: string; createdAt: string;
@@ -15,5 +17,7 @@ export interface KioskRunListItem {
 export interface KioskDesignsAnswer {
   ready: boolean; categoriesReady: boolean; ids: string[];
   categories: Record<string, KioskCategory[]>; canEdit: boolean;
+  /** Brand limits per design; brandsReady is false until the brand table is set up. */
+  brands: Record<string, string[]>; brandsReady: boolean;
   designs?: Array<{ template: LabelTemplate; format: LabelFormat }>;
 }

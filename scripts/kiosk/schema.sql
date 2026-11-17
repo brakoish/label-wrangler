@@ -17,11 +17,20 @@ CREATE TABLE IF NOT EXISTS kiosk_accounts (
 );
 
 -- Product categories for designs (Flower, Pre-roll, Edible, Vape, Concentrate,
--- Shake/Trim, Other). A design with none fits every product.
+-- Shake/Trim, Other). On the kiosk a design with none is offered to no product
+-- (New run still lists it).
 CREATE TABLE IF NOT EXISTS template_categories (
  template_id text NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
  category text NOT NULL CHECK (category IN ('Flower','Pre-roll','Edible','Vape','Concentrate','Shake/Trim','Other')),
  PRIMARY KEY (template_id, category)
+);
+
+-- Brands a design is only for (optional). A design with none fits every brand
+-- of its product kinds. Names as Manifest has them; compared without case.
+CREATE TABLE IF NOT EXISTS template_brands (
+ template_id text NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+ brand text NOT NULL CHECK (length(brand) BETWEEN 1 AND 100),
+ PRIMARY KEY (template_id, brand)
 );
 
 -- Runs made at the kiosk: which product, how many, and where the 12-label

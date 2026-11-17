@@ -4,7 +4,7 @@ import type { KioskDesignsAnswer } from '@/lib/kiosk/types';
 import type { KioskCategory } from '@/lib/kiosk/plan';
 import { friendlyError } from '@/lib/userMessages';
 
-const EMPTY: KioskDesignsAnswer = { ready: false, categoriesReady: false, ids: [], categories: {}, canEdit: false };
+const EMPTY: KioskDesignsAnswer = { ready: false, categoriesReady: false, ids: [], categories: {}, canEdit: false, brands: {}, brandsReady: false };
 
 /**
  * Which designs are on the kiosk and each design's categories, for the
@@ -26,7 +26,7 @@ export function useKioskDesigns() {
       .finally(() => { if (active) setLoaded(true); });
     return () => { active = false; };
   }, []);
-  const save = useCallback(async (templateId: string, change: { kiosk?: boolean; categories?: KioskCategory[] }) => {
+  const save = useCallback(async (templateId: string, change: { kiosk?: boolean; categories?: KioskCategory[]; brands?: string[] }) => {
     setBusy(templateId); setError('');
     try {
       const response = await fetch('/api/kiosk/designs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templateId, ...change }) });

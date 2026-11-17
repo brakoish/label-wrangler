@@ -10,7 +10,7 @@ import { friendlyError } from '@/lib/userMessages';
 import type { LabelFormat, LabelTemplate } from '@/lib/types';
 import type { KioskDesignsAnswer, KioskRunListItem } from '@/lib/kiosk/types';
 import {
-  KIOSK_TEST_LABELS, designsForCategory, kioskDesignCheck, kioskDesignProblem, kioskLabelValues, kioskTestCount,
+  KIOSK_CATEGORIES, KIOSK_TEST_LABELS, kioskCoverage, kioskDesignCheck, kioskDesignsFor, kioskDesignProblem, kioskLabelValues, kioskTestCount,
   packageKey, parseQuantity, plainCategory, productCategory, type KioskCategory, type KioskDesignCheck,
 } from '@/lib/kiosk/plan';
 import { KioskPreview } from './KioskPreview';
@@ -23,7 +23,11 @@ import { signOutEverywhere, useKioskStatus } from './useKioskStatus';
  * first, then the rest). Big buttons, plain words, works by touch or mouse.
  */
 
-interface Product { key: string; rows: Record<string, string>[]; name: string; category: KioskCategory | null; rawCategory: string }
+interface Product {
+  key: string; rows: Record<string, string>[]; name: string; category: KioskCategory | null; rawCategory: string;
+  /** Staff said what kind of product it is (Manifest gave no kind). */
+  pickedCategory?: boolean;
+}
 interface KioskDesign { template: LabelTemplate; format: LabelFormat }
 type Step = 'start' | 'design' | 'quantity' | 'print';
 
@@ -173,8 +177,9 @@ function KioskMain({ preview = false }: { preview?: boolean }) {
           <span className={`size-2.5 shrink-0 rounded-full ${dot[printerLine.tone]}`} aria-hidden="true" />Printer: {printerLine.text}
         </p>
       )}
-      {step === 'start' && <StartStep onPick={(p) => { setProduct(p); setDesign(null); go('design'); }} onOpenRun={openRun} refreshKey={todayKey} />}
-      {step === 'design' && product && <DesignStep product={product} onBack={() => go('start')} onPick={(d) => { setDesign(d); go('quantity'); }} onOpenRun={openRun} />}
+      {step === 'start' && <StartStep preview={preview} onPick={(p) => { setProduct(p); setDesign(null); go('design'); }} onOpenRun={openRun} refreshKey={todayKey} />}
+      {step === 'design' && product && <DesignStep product={product} preview={preview} onBack={() => go('start')} onPick={(d) => { setDesign(d); go('quantity'); }} onOpenRun={openRun}
+        onKind={(category) => setProduct((p) => (p ? { ...p, category, pickedCategory: true } : p))} />}
       {step === 'quantity' && product && design && (
         <QuantityStep product={product} design={design} onBack={() => go('design')}
           onStarted={(started) => { setJob(started); go('print'); }} />
@@ -187,7 +192,7 @@ function KioskMain({ preview = false }: { preview?: boolean }) {
 
 // --- 1. Product ----------------------------------------------------------------
 
-function StartStep({ onPick, onOpenRun, refreshKey }: { onPick: (product: Product) => void; onOpenRun: (run: KioskRunListItem) => void; refreshKey: number }) {
+function StartStep({ preview, onPick, onOpenRun, refreshKey }: { preview: boolean; onPick: (product: Product) => void; onOpenRun: (run: KioskRunListItem) => void; refreshKey: number }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState('');
@@ -267,21 +272,59 @@ function StartStep({ onPick, onOpenRun, refreshKey }: { onPick: (product: Produc
         )}
       </section>
       <RunList title="Today’s prints" empty="Nothing printed at the kiosk today yet." query={`since=${encodeURIComponent(startOfToday())}`} refreshKey={refreshKey} onOpenRun={onOpenRun} />
+      {preview && <KioskSetup />}
     </div>
+  );
+}
+
+/**
+ * For a manager previewing the kiosk: which kinds of products have a kiosk
+ * label, and kiosk labels staff can't use yet because they have no kind.
+ * Staff never see this.
+ */
+function KioskSetup() {
+  const { answer } = useKioskDesignList();
+  if (!answer?.ready) return null;
+  const rules = { categories: answer.categories, brands: answer.brands ?? {} };
+  const names = new Map((answer.designs ?? []).map((d) => [d.template.id, d.template.name]));
+  const { counts, untyped } = kioskCoverage(answer.ids.filter((id) => names.has(id)), rules);
+  const missing = KIOSK_CATEGORIES.filter((c) => c !== 'Other' && counts[c] === 0);
+  return (
+    <section className="card space-y-3 p-5" aria-labelledby="kiosk-setup">
+      <h2 id="kiosk-setup" className="flex items-center gap-2 text-xl font-semibold"><Tag className="size-6 text-zinc-400" aria-hidden="true" />Kiosk setup</h2>
+      <p className="text-sm text-zinc-400">Only you see this. Staff are offered only the labels set for a product’s kind.</p>
+      <ul className="flex flex-wrap gap-2" aria-label="Labels for each kind of product">
+        {KIOSK_CATEGORIES.map((c) => (
+          <li key={c} className={`rounded-full border px-3 py-1 text-sm ${counts[c] ? 'border-emerald-500/40 text-emerald-200' : 'border-zinc-700 text-zinc-400'}`}>
+            {c}: {counts[c] ? (counts[c] === 1 ? '1 label' : `${counts[c]} labels`) : 'none'}
+          </li>
+        ))}
+      </ul>
+      {untyped.length > 0 && (
+        <p role="status" className="flex items-start gap-2 text-base text-amber-200">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+          <span>{untyped.map((id) => `“${names.get(id)}”`).join(', ')} {untyped.length === 1 ? 'is' : 'are'} on the kiosk but staff can’t use {untyped.length === 1 ? 'it' : 'them'} until you pick what {untyped.length === 1 ? 'it’s' : 'they’re'} for. <Link href="/designer" className="link">Open Designs</Link></span>
+        </p>
+      )}
+      {missing.length > 0 && <p className="text-sm text-zinc-400">Products that are {missing.join(', ')} can’t print at the kiosk until one of their labels is on it.</p>}
+    </section>
   );
 }
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); }
 
 /** A list of past prints (today's, or a product's), each with Continue or Print again. */
-function RunList({ title, empty, query, refreshKey = 0, onOpenRun }: { title: string; empty: string; query: string; refreshKey?: number; onOpenRun: (run: KioskRunListItem) => void }) {
+function RunList({ title, empty, query, refreshKey = 0, onOpenRun, onLoaded }: { title: string; empty: string; query: string; refreshKey?: number; onOpenRun: (run: KioskRunListItem) => void; onLoaded?: (runs: KioskRunListItem[]) => void }) {
   const [runs, setRuns] = useState<KioskRunListItem[] | null>(null);
   const [error, setError] = useState('');
+  const loaded = useRef(onLoaded);
+  useEffect(() => { loaded.current = onLoaded; }, [onLoaded]);
   const load = useCallback(async () => {
     try {
       const response = await fetch(`/api/kiosk/runs?${query}`, { cache: 'no-store' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Couldn’t load past prints.');
-      setRuns(Array.isArray(data.runs) ? data.runs : []); setError('');
+      const list: KioskRunListItem[] = Array.isArray(data.runs) ? data.runs : [];
+      setRuns(list); setError(''); loaded.current?.(list);
     } catch (e) { setError(friendlyError(e, 'Couldn’t load past prints.')); }
   }, [query]);
   useEffect(() => {
@@ -357,12 +400,27 @@ function ProductBar({ product, onBack, backLabel }: { product: Product; onBack: 
   );
 }
 
-function DesignStep({ product, onBack, onPick, onOpenRun }: { product: Product; onBack: () => void; onPick: (design: KioskDesign) => void; onOpenRun: (run: KioskRunListItem) => void }) {
+/** Why no label shows for a product, in words for staff (and a manager previewing). */
+function gapWords(gap: 'none-for-category' | 'none-for-brand', product: Product, preview: boolean): string {
+  const kind = product.category === 'Other' || !product.category ? 'this kind of product' : product.category;
+  const brand = product.rows[0]?.brandName?.trim();
+  const what = gap === 'none-for-brand' && brand ? `${brand} ${kind === 'this kind of product' ? 'products' : kind}` : kind;
+  return preview
+    ? `No kiosk label is set up for ${what} yet. In Designs, put a label on the kiosk and pick ${kind === 'this kind of product' ? 'Other' : kind} as what it’s for.`
+    : `No label is set up for ${what} yet, so this can’t print here. Ask a manager to set one up.`;
+}
+
+function DesignStep({ product, preview, onBack, onPick, onOpenRun, onKind }: { product: Product; preview: boolean; onBack: () => void; onPick: (design: KioskDesign) => void; onOpenRun: (run: KioskRunListItem) => void; onKind: (category: KioskCategory) => void }) {
   const { answer, error } = useKioskDesignList();
+  const [lastUsed, setLastUsed] = useState<string | null>(null);
   const designs = useMemo(() => answer?.designs ?? [], [answer]);
-  const filtered = useMemo(() => designsForCategory(designs.map((d) => ({ ...d, id: d.template.id })), answer?.categories ?? {}, product.category), [designs, answer, product.category]);
-  const checks = useMemo(() => new Map(filtered.shown.map((d) => [d.id, kioskDesignCheck(d.template, product.rows, d.format)])), [filtered, product.rows]);
+  const rules = useMemo(() => ({ categories: answer?.categories ?? {}, brands: answer?.brands ?? {} }), [answer]);
+  const brand = product.rows[0]?.brandName ?? '';
+  const match = useMemo(() => kioskDesignsFor(designs.map((d) => ({ ...d, id: d.template.id })), rules, product.category, brand, lastUsed), [designs, rules, product.category, brand, lastUsed]);
+  const checks = useMemo(() => new Map(match.shown.map((d) => [d.id, kioskDesignCheck(d.template, product.rows, d.format)])), [match, product.rows]);
   const name = product.rows[0]?.itemName || product.name;
+  // The label printed last for this product (kiosk or New run) comes first.
+  const onRuns = useCallback((runs: KioskRunListItem[]) => { setLastUsed(runs.find((run) => run.templateId)?.templateId ?? null); }, []);
   return (
     <div className="space-y-6">
       <ProductBar product={product} onBack={onBack} backLabel="Change product" />
@@ -371,21 +429,36 @@ function DesignStep({ product, onBack, onPick, onOpenRun }: { product: Product; 
         {error && <p role="alert" className="text-lg text-red-300">{error}</p>}
         {!answer && !error && <p className="text-lg text-zinc-400">Loading labels…</p>}
         {answer && !designs.length && <p role="status" className="card p-5 text-lg text-zinc-300">No labels are on the kiosk yet. Ask a manager to turn on “Use on kiosk” for a label design.</p>}
-        {answer && designs.length > 0 && !filtered.matched && product.category && (
-          <p role="status" className="text-lg text-amber-200">No labels are set for {product.category} yet, so here are all the kiosk labels.</p>
+        {answer && designs.length > 0 && match.gap === 'no-category' && (
+          <div className="card space-y-4 p-5" role="group" aria-labelledby="kiosk-kind">
+            <p id="kiosk-kind" className="text-xl text-zinc-100">What kind of product is this?</p>
+            <p className="text-base text-zinc-400">Manifest didn’t say, so pick it to see the right labels.</p>
+            <div className="flex flex-wrap gap-3">
+              {KIOSK_CATEGORIES.map((category) => (
+                <button key={category} type="button" className="btn btn-secondary kiosk-btn" onClick={() => onKind(category)}>{category}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        {answer && designs.length > 0 && (match.gap === 'none-for-category' || match.gap === 'none-for-brand') && (
+          <p role="status" className="card border-amber-500/40 p-5 text-lg text-amber-200">{gapWords(match.gap, product, preview)}</p>
+        )}
+        {product.pickedCategory && (
+          <p className="text-base text-zinc-400">Showing labels for {product.category}. <button type="button" className="link" onClick={() => onKind(product.category as KioskCategory)}>Wrong kind?</button></p>
         )}
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Labels">
-          {filtered.shown.map((d) => {
+          {match.shown.map((d) => {
             const check = checks.get(d.id)!;
             const problem = kioskDesignProblem(check);
             const across = Math.max(1, d.format.labelsAcross || 1);
+            const forBrand = (rules.brands[d.id]?.length ?? 0) > 0;
             return (
               <li key={d.id}>
                 <button type="button" disabled={!check.usable} onClick={() => onPick(d)} aria-describedby={problem ? `${d.id}-problem` : undefined}
                   className="card flex h-full w-full flex-col gap-3 p-4 text-left transition-colors enabled:hover:border-amber-500/60 focus-visible:border-amber-500 disabled:cursor-not-allowed">
                   <KioskPreview template={d.template} format={d.format} lanes={laneValues(check, product.rows, across)} alt={`Picture of the ${d.template.name} label for ${product.name}`} className={check.usable ? '' : 'opacity-50'} />
                   <span className="text-xl font-medium text-zinc-100">{d.template.name}</span>
-                  <span className="text-base text-zinc-400">{d.format.name}</span>
+                  <span className="text-base text-zinc-400">{[d.format.name, d.id === lastUsed ? 'Used last time' : '', forBrand && brand ? `For ${brand}` : ''].filter(Boolean).join(' · ')}</span>
                   {problem
                     ? <span id={`${d.id}-problem`} className="text-base text-red-300">{problem}</span>
                     : check.leftBlank.length > 0 && <span className="text-sm text-zinc-400">Prints without {check.leftBlank.join(', ')} (this product doesn’t have {check.leftBlank.length === 1 ? 'it' : 'them'}).</span>}
@@ -396,7 +469,7 @@ function DesignStep({ product, onBack, onPick, onOpenRun }: { product: Product; 
           })}
         </ul>
       </section>
-      <RunList title="What’s been run for this product" empty="Nothing printed for this product yet." query={`product=${encodeURIComponent(product.key)}&name=${encodeURIComponent(name)}`} onOpenRun={onOpenRun} />
+      <RunList title="What’s been run for this product" empty="Nothing printed for this product yet." query={`product=${encodeURIComponent(product.key)}&name=${encodeURIComponent(name)}`} onOpenRun={onOpenRun} onLoaded={onRuns} />
     </div>
   );
 }

@@ -91,15 +91,77 @@ export function cleanCategories(input: unknown): KioskCategory[] {
   return KIOSK_CATEGORIES.filter((c) => wanted.has(c));
 }
 
+/** A brand name as compared: case, spacing and accents don't matter. */
+export function brandKey(name: string | null | undefined): string {
+  return String(name ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Brand names as saved: trimmed, each once (by brandKey), at most 20, each at most 100 characters. */
+export function cleanBrands(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue;
+    const name = raw.trim().replace(/\s+/g, ' ').slice(0, 100);
+    const key = brandKey(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key); out.push(name);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+/** What the kiosk knows about each design: its product kinds and, optionally, the only brands it is for. */
+export interface KioskRules {
+  categories: Readonly<Record<string, ReadonlyArray<string>>>;
+  brands: Readonly<Record<string, ReadonlyArray<string>>>;
+}
+
 /**
- * Kiosk designs for a product: those in its category, plus designs with no
- * category (they fit every product). When none fit, every design shows and
- * `matched` is false so the kiosk can say so. No category: all of them.
+ * May this design print for a product of this kind and brand? Strict: the
+ * design must be set for the kind (a design with no kind is for no product
+ * on the kiosk), and a design limited to brands only fits those brands.
+ * The kiosk screen and the server use this same rule.
  */
-export function designsForCategory<T extends { id: string }>(designs: ReadonlyArray<T>, categories: Readonly<Record<string, ReadonlyArray<string>>>, category: KioskCategory | null): { shown: T[]; matched: boolean } {
-  if (!category) return { shown: [...designs], matched: true };
-  const fit = designs.filter((d) => !categories[d.id]?.length || categories[d.id].includes(category));
-  return fit.length ? { shown: fit, matched: true } : { shown: [...designs], matched: false };
+export function kioskDesignFits(id: string, rules: KioskRules, category: KioskCategory | null, brand: string | null | undefined): boolean {
+  if (!category || !rules.categories[id]?.includes(category)) return false;
+  const limit = rules.brands[id] ?? [];
+  return !limit.length || limit.some((b) => brandKey(b) === brandKey(brand));
+}
+
+/** Why a kiosk product has no labels: the kind is unknown, nothing is set for the kind, or nothing for the brand. */
+export type KioskMatchGap = 'no-category' | 'none-for-category' | 'none-for-brand' | null;
+
+/**
+ * The kiosk's labels for a product, strictly: only designs set for its kind
+ * (and brand, where a design is limited to brands). Brand-specific labels come
+ * first, then the one used last for this product. Nothing else is ever shown,
+ * so staff can't pick a label meant for another kind of product.
+ * `untyped`: kiosk designs with no kind yet (offered to no product).
+ */
+export function kioskDesignsFor<T extends { id: string }>(designs: ReadonlyArray<T>, rules: KioskRules, category: KioskCategory | null, brand: string | null | undefined, lastUsedId?: string | null): { shown: T[]; gap: KioskMatchGap; untyped: T[] } {
+  const untyped = designs.filter((d) => !rules.categories[d.id]?.length);
+  if (!category) return { shown: [], gap: 'no-category', untyped };
+  const forKind = designs.filter((d) => rules.categories[d.id]?.includes(category));
+  if (!forKind.length) return { shown: [], gap: 'none-for-category', untyped };
+  const fit = forKind.filter((d) => kioskDesignFits(d.id, rules, category, brand));
+  if (!fit.length) return { shown: [], gap: 'none-for-brand', untyped };
+  const rank = (d: T) => (d.id === lastUsedId ? 0 : 2) + ((rules.brands[d.id]?.length ?? 0) > 0 ? 0 : 1);
+  const shown = fit.map((d, i) => ({ d, i })).sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i).map(({ d }) => d);
+  return { shown, gap: null, untyped };
+}
+
+/** For a manager: how many kiosk labels each kind of product has, and the kiosk labels with no kind. */
+export function kioskCoverage(ids: ReadonlyArray<string>, rules: KioskRules): { counts: Record<KioskCategory, number>; untyped: string[] } {
+  const counts = Object.fromEntries(KIOSK_CATEGORIES.map((c) => [c, 0])) as Record<KioskCategory, number>;
+  const untyped: string[] = [];
+  for (const id of ids) {
+    const kinds = cleanCategories(rules.categories[id] ?? []);
+    if (!kinds.length) untyped.push(id);
+    for (const kind of kinds) counts[kind] += 1;
+  }
+  return { counts, untyped };
 }
 
 /**

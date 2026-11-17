@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { requireUser, type OfficeUser } from '../office/auth';
 import { officeSql } from '../office/db';
 import { OfficeError } from '../office/http';
-import { cleanCategories, isMissingTable, type KioskCategory } from './plan';
+import { cleanBrands, cleanCategories, isMissingTable, type KioskCategory } from './plan';
 
 /**
  * Kiosk mode on the server. Its tables are new and additive
@@ -69,6 +69,22 @@ export async function designCategories(): Promise<Record<string, KioskCategory[]
     for (const row of rows) {
       const id = String(row.template_id);
       out[id] = cleanCategories([...(out[id] ?? []), String(row.category)]);
+    }
+    return out;
+  } catch (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+}
+
+/** Each design's brand limits (null when the table isn't there yet: then no design is limited). */
+export async function designBrands(): Promise<Record<string, string[]> | null> {
+  try {
+    const rows = await officeSql()`SELECT template_id, brand FROM template_brands ORDER BY brand`;
+    const out: Record<string, string[]> = {};
+    for (const row of rows) {
+      const id = String(row.template_id);
+      out[id] = cleanBrands([...(out[id] ?? []), String(row.brand)]);
     }
     return out;
   } catch (error) {

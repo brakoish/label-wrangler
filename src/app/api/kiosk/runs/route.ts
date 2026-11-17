@@ -8,8 +8,8 @@ import { captureDesign } from '@/lib/runDesign.server';
 import { validate } from '@/lib/validation';
 import { officeSummaryQuery } from '@/lib/runListQueries.server';
 import { officeDeliverySummary, type OfficeJobLike } from '@/lib/officeRange';
-import { requireKiosk } from '@/lib/kiosk/server';
-import { KIOSK_RUN_LIMIT, isMissingTable, kioskRunData, kioskRunName, kioskTestCount } from '@/lib/kiosk/plan';
+import { designBrands, requireKiosk } from '@/lib/kiosk/server';
+import { KIOSK_CATEGORIES, KIOSK_RUN_LIMIT, isMissingTable, kioskDesignFits, kioskRunData, kioskRunName, kioskTestCount, productCategory, type KioskCategory } from '@/lib/kiosk/plan';
 
 export const maxDuration = 60;
 
@@ -48,10 +48,22 @@ export async function POST(req: Request) {
     const packageKey = text(data.packageKey, 300);
     if (!packageKey) throw new OfficeError('Pick a product first.');
     const productName = text(data.productName, 200);
-    const category = text(data.category, 100);
+    // The product's kind comes from its Manifest details; only a product
+    // Manifest gave no kind may carry the kind staff picked on the kiosk.
+    const picked = text(data.category, 100);
+    const category: KioskCategory | null = productCategory(rows[0]) ?? ((KIOSK_CATEGORIES as readonly string[]).includes(picked) ? picked as KioskCategory : null);
+    if (!category) throw new OfficeError('Pick what kind of product this is first.');
     const sql = officeSql();
     const allowed = await sql`SELECT 1 FROM kiosk_designs k JOIN templates t ON t.id=k.template_id WHERE k.template_id=${data.templateId} AND t.archived_at IS NULL`;
     if (!allowed.length) throw new OfficeError('That label isn’t on the kiosk any more. Pick another one.', 409);
+    // The same strict rule the kiosk screen uses: the label must be set for
+    // this kind of product (and brand, where it is limited to brands).
+    const kinds = await sql`SELECT category FROM template_categories WHERE template_id=${data.templateId}`;
+    const brands = (await designBrands())?.[data.templateId] ?? [];
+    const rules = { categories: { [data.templateId]: kinds.map((k) => String(k.category)) }, brands: { [data.templateId]: brands } };
+    if (!kioskDesignFits(data.templateId, rules, category, rows[0].brandName)) {
+      throw new OfficeError(`That label isn’t set up for ${category === 'Other' ? 'this kind of product' : category}${brands.length ? ' from this brand' : ''}. Pick another one, or ask a manager.`, 409);
+    }
     const design = await captureDesign(data.templateId);
     if (design.format.type !== 'thermal') throw new OfficeError('That label isn’t for the office label printer. Ask a manager.', 409);
     const filled = kioskRunData(design.template, rows, quantity, design.format);
@@ -81,7 +93,7 @@ export async function POST(req: Request) {
   } catch (error) { return browserFailure(error); }
 }
 
-interface ListRow { id: string; name: string; template_name: string | null; format_type: string | null; total_labels: number; status: string; created_at: string; stage: string | null; test_count: number | null; product_name: string | null; kiosk_at: string | null }
+interface ListRow { id: string; name: string; template_id: string | null; template_name: string | null; format_type: string | null; total_labels: number; status: string; created_at: string; stage: string | null; test_count: number | null; product_name: string | null; kiosk_at: string | null }
 
 /**
  * GET ?product=KEY&name=ITEM: what's been run for a product (kiosk prints of
@@ -102,7 +114,7 @@ export async function GET(req: Request) {
     let rows: ListRow[];
     try {
       rows = (product
-        ? await sql`SELECT r.id, r.name, coalesce(r.design_snapshot->'template'->>'name', t.name) AS template_name,
+        ? await sql`SELECT r.id, r.name, r.template_id, coalesce(r.design_snapshot->'template'->>'name', t.name) AS template_name,
             r.design_snapshot->'format'->>'type' AS format_type, r.total_labels, r.status, r.created_at,
             k.stage, k.test_count, k.product_name, k.created_at AS kiosk_at
           FROM runs r LEFT JOIN kiosk_runs k ON k.run_id=r.id LEFT JOIN templates t ON t.id=r.template_id
@@ -113,7 +125,7 @@ export async function GET(req: Request) {
             WHERE m.source_data->0->>'packageTag'=${product} OR m.source_data->0->>'tag'=${product} OR (${like}<>'' AND m.name ILIKE ${like})
           )
           ORDER BY r.created_at DESC LIMIT 20`
-        : await sql`SELECT r.id, r.name, coalesce(r.design_snapshot->'template'->>'name', t.name) AS template_name,
+        : await sql`SELECT r.id, r.name, r.template_id, coalesce(r.design_snapshot->'template'->>'name', t.name) AS template_name,
             r.design_snapshot->'format'->>'type' AS format_type, r.total_labels, r.status, r.created_at,
             k.stage, k.test_count, k.product_name, k.created_at AS kiosk_at
           FROM kiosk_runs k JOIN runs r ON r.id=k.run_id LEFT JOIN templates t ON t.id=r.template_id
@@ -137,7 +149,7 @@ export async function GET(req: Request) {
       runs: rows.map((row) => {
         const summary = officeDeliverySummary(byRun.get(row.id) ?? [], Number(row.total_labels));
         return {
-          id: row.id, name: row.name, designName: row.template_name ?? '', thermal: row.format_type === 'thermal',
+          id: row.id, name: row.name, templateId: row.template_id ?? null, designName: row.template_name ?? '', thermal: row.format_type === 'thermal',
           totalLabels: Number(row.total_labels), status: row.status, createdAt: row.kiosk_at ? new Date(row.kiosk_at).toISOString() : row.created_at,
           kiosk: row.stage ? { stage: row.stage, testCount: Number(row.test_count), productName: row.product_name ?? '' } : null,
           office: { sent: summary.sent, onTheWay: summary.onTheWay, failedLabels: summary.failedLabels, anySent: (byRun.get(row.id) ?? []).length > 0 },
