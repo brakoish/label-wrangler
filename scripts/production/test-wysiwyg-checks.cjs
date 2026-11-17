@@ -19,7 +19,9 @@ const rows = Array.from({ length: 20 }, (_, i) => ({ SKU: i === 11 ? '1234567890
 
 // Printed bytes: the checks and preview samples only read; the ZPL for the
 // same values is byte-identical before and after they run, and matches the
-// pinned hash of the f33337f generator.
+// pinned hash of the f33337f generator once the two intended native fixes
+// (^CI28 after ^XA, ^BY2 moved before its barcode) are undone; the new bytes
+// are pinned too.
 const values = { SKU: '850010003', strain: 'Gelato' };
 const before = generateZPL(structuredClone(template), fmt, values);
 const snapshot = structuredClone(template);
@@ -29,7 +31,9 @@ designSampleValues(template.elements, {});
 layoutProblems(template.elements, fmt, designSampleValues(template.elements, {}));
 assert.deepEqual(template, snapshot, 'checks must not change the design');
 assert.equal(generateZPL(template, fmt, values), before, 'printed bytes unchanged');
-assert.equal(crypto.createHash('sha256').update(before).digest('hex'), 'a822d356257cc6e9a3a416a1112f55a3fc801e1a97e1df37855960d7f92b845c', 'ZPL matches the pinned bytes');
+assert.equal(crypto.createHash('sha256').update(before).digest('hex'), 'fbacac554aa04fb0cae86abb87acce59d162433fe039415492d6728127fa5d17', 'ZPL matches the pinned bytes');
+const f33337f = before.replace('^XA\n^CI28\n', '^XA\n').replace(/\^BY2(\^BC[^\n]*?\^FS)/, '$1^BY2');
+assert.equal(crypto.createHash('sha256').update(f33337f).digest('hex'), 'a822d356257cc6e9a3a416a1112f55a3fc801e1a97e1df37855960d7f92b845c', 'only the intended ZPL changes since f33337f');
 
 // Sample values: prefix never doubles; barcodes get a scannable placeholder.
 assert.equal(elementSample(strain, {}), 'Gelato');

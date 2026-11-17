@@ -5,6 +5,7 @@ import { generateZPL, type PreparedZplImages } from '../zplGenerator';
 import { previewLabelValues } from '../runBuilder';
 import type { LabelFormat, LabelTemplate, Run } from '../types';
 import { OfficeError } from './http';
+import { compressGraphicFields } from '../thermal/z64';
 const MAX_BYTES = 2_097_152;
 export interface OfficeBatch { id: string; from: number; to: number; count: number; payload: string; sha256: string }
 function finite(value: unknown, min: number, max: number, name: string) {
@@ -116,7 +117,9 @@ export async function buildBatches(run: Run, template: LabelTemplate, format: La
     let rendered: string;
     try { rendered = bitmap ? (await renderThermalBitmap(template,format,laneValues)).zpl : generateZPL(template,format,laneValues,{imageGraphics}); }
     catch (error) { throw new OfficeError(`Labels ${Math.max(from,first+1)}–${Math.min(to,first+across)}: ${error instanceof Error ? error.message : 'Rendering failed'}`); }
-    const zpl=rendered.replace('^XA','^XA\n^PON\n^LH0,0\n^LT0\n^LS0\n^PQ1');
+    // Office-only: ZD411 accepts Z64 graphics (~3x smaller than hex). Compress
+    // before the size check and sha256 so both cover the exact bytes sent.
+    const zpl=compressGraphicFields(rendered.replace('^XA','^XA\n^PON\n^LH0,0\n^LT0\n^LS0\n^PQ1'));
     const size=Buffer.byteLength(zpl,'utf8');
     if(size>MAX_BYTES)throw new OfficeError('One feed exceeds the 2 MiB payload limit. Reduce logo size.');
     if(count && (count+feedCount>25 || bytes+size+1>MAX_BYTES))flush();
