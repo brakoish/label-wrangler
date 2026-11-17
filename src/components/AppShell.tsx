@@ -169,11 +169,11 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
               src="/logo.png"
               alt=""
               aria-hidden="true"
-              className="w-8 h-8 sm:w-9 sm:h-9"
+              className="logo-buck w-8 h-8 sm:w-9 sm:h-9"
               style={{ filter: 'brightness(0) invert(1)' }}
             />
             {/* Wordmark from sm up; on phones the logo alone leaves room for the nav. */}
-            <span className="hidden sm:block text-base font-semibold text-zinc-100 whitespace-nowrap">Label Wrangler</span>
+            <span className="hidden sm:block text-base font-bold tracking-tight whitespace-nowrap"><span className="gradient-text">Label</span><span className="text-white">Wrangler</span></span>
           </Link>
 
           <nav ref={navRef} aria-label="Main" className="relative flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto sm:gap-1 [scrollbar-width:none]">
