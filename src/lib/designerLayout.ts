@@ -15,7 +15,7 @@ import { barcodeFit, barcodeFitFix, barcodeFitProblem, nativeBarcodeDots, native
 
 export interface Box { x: number; y: number; width: number; height: number }
 
-/** zplGenerator emits ^BY2 after every barcode, so bars are always 2 dots per module. */
+/** zplGenerator emits ^BY2 before every barcode, so bars are always 2 dots per module. */
 export const ZPL_MODULE_DOTS = NATIVE_MODULE_DOTS;
 
 /**

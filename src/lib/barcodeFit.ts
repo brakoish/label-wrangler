@@ -85,7 +85,7 @@ export interface BarcodeFit {
   fixes: BarcodeFix[];
 }
 
-/** zplGenerator's module width (^BY2 after every barcode; the printer's default is also 2). */
+/** zplGenerator's module width (^BY2 before every barcode; the printer's default is also 2). */
 export const NATIVE_MODULE_DOTS = 2;
 /** Clear margin each side the exact renderer keeps inside the box, in modules. */
 const BITMAP_QUIET_MODULES = 10;

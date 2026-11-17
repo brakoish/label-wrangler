@@ -8,6 +8,7 @@ const { packMonochrome, unpackMonochrome, bitmapZpl, decodeBitmapZpl, resolveThe
 const { generateZPL } = require('../../src/lib/zplGenerator.ts');
 const { previewLabelValues, generateLabelsForRunWithImages } = require('../../src/lib/runBuilder.ts');
 const { buildBatches } = require('../../src/lib/office/render.ts');
+const { expandGraphicFields } = require('../../src/lib/thermal/z64.ts');
 const { nearestSnap, arrangeElements, artworkBounds, resizeArtwork } = require('../../src/lib/thermal/editorGeometry.ts');
 const { useUndoStore } = require('../../src/lib/undoStore.ts');
 const decoderPath = process.env.ZXING_PATH || '/tmp/lw-bitmap-verification/node_modules/@zxing/library';
@@ -42,12 +43,13 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  const large = new Uint8Array(Math.ceil(1201/8)*1000).fill(170), z = bitmapZpl(large,1201,1000,'a'.repeat(64),'b'.repeat(64));
  check([...z.matchAll(/\^GFA,(\d+)/g)].every(m=>+m[1]<=99999),'bounded graphic strips'); assert.deepEqual(decodeBitmapZpl(z).packed,large);
  for(const dpi of [203,300,600]) {const r=await renderThermalBitmap(template,{...format,dpi}, {retailId:'DOTS-'+dpi}); await parity(r); check(r.width===2*dpi&&r.height===dpi,'DPI geometry');}
- // Existing native output must remain byte-for-byte identical, including missing mode.
+ // Existing native output must remain byte-for-byte identical, including missing mode,
+ // apart from the intended ^CI28 header and the QR level now carried in the field data.
  const baseline = new Module(require.resolve('../../src/lib/zplGenerator.ts')); baseline.filename=require.resolve('../../src/lib/zplGenerator.ts'); baseline.paths=module.paths;
  baseline._compile(ts.transpileModule(cp.execFileSync('git',['show','d13551a:src/lib/zplGenerator.ts'],{encoding:'utf8'}),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,baseline.filename);
  const legacy = {...template,thermalRenderMode:undefined,elements:[qr,{...qr,id:'text',type:'text',x:200,y:20,width:180,height:80,fontSize:10,fontWeight:'normal',fontFamily:'Arial',textAlign:'left',lineHeight:1.2,content:'DESIGN',defaultValue:'FALLBACK',prefix:'[',suffix:']'}]};
  for(const rotation of [0,90,180,270]) for(const v of [{retailId:'0'},{retailId:''},{retailId:'000042'}]) {
-  const t={...legacy,elements:legacy.elements.map(e=>({...e,rotation}))}; assert.equal(generateZPL(t,format,v),baseline.exports.generateZPL(t,format,v)); checks++;
+  const t={...legacy,elements:legacy.elements.map(e=>({...e,rotation}))}; assert.equal(generateZPL(t,format,v).replace('^XA\n^CI28\n','^XA\n').replace(/\^FD[LMQH]A,/g,'^FDQA,'),baseline.exports.generateZPL(t,format,v)); checks++;
  }
  assert.throws(()=>generateZPL(template,format,{}),/bitmap|async/i);
  const contract=JSON.parse(fs.readFileSync('scripts/thermal/fixtures/dynamic-data-contract-cases.json'));
@@ -192,7 +194,8 @@ const template = {id:'t',name:'Verification',formatId:'f',thermalRenderMode:'bit
  const batches=await buildBatches(seven,template,f3,2,5,203,1218);
  check(batches.reduce((n,b)=>n+b.count,0)===4,'Office counts selected labels');
  const officeZpl=Buffer.from(batches[0].payload,'base64').toString().match(/\^XA[\s\S]*?\^XZ/g);
- for(let i=0;i<partial.length;i++) assert.deepEqual(decodeBitmapZpl(officeZpl[i]).packed,decodeBitmapZpl(partial[i]).packed);
+ check(officeZpl.every(z=>z.includes(':Z64:')&&!/\^GFA,\d+,\d+,\d+,[0-9A-F]/.test(z)),'Office graphics Z64-compressed');
+ for(let i=0;i<partial.length;i++) assert.deepEqual(decodeBitmapZpl(expandGraphicFields(officeZpl[i])).packed,decodeBitmapZpl(partial[i]).packed);
  check(officeZpl.every(z=>z.includes('^LH0,0')),'Office calibration resets preserved');
  check(nearestSnap([10],[14,11],6).delta===1,'nearest not last snap');
  const arranged=arrangeElements([0,17,100].map((x,i)=>({...qr,id:String(i),x,width:10})),'distribute-x');check(arranged[1].x===50,'equal gaps');

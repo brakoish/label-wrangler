@@ -71,6 +71,9 @@ export function generateZPL(
 
   const commands: string[] = [];
   commands.push('^XA');
+  // Field data is UTF-8 (every send path encodes with TextEncoder). Must stay
+  // directly after ^XA: Office inserts its resets after the first ^XA.
+  commands.push('^CI28');
   // Print width covers the full liner so multi-across lays out correctly.
   commands.push(`^PW${linerDots}`);
   commands.push(`^LL${heightDots}`);
@@ -431,7 +434,7 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
       else if (rotation === 180) lineY -= offset;
       else if (rotation === 270) lineX += offset;
 
-      return `^FO${lineX},${lineY}^A0${orientation},${fontH},${fontW}^FB${blockWidth},1,0,${align},0^FD${escapeZPL(line)}^FS`;
+      return `^FO${lineX},${lineY}^A0${orientation},${fontH},${fontW}^FB${blockWidth},1,0,${align},0${zplField(escapeZPL(line, true))}`;
     }).join('');
   }
 
@@ -448,9 +451,9 @@ function textToZPL(element: TextElement, x: number, y: number, format: LabelForm
   // Legacy templates omit autoFit and must retain their original Zebra field
   // behavior. Only opted-in fields receive explicit shared line breaks.
   const fieldData = layout
-    ? layout.visibleLines.map(escapeZPL).join('\\&')
-    : escapeZPL(content);
-  cmds.push(`^FD${fieldData}^FS`);
+    ? layout.visibleLines.map(line => escapeZPL(line, true)).join('\\&')
+    : escapeZPL(content, true);
+  cmds.push(zplField(fieldData));
 
   return cmds.join('');
 }
@@ -559,7 +562,9 @@ function qrToZPL(element: QRElement, x: number, y: number, fieldValues?: Record<
   // Strategy: estimate the minimum QR version (and therefore module count)
   // needed for `content` at the chosen error-correction level, then pick the
   // largest mag where moduleCount * mag ≤ elementWidth.
-  const ec = element.errorCorrection || 'M';
+  // Legacy designs can hold '' or lowercase levels. Use exactly the level
+  // zplQrGeometry sizes for (it falls back to M for anything else).
+  const ec = (['L', 'M', 'Q', 'H'] as const).find(level => level === element.errorCorrection) ?? 'M';
   const { magnification: mag, printedSize } = zplQrGeometry(content, ec, element.width);
   const rotation = normalizeRotation(element.rotation);
   const orientation = rotationToZplOrientation(rotation);
@@ -575,9 +580,11 @@ function qrToZPL(element: QRElement, x: number, y: number, fieldValues?: Record<
 
   const cmds: string[] = [];
   cmds.push(`^FO${originX},${originY}`);
-  // Fifth param of ^BQ sets error correction level: H,Q,M,L.
+  // For model 2 the printer takes the error correction level from the first
+  // character of the field data (then A = automatic input mode); ^BQ's own
+  // level parameter is ignored. Keep both in step with zplQrGeometry(ec).
   cmds.push(`^BQ${orientation},2,${mag},${ec}`);
-  cmds.push(`^FDQA,${escapeZPL(content)}^FS`);
+  cmds.push(zplField(`${ec}A,${escapeZPL(content)}`));
 
   return cmds.join('');
 }
@@ -643,8 +650,11 @@ function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues
   const cmds: string[] = [];
   cmds.push(`^FO${originX},${originY}`);
 
-  // Module width (narrow bar): ~2 dots default
+  // Module width (narrow bar): 2 dots. ^BY applies to the barcode that
+  // follows it, so it must come before the barcode command. barcodeFit.ts and
+  // designerLayout.ts assume exactly ^BY2 (Code 128 subset B).
   const moduleWidth = 2;
+  cmds.push(`^BY${moduleWidth}`);
 
   switch (element.barcodeFormat) {
     case 'CODE128':
@@ -669,8 +679,7 @@ function barcodeToZPL(element: BarcodeElement, x: number, y: number, fieldValues
       cmds.push(`^BC${orientation},${height},${showText},N,N`);
   }
 
-  cmds.push(`^FD${escapeZPL(content)}^FS`);
-  cmds.push(`^BY${moduleWidth}`);
+  cmds.push(zplField(escapeZPL(content)));
 
   return cmds.join('');
 }
@@ -744,14 +753,29 @@ function rectangleToZPL(element: RectangleElement, x: number, y: number, format:
   return `^FO${originX},${originY}^GB${w},${h},${strokeW},B,${r}^FS`;
 }
 
-function escapeZPL(text: string): string {
-  // ZPL special chars that need escaping
-  return text
+// ^FH hex indicator. Not a backslash: inside ^FB, backslash-& is the line
+// break and a doubled backslash prints one, so that indicator would collide.
+const FH_INDICATOR = '_';
+
+/**
+ * Field data safe to place after ^FD. '^' and '~' (format/control prefixes)
+ * and the ^FH indicator itself are written as ^FH hex escapes (_5E, _7E,
+ * _5F); zplField adds the ^FH. Text blocks (^FB) also double backslashes,
+ * which ^FB reads as one literal backslash. Barcode and QR data keep
+ * backslashes as-is (outside ^FB they have no meaning).
+ */
+function escapeZPL(text: string, inFieldBlock = false): string {
+  const normalized = text
     // PDF extraction can preserve a font-private hyphen glyph (U+F6BA).
-    // Desktop Zebra firmware does not understand that Unicode code point.
+    // Zebra font 0 has no glyph for it or the typographic dashes, even
+    // under ^CI28, so keep printing them as plain hyphens/spaces.
     .replace(/[\uF6BA‐‑‒–—−]/g, '-')
-    .replace(/\u00A0/g, ' ')
-    .replace(/\\/g, '\\\\')
-    .replace(/\^/g, '\\^')
-    .replace(/~/g, '\\~');
+    .replace(/\u00A0/g, ' ');
+  return (inFieldBlock ? normalized.replace(/\\/g, '\\\\') : normalized)
+    .replace(/[\^~_]/g, ch => `${FH_INDICATOR}${ch.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/** ^FD..^FS for escaped data, preceded by ^FH only when an escape is present. */
+function zplField(escaped: string): string {
+  return `${escaped.includes(FH_INDICATOR) ? `^FH${FH_INDICATOR}` : ''}^FD${escaped}^FS`;
 }

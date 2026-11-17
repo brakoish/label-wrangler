@@ -65,7 +65,13 @@ function ok(name){passed++;console.log('PASS '+name);}
  await assert.rejects(prepareServerImages({elements:[{...image,src:'https://example.com/logo.png'}]},format),/embedded/);
  const unsafe=Buffer.from('<svg><image href="file:///etc/passwd"/></svg>').toString('base64');
  await assert.rejects(prepareServerImages({elements:[{...image,src:'data:image/svg+xml;base64,'+unsafe}]},format),/references/);ok('server SVG raster/logo output and external-resource rejection');
- const bigImages=Array.from({length:10},(_,i)=>({...image,id:'logo'+i,width:406,height:1218,rotation:0,x:0,y:0}));
+ // Office graphics are Z64-compressed, so solid art is tiny; size limits are
+ // exercised with incompressible (deterministic noise) art instead.
+ const tiny=await buildBatches(run,{...template,elements:[image]},format,1,1,203,448);
+ assert.ok(decode(tiny[0]).includes('^GFA,8,8,1,:Z64:')&&!decode(tiny[0]).includes('FFFFFFFFFFFFFFFF'));
+ let seed=0x2545F491;const noise=Buffer.alloc(406*1218);for(let i=0;i<noise.length;i++){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;noise[i]=seed&0xff;}
+ const noisePng=(await require('sharp')(noise,{raw:{width:406,height:1218,channels:1}}).png().toBuffer()).toString('base64');
+ const bigImages=Array.from({length:15},(_,i)=>({...image,id:'logo'+i,width:406,height:1218,rotation:0,x:0,y:0,src:'data:image/png;base64,'+noisePng}));
  const graphicBatches=await buildBatches(run,{...template,elements:bigImages},{...format,height:6},1,3,203,448);
  assert.deepEqual(graphicBatches.map(b=>b.count),[1,1,1]);
  assert.ok(graphicBatches.every(b=>Buffer.from(b.payload,'base64').length<=2097152));
