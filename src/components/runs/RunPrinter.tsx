@@ -50,6 +50,7 @@ import { againNotice, planStartReprints, progressAfter, reprintEntries, reprintS
 import { openInNewTab } from '@/lib/openTab';
 import { updateRunWithQueue, flushOfflineQueue, pendingPatchCount, rewindPending, QUEUE_EVENT, REWIND_SETTLED_EVENT } from '@/lib/offlineQueue';
 import { generateZPLWithImages } from '@/lib/zplGenerator';
+import { OFFICE_COUNT_SETTLE_MS, OFFICE_SENT_PREFIX } from '@/lib/officeSentCounted';
 import { renderZplToDataUrl, thermalRenderDimensions, thermalRenderGeometry } from '@/lib/zplRenderClient';
 import {
   isWebUsbSupported,
@@ -457,7 +458,23 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
   const allWithOffice = !!officeSummary && printedCount < total && firstUnsentLabel(office.jobs, total, printedCount) === null;
   // Print history follows the office: every move re-reads it.
   const officeSignature = office.signature;
-  useEffect(() => { if (officeSignature) void fetchPrintEvents(runId); }, [officeSignature, fetchPrintEvents, runId]);
+  useEffect(() => {
+    if (!officeSignature) return;
+    void fetchPrintEvents(runId);
+    // The server counts parts the printer took as printed, just after the
+    // office reports them: follow its progress (never backwards) and history.
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void fetchPrintEvents(runId);
+      void fetchRun(runId).then((fresh) => {
+        if (!live || !fresh || statusRef.current === 'running') return;
+        const count = Number(fresh.printedCount ?? 0);
+        setPrintedCount((now) => Math.max(now, count));
+        if (fresh.status === 'completed' && count >= fresh.totalLabels) setStatus(uiStatusForRunStatus(fresh.status));
+      }).catch(() => undefined);
+    }, OFFICE_COUNT_SETTLE_MS);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [officeSignature, fetchPrintEvents, fetchRun, runId]);
   const [markNotice, setMarkNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   // "Labels 41–50 marked printed." is news for a moment: it goes after about
   // 8 s, and at once when the panel starts a send or has something new to say.
@@ -1760,9 +1777,19 @@ export function RunPrinter({ runId, onDone }: RunPrinterProps) {
     for (const r of office.requests) for (const j of r.jobs) requestOfJob.set(j.id, { reprint: !!r.reprint_of, at: r.created_at });
     const requestAt = new Map<string, string | undefined>(office.requests.map((r) => [r.id, r.created_at]));
     for (const j of office.jobs) if (j.requestAt && !requestAt.has(j.requestId)) requestAt.set(j.requestId, j.requestAt);
-    const rows = eventsForRun.map((event) => {
-      const job = event.output === 'office-pi' && event.eventType === 'sent' && event.id.startsWith('office-') ? requestOfJob.get(event.id.slice('office-'.length)) : undefined;
-      return job?.reprint ? { ...event, message: 'Reprint sent to the office printer' } : event;
+    // A part the printer took is counted as printed (a confirmed entry with the
+    // job's id): it reads once, "Printed labels A–B", not also "Sent labels A–B".
+    // A reprint keeps its "Reprint sent" line instead.
+    const countedJobs = new Set(eventsForRun.filter((event) => event.eventType === 'confirmed' && event.id.startsWith(OFFICE_SENT_PREFIX)).map((event) => event.id.slice(OFFICE_SENT_PREFIX.length)));
+    const rows = eventsForRun.flatMap((event) => {
+      if (event.eventType === 'confirmed' && event.id.startsWith(OFFICE_SENT_PREFIX)) {
+        const jobId = event.id.slice(OFFICE_SENT_PREFIX.length);
+        return requestOfJob.get(jobId)?.reprint && eventsForRun.some((e) => e.id === `office-${jobId}`) ? [] : [event];
+      }
+      const jobId = event.output === 'office-pi' && event.eventType === 'sent' && event.id.startsWith('office-') ? event.id.slice('office-'.length) : '';
+      const job = jobId ? requestOfJob.get(jobId) : undefined;
+      if (job?.reprint) return [{ ...event, message: 'Reprint sent to the office printer' }];
+      return jobId && countedJobs.has(jobId) ? [] : [event];
     });
     const failed = office.summary.failed.filter((part) => part.kind === 'did-not-print').flatMap((part) => {
       const at = part.requestId ? requestAt.get(part.requestId) : undefined;

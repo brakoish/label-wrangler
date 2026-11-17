@@ -29,6 +29,14 @@ type Step = 'start' | 'design' | 'quantity' | 'print';
 
 const labels = (n: number) => (n === 1 ? '1 label' : `${n.toLocaleString('en-US')} labels`);
 const nameOf = (row: Record<string, string> | undefined) => (row?.itemName || row?.productName || '').trim() || 'Unnamed product';
+/** How long typing must pause before the kiosk searches. */
+const KIOSK_SEARCH_PAUSE_MS = 350;
+/** Manifest rows as one entry per package, in the order found. */
+function groupProducts(rows: Record<string, string>[]): Product[] {
+  const groups = new Map<string, Record<string, string>[]>();
+  for (const row of rows) { const key = packageKey(row); if (!key) continue; groups.set(key, [...(groups.get(key) ?? []), row]); }
+  return Array.from(groups, ([key, list]) => ({ key, rows: list, name: nameOf(list[0]), category: productCategory(list[0]), rawCategory: String(list[0].category ?? '') }));
+}
 function when(iso: string) {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
@@ -185,25 +193,44 @@ function StartStep({ onPick, onOpenRun, refreshKey }: { onPick: (product: Produc
   const [searched, setSearched] = useState('');
   const [error, setError] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
-  const search = async (event?: React.FormEvent) => {
-    event?.preventDefault();
-    const q = query.trim();
-    if (q.length < 2) { setError('Type at least 2 letters of the product name.'); return; }
-    setSearching(true); setError('');
+  // Results follow the typing: each pause starts a search, and a newer one
+  // replaces an older one still on its way, so the list always matches the box.
+  const pending = useRef<AbortController | null>(null);
+  const run = useCallback(async (raw: string) => {
+    const q = raw.trim();
+    pending.current?.abort();
+    if (q.length < 2) { pending.current = null; setSearching(false); return; }
+    const ask = new AbortController();
+    pending.current = ask;
+    setSearching(true);
     try {
-      const response = await fetch(`/api/nabis/search?q=${encodeURIComponent(q)}`, { cache: 'no-store' });
+      const response = await fetch(`/api/nabis/search?q=${encodeURIComponent(q)}`, { cache: 'no-store', signal: ask.signal });
       const data = await response.json().catch(() => ({}));
+      if (ask.signal.aborted) return;
       if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'search');
       const rows: Record<string, string>[] = Array.isArray(data.packages) ? data.packages : [];
-      const groups = new Map<string, Record<string, string>[]>();
-      for (const row of rows) { const key = packageKey(row); if (!key) continue; groups.set(key, [...(groups.get(key) ?? []), row]); }
-      setProducts(Array.from(groups, ([key, list]) => ({ key, rows: list, name: nameOf(list[0]), category: productCategory(list[0]), rawCategory: String(list[0].category ?? '') })));
+      setProducts(groupProducts(rows));
       setSearched(q);
-      if (data.error) setError('Manifest didn’t answer fully just now. If your product isn’t here, search again in a moment.');
+      setError(data.error ? 'Manifest didn’t answer fully just now. If your product isn’t here, search again in a moment.' : '');
     } catch (e) {
+      if (ask.signal.aborted) return;
       setProducts([]); setSearched('');
       setError(friendlyError(e, 'Couldn’t search just now. Try again in a minute.').replace(/^search$/, 'Couldn’t search just now. Try again in a minute.'));
-    } finally { setSearching(false); }
+    } finally {
+      if (pending.current === ask) { pending.current = null; setSearching(false); }
+    }
+  }, []);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { pending.current?.abort(); pending.current = null; setSearching(false); setProducts([]); setSearched(''); setError(''); return; }
+    const timer = window.setTimeout(() => { void run(q); }, KIOSK_SEARCH_PAUSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query, run]);
+  useEffect(() => () => pending.current?.abort(), []);
+  const search = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    if (query.trim().length < 2) { setError('Type at least 2 letters of the product name.'); return; }
+    void run(query);
   };
   return (
     <div className="space-y-8">
@@ -212,8 +239,9 @@ function StartStep({ onPick, onOpenRun, refreshKey }: { onPick: (product: Produc
         <form onSubmit={search} className="flex flex-col gap-3 sm:flex-row" role="search">
           <label htmlFor="kiosk-search" className="sr-only">Product name, batch or package tag</label>
           <input id="kiosk-search" className="field h-14 flex-1 text-xl" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type a product name, batch or tag" autoComplete="off" enterKeyHint="search" autoFocus />
-          <button type="submit" className="btn btn-primary kiosk-btn" disabled={searching}><Search className="size-6" aria-hidden="true" />{searching ? 'Searching…' : 'Search'}</button>
+          <button type="submit" className="btn btn-primary kiosk-btn"><Search className="size-6" aria-hidden="true" />{searching ? 'Searching…' : 'Search'}</button>
         </form>
+        <p className="sr-only" role="status" aria-live="polite">{searching ? 'Searching' : searched ? `${products.length} ${products.length === 1 ? 'product' : 'products'} found` : ''}</p>
         {error && <p role="alert" className="text-lg text-red-300">{error}</p>}
         {searched && !searching && !products.length && !error && <p role="status" className="text-lg text-zinc-300">Nothing found for “{searched}”. Check the spelling, or try part of the name.</p>}
         {products.length > 0 && (

@@ -1,4 +1,6 @@
+import { after } from 'next/server';
 import { officeSql } from './db';
+import { countOfficeSent } from '../officeSentCounted.server';
 import { OfficeError, uuid } from './http';
 
 export function validatePoll(data: Record<string, unknown>) {
@@ -22,5 +24,15 @@ export async function event(station: string, data: Record<string, unknown>) {
   const jobs = await sql`SELECT id FROM office_jobs WHERE id=${String(data.job_id)} AND station_id=${station}`;
   if (!jobs.length) throw new OfficeError('Job not owned by station', 403);
   const result = await sql`SELECT office_event(${station},${JSON.stringify(data)}::jsonb) AS response`;
+  if (data.state === 'sent_to_printer') countSentLater(String(data.job_id));
   return result[0].response;
+}
+/**
+ * Counts a part the printer took as printed on its run, after the station has
+ * its answer: the station's reply and timing never change, and a failure here
+ * only leaves the part to be counted on the run's next report.
+ */
+function countSentLater(jobId: string) {
+  const work = () => countOfficeSent(jobId).then(() => undefined, (error) => { console.error('Counting office labels as printed failed:', error instanceof Error ? error.message : 'unknown error'); });
+  try { after(work); } catch { void work(); }
 }
