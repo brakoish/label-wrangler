@@ -36,6 +36,7 @@ const stageRoute = require('../../src/app/api/kiosk/runs/[id]/route.ts');
 
 const kioskUser = { id: '11111111-1111-4111-8111-111111111111', username: 'kiosk', can_print: true, can_edit: false, is_admin: false };
 const owner = { id: '22222222-2222-4222-8222-222222222222', username: 'owner', can_print: true, can_edit: true, is_admin: true };
+const printer = { id: '33333333-3333-4333-8333-333333333333', username: 'printer', can_print: true, can_edit: false, is_admin: false };
 const reset = (user, answer) => { h.reset(); h.session.user = user; queries.length = 0; jar.clear(); sqlAnswer = answer; };
 const isKiosk = (text, values) => /FROM kiosk_accounts/.test(text) ? (values[0] === kioskUser.id ? [{ '?column?': 1 }] : []) : null;
 
@@ -159,14 +160,22 @@ const isKiosk = (text, values) => /FROM kiosk_accounts/.test(text) ? (values[0] 
   reset(kioskUser, (t, v) => isKiosk(t, v) ?? []);
   assert.deepEqual(await server.kioskAccess(h.request('GET')).then(({ ready, kiosk }) => ({ ready, kiosk })), { ready: true, kiosk: true });
   reset(owner, (t, v) => isKiosk(t, v) ?? []);
-  assert.deepEqual(await server.kioskAccess(h.request('GET')).then(({ ready, kiosk }) => ({ ready, kiosk })), { ready: true, kiosk: false }, 'the owner is not a kiosk account');
+  assert.deepEqual(await server.kioskAccess(h.request('GET')).then(({ ready, kiosk, manager }) => ({ ready, kiosk, manager })), { ready: true, kiosk: false, manager: true }, 'the owner is not a kiosk account, but may preview it');
+  reset({ ...owner, is_admin: false }, (t, v) => isKiosk(t, v) ?? []);
+  assert.equal((await server.kioskAccess(h.request('GET'))).manager, true, 'an editor may preview the kiosk');
+  reset(printer, (t, v) => isKiosk(t, v) ?? []);
+  assert.equal((await server.kioskAccess(h.request('GET'))).manager, false, 'a print-only account is not a manager');
+  reset(kioskUser, (t, v) => isKiosk(t, v) ?? []);
+  assert.equal((await server.kioskAccess(h.request('GET'))).manager, false, 'the kiosk account is never a manager');
   reset(kioskUser, () => missing());
-  assert.deepEqual(await server.kioskAccess(h.request('GET')).then(({ ready, kiosk }) => ({ ready, kiosk })), { ready: false, kiosk: false }, 'before setup: nobody is a kiosk account');
+  assert.deepEqual(await server.kioskAccess(h.request('GET')).then(({ ready, kiosk, manager }) => ({ ready, kiosk, manager })), { ready: false, kiosk: false, manager: false }, 'before setup: nobody is a kiosk account');
   reset(kioskUser, () => new Error('connection refused'));
   await assert.rejects(server.kioskAccess(h.request('GET')), /connection refused/, 'a real database error is not "not set up"');
   const refused = async (user, answer) => { reset(user, answer); try { await server.requireKiosk(h.request('GET')); return 0; } catch (e) { return e.status; } };
   assert.equal(await refused(kioskUser, (t, v) => isKiosk(t, v) ?? []), 0);
-  assert.equal(await refused(owner, (t, v) => isKiosk(t, v) ?? []), 403, 'kiosk APIs refuse other accounts');
+  assert.equal(await refused(owner, (t, v) => isKiosk(t, v) ?? []), 0, 'the owner can preview and print from the kiosk');
+  assert.equal(await refused({ ...owner, can_print: false }, (t, v) => isKiosk(t, v) ?? []), 403, 'previewing still needs print permission to print');
+  assert.equal(await refused(printer, (t, v) => isKiosk(t, v) ?? []), 403, 'kiosk APIs refuse other accounts');
   assert.equal(await refused({ ...kioskUser, can_print: false }, (t, v) => isKiosk(t, v) ?? []), 403, 'a kiosk account that cannot print');
   assert.equal(await refused(kioskUser, () => missing()), 409, 'not set up yet');
   reset(null, () => []);
@@ -175,15 +184,16 @@ const isKiosk = (text, values) => /FROM kiosk_accounts/.test(text) ? (values[0] 
   // Status and the navigation hint.
   reset(kioskUser, (t, v) => isKiosk(t, v) ?? []);
   let res = await statusRoute.GET(h.request('GET'));
-  assert.deepEqual(await res.json(), { ready: true, kiosk: true, canEdit: false, canPrint: true, username: 'kiosk' });
+  assert.deepEqual(await res.json(), { ready: true, kiosk: true, preview: false, canEdit: false, canPrint: true, username: 'kiosk' });
   assert.equal(jar.get(server.KIOSK_HINT_COOKIE), '1', 'a kiosk browser gets the hint');
   sqlAnswer = (t, v) => isKiosk(t, v) ?? []; h.session.user = owner;
   res = await statusRoute.GET(h.request('GET'));
-  assert.equal((await res.json()).kiosk, false); assert.equal(jar.has(server.KIOSK_HINT_COOKIE), false, 'the hint is cleared for anyone else');
+  { const body = await res.json(); assert.equal(body.kiosk, false); assert.equal(body.preview, true, 'the owner may preview'); }
+  assert.equal(jar.has(server.KIOSK_HINT_COOKIE), false, 'the hint is cleared for anyone else, a previewing owner included');
   reset(owner, () => missing());
   res = await statusRoute.GET(h.request('GET'));
   assert.equal(res.status, 200, 'the app keeps working before setup');
-  assert.deepEqual(await res.json(), { ready: false, kiosk: false, canEdit: true, canPrint: true, username: 'owner' });
+  assert.deepEqual(await res.json(), { ready: false, kiosk: false, preview: false, canEdit: true, canPrint: true, username: 'owner' });
 
   // Designs: before setup the switch is hidden (ready false), nothing breaks.
   reset(owner, () => missing());
@@ -191,8 +201,12 @@ const isKiosk = (text, values) => /FROM kiosk_accounts/.test(text) ? (values[0] 
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { ready: false, categoriesReady: false, ids: [], categories: {}, canEdit: true });
   reset(owner, (t, v) => isKiosk(t, v) ?? (/FROM kiosk_designs/.test(t) ? [{ template_id: 'tpl-a' }] : /FROM template_categories/.test(t) ? [{ template_id: 'tpl-a', category: 'Edible' }, { template_id: 'tpl-a', category: 'Flower' }] : []));
+  h.results.push([]);
   res = await designsRoute.GET(h.request('GET'));
-  assert.deepEqual(await res.json(), { ready: true, categoriesReady: true, ids: ['tpl-a'], categories: { 'tpl-a': ['Flower', 'Edible'] }, canEdit: true });
+  assert.deepEqual(await res.json(), { ready: true, categoriesReady: true, ids: ['tpl-a'], categories: { 'tpl-a': ['Flower', 'Edible'] }, canEdit: true, designs: [] }, 'a previewing owner gets the kiosk designs too');
+  reset(printer, (t, v) => isKiosk(t, v) ?? (/FROM kiosk_designs/.test(t) ? [{ template_id: 'tpl-a' }] : []));
+  res = await designsRoute.GET(h.request('GET'));
+  assert.equal('designs' in await res.json(), false, 'a print-only account gets no kiosk designs');
   reset(kioskUser, (t, v) => isKiosk(t, v) ?? []);
   res = await designsRoute.PUT(h.request('PUT', { templateId: 'tpl-a', kiosk: false }));
   assert.equal(res.status, 403, 'the kiosk account cannot change which labels are on the kiosk');
@@ -209,9 +223,9 @@ const isKiosk = (text, values) => /FROM kiosk_accounts/.test(text) ? (values[0] 
 
   // Runs: only the kiosk account, only once set up.
   const kioskRun = { templateId: 'tpl-a', quantity: 24, rows: units, packageKey: units[0].packageTag, productName: 'Blue Dream 3.5g', category: 'Flower' };
-  reset(owner, (t, v) => isKiosk(t, v) ?? []);
+  reset(printer, (t, v) => isKiosk(t, v) ?? []);
   res = await runsRoute.POST(h.request('POST', kioskRun));
-  assert.equal(res.status, 403, 'an editor makes runs in New run, not here');
+  assert.equal(res.status, 403, 'a print-only account makes runs in New run, not here');
   reset(kioskUser, () => missing());
   res = await runsRoute.POST(h.request('POST', kioskRun));
   assert.equal(res.status, 409);
@@ -239,9 +253,12 @@ const isKiosk = (text, values) => /FROM kiosk_accounts/.test(text) ? (values[0] 
   reset(kioskUser, (t, v) => isKiosk(t, v) ?? []);
   res = await stageRoute.PUT(h.request('PUT', { stage: 'printed' }), h.params('run-1'));
   assert.equal(res.status, 400);
-  reset(owner, (t, v) => isKiosk(t, v) ?? []);
+  reset(printer, (t, v) => isKiosk(t, v) ?? []);
   res = await stageRoute.PUT(h.request('PUT', { stage: 'approved' }), h.params('run-1'));
-  assert.equal(res.status, 403);
+  assert.equal(res.status, 403, 'a print-only account cannot answer the kiosk check');
+  reset(owner, (t, v) => isKiosk(t, v) ?? (/UPDATE kiosk_runs/.test(t) ? [{ stage: 'approved' }] : []));
+  res = await stageRoute.PUT(h.request('PUT', { stage: 'approved' }), h.params('run-1'));
+  assert.deepEqual(await res.json(), { stage: 'approved' }, 'a previewing owner can answer the 12-label check');
 
-  console.log('PASS kiosk: quantities, 12-then-rest (1/12/13/500), categories, filling designs, print phases, kiosk accounts, missing tables');
+  console.log('PASS kiosk: quantities, 12-then-rest (1/12/13/500), categories, filling designs, print phases, kiosk accounts, owner preview, missing tables');
 })().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   try {
     const access = await kioskAccess(req);
     await syncKioskHint(access.kiosk);
-    return json({ ready: access.ready, kiosk: access.kiosk, canEdit: access.user.can_edit, canPrint: access.user.can_print, username: access.user.username });
+    return json({ ready: access.ready, kiosk: access.kiosk, preview: access.manager, canEdit: access.user.can_edit, canPrint: access.user.can_print, username: access.user.username });
   } catch (error) {
     if (error instanceof OfficeError && error.status === 401) await syncKioskHint(false).catch(() => {});
     return browserFailure(error);

@@ -44,7 +44,10 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
   const banners = useShellBanners();
   // The kiosk account sees only the kiosk: its nav has nothing else, and any
   // other page sends it to /kiosk (the proxy usually does that first).
-  const isKiosk = useKioskStatus()?.kiosk === true;
+  const kioskStatus = useKioskStatus();
+  const isKiosk = kioskStatus?.kiosk === true;
+  // Owner accounts get a Kiosk link to preview what staff see.
+  const kioskPreview = kioskStatus?.preview === true && kioskStatus.ready;
   useEffect(() => { if (isKiosk) router.replace('/kiosk'); }, [isKiosk, router]);
   const navRef = useRef<HTMLElement>(null);
   const [indicator, setIndicator] = useState<NavBox | null>(null);
@@ -112,6 +115,7 @@ export function AppShell({ children, headerAction, beforeLeave }: AppShellProps)
     { href: '/runs', label: 'Runs', active: isRuns },
     { href: '/designer', label: 'Designs', active: isDesigner },
     { href: '/formats', label: 'Label sizes', active: isFormats },
+    ...(kioskPreview ? [{ href: '/kiosk', label: 'Kiosk', active: false }] : []),
   ];
 
   const activeLabel = navItems.find(item => item.active)?.label ?? '';

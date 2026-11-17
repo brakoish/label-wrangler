@@ -61,14 +61,14 @@ export function KioskApp() {
     return <Frame signOut={status.kiosk}><Center tone="bad" title="Kiosk mode isn’t set up yet" body={status.kiosk ? 'Ask a manager.' : 'It needs a one-time setup before staff can use it.'}
       action={!status.kiosk ? <Link href="/runs" className="btn btn-secondary">Back to Runs</Link> : undefined} /></Frame>;
   }
-  if (!status.kiosk) {
+  if (!status.kiosk && !status.preview) {
     return <Frame><Center title="This screen is for the kiosk computer" body="Sign in there with the shared kiosk account. To choose which labels show on the kiosk, turn on “Use on kiosk” for a design in Designs."
       action={<div className="flex flex-wrap gap-3"><Link href="/designer" className="btn btn-primary">Go to Designs</Link><Link href="/runs" className="btn btn-secondary">Back to Runs</Link></div>} /></Frame>;
   }
-  return <KioskMain />;
+  return <KioskMain preview={!status.kiosk} />;
 }
 
-function Frame({ children, signOut = false, printer }: { children: React.ReactNode; signOut?: boolean; printer?: React.ReactNode }) {
+function Frame({ children, signOut = false, printer, preview = false }: { children: React.ReactNode; signOut?: boolean; printer?: React.ReactNode; preview?: boolean }) {
   const [leaving, setLeaving] = useState(false);
   const leave = async () => {
     if (!await confirmDialog({ title: 'Sign out of the kiosk?', body: 'A manager will need the kiosk password to sign back in.', confirmLabel: 'Sign out' })) return;
@@ -84,11 +84,19 @@ function Frame({ children, signOut = false, printer }: { children: React.ReactNo
           <span className="flex items-center gap-2 text-lg font-semibold"><Tag className="size-6 text-amber-400" aria-hidden="true" />Label Wrangler <span className="font-normal text-zinc-400">Kiosk</span></span>
           <div className="ml-auto flex items-center gap-3">
             {printer}
+            {preview && <Link href="/runs" className="btn btn-ghost"><ArrowLeft className="size-5" aria-hidden="true" />Back to Runs</Link>}
             {signOut && <button type="button" className="btn btn-ghost" onClick={() => void leave()} disabled={leaving}><LogOut className="size-5" aria-hidden="true" />Sign out</button>}
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        {preview && (
+          <p className="mb-4 card border-amber-500/40 p-4 text-base text-amber-100" role="note">
+            <strong>Preview.</strong> This is what staff see on the kiosk computer. Prints you start here are real labels on the office printer.
+          </p>
+        )}
+        {children}
+      </main>
     </div>
   );
 }
@@ -123,7 +131,7 @@ function usePrinterLine() {
   return line;
 }
 
-function KioskMain() {
+function KioskMain({ preview = false }: { preview?: boolean }) {
   const printerLine = usePrinterLine();
   const [step, setStep] = useState<Step>('start');
   const [product, setProduct] = useState<Product | null>(null);
@@ -150,7 +158,7 @@ function KioskMain() {
   );
 
   return (
-    <Frame signOut printer={printer}>
+    <Frame signOut={!preview} preview={preview} printer={printer}>
       <div ref={top} className="scroll-mt-24" />
       {printerLine && printerLine.tone !== 'ok' && (
         <p className={`mb-4 card flex items-center gap-3 p-4 text-base sm:hidden ${toneText[printerLine.tone === 'bad' ? 'bad' : 'warn']}`} role="status">

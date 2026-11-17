@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-export interface KioskStatus { ready: boolean; kiosk: boolean; canEdit: boolean; canPrint: boolean; username: string }
+/** `preview`: an owner account opening the kiosk to see it while setting it up (never a kiosk account). */
+export interface KioskStatus { ready: boolean; kiosk: boolean; preview?: boolean; canEdit: boolean; canPrint: boolean; username: string }
 
 /** One read per page load (pages share it as you move around); a failed read is tried again next time. */
 let cached: Promise<KioskStatus | null> | null = null;

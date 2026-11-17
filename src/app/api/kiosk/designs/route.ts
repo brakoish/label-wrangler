@@ -9,15 +9,15 @@ import { KIOSK_CATEGORIES, cleanCategories, isMissingTable } from '@/lib/kiosk/p
 
 /**
  * GET: which designs are on the kiosk and each design's categories. A kiosk
- * account gets the kiosk designs themselves (with their label sizes), ready to
- * preview. `ready: false` until scripts/kiosk/schema.sql is applied.
+ * account, or a manager previewing the kiosk, gets the kiosk designs themselves
+ * (with their label sizes), ready to preview. `ready: false` until scripts/kiosk/schema.sql is applied.
  */
 export async function GET(req: Request) {
   try {
     const access = await kioskAccess(req);
     const [ids, categories] = await Promise.all([kioskDesignIds(), designCategories()]);
     const base = { ready: ids !== null, categoriesReady: categories !== null, ids: ids ?? [], categories: categories ?? {}, canEdit: access.user.can_edit && !access.kiosk };
-    if (!access.kiosk || !ids?.length) return json(base);
+    if ((!access.kiosk && !access.manager) || !ids?.length) return json(base);
     const rows = await db.select({ template: templates, format: formats }).from(templates)
       .innerJoin(formats, eq(templates.formatId, formats.id))
       .where(and(inArray(templates.id, ids), isNull(templates.archivedAt)));

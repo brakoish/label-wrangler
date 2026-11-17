@@ -13,26 +13,33 @@ import { cleanCategories, isMissingTable, type KioskCategory } from './plan';
 /** A hint for page navigation only (the proxy sends a kiosk browser to /kiosk). Every kiosk API checks the database. */
 export const KIOSK_HINT_COOKIE = 'lw-kiosk';
 
-export interface KioskAccess { user: OfficeUser; ready: boolean; kiosk: boolean }
+/**
+ * `manager`: an owner account (admin or can edit) that isn't a kiosk account.
+ * It can open the kiosk as a preview while setting it up, and print from it
+ * like any print it could already make in Runs.
+ */
+export interface KioskAccess { user: OfficeUser; ready: boolean; kiosk: boolean; manager: boolean }
+const isManager = (user: OfficeUser) => user.is_admin || user.can_edit;
 
 /** The signed-in account, whether kiosk mode is set up, and whether this is a kiosk account. */
 export async function kioskAccess(req: Request): Promise<KioskAccess> {
   const user = await requireUser(req);
   try {
     const rows = await officeSql()`SELECT 1 FROM kiosk_accounts WHERE user_id=${user.id}::uuid`;
-    return { user, ready: true, kiosk: rows.length > 0 };
+    const kiosk = rows.length > 0;
+    return { user, ready: true, kiosk, manager: !kiosk && isManager(user) };
   } catch (error) {
-    if (isMissingTable(error)) return { user, ready: false, kiosk: false };
+    if (isMissingTable(error)) return { user, ready: false, kiosk: false, manager: false };
     throw error;
   }
 }
 
-/** Only a kiosk account that may print gets past this. */
+/** A kiosk account, or a manager previewing the kiosk, that may print gets past this. */
 export async function requireKiosk(req: Request): Promise<OfficeUser> {
   const access = await kioskAccess(req);
   if (!access.ready) throw new OfficeError('Kiosk mode isn’t set up yet. Ask a manager.', 409);
-  if (!access.kiosk) throw new OfficeError('This is for the kiosk account only.', 403);
-  if (!access.user.can_print) throw new OfficeError('This kiosk account can’t print. Ask a manager.', 403);
+  if (!access.kiosk && !access.manager) throw new OfficeError('This is for the kiosk account only.', 403);
+  if (!access.user.can_print) throw new OfficeError(access.kiosk ? 'This kiosk account can’t print. Ask a manager.' : 'Your account can’t print.', 403);
   return access.user;
 }
 
