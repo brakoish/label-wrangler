@@ -50,6 +50,7 @@ for(const file of [
  'scripts/production/test-kiosk.cjs',
  'scripts/production/test-office-sent-counted.cjs',
  'scripts/production/test-zpl-quick-wins.cjs',
+ 'scripts/production/test-fixed-design-copies.cjs',
  'scripts/thermal/test-designer.cjs',
  'scripts/thermal/test-dotted-lines.cjs',
  'scripts/test-lab-potency.cjs',

@@ -465,6 +465,18 @@ function NewRunContent() {
   const imageSelections = useMemo(() => imagesByTemplate[templateId] ?? {}, [imagesByTemplate, templateId]);
   const format = template ? getFormatById(template.formatId) : null;
   const allDynamicFields = useMemo(() => (template ? dynamicFieldsForTemplate(template) : []), [template]);
+  // A design where nothing changes per label prints the same label N times:
+  // no values to fill, just how many. It runs as Type with no fields.
+  const fixedDesign = !!template && allDynamicFields.length === 0;
+  const modeBeforeFixed = useRef<RunInputMode | null>(null);
+  useEffect(() => {
+    if (fixedDesign) {
+      if (inputMode !== 'manual') { modeBeforeFixed.current = inputMode; setInputMode('manual'); }
+    } else if (modeBeforeFixed.current) {
+      setInputMode(modeBeforeFixed.current);
+      modeBeforeFixed.current = null;
+    }
+  }, [fixedDesign, inputMode]);
   const codeTypes = useMemo(() => codeFieldTypes(template), [template]);
   const hiddenRunFieldSet = useMemo(() => new Set(hiddenRunFields), [hiddenRunFields]);
 
@@ -1791,7 +1803,8 @@ function NewRunContent() {
   };
 
   const setupComplete = name.trim().length > 0 && !!template && !!format;
-  const fieldsComplete = !!template && allDynamicFields.length > 0 && dynamicFields.length > 0;
+  // A fixed design (nothing changes per label) only needs how many.
+  const fieldsComplete = !!template && (fixedDesign || (allDynamicFields.length > 0 && dynamicFields.length > 0));
   // Data is only "done" once there is a design with fields and real values
   // for them (an empty field list used to read as done).
   const dataComplete = fieldsComplete && blanksOk && sameOk && examplesOk && (inputMode === 'manual'
@@ -1870,6 +1883,34 @@ function NewRunContent() {
 
   // "Re-run with the same data" on a run that isn't finished: say once, at
   // the top, that the old run is still open (both could print the same labels).
+  const qtyField = (
+    <div>
+      <label htmlFor={`${formId}-qty`} className="field-label mb-1.5">How many labels</label>
+      <input
+        id={`${formId}-qty`}
+        type="number"
+        min={1}
+        max={9999}
+        value={manualQtyDraft}
+        onChange={(e) => {
+          const nextDraft = e.target.value;
+          setManualQtyDraft(nextDraft);
+          const next = parseInt(nextDraft, 10);
+          if (Number.isFinite(next)) setManualQty(Math.max(1, Math.min(9999, next)));
+        }}
+        onBlur={() => commitManualQty(manualQtyDraft)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            setManualQtyDraft(String(manualQty));
+            e.currentTarget.blur();
+          }
+        }}
+        className="field tabular-nums"
+      />
+    </div>
+  );
   const duplicateSource = duplicateFrom ? runs.find((r) => r.id === duplicateFrom) ?? null : null;
   const copiedRunStillOpen = duplicateApplied && !qrIntent && !!duplicateSource
     && duplicateSource.status !== 'completed' && duplicateSource.status !== 'cancelled'
@@ -2173,15 +2214,18 @@ function NewRunContent() {
               )}
             </section>
           )}
-          {template && allDynamicFields.length === 0 && flippable.length === 0 && (
-            <p role="status" className="text-sm text-amber-300">
-              Nothing on this design changes per label. Open it in the <Link href={`/designer?id=${template.id}`} className="link">designer</Link>{' '}and set the parts that should change to &ldquo;Changes per label&rdquo;.
-            </p>
-          )}
-
-          {template && allDynamicFields.length > 0 && (
+          {template && (allDynamicFields.length > 0 || fixedDesign) && (
             <>
-              {/* Data */}
+              {fixedDesign ? (
+                <section className="card card-flat p-4 sm:p-5 space-y-3" aria-labelledby={`${formId}-copies`}>
+                  <h2 id={`${formId}-copies`} className="text-base font-semibold text-zinc-100">How many labels</h2>
+                  <p className="text-sm text-zinc-400">
+                    Every label is the same, so there’s nothing to fill in. To change a part per label, open the design in the <Link href={`/designer?id=${template.id}`} className="link">designer</Link>{' '}and set it to &ldquo;Changes per label&rdquo;.
+                  </p>
+                  <div className="max-w-xs">{qtyField}</div>
+                </section>
+              ) : (
+              /* Data */
               <section className="card card-flat p-4 sm:p-5 space-y-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <h2 className="text-base font-semibold text-zinc-100">Where the values come from</h2>
@@ -2211,32 +2255,7 @@ function NewRunContent() {
                           />
                         </div>
                       ))}
-                      <div>
-                        <label htmlFor={`${formId}-qty`} className="field-label mb-1.5">How many labels</label>
-                        <input
-                          id={`${formId}-qty`}
-                          type="number"
-                          min={1}
-                          max={9999}
-                          value={manualQtyDraft}
-                          onChange={(e) => {
-                            const nextDraft = e.target.value;
-                            setManualQtyDraft(nextDraft);
-                            const next = parseInt(nextDraft, 10);
-                            if (Number.isFinite(next)) setManualQty(Math.max(1, Math.min(9999, next)));
-                          }}
-                          onBlur={() => commitManualQty(manualQtyDraft)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.blur();
-                            } else if (e.key === 'Escape') {
-                              setManualQtyDraft(String(manualQty));
-                              e.currentTarget.blur();
-                            }
-                          }}
-                          className="field tabular-nums"
-                        />
-                      </div>
+                      {qtyField}
                     </div>
                   </div>
                 ) : inputMode === 'paste' ? (
@@ -2572,6 +2591,7 @@ function NewRunContent() {
                   <p className="pt-2 text-zinc-400">{leftOffFields.size > 0 ? `Nothing prints where ${andList(Array.from(leftOffFields).map((field) => friendlyFieldName(field)))} would go. The design itself doesn’t change.` : 'A part you leave off prints nothing on this run. The design itself doesn’t change.'}</p>
                 </details>
               </section>
+              )}
 
               {/* Review — always shown once a label size is known; with no
                   data yet it shows the design's sample text. */}
