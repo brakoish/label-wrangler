@@ -25,7 +25,7 @@ try {
  window.saves=[];
  const format={id:'f',name:'Fixture',type:'thermal',width:3,height:2,dpi:203,labelsAcross:1};
  const rect=(id,x,w)=>({id,type:'rectangle',x,y:30,width:w,height:70,rotation:0,isStatic:true,zIndex:x,strokeWidth:1,strokeColor:'#000000',fillColor:'#eeeeee',borderRadius:0});
- window.template={id:'t',name:'Focus fixture',formatId:'f',elements:[rect('a',30,80),rect('b',180,120)],thermalRenderMode:'native-v1',updatedAt:'2026-01-01T00:00:00.000Z'};
+ window.template={id:'t',name:'Focus fixture',formatId:'f',elements:[rect('a',30,80),rect('b',180,120),{id:'c',type:'text',content:'Orientation',x:400,y:180,width:80,height:40,rotation:90,isStatic:true,zIndex:500,fontSize:8,fontFamily:'Arial',fontWeight:'normal',textAlign:'left',color:'#000000'}],thermalRenderMode:'native-v1',updatedAt:'2026-01-01T00:00:00.000Z'};
  const real=window.fetch.bind(window);window.fetch=async(input,init={})=>{
  const url=new URL(typeof input==='string'?input:input.url||input.href,location.origin);
  if(url.pathname.startsWith('/api/')){
@@ -61,7 +61,7 @@ try {
  await click('[data-layer-id=b] [data-layer-select]');await key('ArrowRight',8);es=await saved();assert.equal(es[1].x,202.33,'layer shift nudge');
  await click('[data-layer-id=a] [data-layer-select]',8);await key('ArrowDown');es=await saved();assert.equal(es[0].y,32.03);assert.equal(es[1].y,32.03);
  await key('ArrowRight',2);es=await saved();assert.equal(es[1].x,202.33,'modified arrow is not nudge');
- await evaluate('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Upright").click()');
+ await evaluate('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Readable").click()');
  await click('[data-layer-id=b] [data-layer-select]');await key('ArrowRight');es=await saved();assert.equal(es[1].x,202.33);assert.equal(es[1].y,34.06);
  await evaluate('document.querySelector("[data-layer-id=b] button:not([data-layer-select])").focus()');await key('ArrowRight');es=await saved();assert.equal(es[1].y,34.06);
  await evaluate('document.querySelector("[data-designer-canvas]").focus();document.querySelector("[data-designer-canvas] svg rect").dispatchEvent(new MouseEvent("click",{bubbles:true}))');await pause(100);
