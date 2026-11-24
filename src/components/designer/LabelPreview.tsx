@@ -525,7 +525,10 @@ export function LabelPreview({ format, elements, selectedElementIds, editorOrien
   const badQrBounds = badQr && bitmapProof?.qrBounds[badQr.id];
   const canFitQr = badQrBounds && badQrBounds.width <= viewBoxWidth && badQrBounds.height <= viewBoxHeight;
   return (
-    <div data-designer-canvas className="relative flex-1 shrink-0 flex flex-col overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
+    <div data-designer-canvas tabIndex={0} aria-label="Label canvas" onPointerDownCapture={e => {
+      // Drag/marquee prevent default. Commit the old inspector before selection changes.
+      if (!(e.target as Element).closest('input,textarea,select,button,a,[contenteditable="true"]')) e.currentTarget.focus({ preventScroll: true });
+    }} className="relative flex-1 shrink-0 flex flex-col overflow-hidden min-h-[340px] h-[calc(100dvh-270px)] max-h-[800px] max-sm:h-auto max-sm:min-h-0 max-sm:flex-none">
       {/* Notices sit above the label, in the page flow, so the canvas never
           covers them (the space is kept so the label doesn't jump). */}
       <div className="shrink-0 space-y-1 px-4 pt-2 min-h-12 sm:min-h-16 sm:px-6">
