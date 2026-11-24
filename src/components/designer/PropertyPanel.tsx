@@ -548,7 +548,7 @@ function CompactInput({ label, value, onChange, step, labelRight }: {
   }, [isFocused, value]);
 
   const commit = (nextDraft: string) => {
-    const next = Number(nextDraft);
+    const next = nextDraft.trim() === '' ? NaN : Number(nextDraft);
     if (Number.isFinite(next)) {
       onChange(next);
       setDraft(formatInputNumber(next));

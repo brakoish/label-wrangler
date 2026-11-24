@@ -189,11 +189,13 @@ function DesignerContent() {
 
   // Undo handler
   const handleUndo = useCallback(() => {
-    if (!currentTemplate || !canUndo()) return;
+    finishGesture();
+    const latest = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
+    if (!latest || !canUndo()) return;
     const prev = undo();
     if (prev) {
       // Save current state for redo
-      setUndoCurrent(currentTemplate.id, currentTemplate.elements, currentTemplate.formatId);
+      setUndoCurrent(latest.id, latest.elements, latest.formatId);
       // Apply previous state
       const updatedElements = prev.elements;
 
@@ -205,14 +207,16 @@ function DesignerContent() {
       }));
       persistEdits(currentTemplate.id);
     }
-  }, [persistEdits, currentTemplate, undo, setUndoCurrent, canUndo]);
+  }, [finishGesture, persistEdits, currentTemplate, undo, setUndoCurrent, canUndo]);
 
   // Redo handler
   const handleRedo = useCallback(() => {
-    if (!currentTemplate || !canRedo()) return;
+    finishGesture();
+    const latest = currentTemplate && useTemplateStore.getState().getTemplateById(currentTemplate.id);
+    if (!latest || !canRedo()) return;
     const next = redo();
     if (next) {
-      rememberPast(currentTemplate.id, currentTemplate.elements, currentTemplate.formatId);
+      rememberPast(latest.id, latest.elements, latest.formatId);
       const updatedElements = next.elements;
 
       useTemplateStore.setState((state) => ({
@@ -222,7 +226,7 @@ function DesignerContent() {
       }));
       persistEdits(currentTemplate.id);
     }
-  }, [persistEdits, currentTemplate, redo, rememberPast, canRedo]);
+  }, [finishGesture, persistEdits, currentTemplate, redo, rememberPast, canRedo]);
 
   // Keyboard shortcuts: Ctrl+Z / Ctrl+Shift+Z (or Cmd on Mac), + arrow key nudging.
   useEffect(() => {
@@ -231,7 +235,7 @@ function DesignerContent() {
       // text area edits, etc. aren't hijacked.
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable) {
+      if (e.defaultPrevented || showAddElementMenu || showGlobalSave || showGlobalPicker || showNewTemplateDialog || duplicateSource || renameSource || tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable || t?.closest('[role="dialog"],[aria-modal="true"]')) {
         return;
       }
 
@@ -249,7 +253,7 @@ function DesignerContent() {
 
       // Focused menus and controls own their arrow keys; layer selections
       // retain arrow-key nudging for keyboard-only editing.
-      if (t?.closest('button,a,summary,[role="combobox"],[role="listbox"]') && !t.closest('[data-layer-id]')) return;
+      if (!t?.matches('[data-designer-canvas],[data-layer-select]') || e.ctrlKey || e.metaKey || e.altKey) return;
       // Arrow key nudge for selected element(s).
       const arrowMap: Record<string, { dx: number; dy: number }> = {
         ArrowLeft: { dx: -1, dy: 0 },
@@ -277,14 +281,15 @@ function DesignerContent() {
         // Debounce save to avoid hammering the DB on held arrow keys.
         if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current);
         nudgeSaveRef.current = setTimeout(() => {
+          nudgeSaveRef.current = null;
           finishGesture();
         }, 400);
       }
     };
-    const finishNudge = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow')) { if (nudgeSaveRef.current) clearTimeout(nudgeSaveRef.current); finishGesture(); } };
+    const finishNudge = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow') && nudgeSaveRef.current) { clearTimeout(nudgeSaveRef.current); nudgeSaveRef.current = null; finishGesture(); } };
     window.addEventListener('keydown', handler); window.addEventListener('keyup', finishNudge);
     return () => { window.removeEventListener('keydown', handler); window.removeEventListener('keyup', finishNudge); };
-  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation]);
+  }, [handleUndo, handleRedo, currentTemplate, currentFormat, selectedIds, updateElementLocal, saveTemplate, beginGesture, finishGesture, thermalEditorOrientation, showAddElementMenu, showGlobalSave, showGlobalPicker, showNewTemplateDialog, duplicateSource, renameSource]);
 
   // Clear undo history + selection when switching templates
   useEffect(() => {
@@ -760,8 +765,9 @@ function DesignerContent() {
         </div>
 
         {/* Right Panel - Properties */}
-        <div className="contents" onFocusCapture={beginGesture} onBlurCapture={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
+        <div className="contents" onFocusCapture={beginGesture} onBlur={finishGesture} onKeyDownCapture={e => { if (e.key === 'Escape') { cancelGesture(); (e.target as HTMLElement).blur(); } }}>
         <PropertyPanel
+          key={JSON.stringify([currentTemplate.id, [...selectedIds].sort()])}
           element={selectedElement}
           selectedElements={currentTemplate.elements.filter((e) => selectedIds.has(e.id))}
           format={currentFormat}

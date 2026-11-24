@@ -143,7 +143,10 @@ function ElementItem({
   return (
     <div
       data-layer-id={element.id}
-      onClick={(e) => onSelect(e.shiftKey || e.ctrlKey || e.metaKey)}
+      onClick={(e) => {
+        e.currentTarget.querySelector<HTMLButtonElement>('[data-layer-select]')?.focus({ preventScroll: true });
+        onSelect(e.shiftKey || e.ctrlKey || e.metaKey);
+      }}
       role="group"
       aria-label={`${typeLabel} layer ${label}`}
       className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-all card-hover ${
@@ -163,7 +166,7 @@ function ElementItem({
 
       {/* Label */}
       <div className="flex-1 min-w-0">
-        <button aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-200 font-medium truncate min-h-6 focus-visible:outline-2 focus-visible:outline-amber-400" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
+        <button data-layer-select aria-pressed={isSelected} aria-label={`Select layer ${label}`} className="block w-full text-left text-sm text-zinc-200 font-medium truncate min-h-6 focus-visible:outline-2 focus-visible:outline-amber-400" onClick={e => { e.stopPropagation(); onSelect(e.shiftKey || e.ctrlKey || e.metaKey); }}>{label}</button>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-xs text-zinc-500">{typeLabel}</span>
           {!element.isStatic && (
