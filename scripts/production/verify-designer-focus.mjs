@@ -55,16 +55,18 @@ try {
  await key('ArrowRight');es=await saved();assert.equal(es[1].x,182.03);assert.equal(es[0].x,30);
  await key('z',2);assert.equal(await value(x),'0.89');
  await key('z',10);assert.equal(await value(x),'0.9');
- await type(width,'');await click('[data-element-id=a]');assert.equal(await value(),'0.47');
+ await type(width,'');await click('[data-layer-id=a] [data-layer-select]');assert.equal(await value(),'0.47');
  es=await saved();assert.equal(es[1].width,120,'incomplete input resets only on old object');assert.equal(es[0].width,95);
- await evaluate(q(width)+'.focus()');await key('ArrowUp');await click('[data-element-id=a]');es=await saved();assert.equal(es[0].width,97);assert.equal(es[0].x,30,'native numeric arrows do not nudge');
+ await evaluate(q(width)+'.focus()');await key('ArrowUp');await click('[data-layer-id=a] [data-layer-select]');es=await saved();assert.equal(es[0].width,97);assert.equal(es[0].x,30,'native numeric arrows do not nudge');
  await click('[data-layer-id=b] [data-layer-select]');await key('ArrowRight',8);es=await saved();assert.equal(es[1].x,202.33,'layer shift nudge');
  await click('[data-layer-id=a] [data-layer-select]',8);await key('ArrowDown');es=await saved();assert.equal(es[0].y,32.03);assert.equal(es[1].y,32.03);
  await key('ArrowRight',2);es=await saved();assert.equal(es[1].x,202.33,'modified arrow is not nudge');
  await evaluate('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="Readable").click()');
  await click('[data-layer-id=b] [data-layer-select]');await key('ArrowRight');es=await saved();assert.equal(es[1].x,202.33);assert.equal(es[1].y,34.06);
  await evaluate('document.querySelector("[data-layer-id=b] button:not([data-layer-select])").focus()');await key('ArrowRight');es=await saved();assert.equal(es[1].y,34.06);
- await evaluate('document.querySelector("[data-designer-canvas]").focus();document.querySelector("[data-designer-canvas] svg rect").dispatchEvent(new MouseEvent("click",{bubbles:true}))');await pause(100);
+ await evaluate('document.querySelector("[data-designer-canvas]").focus()');
+ const blank=await evaluate('(()=>{const r=document.querySelector("[data-designer-canvas] svg").getBoundingClientRect();return {x:r.right-6,y:r.bottom-6}})()');
+ await send('Input.dispatchMouseEvent',{type:'mousePressed',...blank,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',...blank,button:'left',clickCount:1});await pause(150);
  assert.equal(await evaluate(q(width)+'===null'),true);await key('ArrowRight');es=await saved();assert.equal(es[1].y,34.06);
  console.log(JSON.stringify({passed:['canvas focus transfer','same-type inspector reset','old-object pending blur','native input arrows','canvas and layer nudges','shift and multi-selection','modifier guard','upright direction','layer control guard','blank deselection','undo redo latest snapshot'],apiWritesIntercepted:true,physicalLabelsPrinted:0}));
 } finally {socket?.close();chrome.kill();}
