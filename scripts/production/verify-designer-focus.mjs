@@ -65,7 +65,7 @@ try {
  await click('[data-layer-id=b] [data-layer-select]');await key('ArrowRight');es=await saved();assert.equal(es[1].x,202.33);assert.equal(es[1].y,34.06);
  await evaluate('document.querySelector("[data-layer-id=b] button:not([data-layer-select])").focus()');await key('ArrowRight');es=await saved();assert.equal(es[1].y,34.06);
  await evaluate('document.querySelector("[data-designer-canvas]").focus()');
- const blank=await evaluate('(()=>{const r=document.querySelector("[data-designer-canvas] svg").getBoundingClientRect();return {x:r.right-6,y:r.bottom-6}})()');
+ const blank=await evaluate('(()=>{const r=document.querySelector("[data-designer-canvas] svg > g > rect").getBoundingClientRect();return {x:r.x+r.width*0.85,y:r.y+r.height*0.85}})()');
  await send('Input.dispatchMouseEvent',{type:'mousePressed',...blank,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',...blank,button:'left',clickCount:1});await pause(150);
  assert.equal(await evaluate(q(width)+'===null'),true);await key('ArrowRight');es=await saved();assert.equal(es[1].y,34.06);
  console.log(JSON.stringify({passed:['canvas focus transfer','same-type inspector reset','old-object pending blur','native input arrows','canvas and layer nudges','shift and multi-selection','modifier guard','upright direction','layer control guard','blank deselection','undo redo latest snapshot'],apiWritesIntercepted:true,physicalLabelsPrinted:0}));
