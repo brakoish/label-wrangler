@@ -22,7 +22,7 @@ try {
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
  await send('Network.setCookie',{name:'lw-office-session',value:'synthetic-not-a-real-session',url:base});
  await send('Page.addScriptToEvaluateOnNewDocument',{source:`
- window.saves=[];
+ localStorage.removeItem('label-wrangler:thermal-editor-orientation:t');window.saves=[];
  const format={id:'f',name:'Fixture',type:'thermal',width:3,height:2,dpi:203,labelsAcross:1};
  const rect=(id,x,w)=>({id,type:'rectangle',x,y:30,width:w,height:70,rotation:0,isStatic:true,zIndex:x,strokeWidth:1,strokeColor:'#000000',fillColor:'#eeeeee',borderRadius:0});
  window.template={id:'t',name:'Focus fixture',formatId:'f',elements:[rect('a',30,80),rect('b',180,120),{id:'c',type:'text',content:'Orientation',x:400,y:180,width:80,height:40,rotation:90,isStatic:true,zIndex:500,fontSize:8,fontFamily:'Arial',fontWeight:'normal',textAlign:'left',color:'#000000'}],thermalRenderMode:'native-v1',updatedAt:'2026-01-01T00:00:00.000Z'};
