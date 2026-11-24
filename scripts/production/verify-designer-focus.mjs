@@ -17,7 +17,7 @@ try {
  socket.onmessage=e=>{const data=JSON.parse(e.data);if(data.id){const p=pending.get(data.id);pending.delete(data.id);data.error?p?.reject(Error(data.error.message)):p?.resolve(data.result)}};
  const send=(method,params={})=>new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});socket.send(JSON.stringify({id:next,method,params}))});
  const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description);return r.result.value};
- const wait=async expression=>{for(let i=0;i<300;i++){if(await evaluate(expression))return;await pause(100)}throw Error('Timed out: '+expression+' '+await evaluate('JSON.stringify({text:document.body.innerText.slice(-2000),alerts:window.alerts,path:location.pathname})'))};
+ const wait=async expression=>{for(let i=0;i<300;i++){if(await evaluate('Boolean('+expression+')'))return;await pause(100)}throw Error('Timed out: '+expression+' '+await evaluate('JSON.stringify({text:document.body.innerText.slice(-2000),alerts:window.alerts,path:location.pathname})'))};
  await send('Page.enable');await send('Runtime.enable');
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
  await send('Network.setCookie',{name:'lw-office-session',value:'synthetic-not-a-real-session',url:base});
@@ -43,7 +43,7 @@ try {
  const value=(s=width)=>evaluate(q(s)+'.value');
  const key=async(key,modifiers=0)=>{await send('Input.dispatchKeyEvent',{type:'keyDown',key,modifiers});await send('Input.dispatchKeyEvent',{type:'keyUp',key,modifiers});await pause(100)};
  const click=async(selector,modifiers=0)=>{const r=await evaluate('(()=>{const r='+q(selector)+'.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');await send('Input.dispatchMouseEvent',{type:'mousePressed',...r,button:'left',clickCount:1,modifiers});await send('Input.dispatchMouseEvent',{type:'mouseReleased',...r,button:'left',clickCount:1,modifiers});await pause(100)};
- const type=async(selector,text)=>{await evaluate(q(selector)+'.focus()');await key('a',2);if(text)await send('Input.insertText',{text});else await key('Backspace');await pause(100)};
+ const type=async(selector,text)=>{await evaluate(q(selector)+'.focus()');await evaluate(q(selector)+'.select()');if(text)await send('Input.insertText',{text});else await key('Backspace');await pause(100)};
  const saved=async()=>{await wait('window.saves.length>0');await pause(200);return evaluate('window.template.elements')};
  await send('Page.navigate',{url:base+'/designer?id=t'});
  await wait('document.querySelector("[data-element-id=a]")');
